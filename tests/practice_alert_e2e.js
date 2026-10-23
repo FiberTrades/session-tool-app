@@ -27,12 +27,16 @@
     for (i = 0; i < base.length && target; i++) { var b2 = base[i], pc = i ? base[i - 1].close : b2.open; if (b2.time < now0) continue; if (Math.min(b2.low, pc) <= target && Math.max(b2.high, pc) >= target) { hitBar = b2; break; } }
     ok('a price the next hours reach first (above or below now): ' + target + ' (the ' + (hitBar && hhmm(hitBar.time)) + ' candle)', target && hitBar, [cur, target]);
 
-    // right-click on the chart at that price
+    // since 23 Oct 2026 the + by the price is the way (Nestor: "eliminate the add alarm by pressing the screen down on a phone and also by
+    // clicking the right button on the mouse, the + symbols is enough"): a right-click on the bare chart offers nothing
     var y = P._yOf(0, target), x = pane().el.clientWidth * 0.5;
     mev('contextmenu', x, y); await W(40);
-    var ctx = pane().el.querySelector('.stpr-ctx'), row = ctx && ctx.querySelector('[data-act="alert"]');
-    ok('a right-click on the chart offers Add alert at that price', ctx && ctx.style.display === 'flex' && row && /^Add alert at 1\.\d{5}$/.test(row.textContent), ctx && ctx.textContent);
-    var shown = row && +row.textContent.replace(/[^\d.]/g, ''); row.click(); await W(60);
+    var ctx = pane().el.querySelector('.stpr-ctx');
+    ok('a right-click on the bare chart: no menu, no Add alert', !(ctx && ctx.style.display === 'flex' && ctx.querySelector('[data-act="alert"]')), ctx && ctx.textContent);
+    mev('mousemove', x, y); await W(60);
+    var pw0 = P._kx(0).pw; mev('mousedown', pw0 - 11, y); mev('mouseup', pw0 - 11, y); await W(60);
+    var shown = +Number(P._panes()[0].series.coordinateToPrice(y)).toFixed(5);
+    ok('the + adds one line', DW.list.filter(function (d) { return d.type === 'hline'; }).length === 1, DW.list.map(function (d) { return d.type + ':' + d.price + ':' + !!d.alert; }));
     var L = DW.list[DW.list.length - 1];
     ok('it adds a horizontal line with its alert on, at that price', L && L.type === 'hline' && L.alert === true && !L.hitAt && Math.abs(L.price - shown) < 1e-9 && /Alert set at/.test(flash()), L);
     var hlT = function () { return (pane().hl || []).map(function (l) { return l.options().title + '|' + l.options().lineStyle; }); };

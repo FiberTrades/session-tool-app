@@ -86228,7 +86228,7 @@ window.__stAZ = (function () {
     else if(series&&series.__stMub&&window.__stPractice&&window.__stPractice._miniOff) window.__stPractice._miniOff(series);   /* its shading under the candles goes too (22 Oct 2026) */
     if(KIT) S.drawings.forEach(function(d){ if(d&&d.type==='vline'&&visibleOn(d)) try{ KIT.axis(ctx,d,kx()); }catch(_){} });   /* a vertical line's time on the time axis */
     if(S.cx){ ctx.save(); ctx.strokeStyle=LKC.cxc; ctx.lineWidth=1; ctx.setLineDash(cxDash());
-      ctx.beginPath(); ctx.moveTo(S.cx.x+0.5,0); ctx.lineTo(S.cx.x+0.5,h); ctx.moveTo(0,S.cx.y+0.5); ctx.lineTo(w,S.cx.y+0.5); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(S.cx.x+0.5,0); ctx.lineTo(S.cx.x+0.5,_axisTop(h)); ctx.moveTo(0,S.cx.y+0.5); ctx.lineTo(plotW(w),S.cx.y+0.5); ctx.stroke();   /* to the plot's edges, not over the scales (23 Oct 2026) */
       /* The two readouts LWC used to draw. Same font as the axis, taken from the chart's layout so
          it cannot drift, and the same slate the crosshair labels used. */
       ctx.setLineDash([]);
@@ -91343,7 +91343,7 @@ window.__stAZ = (function () {
     var p = paneOf(e); if (!p) return; flyShut();
     if (e.button != null && e.button !== 0) return;   // left button only; a touch has none
     var xy = evXY(p, e), touch = !!e.touches; DW.at = p;
-    if (!touch && onPlus(p, xy)) { e.stopPropagation(); e.preventDefault(); var ppr = p.series.coordinateToPrice(DW.cx.y); if (ppr != null) alertAt(ppr, p); return; }   // the + by the price: an alert there
+    if (onPlus(p, xy)) { e.stopPropagation(); e.preventDefault(); var ppr = p.series.coordinateToPrice(DW.cx.y); if (ppr != null) alertAt(ppr, p); return; }   // the + by the price: an alert there (a tap on a phone too)
     if (DW.tool === 'none') { var nh = newsAt(p, xy.x, xy.y);
       if (nh) { e.stopPropagation(); e.preventDefault(); if (DW.pin && DW.pin.h.e === nh.e) { DW.pin = null; newsCard(p, null); } else { if (DW.pin) newsCard(DW.pin.p, null); DW.pin = { p: p, h: nh }; newsCard(p, nh); } return; } }
     if (DW.pin) { newsCard(DW.pin.p, null); DW.pin = null; }
@@ -91498,18 +91498,21 @@ window.__stAZ = (function () {
   function ohWire(d, on){ on = on || function(t, ev, fn, op){ t.addEventListener(ev, fn, op); };   // on: a chart window's recorder (wireWin)
     on(d, 'pointerdown', ohDown, true); on(d, 'pointermove', ohMove, true); on(d, 'pointerup', ohUp, true);
     on(d, 'pointercancel', ohOff, true); on(d, 'wheel', ohWheel, { capture: true, passive: true }); }
-  // the + shows on the chart the mouse is on, not while drawing or placing a trade, not on a touch screen
-  function plusOn(p){ return !!(DW.cx && DW.cx.p === p && DW.tool === 'none' && !(S && S.exec) && !touchOnly() && !DW.drag); }
-  function onPlus(p, xy){ if (!plusOn(p)) return false; var dm = paneDims(p); return Math.abs(xy.x - (dm.pw - 11)) <= 9 && Math.abs(xy.y - DW.cx.y) <= 9; }
+  // the + shows on the chart the crosshair is on, not while drawing or placing a trade - the way to add an alert, on a phone too, where it
+  // is bigger for a finger (Nestor, 23 Oct 2026: "eliminate the add alarm by pressing the screen down on a phone and also by clicking the
+  // right button on the mouse, the + symbols is enough to add alarms, but you need to add the + symbol on phones too")
+  function plusOn(p){ return !!(DW.cx && DW.cx.p === p && DW.tool === 'none' && !(S && S.exec) && !DW.drag) && !(p._bells || []).some(function(q){ return Math.abs(q.y - DW.cx.y) < 12 && Math.abs(q.x - plusX(paneDims(p))) < 24; }); }   // not over an alert's bell: a press there picks its line
+  function plusX(dm){ return dm.pw - (touchOnly() ? 15 : 11); }
+  function onPlus(p, xy){ if (!plusOn(p)) return false; var dm = paneDims(p), r = touchOnly() ? 18 : 9; return Math.abs(xy.x - plusX(dm)) <= r && Math.abs(xy.y - DW.cx.y) <= r; }
   function paintCx(p, g, c, dm){
     var X = Math.round(c.x) + 0.5, Y = Math.round(c.y) + 0.5, okX = c.x >= 0 && c.x <= dm.pw, okY = c.y >= 0 && c.y <= dm.ph, fs = 11;
     g.save(); g.strokeStyle = look().cxc; g.lineWidth = 1; g.setLineDash(cxDash()); g.beginPath();
-    if (okX) { g.moveTo(X, 0); g.lineTo(X, dm.h); } if (okY) { g.moveTo(0, Y); g.lineTo(dm.w, Y); } g.stroke(); g.setLineDash([]);
+    if (okX) { g.moveTo(X, 0); g.lineTo(X, dm.ph); } if (okY) { g.moveTo(0, Y); g.lineTo(dm.pw, Y); } g.stroke(); g.setLineDash([]);   // to the plot's edges: not over the price scale or the times (23 Oct 2026)
     g.font = fs + "px 'AppNum','DM Mono',monospace"; g.textBaseline = 'middle';
     try { window.__stAxisLbl(p.series).set('cx', okY ? { y: c.y, t: Number(c.pr).toFixed(PS(p).digits), bg: '#2a2833' } : null); } catch (e) {}   // drawn by the chart, like its SL / TP labels
-    if (okY && plusOn(p)) { var pX = dm.pw - 11, hv = DW.plusHov === p;   // the + that adds an alert at this price
-      g.beginPath(); g.arc(pX, c.y, 7.5, 0, Math.PI * 2); g.fillStyle = hv ? '#f472b6' : '#2a2833'; g.fill(); g.lineWidth = 1; g.strokeStyle = hv ? '#f472b6' : 'rgba(255,255,255,0.75)'; g.stroke();
-      g.lineWidth = 1.4; g.strokeStyle = hv ? '#0b0a0d' : '#ffffff'; g.beginPath(); g.moveTo(pX - 3.5, c.y); g.lineTo(pX + 3.5, c.y); g.moveTo(pX, c.y - 3.5); g.lineTo(pX, c.y + 3.5); g.stroke();
+    if (okY && plusOn(p)) { var pX = plusX(dm), hv = DW.plusHov === p, pR = touchOnly() ? 11 : 7.5;   // the + that adds an alert at this price
+      g.beginPath(); g.arc(pX, c.y, pR, 0, Math.PI * 2); g.fillStyle = hv ? '#f472b6' : '#2a2833'; g.fill(); g.lineWidth = 1; g.strokeStyle = hv ? '#f472b6' : 'rgba(255,255,255,0.75)'; g.stroke();
+      var pA = pR * 0.47; g.lineWidth = 1.4; g.strokeStyle = hv ? '#0b0a0d' : '#ffffff'; g.beginPath(); g.moveTo(pX - pA, c.y); g.lineTo(pX + pA, c.y); g.moveTo(pX, c.y - pA); g.lineTo(pX, c.y + pA); g.stroke();
       if (hv) { var plt = T('Add alert at ', 'Alerta en ') + Number(c.pr).toFixed(PS(p).digits), plw = g.measureText(plt).width; g.fillStyle = '#2a2833'; g.fillRect(pX - 13 - plw - 10, c.y - 9, plw + 10, 18); g.fillStyle = '#ffffff'; g.textAlign = 'left'; g.fillText(plt, pX - 13 - plw - 5, c.y); } }
     if (okX) { var tt = crossFmt(p.tf)(c.t), tw = g.measureText(tt).width, tbh = fs + 5, ty = dm.ph + tbh / 2 + 2, tx = Math.max(tw / 2 + 6, Math.min(dm.pw - tw / 2 - 6, c.x));
       g.fillStyle = '#2a2833'; g.fillRect(tx - tw / 2 - 5, ty - tbh / 2, tw + 10, tbh); g.fillStyle = '#ffffff'; g.textAlign = 'center'; g.fillText(tt, tx, ty); }
@@ -93267,7 +93270,7 @@ window.__stAZ = (function () {
       if (DW.pending && DW.pending.type === 'path') { pathDone(); hideCtx(); return; }   // a path being drawn ends where it is
       if (DW.tool !== 'none') { DW.pending = null; DW.penning = null; setTool('none'); hideCtx(); return; }
       var xy = evXY(p, e), h = hit(p, xy.x, xy.y);
-      if (!h) { var dm0 = paneDims(p), pr0 = xy.x < dm0.pw && xy.y < dm0.ph ? p.series.coordinateToPrice(xy.y) : null; if (pr0 == null) { hideCtx(); return; } DW.sel = null; DW.multi = null; updDel(); DW.at = p; showCtx(p, xy.x, xy.y, pr0); return; }
+      if (!h) { hideCtx(); if (DW.sel != null || (DW.multi && DW.multi.length)) { DW.sel = null; DW.multi = null; updDel(); } DW.at = p; return; }   // the bare chart: no menu - an alert is the + by the price (23 Oct 2026)
       if (!(DW.multi && DW.multi.indexOf(h.i) >= 0)) { DW.sel = h.i; DW.multi = null; } DW.at = p; updDel(); showCtx(p, xy.x, xy.y); }, true);
     window.addEventListener('keyup', WH.kup = function(e){ if (e.key === 'Control' && DW.snap) { DW.snap = null; dirty(); } });
     window.addEventListener('resize', function(){ try { cmpBtnPlace(); } catch (e) {} if (LOG.open) logTop(); stripThumb(); placeMM(); lcFit(); });
