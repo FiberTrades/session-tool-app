@@ -77,13 +77,16 @@ def main():
         for tid in ids:
             cw(tid); ev(CWC[tid], 'window.__mark = 1; 1')
     # watch a hand-over: every chart window always shows a chart and is not reloaded; the taking window never has more than chart 1
-    def watch(name, ids, taker, secs, done_js):
+    def watch(name, ids, taker, secs, done_js, max_still=None):
         blank, reloaded, most, t1, ok_at = [], [], 0, time.time(), None
+        still = {}
         while time.time() - t1 < secs:
             for tid in ids:
                 s = cw(tid)
                 if not s or s.get('cv', 0) < 1: blank.append((round(time.time() - t1, 2), tid[-4:], s))
                 if s and not s.get('mark'): reloaded.append((round(time.time() - t1, 2), tid[-4:]))
+                if s and s.get('bgs', 0) >= 2:
+                    tt = time.time() - t1; a = still.get(tid); still[tid] = [a[0] if a else tt, tt]
             if taker is not None:
                 w = where(taker)
                 if w.get('live'): most = max(most, len(w.get('here') or []))
@@ -93,7 +96,9 @@ def main():
                 except Exception: pass
             elif time.time() - t1 > ok_at + 1.5: break
             time.sleep(0.12)
-        print('    (%s: done after %s s; blank samples %d; reloads %d; most charts in the taking window %d)' % (name, round(ok_at, 1) if ok_at is not None else '-', len(blank), len(set(r[1] for r in reloaded)), most))
+        frozen = max([v[1] - v[0] + 0.12 for v in still.values()] or [0])
+        print('    (%s: done after %s s; blank samples %d; reloads %d; most charts in the taking window %d; still picture up to %.1f s)' % (name, round(ok_at, 1) if ok_at is not None else '-', len(blank), len(set(r[1] for r in reloaded)), most, frozen))
+        if max_still is not None: check(name + ': the chart windows paused for at most %.1f s (a still picture while they change hands)' % max_still, frozen <= max_still, round(frozen, 2))
         check(name + ': every chart window kept showing a chart', not blank, blank[:4])
         check(name + ': no chart window reloaded', not reloaded, reloaded[:4])
         if taker is not None: check(name + ': the window taking over never had more than chart 1 in it', most <= 1, most)
@@ -137,7 +142,7 @@ def main():
         L = bt.CDP(lc['webSocketDebuggerUrl']); L.call('Page.enable'); L.call('Runtime.enable')
         L.call('Page.addScriptToEvaluateOnNewDocument', source='window.__stLcForce = true;'); ev(L, 'window.__stLcForce = true; 1')
         done = "(function(){ var w = %s; w = JSON.parse(w); return w.live && w.here.join() === '0' && w.out.join() === '1,2'; })()" % WHERE
-        watch('Live Charts to its own window', ids, L, 40, done)
+        watch('Live Charts to its own window', ids, L, 40, done, max_still=2.5)
         wl = where(L)
         check("Live Charts' window: chart 1 there, charts 2 and 3 in their windows", wl.get('solo') and wl.get('here') == [0] and wl.get('out') == [1, 2], wl)
         check('still two chart windows, the same two', charts() == ids, [ids, charts()])
@@ -158,7 +163,7 @@ def main():
         # 3. "Show it here instead": Live Charts back in the app, charts 2 and 3 still in their windows
         ev(M, "document.querySelector('#lc-away [data-lcback]').click(); 1", gesture=True)
         done_m = "(function(){ var w = %s; w = JSON.parse(w); return w.live && w.inl && !w.away && w.here.join() === '0' && w.out.join() === '1,2'; })()" % WHERE
-        watch('Show it here instead', ids, M, 40, done_m)
+        watch('Show it here instead', ids, M, 40, done_m, max_still=2.5)
         check('...Live Charts back in the app, chart 1 here, charts 2 and 3 still in their windows', ev(M, done_m), where(M))
         time.sleep(1)
         check("...Live Charts' window closed, the same two chart windows", not any('livecharts=1' in t.get('url', '') for t in targets()) and charts() == ids, [[t.get('url') for t in targets()], ids])
@@ -176,6 +181,24 @@ def main():
         ev(L, 'window.close(); 1')
         watch("Live Charts' window closed by hand", ids, M, 40, done_m)
         check('...Live Charts back in the app with charts 2 and 3 still in their windows', ev(M, done_m), where(M))
+
+        # 5. once more to its own window, then the app itself closed: Live Charts' window and its chart windows stay as they are
+        ev(M, 'window.__stPractice._lcPop(); 1', gesture=True)
+        lc = None
+        for _ in range(80):
+            lc = next((t for t in targets() if 'livecharts=1' in t.get('url', '')), None)
+            if lc: break
+            time.sleep(0.1)
+        L = bt.CDP(lc['webSocketDebuggerUrl']); L.call('Page.enable'); L.call('Runtime.enable')
+        L.call('Page.addScriptToEvaluateOnNewDocument', source='window.__stLcForce = true;'); ev(L, 'window.__stLcForce = true; 1')
+        watch('Live Charts to its own window a third time', ids, L, 40, done, max_still=2.5)
+        app_id = next((t['id'] for t in targets() if t.get('url', '').split('?')[0].endswith('/' + PAGE.split('#')[0]) and 'livecharts=1' not in t.get('url', '')), None)
+        try: urllib.request.urlopen('http://127.0.0.1:%d/json/close/%s' % (dbg_port, app_id), timeout=5).read()
+        except Exception as e: print('close failed', e)
+        time.sleep(4)
+        check('the app closed: it is gone', app_id and not any(t['id'] == app_id for t in targets()), [t.get('url') for t in targets()])
+        check("...Live Charts' window still open, live, chart 1 there and charts 2 and 3 still in their windows", where(L).get('live') and where(L).get('here') == [0] and where(L).get('out') == [1, 2], where(L))
+        check('...the same two chart windows, not folded into one', charts() == ids, [ids, charts()])
         if os.environ.get('LCH_DEBUG'):
             print('DEBUG targets', [t.get('url', '')[-40:] for t in targets()])
             print('DEBUG app', ev(M, "JSON.stringify((function(){ var lv = window.__stPractice._lv(), w = lv.popW, st = 'none'; try { st = w ? (w.closed ? 'closed' : 'open') : 'none'; } catch (e) { st = 'err'; } return { popW: st, awayT: !!lv.awayT, seen: lv.seenAt, tab: (document.querySelector('.tab[data-page=\"livecharts\"]') || {}).className, expect: lv.expect }; })())"))

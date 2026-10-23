@@ -92068,9 +92068,15 @@ window.__stAZ = (function () {
   function satLetGo(i){ var o = POP[i]; if (!o) return; satFreeze(i); try { if (o.unwire) o.unwire(); } catch (e) {} try { o.w.__stFree = 1; } catch (e) {} o.shut = true; delete POP[i]; }
   function satLetGoAll(){ var out = []; Object.keys(POP).forEach(function(k){ if (popOn(+k)) out.push(+k); satLetGo(+k); }); return out; }
   function satPending(){ var x = LV.expect; return !!(x && Date.now() < x.until); }   // (a window taken meanwhile is built by that first build, not rebuilt now)
-  async function satWait(S0){ var x = LV.expect; if (!x || Date.now() >= x.until) { LV.expect = null; return; } var want = x.s.filter(function(k){ return k >= 1 && k < CFG.layout; }); if (!want.length) { LV.expect = null; return; }
-    LV.building = true; var t0 = Date.now();
-    try { while (Date.now() - t0 < 3000 && S === S0 && !want.every(function(k){ return popOn(k); })) await new Promise(function(r){ setTimeout(r, 60); }); } finally { LV.building = false; LV.expect = null; } }
+  function satAsk(){ var op = null; try { op = LCW ? window.opener : LV.handFrom; } catch (e) {}
+    try { if (op && !op.closed && op.__stPractice && op.__stPractice._satHandOver) op.__stPractice._satHandOver(); } catch (e) {}
+    if (!LCW && LV.handFrom) { var hf = LV.handFrom; LV.handFrom = null; try { hf.close(); } catch (e) {} } }
+  async function satWait(S0){ var x = LV.expect, want = (x && Date.now() < x.until) ? x.s.filter(function(k){ return k >= 1 && k < CFG.layout; }) : [];
+    if (want.length) { try { await Promise.all(Array.from({ length: CFG.layout }, function(_, i){ var sr = symAt(i), X = sr === S.sym.raw ? S : ((S.side && S.side[sr]) || S); return paneStatic(Math.max(CFG.tfs[i] || 5, X.baseTf), X); })); } catch (e) {} if (S !== S0) return; }   // every chart's candles first (cached): the hand-over is then only drawing them
+    LV.building = true; satAsk();
+    if (!want.length) { LV.building = false; LV.expect = null; return; }
+    var t0 = Date.now();
+    try { while (Date.now() - t0 < 3000 && S === S0 && !want.every(function(k){ return popOn(k); })) await new Promise(function(r){ setTimeout(r, 30); }); } finally { LV.building = false; LV.expect = null; } }
   function satUnghost(){ Object.keys(POP).forEach(function(k){ var o = POP[k], p = panes[+k]; if (!o || !o.ghost) return;
       var drawn = o.ready && p && p.n > 0 && p.el && p.el.ownerDocument === o.w.document; if (!drawn && Date.now() - (o.ghostAt || 0) < 15000) return;
       if (!drawn && o.ready && S && isOpen() && !LV.building) setTimeout(rebuild, 0);   // taken, but no build came for it: build it now
@@ -93048,7 +93054,7 @@ window.__stAZ = (function () {
      window that opened it, which a reload does not break. */
   var LCB = null, LCW = /[?&]livecharts=1(&|$)/.test(location.search); try { LCB = new BroadcastChannel('st-lc'); } catch (e) {}
   function lcAwayOn(){ if (LV.solo || LCW) return false; try { if (LV.popW) return !LV.popW.closed; } catch (e) { return false; } return Date.now() - (LV.seenAt || 0) < 4000; }
-  function lcAwaySet(w){ if (w) LV.popW = w; lcHide(); lcAwayPaint(true); clearInterval(LV.awayT);
+  function lcAwaySet(w){ if (w) LV.popW = w; lcHide(); lcKeepAway(); lcAwayPaint(true); clearInterval(LV.awayT);
     LV.awayT = setInterval(function(){ if (!LV.popW && LCB) try { LCB.postMessage({ k: 'q' }); } catch (e) {}
       if (lcAwayOn()) return; lcAwayEnded(); }, 1500); }
   function lcAwayEnded(){ clearInterval(LV.awayT); LV.awayT = 0; LV.popW = null; LV.seenAt = 0; lcAwayPaint(false);   // that window was closed: back here
@@ -93057,7 +93063,10 @@ window.__stAZ = (function () {
   function lcBye(s){ if (LV.solo || LCW) return; LV.expect = { s: s || [], until: Date.now() + 10000 }; var n = 0;
     var chk = function(){ if (!LV.popW || !LV.awayT) return; var gone = true; try { gone = LV.popW.closed; } catch (e) {} if (gone) { lcAwayEnded(); return; } if (++n < 40) setTimeout(chk, 80); }; setTimeout(chk, 40); }
   function lcAwayClose(){ try { var lp = LV.popW && LV.popW.__stPractice, lo = lp && lp._pops && lp._pops(); if (lo) { var ls = Object.keys(lo).map(Number).filter(function(k){ try { return !!(lo[k] && lo[k].ready && lo[k].w && !lo[k].w.closed); } catch (e) { return false; } }); if (ls.length) LV.expect = { s: ls, until: Date.now() + 10000 }; } } catch (e) {}   // its chart windows: they come back here
-    try { if (LV.popW) LV.popW.close(); } catch (e) {} try { if (LCB) LCB.postMessage({ k: 'back' }); } catch (e) {} LV.popW = null; LV.seenAt = 0; clearInterval(LV.awayT); LV.awayT = 0; }
+    var hw = LV.popW, open1 = false; try { open1 = !!hw && !hw.closed; } catch (e) {}
+    if (open1) { LV.handFrom = hw; setTimeout(function(){ if (LV.handFrom === hw) { LV.handFrom = null; try { hw.close(); } catch (e) {} } }, 8000); }   // closed once this window is ready for its chart windows (satAsk), at the latest in 8 s
+    else { try { if (LCB) LCB.postMessage({ k: 'back' }); } catch (e) {} }
+    LV.popW = null; LV.seenAt = 0; clearInterval(LV.awayT); LV.awayT = 0; }
   // this app window going away (closed or reloaded): its chart windows stay as they are, as still pictures, until the next one takes them
   try { window.addEventListener('pagehide', function(){ if (!Object.keys(POP).length) return; var gs = satLetGoAll(); if (!gs.length) return;
       try { sessionStorage.setItem('st_satexp', JSON.stringify({ s: gs, at: Date.now() })); } catch (e) {}
@@ -93078,13 +93087,19 @@ window.__stAZ = (function () {
   function lcPopOut(){ var raw = (S && S.sym && S.sym.raw) || CFG.sym || 'EURUSD', w = null, out = Object.keys(POP).map(Number).filter(function(k){ return popOn(k); });
     try { w = window.open(location.pathname + '?livecharts=1&sym=' + encodeURIComponent(raw) + (out.length ? '&out=' + out.join(',') : ''), 'stlivecharts', 'popup,width=1400,height=920'); } catch (e) {}
     if (!w) { flash(T('Your browser blocked the new window. Allow pop-ups for this site and try again.', 'Tu navegador bloqueó la ventana nueva. Permite ventanas emergentes en este sitio y vuelve a intentarlo.')); return; }
-    lcHandOff(); lcAwaySet(w); }
+    lcAwaySet(w); }
   /* The charts already out in windows of their own go along to Live Charts' window (Nestor, 22 Oct 2026: with charts 2 and 3 out in
      windows, Live Charts sent to a window too "ended up giving me 3 charts all together in 1 screen ... there is still a chart that
-     shouldnt be there anymore in the app"). This window lets them go without closing them, so Live Charts here closes as it does with
-     none out; each chart window then asks Live Charts' window for its chart (chart.html, which finds it through __stLcWin) and stays
-     where it is, on its screen. */
-  function lcHandOff(){ satLetGoAll(); }
+     shouldnt be there anymore in the app"). They stay live, drawn from here, while that window starts - the chart in this tab hidden
+     (lcKeepAway) - and go the moment it is ready for them (Nestor, 23 Oct 2026: "the other 2 charts they freeze now and then i guess
+     when everything is loaded they go live again, isnt there a way to make this smoother so its seemless like it would be in
+     tradingview?"): it asks (satAsk), this window lets them go (lcHandOver: a still picture each, no reload) and stops its Live Charts;
+     each chart window then asks Live Charts' window for its chart (chart.html, through __stLcWin) and stays where it is. The same the
+     other way: Show it here instead keeps that window open (LV.handFrom) until this one is ready, then asks it and closes it. */
+  function lcKeepAway(){ if (!(S && S.live && Object.keys(POP).some(function(k){ return popOn(+k); }))) return; var win = $('stpr-win'), bg = $('stpr-bg'); if (win && bg && win.parentNode !== bg) bg.appendChild(win); }
+  function lcHandOver(){ var ws = Object.keys(POP).map(function(k){ return POP[k] && POP[k].w; }).filter(Boolean);
+    satLetGoAll(); if (!LV.solo && !LCW && S && lcAwayOn()) lcStop();
+    ws.forEach(function(w){ try { if (w.__stAskNow) w.__stAskNow(); } catch (e) {} }); }
   window.__stLcWin = function(){ if (LV.solo || LCW) return null; try { return (LV.popW && !LV.popW.closed) ? LV.popW : null; } catch (e) { return null; } };
   // the window of its own: Live Charts alone, filling it, from the first paint
   function lcSolo(raw){ var win = $('stpr-win'), bg = $('stpr-bg'); if (!win || !bg) return; LV.solo = true; LV.host = $('lc-host');
@@ -93099,6 +93114,10 @@ window.__stAZ = (function () {
     // 2026, Aurora: a snapshot, then Session Bias to paste it, and "her charts dissapear from the other monitors"); back in the tab they
     // are all as they were. With none out, leaving the tab stops the charts as before.
     if (S && Object.keys(POP).some(function(k){ return popOn(+k); })) { closeMenu(); dlgClose(false); return; }
+    lcStop(); }
+  // Live Charts here stops: its charts, the EA panel, the Toolbox (the tab left with no chart window out; or its chart windows taken by Live
+  // Charts' own window: lcHandOver)
+  function lcStop(){
     var cw0 = $('stpr-cw'); if (cw0) cw0.style.height = '';
     if (S) { if (S.live) { lvMMOff(); var tbx = $('lc-tb'); if (tbx) tbx.hidden = true; clearLiveT(); popShutAll(); closeMenu(); dlgClose(false); stopLoop(); DW.cx = null; DW.pending = null; DW.penning = null; DW.drag = null; DW.marq = null; DW.pin = null;
         lcViewFlush(); panes.forEach(function(p){ try { p.chart.remove(); } catch (e) {} }); panes = []; S = null; }
@@ -93360,7 +93379,7 @@ window.__stAZ = (function () {
       setTimeout(go1, 300);
     }
   } catch (e) {}
-  window.__stPractice = { open: open, close: close, _lv: function(){ return LV; }, _goLive: goLive, _lvClock: function(ms){ LV.toff = ms || 0; }, _liveDay: liveDay, stats: stats, log: logAll, pull: pull, _satReady: satReady, _lcBye: lcBye, _satExpect: function(){ return LV.expect; }, _satHas: function(w, i){ var o = POP[i]; return !!(o && o.w === w); }, _dayLocked: function(){ return lvDayLocked(); }, _lvEmsg: function(p){ lvEmsg(p); }, _pullCfg: pullCfg, _pushCfg: pushCfg, _save: function(){ save(); }, _lcAway: function(w){ if (LV.solo || LCW || !w || LV.popW === w) return; lcAwaySet(w); }, _wsr: { get: wsrGet, set: wsrSet, open: wsrOpenAll, start: wsrStart, st: function(){ return WSR; }, setup: wsrSetup, steps: wsrSteps, popCheck: wsrPopCheck },
+  window.__stPractice = { open: open, close: close, _lv: function(){ return LV; }, _goLive: goLive, _lvClock: function(ms){ LV.toff = ms || 0; }, _liveDay: liveDay, stats: stats, log: logAll, pull: pull, _satReady: satReady, _lcBye: lcBye, _satHandOver: lcHandOver, _satExpect: function(){ return LV.expect; }, _satHas: function(w, i){ var o = POP[i]; return !!(o && o.w === w); }, _dayLocked: function(){ return lvDayLocked(); }, _lvEmsg: function(p){ lvEmsg(p); }, _pullCfg: pullCfg, _pushCfg: pushCfg, _save: function(){ save(); }, _lcAway: function(w){ if (LV.solo || LCW || !w || LV.popW === w) return; lcAwaySet(w); }, _wsr: { get: wsrGet, set: wsrSet, open: wsrOpenAll, start: wsrStart, st: function(){ return WSR; }, setup: wsrSetup, steps: wsrSteps, popCheck: wsrPopCheck },
     _pop: popChart, _unpop: unpop, _lcPop: lcPopOut, _lcSolo: lcSolo, _zoom: function(i, r){ var p = panes[i]; if (!p) return; p.handAt = Date.now(); setRange(p, r); }, _axl: function(i, k){ var p = panes[i]; return p && p.series && p.series.__stAx ? p.series.__stAx.get(k || 'cd') : null; }, _lvv: function(){ return panes.map(function(p){ try { return p.series.options().lastValueVisible; } catch (e) { return null; } }); }, _pops: function(){ return POP; }, _liveWin: liveWin, _reLive: reLive,
     _setPaneSym: setPaneSym, _ps: PS, _feeds: feeds, _loadSyms: function(){ return loadSymbols(); }, _today: goToday, _dwListOf: dwListOf, _dwRaw: function(){ return DW.raw; },
     _alertsMenu: alertsMenu, _logSync: logSync, _treeMenu: treeMenu, _lockSel: lockSel, _emojis: EMOJIS, _satBar: satBar, _mEl: mEl, _eaNewest: eaNewest, _vpCalc: vpCalc, _vol: function(){ return VOL; }, _volNoHist: volNoHist, _static: function(){ return staticCache; }, _volMerge: volMerge,
