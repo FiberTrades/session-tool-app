@@ -45,6 +45,19 @@
     ok('at the level he picked by ear (0.42, up from 0.28)', window.__stSentSound.level === 0.42 && /exponentialRampToValueAtTime\(0\.42, t \+ 0\.006\)/.test(html) && !/exponentialRampToValueAtTime\(0\.28, t \+ 0\.006\)/.test(html), window.__stSentSound.level);
     ok('no swoosh left: nothing made of noise', noises === 0 && !/function swoosh\(c\)/.test(html), noises);
     ok('it still plays when a post has gone, from the one place every Post button uses', (html.match(/_sentSnd\.play\(\);/g) || []).length === 2 && /function postToChannel\(slug, body, bodyEs, replaceId\)\{/.test(html), (html.match(/_sentSnd\.play\(\);/g) || []).length);
+    // asleep again later (a phone in the background, a long idle): every press wakes it, not only the first after the app loads
+    // (Nestor, 23 Oct 2026: "when i posted the morning bias i didnt hear the chime"), and the press on Post itself does
+    var woke = 0, r0 = c0.resume;
+    c0.resume = function () { woke++; return Promise.resolve(); };
+    try { Object.defineProperty(c0, 'state', { get: function () { return 'suspended'; }, configurable: true }); } catch (e) {}
+    var press = function (t) { window.dispatchEvent(new Event(t)); };
+    press('pointerdown'); press('pointerdown'); press('keydown');
+    var w1 = woke; window.__stSentSound.prime(); var w2 = woke;
+    try { Object.defineProperty(c0, 'state', { get: function () { return 'running'; }, configurable: true }); } catch (e) {}
+    press('pointerdown'); window.__stSentSound.prime(); var w3 = woke;
+    try { delete c0.state; } catch (e) {} c0.resume = r0;
+    ok('asleep later: every press wakes the audio again (three presses, three wakes), and Post\'s own press does too', w1 === 3 && w2 === 4, [w1, w2]);
+    ok('...awake: a press leaves it alone', w3 === 4, w3);
   } catch (err) { ok('test ran without throwing', false, String(err && err.stack || err)); }
   return out;
 })()
