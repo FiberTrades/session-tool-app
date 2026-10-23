@@ -8,10 +8,12 @@
 #   phx_leave  leaves the room
 # It stores nothing and reads no message's contents beyond the envelope. Trade commands are signed by the app (HMAC with the
 # sync token) and checked by the EA, so the relay cannot act on a trade and neither can anyone who only knows a room's name.
-# Python standard library only (asyncio): run with `python server.py` (PORT from the environment, 8080 by default).
+# Python standard library only (asyncio): run with `python server.py` (PORT from the environment, 8080 by default; HOST too,
+# every address by default - on Session Terminal's own server it listens on 127.0.0.1 behind Caddy, which holds the certificate).
 import asyncio, base64, hashlib, json, os, re, struct, time
 
 PORT = int(os.environ.get('PORT', '8080'))
+HOST = os.environ.get('HOST', '0.0.0.0')
 GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 TOPIC = re.compile(r'^realtime:stl-[0-9a-f]{32}$')
 MAX_MSG = 256 * 1024           # the largest message (a "bars" reply of 300 candles is ~20 KB)
@@ -190,7 +192,7 @@ async def handle(reader, writer):
 
 
 async def main():
-    srv = await asyncio.start_server(handle, '0.0.0.0', PORT, limit=MAX_MSG * 2)
+    srv = await asyncio.start_server(handle, HOST, PORT, limit=MAX_MSG * 2)
     print('relay listening on', PORT, flush=True)
     async with srv:
         await srv.serve_forever()
