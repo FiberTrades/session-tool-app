@@ -92992,8 +92992,24 @@ window.__stAZ = (function () {
     return { time: t, open: +a[1], high: +a[2], low: +a[3], close: +a[4], vol: (a.length > 5 && a[5] !== '') ? +a[5] : null }; }
   function upsertBar(arr, b){ var lo = 0, hi = arr.length; while (lo < hi) { var m = (lo + hi) >> 1; if (arr[m].time < b.time) lo = m + 1; else hi = m; }
     if (lo < arr.length && arr[lo].time === b.time) arr[lo] = b; else arr.splice(lo, 0, b); }
+  /* An EA whose clock is off (23 Oct 2026). Before its first live tick an EA before 9.12 worked the broker's time out from the
+     last price it had - frozen since the close for an MT5 started after it - and sent every candle minutes late (his cloud 70K
+     12, the demo 2): on the chart they sat between the stored ones, a mess of tall overlapping bodies. Its answer is dropped
+     (for 10 minutes, its live candles too) when a 5-minute-or-longer candle is off its boundary, a candle is from the future, or
+     it repeats candles already here a few minutes away. The store refuses the same (ingest-candles). */
+  function lvClockOff(bs, tf, have){ var step = (tf >= 60 ? 30 : tf) * 60, now = nowS();
+    if (bs.some(function(b){ return (tf >= 5 && b.time % step !== 0) || b.time > now + tf * 60; })) return true;
+    var at = {}, key = function(b){ return b.open + '|' + b.high + '|' + b.low + '|' + b.close; };
+    (have || []).forEach(function(h){ if (h.high !== h.low) (at[key(h)] = at[key(h)] || []).push(h.time); });
+    var same = 0, lag = {}, most = 0;   // a late copy repeats them all at ONE distance; quiet markets repeat a candle by chance
+    bs.forEach(function(b){ var ts = (b.high !== b.low) && at[key(b)]; if (!ts) return; if (ts.indexOf(b.time) >= 0) { same++; return; }
+      ts.forEach(function(t){ var d = b.time - t; if (d && Math.abs(d) <= 3600) { lag[d] = (lag[d] || 0) + 1; if (lag[d] > most) most = lag[d]; } }); });
+    return most >= 3 && most > same; }
+  function lvClockBad(F){ return !!(F.clockOff && Date.now() - F.clockOff < 600000); }
   function lvBars(p){ var F = p && feedFor(p.s); if (!lvData() || !F || lvNotOurs(F, p)) return; if (+p.tf > 1) { lvBarsTf(F, p); return; } if (+p.tf !== 1 || F.baseTf !== 1) return;
-    String(p.rows || '').split(';').forEach(function(r){ var b = parseBar(r); if (!b) return; if (b.time >= S.f.open) { if (b.time < S.f.close) upsertBar(F.base, b); } else upsertBar(F.pre, b); });
+    var bs = String(p.rows || '').split(';').map(parseBar).filter(Boolean);
+    if (lvClockBad(F) || lvClockOff(bs, 1, F.base.concat(F.pre || []))) { if (!lvClockBad(F)) { F.clockOff = Date.now(); try { console.warn('[LC] EA clock off: its candles dropped', p.s, p.lg); } catch (e) {} } return; }
+    bs.forEach(function(b){ if (b.time >= S.f.open) { if (b.time < S.f.close) upsertBar(F.base, b); } else upsertBar(F.pre, b); });
     F.parts[p.i] = 1; F.gotHist = true;
     if (Object.keys(F.parts).length >= (+p.of || 1)) { F.parts = {}; lvMergePre(F); }
     lvSoon(); }
@@ -93011,7 +93027,8 @@ window.__stAZ = (function () {
     var acc = (F.tfp = F.tfp || {})[tf] || (F.tfp[tf] = { rows: [], parts: {} });
     String(p.rows || '').split(';').forEach(function(r){ var b = parseBar(r); if (b) acc.rows.push(b); });
     acc.parts[p.i] = 1; if (Object.keys(acc.parts).length < (+p.of || 1)) return;
-    delete F.tfp[tf]; var m = {}; acc.rows.forEach(function(b){ m[b.time] = b; });
+    delete F.tfp[tf]; if (lvClockOff(acc.rows, tf, null)) { F.clockOff = Date.now(); return; }   // see lvClockOff: asked again in 20 s
+    var m = {}; acc.rows.forEach(function(b){ m[b.time] = b; });
     (F.tfh = F.tfh || {})[tf] = Object.keys(m).map(Number).sort(function(a, b){ return a - b; }).map(function(t){ return m[t]; });
     panes.forEach(function(q){ if (PS(q) === F && SRC[q.tf] === tf) lvSetStatic(q, F.tfh[tf].filter(function(b){ return b.time + tf * 60 <= S.f.open; }), false); });
     lvSoon(); }
@@ -93034,7 +93051,7 @@ window.__stAZ = (function () {
   function lvPx(p){ var F = p && feedFor(p.s); if (!lvData() || !F || lvNotOurs(F, p)) return;
     var b = +p.b, a = +p.a; if (!(b > 0)) return; var prev = F.px ? F.px.b : null;
     F.px = { b: b, a: a, sp: (a >= b) ? a - b : null, t: +p.t || nowS() }; F.at = Date.now(); if (isFinite(+p.dg)) F.dg = +p.dg;
-    if (F.baseTf === 1) { var pb = parseBar(p.pb), fb = parseBar(p.bar), last = F.base.length ? F.base[F.base.length - 1].time : 0;
+    if (F.baseTf === 1 && !lvClockBad(F)) { var pb = parseBar(p.pb), fb = parseBar(p.bar), last = F.base.length ? F.base[F.base.length - 1].time : 0;
       if (pb && pb.time >= S.f.open && pb.time < S.f.close) { if (last && pb.time - last > 60) lvHist(F, Math.ceil((pb.time - last) / 60) + 3); upsertBar(F.base, pb); }
       if (fb && fb.time >= S.f.open && fb.time < S.f.close) upsertBar(F.base, fb); }
     if (S.live) { S.now = Math.max(S.now, Math.min(nowS(), S.f.close)); if (prev != null) lvAlertScan(F, prev, b); }   // Back Testing's today keeps its own clock
@@ -93558,7 +93575,7 @@ window.__stAZ = (function () {
       else close(); }
     var win = $('stpr-win'), bg = $('stpr-bg'); win.classList.remove('lc', 'lcp'); lcTbOut(); if (win.parentNode !== bg) bg.appendChild(win); LV.inl = false;
     try { if (window.__stLiveLine && window.__stLiveLine.tickle) window.__stLiveLine.tickle(); } catch (e) {} }
-  window.__stLC = { emsg: lvEmsg, _eaMsg: function(){ return EM; },
+  window.__stLC = { emsg: lvEmsg, _eaMsg: function(){ return EM; }, _clockOff: lvClockOff,
     tab: function(page){ if (page === 'livecharts') lcShow(); else lcHide(); },
     // from a Session Live card: that trade's symbol, its timeframe on the first chart
     open: function(o){ o = o || {}; if (window.__stLcAllowed && !window.__stLcAllowed()) return; try { if (o.sym) { var k = canon(o.sym), sy = (SYMS || []).filter(function(x){ return x.key === k; })[0]; LV.want = sy ? sy.raw : o.sym; }

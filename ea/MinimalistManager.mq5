@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "9.11"
+#property version   "9.12"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -204,6 +204,8 @@ void   PanelTitle(int x,int y,int maxW);   // v8.85: the account as the panel's 
 void   CopySetRole(ENUM_COPY_ROLE r);
 int    g_cpFollowers=0;                        // Lead: follow accounts linked to it (running or not), for Session Terminal
 string CpSettingsJson();                       // the copier part of the settings sent to Session Terminal
+double CpAccountSize();                        // v9.12: the broker, server and first deposit go with the settings too
+string JsonSafe(string v){ StringReplace(v,"\\","/"); StringReplace(v,"\"","'"); StringReplace(v,"\r"," "); StringReplace(v,"\n"," "); return v; }
 // Hotkeys on a Follow account (close all, close half, cancel pending) also reach its copies.
 bool   CpMine(long mg){ return mg==InpMagic || (g_copyRole==CR_FOLLOW && mg==InpCopyMagic); }
 #define PANEL_CARDS 10
@@ -955,9 +957,14 @@ long BrokerOff()
    if(g_brokerOff != LONG_MAX) return g_brokerOff;
    if(GlobalVariableCheck(StateKey("brokerOff")))
      { g_brokerOff = (long)GlobalVariableGet(StateKey("brokerOff")); return g_brokerOff; }
-   long off = (long)TimeCurrent() - (long)TimeGMT();          // never measured one: best effort
+   // Never measured one: MT5's own running estimate of the server clock, quantised like a measured one. v9.12 (23 Oct
+   // 2026): this used TimeCurrent(), the LAST TICK's time - frozen since the close for a terminal started after it - so
+   // a cloud MT5 started 12 minutes after Friday's close sent every bar 12 minutes late, and months of 1/2/12/17-minute
+   // copies sat beside the real candles in the store.
+   long off = (long)TimeTradeServer() - (long)TimeGMT();
    if(MathAbs((double)off) > 14*3600) off = 0;
-   return off;
+   long q = 15*60;
+   return (long)(MathRound((double)off/(double)q)*q);
   }
 
 // Last Sunday of a month at a given UTC hour (EU/UK DST switch points).
@@ -3590,8 +3597,9 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.11\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\",\"cloud\":%s}}",
-                            g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY),g_inCloud?"true":"false"));
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.12\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\",\"cloud\":%s,\"company\":\"%s\",\"server\":\"%s\",\"start_bal\":%s}}",
+                            g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY),g_inCloud?"true":"false",
+                            JsonSafe(AccountInfoString(ACCOUNT_COMPANY)),JsonSafe(AccountInfoString(ACCOUNT_SERVER)),DoubleToString(CpAccountSize(),2)));   // v9.12: the Accounts tab's "Read from MT5" line
   }
 // v8.86 (Nestor, 2 Oct 2026: "nudges for when my trade gets moved to BE, TP hit, SL hit, taken out for BE"):
 // why a position closed - the broker's stop loss, take profit or stop out, by hand, or by the EA.
@@ -3981,7 +3989,7 @@ void LwOpen()
 // v9.06: MT5's Algo Trading button (and this EA's own "Allow Algo Trading") - off, no order can be placed, from here or from the app
 bool AlgoOn(){ return TerminalInfoInteger(TERMINAL_TRADE_ALLOWED)!=0 && MQLInfoInteger(MQL_TRADE_ALLOWED)!=0; }
 int  g_lwAl=-1;                       // v9.06: Algo Trading as last told to the app
-string LwHi(){ return StringFormat("{\"v\":\"9.11\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d,\"cl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0,g_inCloud?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
+string LwHi(){ return StringFormat("{\"v\":\"9.12\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d,\"cl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0,g_inCloud?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
 // v9.06 (Nestor, 19 Oct 2026: "whatever messages appear in MT5 i need to also see them in the app"): every message this EA writes on its
 // chart (Flash) goes to Session Terminal too, which shows it on Live Charts. Only while the line is up; nothing is queued.
 void LwMsg(string m)

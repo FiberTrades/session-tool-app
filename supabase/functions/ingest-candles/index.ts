@@ -33,6 +33,40 @@ async function dbBytes(): Promise<number> {
   return sizeBytes;
 }
 
+// Why a batch can't be from a sound clock, or "" when it can. Brokers sit whole or half hours from UTC, so a bar of 5
+// minutes or more opens on its own boundary (an hour or more: on the half hour at least). The newest 300 bars are also
+// compared with the stored ones nearby: the same candle stored k minutes away (k != 0), for most of them, is a shifted copy.
+async function clockOff(symbol: string, tf: number, rows: Array<Record<string, number | string>>): Promise<string> {
+  const step = (tf >= 60 ? 30 : tf) * 60;
+  if (tf >= 5 && rows.some((x) => Number(x.t) % step !== 0)) return "bar off its timeframe boundary";
+  if (rows.some((x) => Number(x.t) > Date.now() / 1000 + tf * 60)) return "bar from the future";
+  const last = rows.slice().sort((a, b) => Number(a.t) - Number(b.t)).slice(-300).filter((x) => x.h !== x.l);
+  if (last.length < 3) return "";
+  const lo = Number(last[0].t) - 3600, hi = Number(last[last.length - 1].t) + 3600;
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/candles?select=t,o,h,l,c&symbol=eq.${encodeURIComponent(symbol)}&tf=eq.${tf}&t=gte.${lo}&t=lte.${hi}&limit=1000`,
+      { headers: { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` } });
+    if (!r.ok) return "";
+    const have: Array<{ t: number; o: number; h: number; l: number; c: number }> = await r.json();
+    const at: Record<string, number[]> = {};
+    for (const s of have) if (s.h !== s.l) (at[`${s.o}|${s.h}|${s.l}|${s.c}`] = at[`${s.o}|${s.h}|${s.l}|${s.c}`] || []).push(Number(s.t));
+    // a late copy repeats them all at ONE distance; a quiet market repeats a candle by chance, at any distance
+    let same = 0, most = 0;
+    const lag: Record<number, number> = {};
+    for (const x of last) {
+      const ts = at[`${x.o}|${x.h}|${x.l}|${x.c}`];
+      if (!ts) continue;
+      if (ts.includes(Number(x.t))) { same++; continue; }
+      for (const t of ts) {
+        const d = Number(x.t) - t;
+        if (d && Math.abs(d) <= 3600) { lag[d] = (lag[d] || 0) + 1; most = Math.max(most, lag[d]); }
+      }
+    }
+    if (most >= 3 && most > same) return "candles already stored at other times (clock off)";
+  } catch { /* can't check: let it through */ }
+  return "";
+}
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -80,6 +114,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const allV = rows.length > 0 && rows.every((x) => Number.isFinite(Number(x.v)) && Number(x.v) >= 0);
   for (const x of rows) if (!allV) delete x.v;
   if (!rows.length) return json({ ok: true, upserted: 0 });
+  // A batch from an EA whose clock is off (23 Oct 2026). Before its first live tick an EA worked out the broker's time
+  // from the last price it had - frozen since the close for a terminal started after it - so every bar went out minutes
+  // late: his cloud 70K's 12, the demo's 2, and months of 1/2/12/17-minute copies beside the real candles. Such a batch is
+  // refused whole (the EA is told ok, so it moves on): a 5-minute-or-longer bar off its boundary, a bar from the future, or
+  // a batch that repeats the candles already stored a few minutes away.
+  const bad = await clockOff(symbol, tf, rows);
+  if (bad) return json({ ok: true, upserted: 0, rejected: rows.length, reason: bad });
   if (tf <= 5) {
     const edge = Date.now() / 1000 - DEEP_AGE, deep = rows.filter((x) => Number(x.t) < edge).length;
     if (deep && (await dbBytes()) > DEEP_CAP) {
