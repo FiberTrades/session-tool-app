@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "9.12"
+#property version   "9.13"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -3597,7 +3597,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.12\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\",\"cloud\":%s,\"company\":\"%s\",\"server\":\"%s\",\"start_bal\":%s}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.13\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\",\"cloud\":%s,\"company\":\"%s\",\"server\":\"%s\",\"start_bal\":%s}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY),g_inCloud?"true":"false",
                             JsonSafe(AccountInfoString(ACCOUNT_COMPANY)),JsonSafe(AccountInfoString(ACCOUNT_SERVER)),DoubleToString(CpAccountSize(),2)));   // v9.12: the Accounts tab's "Read from MT5" line
   }
@@ -3821,14 +3821,15 @@ bool LiveTickMine()
 // fallback (not allowed in MT5's list yet, or not answering), and is tried again for the relay after LW_RELAY_RETRY.
 #define LW_RELAY      "live.sessionterminal.com"   // the relay's address (Railway, 18 Oct 2026); empty: Supabase only
 #define LW_RELAY_MS   100        // on the relay: up to 10 a second, in the session or not, trade or not
-#define LW_RELAY_RETRY 1800000   // a relay that failed is tried again after 30 minutes
+#define LW_RELAY_RETRY 120000    // a relay that failed is tried again after 2 minutes (v9.13: was 30)
 // v9.00 (Nestor, 17 Oct 2026, Live Charts): the app says how fast in its "watch" - "2 updates a second in session ... With
 // a trade open: once every 2 seconds. Outside your session: every 5 seconds." The fastest any window asked for in the last
 // 45 s wins; an app from before 9.00 says nothing and gets every 2 s.
 #define LW_FAST_MS    500        // in the member's session with no trade open: 2 a second
 #define LW_MID_MS     2000       // a trade open (or an older app): every 2 seconds
 #define LW_SLOW_MS    5000       // outside the session: every 5 seconds
-#define LW_DAY_SENDS  30000      // the safety brake: live updates per MT5 account per UTC day (v9.00: was 10800)
+#define LW_DAY_SENDS  300000     // the safety brake: Supabase live updates per MT5 account per UTC day (v9.13: was 30000 - at every tick
+                                 // that is about 8-16 hours of a busy market; the relay has none)
 #define LW_HIST_MAX   1500       // the most 1-minute candles one Live Charts ask gets back (25 hours)
 #define LW_HIST_PART  300        // candles per message
 #define LW_HIST_TF_MAX  5000     // v9.01: the most candles of another timeframe one ask gets back (D1: about 20 years)
@@ -3989,7 +3990,7 @@ void LwOpen()
 // v9.06: MT5's Algo Trading button (and this EA's own "Allow Algo Trading") - off, no order can be placed, from here or from the app
 bool AlgoOn(){ return TerminalInfoInteger(TERMINAL_TRADE_ALLOWED)!=0 && MQLInfoInteger(MQL_TRADE_ALLOWED)!=0; }
 int  g_lwAl=-1;                       // v9.06: Algo Trading as last told to the app
-string LwHi(){ return StringFormat("{\"v\":\"9.12\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d,\"cl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0,g_inCloud?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
+string LwHi(){ return StringFormat("{\"v\":\"9.13\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d,\"cl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0,g_inCloud?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
 // v9.06 (Nestor, 19 Oct 2026: "whatever messages appear in MT5 i need to also see them in the app"): every message this EA writes on its
 // chart (Flash) goes to Session Terminal too, which shows it on Live Charts. Only while the line is up; nothing is queued.
 void LwMsg(string m)
@@ -4016,7 +4017,10 @@ string LwStr(string s,string key)
 // how often the price goes out now: the fastest any window asked for in the last 45 s
 uint LwInterval()
   {
-   if(g_lwRelay) return LW_RELAY_MS;   // the relay: every tick (at most 10 a second), whatever the app asked for
+   // v9.13 (Nestor, 23 Oct 2026: "if we are ever going to use this when the server fails the candles have to be just as fast
+   // loading as the tick by tick"): Supabase, the way round when the relay is down, every tick too; the speeds the app asks for
+   // (2 a second / every 2 s / every 5 s) are kept only for the day's brake, see LwBraked
+   if(g_lwRelay || !LwBraked()) return LW_RELAY_MS;
    uint now=GetTickCount();
    if(g_lwFastAt!=0 && now-g_lwFastAt<LW_WATCH_MS) return LW_FAST_MS;
    if(g_lwMidAt!=0 && now-g_lwMidAt<LW_WATCH_MS) return LW_MID_MS;
@@ -4098,7 +4102,7 @@ void LwStreamPx()
 // Charts shows that has no EA chart of its own ("hs" in "watch", "by" in "hist") - so no MT5 chart is needed per symbol.
 #define LW_WL_MAX   40           // symbols in a watchlist
 #define LW_HUB_MAX  8            // symbols with no chart of their own on screen at once
-string g_wlSyms[]; int g_wlN=0; uint g_wlAt=0, g_wlQAt=0; string g_wlQKey="";
+string g_wlSyms[]; int g_wlN=0; uint g_wlAt=0, g_wlQAt=0, g_wlQFull=0; string g_wlQKey="", g_wlQLast[];
 string g_hubSyms[]; int g_hubN=0; uint g_hubAt=0; uint g_hubPxMs[]; string g_hubPxKey[];
 string LwKey(){ return _Symbol+"|"+IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)); }
 // a comma list of symbols this broker has (added to Market Watch so their prices flow); at most `most`
@@ -4114,30 +4118,40 @@ int LwSymList(string csv,string &out[],int most)
      }
    return k;
   }
-void LwWlSet(string csv){ g_wlN=LwSymList(csv,g_wlSyms,LW_WL_MAX); g_wlAt=GetTickCount(); g_wlQKey=""; }
+void LwWlSet(string csv){ g_wlN=LwSymList(csv,g_wlSyms,LW_WL_MAX); g_wlAt=GetTickCount(); g_wlQKey=""; g_wlQFull=0; }
 void LwHubSet(string csv)
   {
    g_hubN=LwSymList(csv,g_hubSyms,LW_HUB_MAX); g_hubAt=GetTickCount();
    if(ArraySize(g_hubPxMs)!=g_hubN){ ArrayResize(g_hubPxMs,g_hubN); ArrayResize(g_hubPxKey,g_hubN); for(int i=0;i<g_hubN;i++){ g_hubPxMs[i]=0; g_hubPxKey[i]=""; } }
   }
-// the watchlist's prices: once a second on the relay (every 5 s on Supabase), when any changed (and every 10 s anyway)
+// the watchlist's prices. v9.13 (Nestor, 23 Oct 2026: "every second or every tick??"): every tick, at most LW_RELAY_MS apart
+// like the chart's own price, on the relay or Supabase - only the symbols whose price changed, and all of them every 10 s
+// (was: all of them once a second on the relay, every 5 s on Supabase)
 void LwStreamQuotes()
   {
    uint now=GetTickCount();
    if(g_wlN==0 || now-g_wlAt>=LW_WATCH_MS) return;
-   uint every=g_lwRelay ? 1000 : 5000;
-   if(g_wlQAt!=0 && now-g_wlQAt<every) return;
+   if(g_wlQAt!=0 && now-g_wlQAt<LW_RELAY_MS) return;
+   bool full=(g_wlQFull==0 || now-g_wlQFull>=10000);
+   if(ArraySize(g_wlQLast)!=g_wlN){ ArrayResize(g_wlQLast,g_wlN); for(int k=0;k<g_wlN;k++) g_wlQLast[k]=""; full=true; }
    string rows="";
    for(int i=0;i<g_wlN;i++)
      {
       string sy=g_wlSyms[i]; int dg=(int)SymbolInfoInteger(sy,SYMBOL_DIGITS);
       double b=SymbolInfoDouble(sy,SYMBOL_BID), a=SymbolInfoDouble(sy,SYMBOL_ASK), pc=iClose(sy,PERIOD_D1,1);
+      string r=sy+","+DoubleToString(b,dg)+","+DoubleToString(a,dg)+","+DoubleToString(pc,dg)+","+IntegerToString(dg);
+      if(!full && r==g_wlQLast[i]) continue;
       if(StringLen(rows)>0) rows+=";";
-      rows+=sy+","+DoubleToString(b,dg)+","+DoubleToString(a,dg)+","+DoubleToString(pc,dg)+","+IntegerToString(dg);
+      rows+=r;
      }
-   if(rows==g_wlQKey && now-g_wlQAt<10000) return;
+   if(StringLen(rows)==0) return;
    if(!LwText(LwBroadcast("q",StringFormat("{\"by\":\"%s\",\"r\":\"%s\"}",LwKey(),rows)))) return;
-   g_wlQAt=now; g_wlQKey=rows;
+   for(int j=0;j<g_wlN;j++)
+     {
+      string sy=g_wlSyms[j]; int dg=(int)SymbolInfoInteger(sy,SYMBOL_DIGITS);
+      g_wlQLast[j]=sy+","+DoubleToString(SymbolInfoDouble(sy,SYMBOL_BID),dg)+","+DoubleToString(SymbolInfoDouble(sy,SYMBOL_ASK),dg)+","+DoubleToString(iClose(sy,PERIOD_D1,1),dg)+","+IntegerToString(dg);
+     }
+   g_wlQAt=now; if(full) g_wlQFull=now;
    LwCount();
   }
 // the broker's symbols containing what was typed: those starting with it first; at most 20. v9.12 (Nestor, 23 Oct 2026: "so its
