@@ -88545,6 +88545,8 @@ window.__stAZ = (function () {
   .stpr-wlsug > div + div { border-top: 1px solid rgba(255,255,255,.05); }
   @media (hover: hover) { .stpr-wlsug > div[data-wlpick]:hover { background: rgba(244,114,182,.08); } }
   .stpr-wlsug small, .stpr-wlsm { color: var(--text-dim); font-size: 10px; letter-spacing: .05em; }
+  .stpr-wlsug > div { gap: 12px; } .stpr-wlsug > div > span { flex: none; }
+  .stpr-wlsug > div > small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }   /* the broker's description (EA 9.12) on one line */
   .stpr-wlf { margin: 10px 4px 2px; max-width: 380px; font-family: Fraunces, serif; font-size: 12px; color: var(--text-dim); line-height: 1.45; }
   .stpr-syl button { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; text-align: left; padding: 8px 10px; border-radius: 7px; border: 1px solid transparent; background: transparent; color: var(--text); cursor: pointer; font-family: 'AppNum','DM Mono',monospace; font-size: 12.5px; }
   @media (hover: hover) { .stpr-syl button:hover { border-color: var(--border-2); background: rgba(255,255,255,.03); } }
@@ -92760,7 +92762,27 @@ window.__stAZ = (function () {
   function wlQ(p){ if (!p || p.by !== hubKey()) return;
     String(p.r || '').split(';').forEach(function(r){ var a = r.split(','); if (a.length < 5 || !a[0]) return; WL.q[a[0]] = { b: +a[1], a: +a[2], pc: +a[3], dg: +a[4], at: Date.now() }; });
     if (menuFor === 'sym') wlRows(); }
-  function wlSymlist(p){ if (!p || p.by !== hubKey() || p.q !== WL.sugQ) return; WL.sug = String(p.r || '').split(',').filter(Boolean); wlSug(); }
+  function wlSymlist(p){ if (!p || p.by !== hubKey() || (WL.sugQs || []).indexOf(p.q) < 0) return;
+    var r = String(p.r || '').split(',').filter(Boolean), d = String(p.d || '').split('|'); WL.sugD = WL.sugD || {};
+    r.forEach(function(s, i){ if (d[i]) WL.sugD[s] = d[i]; });   // the broker's own description (EA 9.12)
+    (WL.sugAcc = WL.sugAcc || {})[p.q] = r; var all = [];
+    WL.sugQs.forEach(function(q){ (WL.sugAcc[q] || []).forEach(function(s){ if (all.indexOf(s) < 0) all.push(s); }); });
+    WL.sug = all; wlSug(); }
+  /* What people call a market, to the names brokers give it (Nestor, 23 Oct 2026: "can this asset picker be improved too so its
+     easier to find an asset that i might not know the exact name of it in MT5?"): typing gold also searches XAU, nasdaq US100 /
+     NAS100 / USTEC... - a word of 3 letters or more that starts one of these. EA 9.12 also matches the broker's description
+     ("Gold vs US Dollar") and sends it, shown under each result. */
+  var WL_ALIAS = { GOLD: ['XAU'], SILVER: ['XAG'], PLATINUM: ['XPT'], PALLADIUM: ['XPD'], COPPER: ['COPPER', 'XCU'],
+    NASDAQ: ['US100', 'NAS100', 'USTEC', 'NDX'], TECH: ['US100', 'USTEC'], DOW: ['US30', 'DJ30', 'WS30'], DJI: ['US30'], SP500: ['US500', 'SPX500', 'SP500'], SPX: ['US500', 'SPX'],
+    DAX: ['GER40', 'DE40', 'GER30'], GERMANY: ['GER40', 'DE40'], FTSE: ['UK100'], NIKKEI: ['JP225', 'JPN225'], CAC: ['FRA40', 'FR40'], EUROSTOXX: ['EU50', 'EUSTX50'], STOXX: ['EU50'],
+    HANGSENG: ['HK50', 'HSI'], ASX: ['AUS200'], RUSSELL: ['US2000', 'RUS2000'], VIX: ['VIX'],
+    OIL: ['USOIL', 'WTI', 'XTI', 'UKOIL', 'BRENT'], CRUDE: ['USOIL', 'WTI', 'XTI'], WTI: ['USOIL', 'WTI', 'XTI'], BRENT: ['UKOIL', 'BRENT', 'XBR'], NATGAS: ['NATGAS', 'NGAS', 'XNG'], GAS: ['NATGAS', 'NGAS', 'XNG'],
+    BITCOIN: ['BTC'], ETHEREUM: ['ETH'], SOLANA: ['SOL'], RIPPLE: ['XRP'], LITECOIN: ['LTC'],
+    DOLLAR: ['DXY', 'USDX'], DXY: ['DXY', 'USDX'], CABLE: ['GBPUSD'], FIBER: ['EURUSD'], FIBRE: ['EURUSD'], EURO: ['EUR'], POUND: ['GBP'], STERLING: ['GBP'],
+    YEN: ['JPY'], AUSSIE: ['AUD'], KIWI: ['NZD'], LOONIE: ['CAD'], SWISSY: ['CHF'], FRANC: ['CHF'] };
+  function wlTerms(q){ var Q = q.toUpperCase(), out = [q];
+    if (Q.length >= 3) Object.keys(WL_ALIAS).forEach(function(k){ if (k.indexOf(Q) === 0) WL_ALIAS[k].forEach(function(x){ if (out.indexOf(x) < 0 && x.toUpperCase() !== Q) out.push(x); }); });
+    return out.slice(0, 5); }
   // Back Testing: each listed symbol's price at the replay's moment, and the day before's close (its stored 5-minute candles)
   function wlBt(s){ var e = WL.bt[s.raw + '|' + S.day]; if (!e || !e.rows) return null; var last = null, pc = null;
     e.rows.forEach(function(b){ if (b.time + 300 <= S.now) last = b; if (b.time + 300 <= S.f.open) pc = b; });
@@ -92783,17 +92805,18 @@ window.__stAZ = (function () {
     return S ? T('Prices at ' + hm(S.now) + ', ' + dshort(new Date(S.now * 1000)) + ' · change from the day before. Click a symbol to open it on ' + on + '.', 'Precios a las ' + hm(S.now) + ', ' + dshort(new Date(S.now * 1000)) + ' · cambio desde el día anterior. Haz clic en un símbolo para abrirlo en ' + on + '.') : ''; }
   function wlRows(){ var m = mEl(), r = m && m.querySelector('#stpr-wlrows'); if (r) r.innerHTML = wlRowsHtml(); var f = m && m.querySelector('#stpr-wlf'); if (f) f.textContent = wlFoot(); }
   // adding: Live Charts asks the hub for the broker's symbols; Back Testing (or no hub) offers the stored ones and the EAs' own
-  function wlSearch(v){ var q = String(v || '').replace(/[^A-Za-z0-9._#-]/g, '').slice(0, 20); WL.sugQ = q; WL.sug = null; clearTimeout(WL.sugT);
+  function wlSearch(v){ var q = String(v || '').replace(/[^A-Za-z0-9._#-]/g, '').slice(0, 20), terms = q ? wlTerms(q) : []; WL.sugQ = q; WL.sugQs = terms; WL.sugAcc = {}; WL.sug = null; clearTimeout(WL.sugT);
     if (!q) { wlSug(); return; }
     var h = (S && S.live) ? hubEA() : null, ln = window.__stLiveLine;
-    if (h && ln && ln._send) { WL.sugT = setTimeout(function(){ ln._send('syms', { by: h.raw + '|' + h.lg, q: q }); }, 200); wlSug(); return; }
-    var Q = q.toUpperCase(), c = []; ((S && S.live) ? liveEAs().map(function(o){ return o.raw; }) : []).concat((SYMS || []).map(function(s){ return s.raw; })).forEach(function(r){ if (c.indexOf(r) < 0 && r.toUpperCase().indexOf(Q) >= 0) c.push(r); });
+    if (h && ln && ln._send) { WL.sugT = setTimeout(function(){ terms.forEach(function(t){ ln._send('syms', { by: h.raw + '|' + h.lg, q: t }); }); }, 200); wlSug(); return; }
+    var c = []; ((S && S.live) ? liveEAs().map(function(o){ return o.raw; }) : []).concat((SYMS || []).map(function(s){ return s.raw; })).forEach(function(r){
+      var R = r.toUpperCase(); if (c.indexOf(r) < 0 && terms.some(function(t){ return R.indexOf(t.toUpperCase()) >= 0; })) c.push(r); });
     WL.sug = c; wlSug(); }
   function wlSug(){ var m = mEl(), b = m && m.querySelector('#stpr-wlsug'); if (!b) return; var have = {}; wlList().forEach(function(r){ have[canon(r)] = 1; });
     if (!WL.sugQ) { b.innerHTML = ''; return; }
     if (WL.sug == null) { b.innerHTML = '<div class="stpr-wlsm">' + esc(T('Searching your MT5…', 'Buscando en tu MT5…')) + '</div>'; return; }
     var a = WL.sug.filter(function(r){ return !have[canon(r)]; }).slice(0, 12), live = S && S.live && hubEA();
-    b.innerHTML = a.length ? a.map(function(r){ return '<div data-wlpick="' + esc(r) + '"><span>' + esc(r) + '</span><small>' + esc(live ? T('in your MT5', 'en tu MT5') : T('stored history', 'historial guardado')) + '</small></div>'; }).join('')
+    b.innerHTML = a.length ? a.map(function(r){ var d = (WL.sugD || {})[r]; return '<div data-wlpick="' + esc(r) + '"><span>' + esc(r) + '</span><small>' + esc((d ? d + ' · ' : '') + (live ? T('in your MT5', 'en tu MT5') : T('stored history', 'historial guardado'))) + '</small></div>'; }).join('')
       : '<div class="stpr-wlsm">' + esc(T('No symbol matches.', 'Ningún símbolo coincide.')) + '</div>'; }
   function wlSet(list){ CFG.wl = list.slice(0, 40); save(); LV.wlAt = 0; lvWlSend(true); wlBtLoad(); wlRows(); }
   function wlAdd(raw){ var l = wlList(); if (!raw || l.some(function(r){ return canon(r) === canon(raw); })) return; l.push(raw); wlSet(l);
@@ -93871,7 +93894,7 @@ window.__stAZ = (function () {
     _settle: function(){ settleNow(); render(); }, _setLine: function(k, pr){ setLine(k, pr); settleNow(); render(); }, _lots: function(rd){ return lotsFor(rd); }, _step: step, _act: function(){ var a = actPane(); return a ? a.i : -1; }, _stepSec: function(){ return stepSec(); }, _place: place, _close: closeNow, _jump: jumpTo, _preview: setPreview, _panes: function(){ return panes; },
     _lines: function(i){ var p = panes[i || 0]; return p ? p.lines.map(function(l){ var o = l.options(); return { k: l._k, p: l._p, title: o.title, vis: !!(l._ln && l._ln.vis) && o.axisLabelVisible !== false }; }) : []; },
     _yOf: function(i, pr){ var p = panes[i || 0]; return p ? p.series.priceToCoordinate(pr) : null; }, _cfg: function(){ return CFG; }, _render: function(f){ render(f); },
-    _layout: setLayout, _tf: setTf, _syms: function(){ return SYMS; }, _wl: function(){ return { list: wlList(), q: WL.q, hub: hubKey() }; }, _canon: canon, _keyOf: keyOf, _paneBars: function(i){ return panes[i] ? paneBars(panes[i]) : null; },
+    _layout: setLayout, _tf: setTf, _syms: function(){ return SYMS; }, _wl: function(){ return { list: wlList(), q: WL.q, hub: hubKey() }; }, _wlTerms: wlTerms, _wlSearch: wlSearch, _wlSug: function(){ return { q: WL.sugQ, qs: WL.sugQs, sug: WL.sug, d: WL.sugD }; }, _wlSymlist: wlSymlist, _canon: canon, _keyOf: keyOf, _paneBars: function(i){ return panes[i] ? paneBars(panes[i]) : null; },
     _dr: function(){ return DW; }, _quick: quickDraw, _copy: copySel, _paste: pasteClip, _pick: pickTool, _keyRows: keyRows, _keysMenu: function(){ keysMenu($('stpr-keysbtn')); }, _flyOpen: flyOpen, _flyShut: flyShut, _tg: function(){ return TG; },
     _hit: function(i, x, y){ return hit(panes[i || 0], x, y); }, _bbox: function(i, d){ var p = panes[i || 0]; return p ? bboxOf(p, d, paneDims(p).pw) : null; }, _kx: function(i){ return kx(panes[i || 0]); }, _mini: function(i){ return miniCalc(panes[i || 0]); }, _miniFresh: function(){ panes.forEach(function(q){ q._mini = null; }); }, _look: look, _parseC: parseC, _lookSet: lookSet, _lookReset: function(){ CFG.look = {}; LK.pick = null; save(); lookAll(true); }, _txtBox: function(i, d){ return txtBox(panes[i || 0], d); }, _ms: ms, _msRaw: function(p){ return msRaw(p); }, _msSet: function(p, v){ msSet(p, v); }, _cfgSave: function(){ save(); }, _miniOn: function(k, p){ return miniOn(k, p); },
     _miniDraw: function(p, g, dm, mx){ MX = mx; MINI_P = p; try { drawMini(p, g, dm); } catch (e) {} MINI_P = null; MX = null; },

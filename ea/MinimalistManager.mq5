@@ -4140,20 +4140,26 @@ void LwStreamQuotes()
    g_wlQAt=now; g_wlQKey=rows;
    LwCount();
   }
-// the broker's symbols containing what was typed: those starting with it first; at most 20
+// the broker's symbols containing what was typed: those starting with it first; at most 20. v9.12 (Nestor, 23 Oct 2026: "so its
+// easier to find an asset that i might not know the exact name of it in MT5"): then those whose broker description has it
+// ("Gold vs US Dollar", "NASDAQ 100 Index"), and every result's description goes too ("d", in the same order)
 void LwSymSearch(string q)
   {
    string Q=q; StringToUpper(Q); if(StringLen(Q)==0 || StringLen(Q)>20) return;
-   string hit=""; int n=0, tot=SymbolsTotal(false);
-   for(int pass=0;pass<2 && n<20;pass++)
+   string hit="", des=""; int n=0, tot=SymbolsTotal(false);
+   for(int pass=0;pass<3 && n<20;pass++)
       for(int i=0;i<tot && n<20;i++)
         {
          string nm=SymbolName(i,false), U=nm; StringToUpper(U);
          int at=StringFind(U,Q);
-         if((pass==0 && at!=0) || (pass==1 && at<=0)) continue;
-         if(StringLen(hit)>0) hit+=","; hit+=nm; n++;
+         string d=SymbolInfoString(nm,SYMBOL_DESCRIPTION), D=d; StringToUpper(D);
+         if(pass==0 && at!=0) continue;
+         if(pass==1 && at<=0) continue;
+         if(pass==2 && (at>=0 || StringFind(D,Q)<0)) continue;
+         if(StringLen(hit)>0){ hit+=","; des+="|"; }
+         hit+=nm; StringReplace(d,"|","/"); StringReplace(d,",",";"); des+=JsonSafe(d); n++;
         }
-   LwText(LwBroadcast("symlist",StringFormat("{\"by\":\"%s\",\"q\":\"%s\",\"r\":\"%s\"}",LwKey(),q,hit)));
+   LwText(LwBroadcast("symlist",StringFormat("{\"by\":\"%s\",\"q\":\"%s\",\"r\":\"%s\",\"d\":\"%s\"}",LwKey(),q,hit,des)));
    LwCount();
   }
 // a symbol with no chart of its own, on a Live Charts chart: its price and forming candle, as this chart's own
