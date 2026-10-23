@@ -669,6 +669,7 @@ ulong  g_flashUntil=0;
 bool   g_onVps=false;          // this terminal is the MT5 VPS (TERMINAL_VPS)
 bool   g_aside=false;          // the VPS copy of this account is running: this copy does nothing
 bool   g_vpsHold=false;        // the first ask failed and this account had a VPS copy today: aside until an answer comes
+uint   g_vpsT0=0;              // when this copy started (GetTickCount): it asks every minute for its first 15 minutes
 string AsideMsg(){ return "Your EA runs on your MT5 VPS, so this copy stands aside. Trade from Session Terminal or with MT5's own buttons."; }
 void DrawHint();
 void LwMsg(string m);                 // v9.06: the message to Session Terminal as well (defined with the live line)
@@ -7589,7 +7590,11 @@ void AsideTick(bool start)
    double t=(double)TimeGMT();
    double chk=GlobalVariableCheck(VpsKey("chk")) ? GlobalVariableGet(VpsKey("chk")) : 0.0;
    double seen=GlobalVariableCheck(VpsKey("seen")) ? GlobalVariableGet(VpsKey("seen")) : 0.0;
-   int every=(seen>0 && t-seen<86400) ? 60 : 600;
+   if(start) g_vpsT0=GetTickCount();
+   // every minute once this account has had a VPS copy, and for the first 15 minutes after a start (Nestor's first 9.08, 23 Oct 2026:
+   // compiled on the PC, then migrated - the PC copy started a minute before the VPS one, heard "never", and would only have asked
+   // again 10 minutes later); else every 10
+   int every=((seen>0 && t-seen<86400) || GetTickCount()-g_vpsT0<900000) ? 60 : 600;
    if(start || t-chk>=every)
      {
       GlobalVariableSet(VpsKey("chk"),t);
