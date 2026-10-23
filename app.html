@@ -90066,11 +90066,14 @@ window.__stAZ = (function () {
   function hlTagW(p, price){ var y = yOf(p, price), w = 0; if (y == null) return 0;
     (p.lines || []).forEach(function(l){ var o = null; try { o = l.options(); } catch (e) {} if (!o || !o.title || o.axisLabelVisible === false) return;
       var ly = yOf(p, o.price); if (ly != null && Math.abs(ly - y) < 16) w = Math.max(w, hlTextW(p, o.title)); }); return w; }
+  /* A horizontal line's note the way TradingView writes it (Nestor, 23 Oct 2026: "Can the labels/notes look like this without the
+     background behind the text?"): the words in the line's own colour, on the line, which stops under them - no box. The price on
+     the scale keeps its box. */
   function hlNoteAt(p, g, o, pw){ var y = yOf(p, o.p); if (y == null) return; var lo = {}; try { lo = p.chart.options().layout || {}; } catch (e) {}
-    var fs = lo.fontSize || 12, w = hlTextW(p, o.t), h = Math.ceil(fs * 17 / 12), x1 = pw - o.x - 2, x0 = x1 - w, pc = parseC(o.c), n = parseInt(pc.h.slice(1), 16);
-    g.save(); g.setLineDash([]); g.fillStyle = pc.h; g.beginPath(); if (g.roundRect) g.roundRect(Math.round(x0), Math.round(y - h / 2), Math.round(w), h, 2); else g.rect(Math.round(x0), Math.round(y - h / 2), Math.round(w), h); g.fill();
-    g.fillStyle = (0.199 * ((n >> 16) & 255) + 0.687 * ((n >> 8) & 255) + 0.114 * (n & 255)) > 160 ? '#000000' : '#ffffff';   // the library's own rule for its labels
-    g.font = fs + 'px ' + (lo.fontFamily || 'sans-serif'); g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(o.t, (x0 + x1) / 2, y + 0.5); g.restore(); }
+    var fs = lo.fontSize || 12, w = hlTextW(p, o.t), x1 = pw - o.x - 2, x0 = x1 - w, pc = parseC(o.c), bg = (lo.background && (lo.background.color || lo.background.bottomColor)) || '#0b0a0d';
+    g.save(); g.setLineDash([]);
+    g.fillStyle = bg; g.fillRect(Math.round(x0), Math.round(y) - 3, Math.round(w), 6);   // the line, cleared under the words only
+    g.fillStyle = pc.h; g.font = fs + 'px ' + (lo.fontFamily || 'sans-serif'); g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(o.t, (x0 + x1) / 2, y + 0.5); g.restore(); }
   function bellAt(g, x, y, col, hit){ var pc = parseC(col), c1 = hexA(pc.h, hit ? 0.42 : 1);
     g.save(); g.translate(Math.round(x), Math.round(y)); g.scale(0.85, 0.85); g.setLineDash([]); g.lineJoin = 'round';
     var body = function(){ g.beginPath(); g.moveTo(-6.2, 3.4); g.quadraticCurveTo(-3.9, 2.3, -3.9, -0.6); g.bezierCurveTo(-3.9, -4.3, -2.1, -5.5, 0, -5.5); g.bezierCurveTo(2.1, -5.5, 3.9, -4.3, 3.9, -0.6);
@@ -91233,8 +91236,8 @@ window.__stAZ = (function () {
     ax.set('ptp', d && d.tp > 0 ? { p: d.tp, t: f(d.tp), bg: pzc(d, 'ptc', 'pat', 1) } : null); }
   // horizontal lines are drawn by the chart itself, like the trade's lines, so their price label sits on the scale
   function syncHL(p){ var want = [], ov = []; dwListFor(p).forEach(function(d){ if (d && d.type === 'hline' && isFinite(d.price) && visibleOn(d, p.tf)) { var tx = alertTitle(d), tg = tx ? hlTagW(p, d.price) : 0;
-        if (tg) ov.push({ p: d.price, t: tx, c: dC(d), x: tg });   // beside a trade's tag: drawn here (hlNoteAt)
-        want.push({ p: d.price, c: dC(d), w: Math.max(1, Math.min(4, Math.round(dW(d)))), t: tg ? '' : tx, s: hlStyle(d) }); }
+        if (tx) ov.push({ p: d.price, t: tx, c: dC(d), x: tg });   // every line's note drawn here (hlNoteAt), left of a trade's tag if one is there
+        want.push({ p: d.price, c: dC(d), w: Math.max(1, Math.min(4, Math.round(dW(d)))), t: '', s: hlStyle(d) }); }
       else if (d && d.type === 'hray' && d.a && isFinite(d.a.price) && visibleOn(d, p.tf)) want.push({ p: d.a.price, c: dC(d), w: 1, t: '', s: 0, nl: 1 }); });   // a horizontal ray: its price on the scale (its line is its own: it starts where it was put)
     var os = JSON.stringify(ov); if (os !== p._hlOvSig) { p._hlOvSig = os; p._hlOv = ov; dirty(); }
     var sig = JSON.stringify(want); if (sig === p._hlSig) return; p._hlSig = sig;
