@@ -26,6 +26,7 @@
     try { if (window.opener && !window.opener.closed) c.push(window.opener); } catch (e) {}
     try { if (host && !host.closed) c.push(host); } catch (e) {}
     try { if (PW && !PW.closed && c.indexOf(PW) < 0) c.push(PW); } catch (e) {}   // the window that drew it last (it may outlive the app window: Live Charts' own)
+    try { var lh = window.__stLcHost; if (lh && !lh.closed && c.indexOf(lh) < 0) c.push(lh); } catch (e) {}   // Live Charts' own window, become the app itself (23 Oct 2026)
     for (var k = 0; k < c.length; k++) { try { var p = c[k].__stPractice; if (p && p._satReady) return { p: p, w: c[k] }; } catch (e) {} }
     return null; }
   // The waits are measured from when they began, not from the last look: a minimised window looks only now and then (the browser slows
@@ -37,7 +38,9 @@
     // open while the app window that opened it is, or the window that draws it: closing the app leaves Live Charts' own window and its
     // chart windows as they are (Nestor, 23 Oct 2026: "if i close the app they all fold into the main tab ... why cant they stay opened as
     // they were")
-    var alive = false; try { alive = (!!window.opener && !window.opener.closed) || (!!host && !host.closed) || (!!PW && !PW.closed); } catch (e) {}
+    // (23 Oct 2026: Live Charts' own window is drawn by the app window too, and it becomes the app itself when that one closes: this
+    // window waits for it - __stLcHost, set by the app window that draws this chart)
+    var alive = false; try { alive = (!!window.opener && !window.opener.closed) || (!!host && !host.closed) || (!!PW && !PW.closed) || (!!window.__stLcHost && !window.__stLcHost.closed); } catch (e) {}
     if (!alive) { window.close(); return; }
     // the window drawing this chart keeps it while it is there and still has it (another app window answering first changes nothing:
     // the app reloading while Live Charts' window has it)
@@ -52,7 +55,8 @@
     missing = 0;
     if (P) { location.reload(); return; }   // that window reloaded or closed without letting go: a fresh page here, which asks again
     if (!asking) asking = now;
-    var r = null; try { r = a.p._satReady(window, slot); } catch (e) {} if (r === true) { P = a.p; PW = a.w; asking = 0; return; }
+    // the window that draws it is the app window's own, also when it was found through Live Charts' own window (this window opened there)
+    var r = null; try { r = a.p._satReady(window, slot); } catch (e) {} if (r === true) { P = a.p; PW = a.w; try { if (a.p._win) PW = a.p._win() || a.w; } catch (e) {} asking = 0; return; }
     if (now - asking > 120000) window.close(); }   // an app that never takes it back (that chart is gone; false closes it at once)
   // every quarter second while it waits for its chart (a hand-over is quick), every second once it has it
   function loop() { try { tick(); } catch (e) {} setTimeout(loop, P ? 1000 : 250); }

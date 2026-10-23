@@ -572,18 +572,36 @@
     // ---- Live Charts in a window of its own (18 Oct 2026: "where is the open in a new window button?") ----
     var popEl = document.getElementById('stpr-pop');
     check('Live Charts has the open-in-a-new-window button', popEl && getComputedStyle(popEl).display !== 'none' && popEl.offsetWidth > 0);
-    var opened = null, fakeW = { closed: false, focused: 0, close: function () { this.closed = true; }, focus: function () { this.focused++; } }, wo = window.open;
-    window.open = function (u, n, f) { opened = [u, n, f]; return fakeW; };
-    popEl.click(); await W(500); window.open = wo;
+    // the window: livecharts.html, drawn from here (23 Oct 2026: the second copy of the app it used to be made the chart windows pause
+    // while it started - "do this"). A real window: the same Live Charts moves into it, nothing starts again.
+    var opened = null, wo = window.open, satW = null, inDoc = function (d) { return P._panes().filter(function (p) { return p.el.ownerDocument === d; }).length; };
+    window.open = function (u, n, f) { opened = [u, n, f]; satW = wo.call(window, u, n, f); return satW; };
+    var s0 = P._s(); popEl.click(); window.open = wo;
+    for (k = 0; k < 100 && !(P._stage().on && LC.state().live && satW && inDoc(satW.document) === P._panes().length && P._panes()[0].n > 30); k++) await W(150);
     var away = document.getElementById('lc-away');
-    check('...it opens the app in a window of its own on Live Charts (this symbol), a page of the site (no address band in the installed app); this tab says so and stops its chart', !!opened && /\?livecharts=1&sym=EURUSD$/.test(opened[0]) && !/^blob:/.test(opened[0]) && !!away && /open in its own window/.test(away.textContent) && !P._s(), [opened, away && away.textContent]);
+    check('...Live Charts moves into a window of its own (livecharts.html, this symbol), the same one - not started again: its charts drawn there, live; this tab says so',
+      !!opened && opened[0] === 'livecharts.html?sym=EURUSD' && opened[1] === 'stlivecharts' && P._stage().on && P._s() === s0 && LC.state().live && !!satW && inDoc(satW.document) === P._panes().length && inDoc(document) === 0
+      && !!satW.document.getElementById('stpr-mm') && !!satW.document.getElementById('lc-tb') && !!away && /open in its own window/.test(away.textContent), [opened, P._stage(), P._s() === s0, satW && inDoc(satW.document), inDoc(document), away && away.textContent]);
+    check("...that window shows Live Charts alone (the app's own bar and tabs are not there)", satW.document.body.querySelectorAll('.tabs, #page-livecharts').length === 0 && satW.document.getElementById('stpr-bg').classList.contains('popped') && /Live Charts/.test(satW.document.title), satW.document.title);
     await W(900); var lvBtn = document.querySelector('#lc-mode [data-lcm="live"]'), rpBtn = document.querySelector('#lc-mode [data-lcm="replay"]');
     check('...while it is in its own window the switch here says Live, not Replay (22 Oct 2026: "this screen says replay??")', lvBtn && lvBtn.classList.contains('on') && !rpBtn.classList.contains('on'), [lvBtn && lvBtn.className, rpBtn && rpBtn.className]);
-    lvBtn.click(); await W(200);
-    check('...and Live pressed brings that window to the front (no Switch to Live? question)', fakeW.focused > 0 && !document.getElementById('lc-ask-bg'), [fakeW.focused, !!document.getElementById('lc-ask-bg')]);
-    fakeW.closed = true;
-    for (k = 0; k < 60 && !(LC.state().live && !document.getElementById('lc-away')); k++) await W(250);
-    check('...closing that window brings Live Charts back here', LC.state().live && !document.getElementById('lc-away'));
+    var fz = 0, f0 = satW.focus; satW.focus = function () { fz++; };
+    lvBtn.click(); await W(200); satW.focus = f0;
+    check('...and Live pressed brings that window to the front (no Switch to Live? question)', fz > 0 && !document.getElementById('lc-ask-bg'), [fz, !!document.getElementById('lc-ask-bg')]);
+    var ek = satW.document.createEvent('Event'); ek.initEvent('keydown', true, true); ek.key = 'o'; ek.code = 'KeyO'; document.body.dispatchEvent(ek); await W(100);
+    var ex1 = !!P._s().exec, ek2 = satW.document.createEvent('Event'); ek2.initEvent('keydown', true, true); ek2.key = 'o'; ek2.code = 'KeyO'; satW.document.body.dispatchEvent(ek2); await W(100);
+    var ex2 = !!P._s().exec, ek3 = satW.document.createEvent('Event'); ek3.initEvent('keydown', true, true); ek3.key = 'Escape'; satW.document.body.dispatchEvent(ek3); await W(100);
+    check("...its keys are there: O in that window arms execution, Escape disarms it; O pressed in the app window does nothing to it", !ex1 && ex2 && !P._s().exec, [ex1, ex2, !!P._s().exec]);
+    // Show it here instead: back in the tab at once
+    away.querySelector('[data-lcback]').click();
+    for (k = 0; k < 60 && !(!P._stage().on && LC.state().live && inDoc(document) === P._panes().length && P._panes()[0].n > 30); k++) await W(150);
+    check('...Show it here instead: Live Charts back in this tab, the same one, and that window closed', !P._stage().on && P._s() === s0 && LC.state().live && inDoc(document) === P._panes().length && !document.getElementById('lc-away') && satW.closed, [P._stage(), P._s() === s0, inDoc(document), satW.closed]);
+    // and its window closed (its X): back here too
+    window.open = function (u, n, f) { satW = wo.call(window, u, n, f); return satW; }; popEl.click(); window.open = wo;
+    for (k = 0; k < 100 && !(P._stage().on && satW && inDoc(satW.document) === P._panes().length && P._panes()[0].n > 30); k++) await W(150);
+    var onAgain = P._stage().on; satW.close();
+    for (k = 0; k < 60 && !(!P._stage().on && LC.state().live && inDoc(document) === P._panes().length && P._panes()[0].n > 30 && !document.getElementById('lc-away')); k++) await W(150);
+    check('...closing that window brings Live Charts back here', onAgain && !P._stage().on && P._s() === s0 && LC.state().live && inDoc(document) === P._panes().length && !document.getElementById('lc-away'), [onAgain, P._stage(), inDoc(document)]);
     // ---- leaving the tab ----
     document.querySelector('.tab[data-page="trades"]').click(); await W(600);
     for (k = 0; k < 20; k++) { await W(250); if (!LN.state().watching) break; }

@@ -88774,7 +88774,10 @@ window.__stAZ = (function () {
   var lwcP = null;
   function ensureLWC(){ if (window.LightweightCharts) return Promise.resolve(); if (lwcP) return lwcP;
     lwcP = new Promise(function(res, rej){ var s = document.createElement('script'); s.src = LWC_SRC; s.onload = function(){ res(); }; s.onerror = function(){ lwcP = null; rej(new Error('lwc')); }; document.head.appendChild(s); }); return lwcP; }
-  function $(id){ return document.getElementById(id); }
+  /* The stage: where Live Charts is - this window, or Live Charts' own window (livecharts.html), which this window draws as it draws a
+     chart window (stageAttach, 23 Oct 2026). Its elements are looked up there first. */
+  var SD = document, SW = window;
+  function $(id){ if (SD !== document) { var e = null; try { e = SD.getElementById(id); } catch (x) {} if (e) return e; } return document.getElementById(id); }
   function es(){ try { return document.documentElement.lang === 'es' || window.__lang === 'es'; } catch (e) { return false; } }
   function T(en, sp){ return es() ? sp : en; }
   function esc(v){ return String(v == null ? '' : v).replace(/[&<>"]/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
@@ -89068,7 +89071,7 @@ window.__stAZ = (function () {
   // ---- state ----
   var S = null, panes = [], drag = null, timer = 0, timerW = window, flashT = 0, flashEl = null, popped = false, staticCache = {};
   var POP = {}, WH = {}, UI = { w: window };   // charts in windows of their own, the window-wide handlers they share, the window last used
-  function phone(){ return (window.innerWidth || 1200) <= 760; }
+  function phone(){ var w = SW; try { if (w.closed) w = window; } catch (e) { w = window; } return (w.innerWidth || 1200) <= 760; }
   // ---- each chart its own symbol (Nestor, 17 Oct 2026: "Should each chart also get its own symbol, so EUR/USD and gold can
   //      sit side by side?" - "yes"). Chart 1 is the replay's own symbol (S: the trade, the panel, the log); any other chart
   //      can be put on another (CFG.syms[i], from its symbol button), on the same day and at the same moment. Each other
@@ -89593,7 +89596,7 @@ window.__stAZ = (function () {
   // one chart, made (again) in its place: at = the element it takes the place of
   function makePane(i, n, g, at){
     var sr = symAt(i), X = sr === S.sym.raw ? S : ((S.side && S.side[sr]) || S);
-    var pw = popOn(i) ? POP[i] : null, el = (pw ? pw.w.document : document).createElement('div'); el.className = 'stpr-pane'; el.setAttribute('data-i', i);
+    var pw = popOn(i) ? POP[i] : null, el = (pw ? pw.w.document : SD).createElement('div'); el.className = 'stpr-pane'; el.setAttribute('data-i', i);
     el.innerHTML = '<div class="stpr-pc"></div><canvas class="stpr-ov"></canvas>'
       + '<div class="stpr-ptfw" data-i="' + i + '">' + '<button type="button" class="stpr-tfpill" data-i="' + i + '"></button><div class="stpr-seg stpr-tfseg">' + TFS.map(function(x){ return '<button type="button" data-tf="' + x + '" data-i="' + i + '">' + TFL[x] + '</button>'; }).join('') + '<button type="button" class="stpr-tfadd" data-tfadd="' + i + '" title="' + esc(T('Custom timeframe', 'Temporalidad personalizada')) + '" aria-label="' + esc(T('Custom timeframe', 'Temporalidad personalizada')) + '">+</button></div>' + (n > 1 && !(i === 0 && mainN() === 1) ? '<button type="button" class="stpr-sympill" data-psym="' + i + '" title="' + esc(T('This chart\'s symbol', 'Símbolo de este gráfico')) + '">' + esc(X.ea && X.ea.raw ? X.ea.raw : symShort(X.sym)) + '</button>' : '') + '<span class="stpr-ohlc" aria-hidden="true"></span></div>' + popBtn(i)
       + (i === 0 ? '<div class="stpr-tl" id="stpr-tl"><div class="stpr-pill idle" id="stpr-pill"></div></div>' : '') + '<div class="strp-newscard" style="display:none"></div>';
@@ -89606,7 +89609,7 @@ window.__stAZ = (function () {
       nt.textContent = (cv ? T(TFL[want] + ' candles start ' + dshort(new Date(cv[0] * 1000)), 'Las velas de ' + TFL[want] + ' empiezan el ' + dshort(new Date(cv[0] * 1000))) : T('No ' + TFL[want] + ' candles stored', 'No hay velas de ' + TFL[want])) + T(' · showing ' + TFL[tf], ' · se ve ' + TFL[tf]);
       el.appendChild(nt); }
     if (X.err) { var ne = document.createElement('div'); ne.className = 'stpr-tfnote'; ne.textContent = X.sym.name + ': ' + X.err; el.appendChild(ne); }
-    var chart = (pw ? pw.w.LightweightCharts : LightweightCharts).createChart(pc, { autoSize: true,
+    var chart = (pw ? pw.w.LightweightCharts : (SW.LightweightCharts || LightweightCharts)).createChart(pc, { autoSize: true,
       layout: { background: { type: 'solid', color: '#121116' }, textColor: '#9a97a3', fontFamily: "'AppNum','DM Mono',monospace", fontSize: 11 },
       grid: { vertLines: { color: 'rgba(255,255,255,0.03)' }, horzLines: { color: 'rgba(255,255,255,0.045)' } },
       rightPriceScale: { borderColor: '#2A2833', scaleMargins: { top: 0.14, bottom: 0.1 }, alignLabels: false },   // every label on its own price, not pushed off it by its neighbours (19 Oct 2026: "why are these labels sitting up here? looks broken")
@@ -89653,7 +89656,7 @@ window.__stAZ = (function () {
   function remakePane(i){ var o = panes[i], g = $('stpr-grid'), mk = mmEl(); if (!o || !g) return null;
     lcViewFlush(); if (mk && o.el.contains(mk)) $('stpr-cw').appendChild(mk);   // the folded panel lives on the first chart: keep it
     try { o.chart.remove(); } catch (e) {} DW.oh = null; relangAt = null;
-    makePane(i, CFG.layout, g, o.el.ownerDocument === document ? o.el : null); try { if (o.el.parentNode) o.el.parentNode.removeChild(o.el); } catch (e) {}
+    makePane(i, CFG.layout, g, o.el.ownerDocument === SD ? o.el : null); try { if (o.el.parentNode) o.el.parentNode.removeChild(o.el); } catch (e) {}
     placeMM(); paintAct(); layApply(mainN()); return panes[i]; }
   async function loadPanes(){ var P0 = panes; for (var i = 0; i < P0.length; i++) { var p = P0[i], e = await paneStatic(p.tf, PS(p)); if (!S || panes !== P0) return; p.hist = e; p.static = e.agg; } await cmpStatics(P0); }
   // A chart's candles at this moment: before the day from the store, the day so far from the replay (its last candle only
@@ -89807,8 +89810,8 @@ window.__stAZ = (function () {
   var relangAt = null;
   function relang(force){ var l = L(); if (!force && relangAt === l) return; relangAt = l;
     I18N.forEach(function(r){ var e = $(r[0]); if (!e) return; var v = T(r[2], r[3]); e.setAttribute(r[1], v); if (r[1] === 'title' && e.hasAttribute('aria-label')) e.setAttribute('aria-label', v); });
-    document.querySelectorAll('#stpr-tools [data-tool]').forEach(function(b){ var n = TOOLN[b.getAttribute('data-tool')]; if (n) b.title = T(n[0], n[1]); }); toolsPaint();
-    document.querySelectorAll('#stpr-grid .stpr-tfpill').forEach(function(b){ b.title = T('Timeframe', 'Temporalidad'); });
+    SD.querySelectorAll('#stpr-tools [data-tool]').forEach(function(b){ var n = TOOLN[b.getAttribute('data-tool')]; if (n) b.title = T(n[0], n[1]); }); toolsPaint();
+    SD.querySelectorAll('#stpr-grid .stpr-tfpill').forEach(function(b){ b.title = T('Timeframe', 'Temporalidad'); });
     panes.forEach(function(p){ var b = p.el.querySelector('.stpr-popc'); if (b) { b.title = popTitle(p.i); b.setAttribute('aria-label', b.title); } });
     var st = $('stpr-state'); if (st && /^Loading/.test(st.textContent)) st.textContent = T('Loading…', 'Cargando…');
     dwAllBtns(); renderProps();
@@ -89914,7 +89917,7 @@ window.__stAZ = (function () {
   }
   function sideW(d){ return d > 0 ? T('BUY', 'COMPRAR') : T('SELL', 'VENDER'); }
   function sideTxt(d){ return '<svg class="stpr-arw" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + (d < 0 ? 'M12 4v16M5.5 13.5 12 20l6.5-6.5' : 'M12 20V4M5.5 10.5 12 4l6.5 6.5') + '"/></svg>' + sideW(d); }
-  function paintSides(){ var a = document.querySelector('#stpr-tr [data-a="sell"]'), b = document.querySelector('#stpr-tr [data-a="buy"]'), d = S && S.pv && S.pv.dir;
+  function paintSides(){ var a = SD.querySelector('#stpr-tr [data-a="sell"]'), b = SD.querySelector('#stpr-tr [data-a="buy"]'), d = S && S.pv && S.pv.dir;
     if (a) { a.classList.toggle('pv', d < 0); a.innerHTML = sideTxt(-1); } if (b) { b.classList.toggle('pv', d > 0); b.innerHTML = sideTxt(1); } }
   function paintProgress(){ var f = (S.now - S.f.open) / (S.f.close - S.f.open); $('stpr-ti').style.width = (f * 100) + '%'; $('stpr-tu').style.left = (f * 100) + '%';
     $('stpr-tm').textContent = dshort(new Date(S.now * 1000)) + ' ' + hm(S.now);
@@ -89966,7 +89969,7 @@ window.__stAZ = (function () {
     var head = '<div class="stpr-mm-t">' + (S.live ? lvAccHead() : '<span class="stpr-mm-n">' + esc(T('Replay account', 'Cuenta de Replay')) + '</span>') + '<button type="button" class="stpr-mm-on' + (off ? ' off' : '') + '" data-mm="on" title="' + esc(T('EA on / off', 'EA encendido / apagado')) + '">' + (off ? 'OFF' : 'ON') + '</button><button type="button" class="stpr-mm-ic" data-mm="col" title="' + esc(mmCol() ? T('Expand panel', 'Abrir el panel') : T('Collapse panel', 'Plegar el panel')) + '" aria-label="' + esc(mmCol() ? T('Expand panel', 'Abrir el panel') : T('Collapse panel', 'Plegar el panel')) + '">' + (mmCol() ? '+' : '\u2212') + '</button></div>';
     var html = head + ((mmCol() || (S.live && !LV.mmStash)) ? '' : '<div class="stpr-mm-b">' + body + '</div>') + '<div class="stpr-mm-f">' + foot + '</div>';   // Live Charts: the settings once the EA's have come
     // never rebuilt under a field being typed in: only the footer moves then
-    var ae = document.activeElement;
+    var ae = SD.activeElement;
     if (ae && ae.tagName === 'INPUT' && el.contains(ae)) { var f = el.querySelector('.stpr-mm-f'); if (f && f.innerHTML !== foot) f.innerHTML = foot; return; }
     if (el._h !== html) { var sb = el.querySelector('.stpr-mm-b'), st = sb ? sb.scrollTop : 0; el.innerHTML = html; el._h = html; var nb = el.querySelector('.stpr-mm-b'); if (nb) nb.scrollTop = st; }
     el.classList.toggle('armed', !!S.exec);   // the folded strip shows it with its border
@@ -89996,7 +89999,7 @@ window.__stAZ = (function () {
      then EA to its right"): the chart keeps its timeframe button at its top left, and the EA panel sits on the same row just right
      of it - not under it (his 17 Oct "move EA settings panel below the TF", which stays everywhere else) and not under the chart,
      out of sight below the screen. A touch screen wider than tall and at most 560 px high; portrait and computers as before. */
-  function landTouch(){ try { return window.innerWidth > window.innerHeight && window.innerHeight <= 560 && ((navigator.maxTouchPoints || 0) > 0 || matchMedia('(pointer: coarse)').matches); } catch (e) { return false; } }
+  function landTouch(){ try { return SW.innerWidth > SW.innerHeight && SW.innerHeight <= 560 && ((navigator.maxTouchPoints || 0) > 0 || matchMedia('(pointer: coarse)').matches); } catch (e) { return false; } }
   function tlBeside(){ var tl = $('stpr-tl'); if (!tl) return; var pane = tl.closest('.stpr-pane'); if (!pane) return;
     var pf = Array.prototype.filter.call(pane.querySelectorAll('.stpr-ptfw'), function(q){ return !tl.contains(q); })[0];
     var on = !!pf && landTouch() && !pane.classList.contains('tfbar') && !pane.classList.contains('tfrow') && !!pf.offsetWidth;
@@ -90099,7 +90102,7 @@ window.__stAZ = (function () {
   var MH = null;   // the menu open now: this window's, or a chart window's
   function mEl(){ return (MH && MH.isConnected) ? MH : $('stpr-menu'); }
   function popDocs(){ var a = []; for (var k in POP) if (popOn(+k)) { try { a.push(POP[k].w.document); } catch (e) {} } return a; }
-  function closeMenu(){ [document].concat(popDocs()).forEach(function(d){ var m0 = d.getElementById('stpr-menu'); if (m0) m0.classList.remove('show'); }); MH = null; var m = $('stpr-menu'); menuFor = null; MENU_BTNS.forEach(function(id){ var b = $(id); if (b) b.setAttribute('aria-expanded', 'false'); }); document.querySelectorAll('.stpr-ptf.open').forEach(function(b){ b.classList.remove('open'); }); MENUD = null; MENUA = null; try { satBar(); } catch (e) {} }
+  function closeMenu(){ allDocs().forEach(function(d){ var m0 = d.getElementById('stpr-menu'); if (m0) m0.classList.remove('show'); }); MH = null; var m = $('stpr-menu'); menuFor = null; MENU_BTNS.forEach(function(id){ var b = $(id); if (b) b.setAttribute('aria-expanded', 'false'); }); SD.querySelectorAll('.stpr-ptf.open').forEach(function(b){ b.classList.remove('open'); }); MENUD = null; MENUA = null; try { satBar(); } catch (e) {} }
   function openMenu(anchor, html, tag){
     if (menuFor === tag) { closeMenu(); return; }
     if (UI.fwd && anchor && anchor.id && UI.fwd.id === anchor.id && UI.fwd.isConnected) anchor = UI.fwd;   // asked from a chart window's toolbar: it opens there
@@ -90141,7 +90144,7 @@ window.__stAZ = (function () {
     (CFG.tfs || []).forEach(function(tf, k){ if (tf === n) { CFG.tfs[k] = std; used = true; } });
     tfUnreg(n); save(); closeMenu();
     if (used && S) { buildPanes(); dwPanes(); renderProps(); loadPanes().then(function(){ if (!S) return; if (S.live) lvMergePre(); render(true); }); return; }
-    [document].concat(popDocs()).forEach(function(d){ d.querySelectorAll('.stpr-tfseg [data-tf="' + n + '"]').forEach(function(b){ b.remove(); }); }); }
+    allDocs().forEach(function(d){ d.querySelectorAll('.stpr-tfseg [data-tf="' + n + '"]').forEach(function(b){ b.remove(); }); }); }
   // The symbol button: the watchlist (Nestor, 18 Oct 2026: "when you click on eurusd you see the watchlist inside")
   function symMenu(anchor, si){ WL.si = (si == null) ? null : si;
     var h = '<div class="stpr-wl"><div class="stpr-wlh"><h6>' + esc(WL.si == null ? T('Watchlist', 'Lista') : T('Chart ' + (WL.si + 1) + ' · watchlist', 'Gráfico ' + (WL.si + 1) + ' · lista')) + '</h6><button type="button" class="stpr-wladd" data-wladd title="' + esc(T('Add a symbol', 'Añadir un símbolo')) + '">+</button></div>'
@@ -90179,7 +90182,7 @@ window.__stAZ = (function () {
      as they were (CFG.marks / hist / pos / mini). The menu is for the chart clicked last, or the chart in the window it was opened from. */
   function showOn(p, k){ var o = p && (CFG.showPer || {})[p.i]; if (o && o[k] != null) return !!o[k]; return k === 'mini' ? !!CFG.mini : CFG[k] !== false; }
   function showSet(p, k, v){ if (!p) return; CFG.showPer = Object.assign({}, CFG.showPer || {}); CFG.showPer[p.i] = Object.assign({}, CFG.showPer[p.i] || {}); CFG.showPer[p.i][k] = !!v; }
-  function showTgt(){ var w = UI.w; if (w && w !== window) { var q = panes.filter(function(p){ return p.el.ownerDocument === w.document; })[0]; if (q) return q; } return actPane() || panes[0] || null; }
+  function showTgt(){ var w = UI.w; if (w && w !== SW) { var q = panes.filter(function(p){ return p.el.ownerDocument === w.document; })[0]; if (q) return q; } return actPane() || panes[0] || null; }
   var LAYP = null;   // the chart the open Show on chart menu is for
   function layersMenu(anchor, refresh){
     if (!(refresh && LAYP && panes.indexOf(LAYP) >= 0)) LAYP = showTgt(); var tp = LAYP;
@@ -90276,7 +90279,7 @@ window.__stAZ = (function () {
       + '<button type="button" class="stpr-snapi" data-snap="img">' + CP + '<span>' + T('Copy image', 'Copiar imagen') + '</span><kbd>Ctrl+Shift+S</kbd></button>'
       + '<button type="button" class="stpr-snapi" data-snap="link">' + LK + '<span>' + T('Copy link', 'Copiar enlace') + '</span><kbd>Alt+S</kbd></button>', 'snap'); }
   function snapShot(){
-    var uw = (UI.w && UI.w !== window && !UI.w.closed && UI.w.document.getElementById('stpr-grid')) ? UI.w : window, ud = uw.document;   // asked from a chart window: its chart
+    var uw = (UI.w && UI.w !== window && !UI.w.closed && UI.w.document.getElementById('stpr-grid')) ? UI.w : SW, ud = uw.document;   // asked from a chart window: its chart
     var gr = ud.getElementById('stpr-grid').getBoundingClientRect(), dpr = Math.max(1, Math.min(2, uw.devicePixelRatio || 1)), head = 30, L0 = look(), lt = lightBg();
     var cx0 = DW.cx; DW.cx = null; panes.forEach(function(p){ try { drawOv(p); } catch (e) {} });   // no crosshair in the picture
     var cv = document.createElement('canvas'); cv.width = Math.round(gr.width * dpr); cv.height = Math.round((gr.height + head) * dpr);
@@ -90465,10 +90468,10 @@ window.__stAZ = (function () {
       go.sort(function(a, b){ return b - a; }).forEach(function(i){ DW.list.splice(i, 1); }); DW.multi = null; DW.sel = null; if (go.length) commit(); updDel(); if (lk) lockSay(lk); return; }
     if (DW.sel == null) return; if (DW.list[DW.sel] && lkd(DW.list[DW.sel])) { lockSay(1); return; }   // locked: stays
     DW.list.splice(DW.sel, 1); DW.sel = null; commit(); updDel(); }
-  function drawerOpen(on){ flyShut(); if (on) [document].concat(popDocs()).forEach(function(d){ d.querySelectorAll('.stpr-ptfw.open').forEach(function(x){ x.classList.remove('open'); }); }); $('stpr-tb2').classList.toggle('drawing', !!on); $('stpr-drawbtn').classList.toggle('on', !!on); if (!on && DW.tool !== 'none') { DW.pending = null; DW.penning = null; setTool('none'); } }
+  function drawerOpen(on){ flyShut(); if (on) allDocs().forEach(function(d){ d.querySelectorAll('.stpr-ptfw.open').forEach(function(x){ x.classList.remove('open'); }); }); $('stpr-tb2').classList.toggle('drawing', !!on); $('stpr-drawbtn').classList.toggle('on', !!on); if (!on && DW.tool !== 'none') { DW.pending = null; DW.penning = null; setTool('none'); } }
   function dwPanes(){ panes.forEach(function(p){ p.el.classList.toggle('drawing', DW.tool !== 'none'); }); }
   function setTool(t){ hideCtx(); DW.noProps = false; DW.emoArm = false; DW.tool = (DW.tool === t ? 'none' : t); DW.pending = null; DW.snap = null; if (DW.tool !== 'none') dwUnhide(); if (DW.tool !== 'none' && (DW.sel != null || (DW.multi && DW.multi.length))) { DW.sel = null; DW.multi = null; updDel(); }   // picking a tool puts the selection down (TradingView's)
-    document.querySelectorAll('#stpr-tools [data-tool]').forEach(function(b){ b.classList.toggle('on', b.getAttribute('data-tool') === DW.tool); });
+    SD.querySelectorAll('#stpr-tools [data-tool]').forEach(function(b){ b.classList.toggle('on', b.getAttribute('data-tool') === DW.tool); });
     if (DW.tool !== 'none') tgSet(DW.tool); DW.pdn = null; toolsPaint(); dwPanes(); renderProps(); dirty(); }
   // a two-point drawing (or a channel's third point) placed: kept, selected, the tool put down
   function pendDone(){ var d = DW.pending; if (!d) return; delete d.st; DW.list.push(d); DW.pending = null; DW.pdn = null; DW.sel = DW.list.length - 1; commit(); updDel(); setTool('none'); }
@@ -91385,11 +91388,11 @@ window.__stAZ = (function () {
       if (m._t !== t && src) { m.innerHTML = src.outerHTML; m._t = t; } if (m.title !== nm) { m.title = nm; m.setAttribute('aria-label', nm); } if (m.classList.contains('on') !== on) m.classList.toggle('on', on); });
     box.querySelectorAll('[data-tgrp]').forEach(function(c){ var n = TGN[c.getAttribute('data-tgrp')], nm = n ? T(n[0], n[1]) : ''; if (c.title !== nm) { c.title = nm; c.setAttribute('aria-label', nm); } }); }
   var FLYW = null;   // the window a tools group's list is open in (each chart window its own, 21 Oct 2026)
-  function flyShut(){ var any = false; document.querySelectorAll('#stpr-tools .stpr-tg.open').forEach(function(s){ s.classList.remove('open', 'away'); var c = s.querySelector('[data-tgrp]'); if (c) c.setAttribute('aria-expanded', 'false'); any = true; }); FLYW = null; return any; }
-  function flyOpen(g){ var s = document.querySelector('#stpr-tools .stpr-tg[data-grp="' + g + '"]'); if (!s) return; var by = UI.w || window, was = s.classList.contains('open') && FLYW === by; flyShut(); if (was) return;   // open in another window: it opens here instead
-    FLYW = by; s.classList.toggle('away', by !== window);
+  function flyShut(){ var any = false; SD.querySelectorAll('#stpr-tools .stpr-tg.open').forEach(function(s){ s.classList.remove('open', 'away'); var c = s.querySelector('[data-tgrp]'); if (c) c.setAttribute('aria-expanded', 'false'); any = true; }); FLYW = null; return any; }
+  function flyOpen(g){ var s = SD.querySelector('#stpr-tools .stpr-tg[data-grp="' + g + '"]'); if (!s) return; var by = UI.w || window, was = s.classList.contains('open') && FLYW === by; flyShut(); if (was) return;   // open in another window: it opens here instead
+    FLYW = by; s.classList.toggle('away', by !== SW);
     s.classList.add('open'); var c = s.querySelector('[data-tgrp]'); if (c) c.setAttribute('aria-expanded', 'true');
-    var f = s.querySelector('.stpr-tfl'); f.style.left = ''; var r = f.getBoundingClientRect(), vw = document.documentElement.clientWidth || window.innerWidth, sh = 0;   // kept on screen (a phone)
+    var f = s.querySelector('.stpr-tfl'); f.style.left = ''; var r = f.getBoundingClientRect(), vw = s.ownerDocument.documentElement.clientWidth || SW.innerWidth, sh = 0;   // kept on screen (a phone)
     if (r.right > vw - 8) sh = r.right - (vw - 8); if (r.left - sh < 8) sh = r.left - 8; if (sh) f.style.left = Math.round(-1 - sh) + 'px'; }
   function measOff(){ if (!DW.meas) return false; DW.meas = null; dirty(); return true; }
   // right-click on a drawing: Clone / Delete
@@ -91779,7 +91782,7 @@ window.__stAZ = (function () {
   function sesOf(t){ try { var f = frameCache[t.day] || (frameCache[t.day] = dayFrame(t.day)), id = 'asia'; f.ses.forEach(function(x){ if (t.entryTs >= x.at) id = x.id; }); return id; } catch (e) { return 'asia'; } }
   function logOpen(on){ LOG.open = !!on; var w = $('stpr-win'); w.classList.toggle('logv', LOG.open); var b = $('stpr-logbtn'); if (b) { b.classList.toggle('on', LOG.open); b.setAttribute('aria-expanded', LOG.open ? 'true' : 'false'); }
     LOG.ask = false; if (LOG.open) { pause(); closeMenu(); w.scrollTop = 0; frameCache = {}; renderLog(); } }
-  function logTop(){ var el = $('stpr-log'), hd = document.querySelector('#stpr-win .stpr-hd'); if (el && hd) el.style.top = hd.offsetHeight + 'px'; }
+  function logTop(){ var el = $('stpr-log'), hd = SD.querySelector('#stpr-win .stpr-hd'); if (el && hd) el.style.top = hd.offsetHeight + 'px'; }
   function runR(cum, n){
     var last = cum[cum.length - 1], W = 1000, H = 96, pad = 8, lo = 0, hi = 0; cum.forEach(function(v){ if (v < lo) lo = v; if (v > hi) hi = v; });
     var rng = (hi - lo) || 1, X = function(i){ return i * W / (cum.length - 1); }, Y = function(v){ return pad + (hi - v) * (H - pad * 2) / rng; };
@@ -91948,7 +91951,7 @@ window.__stAZ = (function () {
      that arrangement back as it was. Not on a phone, where the charts are one under another. */
   function laySizes(m, v, L){ var z = CFG.lsz && CFG.lsz[m + '|' + v]; return { c: (z && Array.isArray(z.c) && z.c.length === L.c.length) ? z.c : L.c, r: (z && Array.isArray(z.r) && z.r.length === L.r.length) ? z.r : L.r }; }
   function layHandles(g, L, m, v, Z){ Array.prototype.slice.call(g.querySelectorAll('.stpr-gh')).forEach(function(h){ h.remove(); });
-    if (!L || !Z || phone() || getComputedStyle(g).display !== 'grid') return;
+    if (!L || !Z || phone() || (g.ownerDocument.defaultView || window).getComputedStyle(g).display !== 'grid') return;
     var cs = Z.c, rs = Z.r, nc = cs.length, nr = rs.length, np = g.querySelectorAll('.stpr-pane').length, occ = {};
     for (var i = 0; i < np && i < L.a.length; i++) { var a = L.a[i]; for (var x = a[0]; x < a[0] + (a[2] || 1); x++) for (var y = a[1]; y < a[1] + (a[3] || 1); y++) occ[x + ',' + y] = i; }
     var sum = function(arr, k0, k1){ var t = 0; for (var j = k0; j <= k1; j++) t += arr[j]; return t; }, TC = sum(cs, 0, nc - 1), TR = sum(rs, 0, nr - 1);
@@ -91960,7 +91963,7 @@ window.__stAZ = (function () {
       if (dir === 'c') { h.style.left = at(cs, TC, nc, k, -1); h.style.top = at(rs, TR, nr, s0 - 1, 0); h.style.height = len(rs, TR, nr, s0 - 1, s1 - 1); }
       else { h.style.top = at(rs, TR, nr, k, -1); h.style.left = at(cs, TC, nc, s0 - 1, 0); h.style.width = len(cs, TC, nc, s0 - 1, s1 - 1); }
       h.addEventListener('pointerdown', function(e){ if (e.button !== 0) return; e.preventDefault(); e.stopPropagation();
-        var cst = getComputedStyle(g), tr = (dir === 'c' ? cst.gridTemplateColumns : cst.gridTemplateRows).split(' ').map(parseFloat); if (tr.length !== (dir === 'c' ? nc : nr) || tr.some(isNaN)) return;
+        var cst = (g.ownerDocument.defaultView || window).getComputedStyle(g), tr = (dir === 'c' ? cst.gridTemplateColumns : cst.gridTemplateRows).split(' ').map(parseFloat); if (tr.length !== (dir === 'c' ? nc : nr) || tr.some(isNaN)) return;
         var a0 = tr[k - 1], tot = a0 + tr[k], MIN = Math.min(dir === 'c' ? 140 : 90, tot / 2), p0 = dir === 'c' ? e.clientX : e.clientY, last = tr.slice();
         h.classList.add('on'); try { h.setPointerCapture(e.pointerId); } catch (x) {}
         var mv = function(ev){ var a1 = Math.max(MIN, Math.min(tot - MIN, a0 + (dir === 'c' ? ev.clientX : ev.clientY) - p0)); last = tr.slice(); last[k - 1] = a1; last[k] = tot - a1;
@@ -91987,7 +91990,7 @@ window.__stAZ = (function () {
   // The strip's grip is its scroll thumb: at the top of the strip with the page at the top, at the bottom with the page at
   // the bottom (Nestor, 15 Oct 2026: "why doesnt this start at the very top and end at the bottom when scrolling up and
   // down?" - it had stayed in the middle of the screen).
-  function stripThumb(){ var sc = document.querySelector('#stpr-cw .stpr-scr'), i = sc && sc.querySelector('i'), w = $('stpr-win'); if (!i || !sc.clientHeight) return;
+  function stripThumb(){ var sc = SD.querySelector('#stpr-cw .stpr-scr'), i = sc && sc.querySelector('i'), w = $('stpr-win'); if (!i || !sc.clientHeight) return;
     var max = w.scrollHeight - w.clientHeight, f = max > 0 ? Math.max(0, Math.min(1, w.scrollTop / max)) : 0;
     i.style.transform = 'translateY(' + Math.round(4 + f * (sc.clientHeight - i.offsetHeight - 8)) + 'px)'; }
   // On a phone the window already fills the screen, so Maximise gives the charts the whole of it (Trade Replay's "more
@@ -92014,11 +92017,14 @@ window.__stAZ = (function () {
   var POPB = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12.5 7.5h-4v-4"/><path d="M8.5 7.5L14 2"/><path d="M11.5 9.5v3.2a.8.8 0 0 1-.8.8H3.3a.8.8 0 0 1-.8-.8V5.3a.8.8 0 0 1 .8-.8h3.2"/></svg>';
   function popOn(i){ var o = POP[i]; try { return !!(o && o.ready && o.w && !o.w.closed); } catch (e) { return false; } }
   function mainN(){ var m = 0; for (var i = 0; i < CFG.layout; i++) if (!popOn(i)) m++; return Math.max(1, m); }
-  function mainPanes(){ return panes.filter(function(p){ return p.el.ownerDocument === document; }); }
+  function mainPanes(){ return panes.filter(function(p){ return p.el.ownerDocument === SD; }); }
+  function allDocs(){ var a = [document]; if (SD !== document) a.push(SD); return a.concat(popDocs()); }
   // a window that is on screen: this one unless it is hidden (minimised, or covered - Windows calls that hidden) and a
   // chart window is not
-  function liveWin(){ if (!document.hidden) return window;
-    for (var k in POP) if (popOn(+k)) { try { if (!POP[k].w.document.hidden) return POP[k].w; } catch (e) {} } return window; }
+  function liveWin(){ if (SD !== document) { try { if (!SW.closed && !SD.hidden) return SW; } catch (e) {} }   // Live Charts' own window on screen
+    if (!document.hidden) return window;
+    for (var k in POP) if (popOn(+k)) { try { if (!POP[k].w.document.hidden) return POP[k].w; } catch (e) {} }
+    if (SD !== document) { try { if (!SW.closed) return SW; } catch (e) {} } return window; }
   function uiEl(id){ var w = UI.w; if (w && w !== window) { try { if (!w.closed) { var e = w.document.getElementById(id); if (e) return e; } } catch (x) {} } return $(id); }
   function popTitle(i){ return popOn(i) ? T('Back to the main window', 'Volver a la ventana principal') : T('Open this chart in a new window', 'Abrir este gráfico en una ventana nueva'); }
   function popBtn(i){ if (i < 1 || phone() || touchOnly()) return ''; var t = esc(popTitle(i));
@@ -92026,7 +92032,7 @@ window.__stAZ = (function () {
   var tbObs = null;
   function satBar(){ var src = $('stpr-tb2'); if (!src) return;
     popDocs().forEach(function(d){ var tb = d.getElementById('stpr-tb2'), tm = tb && tb.querySelector('.stpr-tbm'); if (!tm) return; if (tb.className !== src.className) tb.className = src.className; var h = src.innerHTML.replace(/<span class="stpr-sattf" id="stpr-maintf">[\s\S]*?<\/span>/, '');
-      var mine = !!FLYW && FLYW !== window && (function(){ try { return FLYW.document === d; } catch (e) { return false; } })(), key = h + (mine ? '|1' : '|0');
+      var mine = !!FLYW && FLYW !== SW && (function(){ try { return FLYW.document === d; } catch (e) { return false; } })(), key = h + (mine ? '|1' : '|0');
       if (tm._h !== key) { tm.innerHTML = h; tm._h = key;   // a tools group's open list: only in the window it was opened in
         tm.querySelectorAll('.stpr-tg.open').forEach(function(g){ if (mine) g.classList.remove('away'); else { g.classList.remove('open', 'away'); var c = g.querySelector('[data-tgrp]'); if (c) c.setAttribute('aria-expanded', 'false'); } }); }
       MENU_BTNS.forEach(function(id){ var mb = tm.querySelector('#' + id); if (mb) mb.setAttribute('aria-expanded', (menuFor && MENUD === d && MENUA === id) ? 'true' : 'false'); });   // the main window's open menu is not this window's
@@ -92038,12 +92044,12 @@ window.__stAZ = (function () {
     if (!S || !(i >= 1 && i < CFG.layout) || phone()) return null;
     var o = POP[i]; try { if (o && o.w && !o.w.closed) { o.w.focus(); return o.w; } } catch (e) {}
     var p = panes[i], r = p ? p.el.getBoundingClientRect() : null, ww = Math.max(920, Math.round(r ? r.width : 900)), wh = Math.max(420, Math.round(r ? r.height : 600) + 48);   // + its toolbar row
-    var x = Math.round((window.screenX || 0) + 40 + 28 * i), y = Math.round((window.screenY || 0) + 50 + 28 * i), w = null;
+    var x = Math.round((SW.screenX || 0) + 40 + 28 * i), y = Math.round((SW.screenY || 0) + 50 + 28 * i), w = null;
     if (g) { ww = g.w; wh = g.h; x = g.x; y = g.y; }
     // The chart's window is the site's own page, chart.html. For one day (21 Oct 2026) it was a page made here (a blob: address) so it
     // kept its own zoom, but the installed app puts a grey address band on any window that is not a sessionterminal.com page, and
     // Nestor chose no band ("the thick grey band still here, why did you add that?"): its zoom is the app's again (one per website).
-    try { w = window.open('chart.html?slot=' + i, (LV.solo ? 'stpr-lcchart-' : 'stpr-chart-') + i, 'popup,width=' + ww + ',height=' + wh + ',left=' + x + ',top=' + y); } catch (e) {}
+    try { w = winOpen('chart.html?slot=' + i, (LV.solo ? 'stpr-lcchart-' : 'stpr-chart-') + i, 'popup,width=' + ww + ',height=' + wh + ',left=' + x + ',top=' + y); } catch (e) {}
     if (!w) { if (!g) flash(T('Your browser blocked the new window. Allow pop-ups for this site and try again.', 'Tu navegador bloqueó la ventana nueva. Permite ventanas emergentes en este sitio y vuelve a intentarlo.')); return null; }
     if (g) { try { w.moveTo(g.x, g.y); w.resizeTo(g.w, g.h); } catch (e) {} }   // exactly where it was (the size it opened at is the inside; these are the outside)
     POP[i] = { w: w, ready: false }; popWatch(); return w; }
@@ -92174,7 +92180,9 @@ window.__stAZ = (function () {
   //      picture out once its chart is drawn (satUnghost); a window that knows which charts are out in windows (LV.expect) waits for them
   //      before its first build (satWait), so it never builds them here first. ----
   function satFreeze(i){ var o = POP[i], p = panes[i]; if (!o || !o.w || !p || !p.el || !p.chart) return;
-    try { var w = o.w, d = w.document; if (p.el.ownerDocument !== d) return; var pc = p.el.querySelector('.stpr-pc'), r = pc && pc.getBoundingClientRect(); if (!r || !(r.width > 0 && r.height > 0)) return;
+    try { if (p.el.ownerDocument !== o.w.document) return; } catch (e) { return; } paneFreeze(p, o.w); }
+  function paneFreeze(p, w){
+    try { var d = w.document; var pc = p.el.querySelector('.stpr-pc'), r = pc && pc.getBoundingClientRect(); if (!r || !(r.width > 0 && r.height > 0)) return;
       var dpr = w.devicePixelRatio || 1, sc = p.chart.takeScreenshot(), cv = d.createElement('canvas'); cv.width = Math.max(1, Math.round(r.width * dpr)); cv.height = Math.max(1, Math.round(r.height * dpr));
       cv.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%'; cv.getContext('2d').drawImage(sc, 0, 0, cv.width, cv.height);
       try { p.chart.remove(); } catch (e) {} pc.appendChild(cv); } catch (e) {} }
@@ -92209,7 +92217,7 @@ window.__stAZ = (function () {
     var gh = d.getElementById('stpr-bg'); if (gh) gh.remove();   // what the window that had it left on screen: kept on top until this chart is drawn (satUnghost)
     d.body.innerHTML = '<div class="stpr-bg show max popped sat" id="stpr-bg"><div class="stpr-win" id="stpr-win"><div class="stpr-tb stpr-tb2" id="stpr-tb2"><span class="stpr-sattf"></span><span class="stpr-tbm"></span></div><div class="stpr-cw one" id="stpr-cw"><div class="stpr-grid l1" id="stpr-grid"></div><div class="stpr-flash" id="stpr-flash"></div></div><div class="stpr-menu" id="stpr-menu"></div></div></div>';
     if (gh) { gh.style.cssText += ';position:fixed;inset:0;z-index:2147483000;pointer-events:none'; d.body.appendChild(gh); o.ghost = gh; o.ghostAt = Date.now(); setTimeout(satUnghost, 15500); }
-    try { w.__stFree = 0; } catch (e) {}
+    try { w.__stFree = 0; w.__stLcHost = LV.sat || null; } catch (e) {}
     var up = function(){ if (POP[i] !== o || o.w !== w) return; o.ready = true; wireWin(w, i); if (!LV.building && !satPending()) rebuild(); };   // (a first build waiting for it builds it there)
     if (w.LightweightCharts) up();
     else { var sc = d.createElement('script'); sc.src = LWC_SRC; sc.onload = up; sc.onerror = function(){ unpop(i); flash(T('The new window could not load the chart. Check the connection and try again.', 'La ventana nueva no pudo cargar el gráfico. Revisa la conexión y vuelve a intentarlo.')); }; d.head.appendChild(sc); }
@@ -92226,7 +92234,7 @@ window.__stAZ = (function () {
     // its toolbar: a copy of this window's, kept the same (satBar); a press there is the same press here, its menu opening there
     d.getElementById('stpr-tb2').addEventListener('click', function(e){ var b = e.target.closest && e.target.closest('.stpr-tbm button'); if (!b) return; e.preventDefault(); e.stopPropagation();   // (its timeframe button is its own)
       var tl = b.getAttribute('data-tool'), ga = b.hasAttribute('data-gtool') ? 'data-gtool' : (b.hasAttribute('data-tgrp') ? 'data-tgrp' : null);   // a tools group's button or arrow: the same one here
-      var mb = tl ? $('stpr-tools').querySelector('[data-tool="' + tl + '"]') : (ga ? $('stpr-tools').querySelector('[' + ga + '="' + b.getAttribute(ga) + '"]') : (b.id ? document.getElementById(b.id) : null));
+      var mb = tl ? $('stpr-tools').querySelector('[data-tool="' + tl + '"]') : (ga ? $('stpr-tools').querySelector('[' + ga + '="' + b.getAttribute(ga) + '"]') : (b.id ? $(b.id) : null));
       if (!mb || mb.disabled) return; UI.w = w; UI.fwd = b; try { mb.click(); } finally { UI.fwd = null; } satBar(); });
     satBar(); satBarWatch();
     on(d, 'visibilitychange', reLive);
@@ -92235,7 +92243,7 @@ window.__stAZ = (function () {
   // its window closed: the chart comes back here; reloaded: it comes back here until that window's page asks for it again
   function satGone(i, w){ var o = POP[i]; if (!o || o.w !== w || o.shut) return; o.ready = false;
     setTimeout(function(){ var gone = true; try { gone = w.closed; } catch (e) {} if (gone && POP[i] === o) { delete POP[i]; wsrLater(i); } if (S && isOpen()) rebuild(); }, 60); }
-  function unpop(i){ if (!POP[i]) return; wsrForget(i); popShut(i); if (S && isOpen()) rebuild(); try { window.focus(); } catch (e) {} }
+  function unpop(i){ if (!POP[i]) return; wsrForget(i); popShut(i); if (S && isOpen()) rebuild(); try { SW.focus(); } catch (e) {} }
   function popShut(i){ var o = POP[i]; if (!o) return; o.shut = true; delete POP[i]; try { o.w.close(); } catch (e) {} }
   function popShutAll(){ Object.keys(POP).forEach(function(k){ popShut(+k); }); }
   var popT = 0;
@@ -92332,7 +92340,7 @@ window.__stAZ = (function () {
   function lvMMOff(){ clearTimeout(LV.cfgT); if (!LV.mmStash) return; LVK.forEach(function(k){ CFG[k] = LV.mmStash[k]; }); LV.mmStash = null; LV.setSig = ''; }
   function lvSet(p){ if (!p || !p.s || !p.st) return; LV.set = LV.set || {}; LV.set[p.s + '|' + p.lg] = p.st;
     var e = lvOwnEA(); if (!e || e.raw !== p.s || String(e.lg) !== String(p.lg) || JSON.stringify(p.st) === LV.setSig) return;
-    var ae = document.activeElement, me = mmEl(); if ((ae && ae.tagName === 'INPUT' && me && me.contains(ae)) || Date.now() - (LV.cfgAt || 0) < 1500) { LV.setLater = true; return; }   // never under a field being typed in, nor over our own change on its way
+    var ae = SD.activeElement, me = mmEl(); if ((ae && ae.tagName === 'INPUT' && me && me.contains(ae)) || Date.now() - (LV.cfgAt || 0) < 1500) { LV.setLater = true; return; }   // never under a field being typed in, nor over our own change on its way
     lvMMApply(); if (S.pv) S.pv.rd = clampSL(S.pv.rd || stopPx()); render(); }
   function lvCfgKV(){ var m = CFG.mm, pip = lvPip(), f = function(v, d){ v = Number(v); return (isFinite(v) ? v : 0).toFixed(d); };
     return ['on=' + (m.on === false ? 0 : 1), 'ord=' + String(m.ord || 'market').charAt(0), 'key=' + String(m.key || 'O').charCodeAt(0), 'rm=' + (m.riskMode || 'amount'), 'ra=' + f(m.riskAmt, 2), 'rp=' + f(m.riskPct, 2), 'fl=' + f(m.lots, 2),
@@ -92344,7 +92352,7 @@ window.__stAZ = (function () {
     window.__stTM.acct({ login: e.lg, sym: e.raw, a: 'cfg', cp: kv }).then(function(r){ if (!r.ok) { LV.cfgSig = ''; lvCfgBack(); flash(window.__stTM.whyTxt ? window.__stTM.whyTxt(r.why) : String(r.why)); } }); }
   /* A change the EA refused (App trading off, no answer): the panel goes back to what the EA really has. It kept the typed values before,
      so it read £500 while the EA went on risking £50 (Nestor's VPS copy, 23 Oct 2026). Under a field being typed in it waits (the tick's setLater). */
-  function lvCfgBack(){ LV.cfgAt = 0; LV.setLater = true; var ae = document.activeElement, me = mmEl(); if (ae && ae.tagName === 'INPUT' && me && me.contains(ae)) return;
+  function lvCfgBack(){ LV.cfgAt = 0; LV.setLater = true; var ae = SD.activeElement, me = mmEl(); if (ae && ae.tagName === 'INPUT' && me && me.contains(ae)) return;
     LV.setLater = false; LV.setSig = ''; if (lvMMApply()) { if (S && S.pv) S.pv.rd = clampSL(S.pv.rd || stopPx()); render(); } }
   function lvTradeWhy(){ if (!S || !S.live) return ''; var e = lvOwnEA();
     if (!e) return T('To trade ' + S.sym.name + ' from here, open the EA on a ' + S.sym.name + ' chart in MT5.', 'Para operar ' + S.sym.name + ' desde aquí, abre el EA en un gráfico de ' + S.sym.name + ' en MT5.');
@@ -92748,7 +92756,8 @@ window.__stAZ = (function () {
   function lvMs(){ try { return (window.__stLiveLine && window.__stLiveLine.ms) ? window.__stLiveLine.ms() : 2000; } catch (e) { return 2000; } }
   // F: a feed (chart 1's, S, unless said) - its EA's prices came lately
   function lvFresh(F){ F = F || S; return !!(F && F.at && Date.now() - F.at < Math.max(15000, 3 * lvMs())); }
-  function clearLiveT(){ clearInterval(LV.clk); LV.clk = 0; clearTimeout(LV.rq); LV.rq = 0; }
+  function lvClkArm(){ var w = SW; try { (LV.clkW || window).clearInterval(LV.clk); } catch (e) {} try { if (w.closed) w = window; } catch (e) { w = window; } LV.clkW = w; LV.clk = w.setInterval(lvClock, 1000); }
+  function clearLiveT(){ try { (LV.clkW || window).clearInterval(LV.clk); } catch (e) {} LV.clkW = null; LV.clk = 0; clearTimeout(LV.rq); LV.rq = 0; }
   // a symbol on a live chart: the day's 1-minute candles from the store (its EA tops them up), its digits; then its EA's prices
   async function liveFeed(sym, f){
     var end = Math.min(nowS(), f.close), ea = eaFor(sym), base = [], baseTf = 1, sd = LV.seed; LV.seed = null;
@@ -92789,7 +92798,7 @@ window.__stAZ = (function () {
     st.style.display = 'none'; render(true); startLoop(); cmpDot(); if (LV.snap) { LV.snap = false; setTimeout(lcSnap, 60); }
     satUnghost();
     pull().then(function(ch){ if (ch && S) render(); });
-    LV.clk = setInterval(lvClock, 1000); allFeeds().forEach(function(F){ lvHist(F); }); lvAlertsPull(); lcAcctSync(); lvTm();
+    lvClkArm(); allFeeds().forEach(function(F){ lvHist(F); }); lvAlertsPull(); lcAcctSync(); lvTm();
     if (!LV.tmOn && window.__stTM) { LV.tmOn = true; window.__stTM.on(function(){ if (S && S.live) { lvTm(); linesAll(); } }); }
     try { if (window.__stLiveLine && window.__stLiveLine.tickle) window.__stLiveLine.tickle(); } catch (e) {}
     return true;
@@ -92798,6 +92807,7 @@ window.__stAZ = (function () {
   // minutes; the open trades' lines follow their levels
   function lvClock(){
     if (!S || !S.live) { clearLiveT(); return; }
+    if (SD !== document) try { window.__stLiveLine.tickle(); } catch (e) {}   // Live Charts' own window: the line kept up from its timer (this window's may be slowed)
     var n = nowS();
     if (n >= S.f.close + 30 && liveDay(S.sym) !== S.day) { goLive(S.sym.raw); return; }
     S.now = Math.max(S.now, Math.min(n, S.f.close));
@@ -92807,7 +92817,7 @@ window.__stAZ = (function () {
       else if (!ea) F.ea = null;
       if (F.ea && vNum(F.ea.v) >= 9.00 && !F.gotHist) lvHist(F); });
     lvTfAsk(); lvWlSend(false); tbPaint();
-    if (!LV.mmStash || LV.setLater) { var ae = document.activeElement, me = mmEl(); if (!(ae && ae.tagName === 'INPUT' && me && me.contains(ae)) && Date.now() - (LV.cfgAt || 0) >= 1500) { LV.setLater = false; LV.setSig = ''; if (lvMMApply()) render(); } }
+    if (!LV.mmStash || LV.setLater) { var ae = SD.activeElement, me = mmEl(); if (!(ae && ae.tagName === 'INPUT' && me && me.contains(ae)) && Date.now() - (LV.cfgAt || 0) >= 1500) { LV.setLater = false; LV.setSig = ''; if (lvMMApply()) render(); } }
     if (again) { goLive(S.sym.raw); return; }   // an EA came on a chart showing 5-minute candles: its minutes from here
     var sig = lvSig(); if (sig !== LV.sig) { LV.sig = sig; if (LT.k && !LT.wait && LT.at) LT.k = null; panes.forEach(function(p){ try { paintLines(p); } catch (e) {} }); dirty(); }   // MT5's new figures: the line moved there
     lvBadges(); panes.forEach(function(p){ try { cdLbl(p); } catch (e) {} }); liveBar(); liveHeader(); lcFit(); lcAcctSync(); lvTm();
@@ -93155,6 +93165,7 @@ window.__stAZ = (function () {
   try { window.addEventListener('focus', function(){ pullCfg(); }); document.addEventListener('visibilitychange', function(){ if (!document.hidden) pullCfg(); }); } catch (e) {}   // another device's settings (mergeCfg)
   function lcShow(){ var host = $('lc-host'); if (!host) return; LV.host = host; pullCfg();
     if (LV.solo) return;   // this is Live Charts' own window: it stays as it is
+    if (LV.sat) { lcAwayPaint(true); return; }   // Live Charts in its own window, drawn from here (stageAttach): the tab says so
     if (lcAwayOn()) { lcAwayPaint(true); return; }   // open in its own window: the tab says so
     lcAwayPaint(false);
     if ($('stpr-bg').classList.contains('show') && !LV.max) return;   // Practice Replay is open over the app
@@ -93191,13 +93202,14 @@ window.__stAZ = (function () {
       + '<div class="lc-ask-b"><button type="button" data-lca="0">' + esc(toLive ? T('Stay in Replay', 'Seguir en Replay') : T('Stay on Live', 'Seguir en vivo')) + '</button><button type="button" data-lca="1" class="go' + (toLive ? ' lv' : '') + '">' + esc(toLive ? T('Switch to Live', 'Pasar a En vivo') : T('Switch to Replay', 'Pasar a Replay')) + '</button></div></div>';
     document.body.appendChild(bg);
     var done = function(yes){ bg.remove(); document.removeEventListener('keydown', key, true); if (!yes) return; if (toLive) { LV.mode = 'live'; resumeSave(); lvBack(); }
-      else { if (lcAwayOn()) { lcAwayClose(); lcAwayPaint(false); } lcReplayStart(); }   // its own window closes: Replay here
+      else { if (LV.sat) stageDetach(true); if (lcAwayOn()) { lcAwayClose(); lcAwayPaint(false); } lcReplayStart(); }   // its own window closes: Replay here
       setTimeout(lcModePaint, 50); };
     var key = function(e){ if (e.key === 'Escape') { e.stopPropagation(); done(false); } };
     document.addEventListener('keydown', key, true);
     bg.addEventListener('click', function(e){ var b = e.target.closest && e.target.closest('[data-lca]'); if (b) done(b.getAttribute('data-lca') === '1'); });
     try { bg.querySelector('[data-lca="1"]').focus(); } catch (e) {} }
   document.addEventListener('click', function(e){ var b = e.target && e.target.closest && e.target.closest('#lc-mode [data-lcm]'); if (!b) return;
+    if (LV.sat && b.getAttribute('data-lcm') === 'live') { try { LV.sat.focus(); } catch (x) {} return; }   // in its own window: there
     if (lcAwayOn() && b.getAttribute('data-lcm') === 'live') { try { LV.popW.focus(); } catch (x) {} return; }   // it is live in its own window: there
     if (b.classList.contains('on')) return; lcAsk(b.getAttribute('data-lcm') === 'live'); });
   setInterval(function(){ try { if (LV.inl || LV.max || $('page-livecharts').classList.contains('active')) lcModePaint(); } catch (e) {} }, 700);
@@ -93229,9 +93241,10 @@ window.__stAZ = (function () {
     else { try { if (LCB) LCB.postMessage({ k: 'back' }); } catch (e) {} }
     LV.popW = null; LV.seenAt = 0; clearInterval(LV.awayT); LV.awayT = 0; }
   // this app window going away (closed or reloaded): its chart windows stay as they are, as still pictures, until the next one takes them
-  try { window.addEventListener('pagehide', function(){ var solo = LV.solo || LCW; if (!Object.keys(POP).length && !solo) return;
+  try { window.addEventListener('pagehide', function(){ var solo = LV.solo || LCW; if (!Object.keys(POP).length && !solo && !LV.sat) return;
       LV.bye = true;   // going: it takes no chart window now (satReady)
       var ws = Object.keys(POP).map(function(k){ return POP[k] && POP[k].w; }).filter(Boolean), gs = satLetGoAll();
+      if (LV.sat) stageLetGo(gs);   // Live Charts' own window: a still picture, until the app window reloaded takes it again (or it becomes the app itself)
       if (gs.length) try { sessionStorage.setItem('st_satexp', JSON.stringify({ s: gs, at: Date.now() })); } catch (e) {}
       // Live Charts' own window: the app gets its candles up to this second, so it has nothing to download before it draws them (Nestor,
       // 23 Oct 2026: "if i close the main chart the other 2 freeze for a second then live price resumes, can you stop this?")
@@ -93247,14 +93260,113 @@ window.__stAZ = (function () {
   function lcAwayPaint(on){ var host = $('lc-host'), el = $('lc-away'); if (!host) return;
     if (!on) { if (el) el.remove(); return; }
     if (!el) { el = document.createElement('div'); el.id = 'lc-away'; el.className = 'lc-away'; host.appendChild(el);
-      el.addEventListener('click', function(e){ if (!(e.target.closest && e.target.closest('[data-lcback]'))) return; lcAwayClose(); lcAwayPaint(false); lcShow(); }); }
+      el.addEventListener('click', function(e){ if (!(e.target.closest && e.target.closest('[data-lcback]'))) return; if (LV.sat) { stageDetach(true); return; } lcAwayClose(); lcAwayPaint(false); lcShow(); }); }
     var h = '<p>' + esc(T('Live Charts is open in its own window.', 'Live Charts está abierto en su propia ventana.')) + '</p><button type="button" data-lcback>' + esc(T('Show it here instead', 'Mostrarlo aquí')) + '</button>';
     if (el.innerHTML !== h) el.innerHTML = h; }
   // the site's own page (the app with ?livecharts=1), so the installed app shows no address band on it; its zoom is the app's (21 Oct 2026)
-  function lcPopOut(){ var raw = (S && S.sym && S.sym.raw) || CFG.sym || 'EURUSD', w = null, out = Object.keys(POP).map(Number).filter(function(k){ return popOn(k); });
-    try { w = window.open(location.pathname + '?livecharts=1&sym=' + encodeURIComponent(raw) + (out.length ? '&out=' + out.join(',') : ''), 'stlivecharts', 'popup,width=1400,height=920'); } catch (e) {}
-    if (!w) { flash(T('Your browser blocked the new window. Allow pop-ups for this site and try again.', 'Tu navegador bloqueó la ventana nueva. Permite ventanas emergentes en este sitio y vuelve a intentarlo.')); return; }
-    lcAwaySet(w); }
+  function lcPopOut(){ if (stageOn()) { try { LV.sat.focus(); } catch (e) {} return; }
+    var raw = (S && S.sym && S.sym.raw) || CFG.sym || 'EURUSD', w = null;
+    try { w = window.open('livecharts.html?sym=' + encodeURIComponent(raw), 'stlivecharts', 'popup,width=1400,height=920'); } catch (e) {}
+    if (!w) { flash(T('Your browser blocked the new window. Allow pop-ups for this site and try again.', 'Tu navegador bloqueó la ventana nueva. Permite ventanas emergentes en este sitio y vuelve a intentarlo.')); return; } }   // the page asks for Live Charts (stageReady)
+  /* Live Charts' own window, drawn from here (Nestor, 23 Oct 2026: opening it still made his chart windows stall for a fifth of a second -
+     that window was a second copy of the app starting up on the same thread as this one and the chart windows; "do this": it is drawn
+     from here instead, as a chart window is). livecharts.html has nothing of its own: it asks (stageReady); its look and its chart library
+     go in first (stagePrep), then the whole of Live Charts moves in at once - its bars, the charts, the EA panel, the Toolbox (stageAttach),
+     the same Live Charts as before, not started again, so the chart windows never pause. Its X, or Show it here instead, brings it back
+     (stageDetach). Only when this app window closes does that page start the app itself (?livecharts=1, as Live Charts' window always
+     was), keeping the chart windows; when it reloads, the new app window takes it again. */
+  var STW = null, ENG = Math.random().toString(36).slice(2);   // that window's handlers (undone when it goes); this app window, to its page
+  function stageOn(){ try { return !!(LV.sat && !LV.sat.closed); } catch (e) { return false; } }
+  function winOpen(u, n, f){ if (SD !== document) { try { if (SW.__stOpen) return SW.__stOpen(u, n, f); } catch (e) {} } return window.open(u, n, f); }   // opened by the window clicked in
+  function stageHostAll(){ Object.keys(POP).forEach(function(k){ try { POP[k].w.__stLcHost = LV.sat || null; } catch (e) {} }); }
+  function stageReady(w, sym){
+    if (LV.solo || LCW) return false;
+    if (LV.bye) return null;   // this app window is going: the next one (or that window itself) takes it
+    try { if (!w || w.closed) return false; } catch (e) { return false; }
+    if (LV.sat === w) return true;
+    if (!lcLiveOK() || !window.__stSB) return null;   // not signed in yet (this window has just reloaded): it waits
+    if (S && !S.live && isOpen()) return null;   // a replay here: it waits (and after a while becomes the app itself)
+    var d = null; try { d = w.document; } catch (e) {} if (!d || !d.body) return null;
+    if (w.__stPrep !== ENG) { stagePrep(w); return null; }   // its look and its chart library first: then the move is only the move
+    if (!w.LightweightCharts) return null;
+    if (LV.sat) stageDetach(true);
+    stageAttach(w, sym); return true; }
+  function stagePrep(w){ var d = w.document, de = d.documentElement, md = document.documentElement; w.__stPrep = ENG;
+    de.lang = md.lang; de.className = md.className; if (md.hasAttribute('data-theme')) de.setAttribute('data-theme', md.getAttribute('data-theme')); de.style.cssText = md.style.cssText; d.body.className = document.body.className;
+    var was = Array.prototype.slice.call(d.querySelectorAll('[data-stsat]'));   // an app window before this one's: this one's first, then those go
+    Array.prototype.forEach.call(document.querySelectorAll('link[rel="stylesheet"], style'), function(st){ if (st.tagName === 'STYLE' && !/\.stpr-|:root|@font-face/.test(st.textContent)) return; var sn = d.importNode(st, true); sn.setAttribute('data-stsat', ''); d.head.appendChild(sn); });
+    was.forEach(function(x){ x.remove(); });
+    var ask = function(){ try { if (w.__stAskNow) w.__stAskNow(); } catch (e) {} };
+    if (w.LightweightCharts) setTimeout(ask, 0);
+    else { var sc = d.createElement('script'); sc.src = LWC_SRC; sc.onload = ask; d.head.appendChild(sc); } }
+  function stageAttach(w, sym){
+    if (!wired) wire();
+    var d = w.document, old = d.getElementById('stpr-bg');
+    if (old) { old.removeAttribute('id'); Array.prototype.forEach.call(old.querySelectorAll('[id]'), function(e){ e.removeAttribute('id'); });   // what an app window before this one left there: on top until these charts are drawn
+      old.style.cssText += ';position:fixed;inset:0;z-index:2147483000;pointer-events:none'; LV.satGhost = old; LV.satGhostAt = Date.now(); }
+    var bg = d.createElement('div'); bg.className = 'stpr-bg show max popped'; bg.id = 'stpr-bg'; bg.setAttribute('aria-hidden', 'false'); d.body.insertBefore(bg, d.body.firstChild);
+    try { closeMenu(); } catch (e) {} try { dlgClose(false); } catch (e) {} try { hideCtx(); } catch (e) {}
+    var win = $('stpr-win'), mbg = $('stpr-bg');   // (this window's, until the move)
+    mbg.classList.remove('show', 'max'); mbg.setAttribute('aria-hidden', 'true'); try { document.documentElement.style.overflow = ''; } catch (e) {}
+    lcTbIn();   // the Toolbox comes along, under the charts (as in MT5)
+    panes.forEach(function(p){ try { if (p.el && p.el.ownerDocument === document) p.chart.remove(); } catch (e) {} });   // drawn there by its own chart library (below)
+    stageBare(win);
+    bg.appendChild(d.adoptNode(win));
+    SD = d; SW = w; LV.sat = w; LV.max = true; LV.inl = false; UI.w = w; FLYW = null;
+    try { d.title = 'Live Charts \u00b7 Session Terminal'; w.__stSym = S && S.sym ? S.sym.raw : (sym || CFG.sym || ''); } catch (e) {}
+    stageWire(w); stageHostAll();
+    lcAwayPaint(true); try { lcModePaint(); } catch (e) {}
+    if (S && S.live) { lvClkArm(); rebuild(); } else goLive(sym || CFG.sym);
+    if (LV.satGhost) { var gh = LV.satGhost, chk = function(){ if (LV.satGhost !== gh) return; var drawn = panes.some(function(p){ return p.el && p.el.ownerDocument === d && p.n > 0; });
+        if (!drawn && Date.now() - LV.satGhostAt < 8000) { setTimeout(chk, 120); return; }
+        LV.satGhost = null; gh.style.transition = 'opacity .18s ease'; gh.style.opacity = '0'; setTimeout(function(){ try { gh.remove(); } catch (e) {} }, 240); };
+      setTimeout(chk, 120); } }
+  // that window's window-wide handlers: this window's own, in that one too (as a chart window's, wireWin)
+  // (each only while this app window still draws that one: a closed or reloaded app window's never act there - stageLetGo)
+  function stageWire(w){ stageUnwire(); var d = w.document, L = [], on = function(t, ev, fn, op){ if (!fn) return; var g = function(){ if (LV.sat !== w || LV.bye) return; return fn.apply(this, arguments); }; t.addEventListener(ev, g, op); L.push([t, ev, g, op]); };
+    on(d, 'mousedown', dwDown, true); on(d, 'dblclick', WH.dbl, true); on(d, 'contextmenu', WH.ctx, true);
+    on(d, 'touchstart', WH.tst, { passive: false, capture: true }); on(d, 'touchmove', WH.tmv, { passive: false, capture: true }); on(d, 'touchend', WH.tend, { passive: false, capture: true });
+    on(w, 'mousemove', dwMove); on(w, 'mouseup', dwUp); on(w, 'keyup', WH.kup); on(w, 'resize', WH.rsz); on(w, 'blur', WH.execOff);
+    on(d, 'pointerdown', function(){ UI.w = w; }, true); on(d, 'keydown', function(){ UI.w = w; }, true); on(d, 'keydown', WH.key);
+    on(d, 'pointerup', WH.handOff, true); on(d, 'pointercancel', WH.handOff, true); ohWire(d, on);
+    on(d.documentElement, 'mouseleave', WH.execOff);
+    on(d, 'visibilitychange', reLive); on(d, 'visibilitychange', function(){ if (d.visibilityState === 'hidden') lcViewFlush(); });
+    on(w, 'pagehide', function(){ if (LV.sat === w) stageDetach(false); });   // its X (or its own reload): Live Charts comes back here
+    STW = L; }
+  // the charts' own elements stay behind (they are made again where Live Charts goes): no canvas changes window - one that does stalled
+  // every window's frames for a third of a second (measured 23 Oct 2026)
+  function stageBare(win){ try { var g = win.querySelector('#stpr-grid'), cw = win.querySelector('#stpr-cw'), mk = win.querySelector('#stpr-mm');
+      if (mk && g && g.contains(mk) && cw) cw.appendChild(mk); if (g) g.innerHTML = ''; } catch (e) {} }
+  function stageUnwire(){ (STW || []).forEach(function(x){ try { x[0].removeEventListener(x[1], x[2], x[3]); } catch (e) {} }); STW = null; }
+  // Live Charts back in this window: the tab, or (another tab showing) here behind it while chart windows still have it
+  function stageDetach(closeIt){ var w = LV.sat; if (!w) return false; LV.sat = null; stageUnwire();
+    var d = SD, win = null; try { win = d.getElementById('stpr-win'); } catch (e) {}
+    try { closeMenu(); } catch (e) {} try { dlgClose(false); } catch (e) {} try { hideCtx(); } catch (e) {}
+    if (S && S.exec) { S.exec = false; S.pv = null; }
+    panes.forEach(function(p){ try { if (p.el && p.el.ownerDocument === d) p.chart.remove(); } catch (e) {} });
+    if (win) stageBare(win);
+    SD = document; SW = window; UI.w = window; FLYW = null; LV.satGhost = null;
+    var host = $('lc-host'), bg = $('stpr-bg');
+    if (win) { try { win = document.adoptNode(win); } catch (e) {} (host || bg).appendChild(win); }
+    LV.max = false; LV.inl = !!host; if (host) LV.host = host; lcTbIn();
+    bg.classList.remove('show', 'max'); bg.setAttribute('aria-hidden', 'true');
+    lcAwayPaint(false); stageHostAll();
+    var tb = document.querySelector('.tab[data-page="livecharts"]'), here = !!(tb && tb.classList.contains('active'));
+    if (S && S.live) { lvClkArm(); if (here || Object.keys(POP).some(function(k){ return popOn(+k); })) { rebuild(); if (here) { LV.snap = true; setTimeout(function(){ LV.snap = false; lcSnap(); }, 60); } } else lcStop(); }
+    else if (S) rebuild();
+    stopLoop(); if (S) startLoop();
+    if (closeIt) { try { w.close(); } catch (e) {} }
+    try { lcModePaint(); } catch (e) {}
+    return true; }
+  // this app window going (closed or reloaded): that window keeps a still picture of its charts; it is told the chart windows that were out
+  // and the symbol, for the app it becomes if this window does not come back (livecharts.html)
+  // Its handlers are left on (they do nothing now): taking them off while this window closes kept it from closing (23 Oct 2026, measured).
+  // Nothing of this window's keeps running on that one's timers either (its frame loop, the live clock): this window is going.
+  function stageLetGo(gs){ var w = LV.sat; if (!w) return;
+    stopLoop(); clearLiveT();
+    panes.forEach(function(p){ if (p.el && p.el.ownerDocument === SD && p.chart) paneFreeze(p, w); });
+    try { w.__stOut = gs || []; w.__stSym = S && S.sym ? S.sym.raw : (CFG.sym || ''); w.__stFree = 1; } catch (e) {}
+    LV.sat = null; }
   /* The charts already out in windows of their own go along to Live Charts' window (Nestor, 22 Oct 2026: with charts 2 and 3 out in
      windows, Live Charts sent to a window too "ended up giving me 3 charts all together in 1 screen ... there is still a chart that
      shouldnt be there anymore in the app"). They stay live, drawn from here, while that window starts - the chart in this tab hidden
@@ -93276,7 +93388,7 @@ window.__stAZ = (function () {
     try { document.documentElement.style.overflow = 'hidden'; document.title = 'Live Charts · Session Terminal'; } catch (e) {}
     lcTbIn();   // the Toolbox comes along, under the charts (as in MT5)
     goLive(raw || CFG.sym); lcSoloHere(); }
-  function lcHide(){ if (LV.solo) return; if (!LV.inl && !LV.max) return; if (LV.max) inlineMax(false);
+  function lcHide(){ if (LV.solo || LV.sat) return; if (!LV.inl && !LV.max) return; if (LV.max) inlineMax(false);
     // a chart in a window of its own: leaving the tab leaves the charts running, so those windows stay where they were put (Nestor, 21 Oct
     // 2026, Aurora: a snapshot, then Session Bias to paste it, and "her charts dissapear from the other monitors"); back in the tab they
     // are all as they were. With none out, leaving the tab stops the charts as before.
@@ -93296,10 +93408,11 @@ window.__stAZ = (function () {
     // from a Session Live card: that trade's symbol, its timeframe on the first chart
     open: function(o){ o = o || {}; if (window.__stLcAllowed && !window.__stLcAllowed()) return; try { if (o.sym) { var k = canon(o.sym), sy = (SYMS || []).filter(function(x){ return x.key === k; })[0]; LV.want = sy ? sy.raw : o.sym; }
         if (o.tf && TFS.indexOf(+o.tf) >= 0) { CFG.tfs[0] = +o.tf; save(); } } catch (e) {}
+      if (stageOn() && S && S.live) { var ws = LV.want; LV.want = null; try { LV.sat.focus(); } catch (e) {} if (ws && ws !== S.sym.raw) goLive(ws); else if (o.tf) setTf(0, +o.tf); return; }   // Live Charts in its own window: there
       var tb = document.querySelector('.tab[data-page="livecharts"]');
       if (tb && tb.classList.contains('active') && S && S.live) { var w = LV.want; LV.want = null; if (w && w !== S.sym.raw) goLive(w); else if (o.tf) setTf(0, +o.tf); return; }
       if (tb) tb.click(); },
-    visible: function(){ return !!(((S && S.live && (LV.inl || LV.max)) || (((S && S.today) || LV.tdWant) && isOpen())) && !document.hidden); },   // + Back Testing's today
+    visible: function(){ return !!(((S && S.live && (LV.inl || LV.max)) || (((S && S.today) || LV.tdWant) && isOpen())) && !(SD !== document ? SD.hidden : document.hidden)); },   // + Back Testing's today; Live Charts' own window: that one on screen
     // the charts' symbols as their EAs name them, chart 1's first ("watch" carries them; each EA streams its own)
     sym: function(){ if (!lvData()) return ''; var a = []; allFeeds().forEach(function(F){ if (F.ea && a.indexOf(F.ea.raw) < 0) a.push(F.ea.raw); }); return a.join(','); },
     px: lvPx, bars: lvBars, q: wlQ, symlist: wlSymlist, set: lvSet, acct: tbAcct, dhist: tbDhist, acc: function(){ return tbEA(); },
@@ -93328,12 +93441,12 @@ window.__stAZ = (function () {
     $('stpr-win').addEventListener('click', WH.win = function(e){
       var t = e.target; if (!(t.closest && t.closest('.stpr-tg'))) flyShut();   // a click anywhere else closes a tools group
       if (t.closest && t.closest('#stpr-keysbtn')) { keysMenu($('stpr-keysbtn')); return; }
-      if (!(t.closest && t.closest('.stpr-sattf'))) [document].concat(popDocs()).forEach(function(d){ d.querySelectorAll('.stpr-sattf .stpr-ptfw.open').forEach(function(x){ x.classList.remove('open'); }); });   // a click anywhere else closes the top bar's timeframes
+      if (!(t.closest && t.closest('.stpr-sattf'))) allDocs().forEach(function(d){ d.querySelectorAll('.stpr-sattf .stpr-ptfw.open').forEach(function(x){ x.classList.remove('open'); }); });   // a click anywhere else closes the top bar's timeframes
       if (t.closest && t.closest('#stpr-lvrp')) { lvReplay(); return; }
       if (t.closest && t.closest('#stpr-lvback')) { lvBack(); return; }
       var pcb = t.closest && t.closest('[data-popc]'); if (pcb) { popToggle(+pcb.getAttribute('data-popc')); return; }
       var tfb = t.closest && t.closest('.stpr-tfpill'); if (tfb) { var w0 = tfb.parentNode, was = w0.classList.contains('open');
-        [document].concat(popDocs()).forEach(function(d){ d.querySelectorAll('.stpr-ptfw.open').forEach(function(x){ if (x !== w0) x.classList.remove('open'); }); }); w0.classList.toggle('open', !was); if (!was && $('stpr-tb2').classList.contains('drawing')) drawerOpen(false); return; }   // pressed again: closed (in a chart window too); opened, the drawing tools close (Nestor, 17 Oct 2026: "if objects are open and i open TFs close objects inmediately and viceversa")
+        allDocs().forEach(function(d){ d.querySelectorAll('.stpr-ptfw.open').forEach(function(x){ if (x !== w0) x.classList.remove('open'); }); }); w0.classList.toggle('open', !was); if (!was && $('stpr-tb2').classList.contains('drawing')) drawerOpen(false); return; }   // pressed again: closed (in a chart window too); opened, the drawing tools close (Nestor, 17 Oct 2026: "if objects are open and i open TFs close objects inmediately and viceversa")
       var tfa = t.closest && t.closest('[data-tfadd]'); if (tfa) { tfAddMenu(+tfa.getAttribute('data-tfadd') || 0, tfa); return; }   // a custom timeframe
       var tfu = t.closest && t.closest('[data-tfu]'); if (tfu) { TFC.u = +tfu.getAttribute('data-tfu') === 60 ? 60 : 1; tfu.parentNode.querySelectorAll('[data-tfu]').forEach(function(b){ b.classList.toggle('on', b === tfu); }); var ni = mEl().querySelector('#stpr-tfn'); if (ni) try { ni.focus(); } catch (er) {} return; }
       var tfo = t.closest && t.closest('[data-tfok]'); if (tfo) { tfAddGo(+tfo.getAttribute('data-tfok') || 0); return; }
@@ -93449,10 +93562,10 @@ window.__stAZ = (function () {
       var mz3 = !h && showOn(p, 'mini') && miniOn('zone', p) && p._mz; if (mz3 && xy.x >= mz3.x0 && xy.x <= mz3.x1 && xy.y >= mz3.y0 && xy.y <= mz3.y1) { e.preventDefault(); e.stopPropagation(); miniDialog(null, p); } }, true);
     window.addEventListener('mousemove', dwMove);
     window.addEventListener('mouseup', dwUp);
-    document.addEventListener('touchstart', function(e){ if (isOpen() && e.target && e.target.closest && e.target.closest('.stpr-pathok')) { dwDown(e); return; }   // a path's Done (beside the chart's surface)
+    document.addEventListener('touchstart', WH.tst = function(e){ if (isOpen() && e.target && e.target.closest && e.target.closest('.stpr-pathok')) { dwDown(e); return; }   // a path's Done (beside the chart's surface)
       DW.tin = !!(isOpen() && paneOf(e)); if (DW.tin) dwDown(e); }, { passive: false, capture: true });
-    document.addEventListener('touchmove', function(e){ if (!isOpen() || !DW.tin) return; if ((DW.penning || DW.pending || DW.drag || DW.marq || DW.tool !== 'none') && e.cancelable) e.preventDefault(); dwMove(e); }, { passive: false, capture: true });
-    document.addEventListener('touchend', function(e){ if (!isOpen()) return; if ((DW.penning || DW.pending || DW.drag || DW.marq) && e.cancelable) e.preventDefault(); dwUp(e); }, { passive: false, capture: true });
+    document.addEventListener('touchmove', WH.tmv = function(e){ if (!isOpen() || !DW.tin) return; if ((DW.penning || DW.pending || DW.drag || DW.marq || DW.tool !== 'none') && e.cancelable) e.preventDefault(); dwMove(e); }, { passive: false, capture: true });
+    document.addEventListener('touchend', WH.tend = function(e){ if (!isOpen()) return; if ((DW.penning || DW.pending || DW.drag || DW.marq) && e.cancelable) e.preventDefault(); dwUp(e); }, { passive: false, capture: true });
     document.addEventListener('contextmenu', WH.ctx = function(e){ if (!isOpen()) return; var p = paneOf(e), box = e.target && e.target.closest && e.target.closest('.stdb-bar,.stdb-pop,.stpr-ctx'); if (!p && !box) return; e.preventDefault(); if (!p) return;
       if (DW.pending && DW.pending.type === 'path') { pathDone(); hideCtx(); return; }   // a path being drawn ends where it is
       if (DW.tool !== 'none') { DW.pending = null; DW.penning = null; setTool('none'); hideCtx(); return; }
@@ -93460,15 +93573,15 @@ window.__stAZ = (function () {
       if (!h) { hideCtx(); if (DW.sel != null || (DW.multi && DW.multi.length)) { DW.sel = null; DW.multi = null; updDel(); } DW.at = p; return; }   // the bare chart: no menu - an alert is the + by the price (23 Oct 2026)
       if (!(DW.multi && DW.multi.indexOf(h.i) >= 0)) { DW.sel = h.i; DW.multi = null; } DW.at = p; updDel(); showCtx(p, xy.x, xy.y); }, true);
     window.addEventListener('keyup', WH.kup = function(e){ if (e.key === 'Control' && DW.snap) { DW.snap = null; dirty(); } });
-    window.addEventListener('resize', function(){ try { cmpBtnPlace(); } catch (e) {} if (LOG.open) logTop(); stripThumb(); placeMM(); lcFit(); });
+    window.addEventListener('resize', WH.rsz = function(){ try { cmpBtnPlace(); } catch (e) {} if (LOG.open) logTop(); stripThumb(); placeMM(); lcFit(); });
     window.addEventListener('orientationchange', function(){ setTimeout(function(){ try { placeMM(); } catch (e) {} }, 300); });
     // Execution mode ends when the mouse leaves the window - off the app, onto another monitor - or the app loses the focus,
     // as the EA disarms it when the cursor leaves the chart (Nestor, 17 Oct 2026: "when the mouse goes off the screen to a
     // different monitor or outside the app the execution mode should turn off"). The panel counts as the chart, as on MT5.
     var execOff = WH.execOff = function(){ if (isOpen() && S.exec) toggleExec(false); };
     $('stpr-win').addEventListener('mouseleave', execOff);
-    document.documentElement.addEventListener('mouseleave', execOff);
-    window.addEventListener('blur', execOff);
+    document.documentElement.addEventListener('mouseleave', function(){ if (SD === document) execOff(); });   // (Live Charts in its own window: that window's own)
+    window.addEventListener('blur', function(){ if (SD === document) execOff(); });
     var handOff = WH.handOff = function(){ panes.forEach(function(p){ if (p.hand) { p.hand = false; p.handAt = Date.now(); } }); };   // one listener for every chart
     document.addEventListener('pointerup', handOff, true); document.addEventListener('pointercancel', handOff, true);
     ohWire(document);   // the O H L C line: a candle clicked on
@@ -93490,8 +93603,9 @@ window.__stAZ = (function () {
     tr.addEventListener('change', function(e){ if (e.target.id === 'stpr-stop' || e.target.id === 'stpr-tgt') save(); });
     document.addEventListener('keydown', WH.key = function(e){
       if (!S || !isOpen()) return;
+      if (SD !== document && ((e.target && e.target.ownerDocument) || document) === document) return;   // Live Charts in its own window: keys pressed in the app are the app's
       if (LV.inl && !($('page-livecharts') && $('page-livecharts').classList.contains('active'))) return;
-      if (e.key === 'Escape' && LV.max && !LV.solo && !menuFor && DW.tool === 'none' && DW.sel == null) { inlineMax(false); e.preventDefault(); return; }
+      if (e.key === 'Escape' && LV.max && !LV.solo && !LV.sat && !menuFor && DW.tool === 'none' && DW.sel == null) { inlineMax(false); e.preventDefault(); return; }
       var tg = e.target, typing = tg && (tg.tagName === 'INPUT' || tg.tagName === 'TEXTAREA' || tg.tagName === 'SELECT');
       if ((e.key === 'Escape' || e.key === 'Enter') && !typing && DW.pending && DW.pending.type === 'path') { e.preventDefault(); pathDone(); return; }   // a path being drawn ends where it is (before Enter's execution key)
       // the panel's execution key being set, and Enter in execution mode
@@ -93547,7 +93661,7 @@ window.__stAZ = (function () {
       setTimeout(go1, 300);
     }
   } catch (e) {}
-  window.__stPractice = { open: open, close: close, _lv: function(){ return LV; }, _goLive: goLive, _lvClock: function(ms){ LV.toff = ms || 0; }, _liveDay: liveDay, stats: stats, log: logAll, pull: pull, _satReady: satReady, _lcBye: lcBye, _satHandOver: lcHandOver, _satExpect: function(){ return LV.expect; }, _satHas: function(w, i){ var o = POP[i]; return !!(o && o.w === w); }, _dayLocked: function(){ return lvDayLocked(); }, _lvEmsg: function(p){ lvEmsg(p); }, _pullCfg: pullCfg, _pushCfg: pushCfg, _save: function(){ save(); }, _lcAway: function(w){ if (LV.solo || LCW || !w || LV.popW === w) return; lcAwaySet(w); }, _wsr: { get: wsrGet, set: wsrSet, open: wsrOpenAll, start: wsrStart, st: function(){ return WSR; }, setup: wsrSetup, steps: wsrSteps, popCheck: wsrPopCheck },
+  window.__stPractice = { open: open, close: close, _lv: function(){ return LV; }, _goLive: goLive, _lvClock: function(ms){ LV.toff = ms || 0; }, _liveDay: liveDay, stats: stats, log: logAll, pull: pull, _satReady: satReady, _stageReady: stageReady, _stageHas: function(w){ return LV.sat === w; }, _stage: function(){ return { on: stageOn(), sd: SD !== document }; }, _stageDetach: stageDetach, _win: function(){ return window; }, _lcBye: lcBye, _satHandOver: lcHandOver, _satExpect: function(){ return LV.expect; }, _satHas: function(w, i){ var o = POP[i]; return !!(o && o.w === w); }, _dayLocked: function(){ return lvDayLocked(); }, _lvEmsg: function(p){ lvEmsg(p); }, _pullCfg: pullCfg, _pushCfg: pushCfg, _save: function(){ save(); }, _lcAway: function(w){ if (LV.solo || LCW || !w || LV.popW === w) return; lcAwaySet(w); }, _wsr: { get: wsrGet, set: wsrSet, open: wsrOpenAll, start: wsrStart, st: function(){ return WSR; }, setup: wsrSetup, steps: wsrSteps, popCheck: wsrPopCheck },
     _pop: popChart, _unpop: unpop, _lcPop: lcPopOut, _lcSolo: lcSolo, _zoom: function(i, r){ var p = panes[i]; if (!p) return; p.handAt = Date.now(); setRange(p, r); }, _axl: function(i, k){ var p = panes[i]; return p && p.series && p.series.__stAx ? p.series.__stAx.get(k || 'cd') : null; }, _lvv: function(){ return panes.map(function(p){ try { return p.series.options().lastValueVisible; } catch (e) { return null; } }); }, _pops: function(){ return POP; }, _liveWin: liveWin, _reLive: reLive,
     _setPaneSym: setPaneSym, _ps: PS, _feeds: feeds, _loadSyms: function(){ return loadSymbols(); }, _today: goToday, _dwListOf: dwListOf, _dwRaw: function(){ return DW.raw; },
     _alertsMenu: alertsMenu, _logSync: logSync, _treeMenu: treeMenu, _lockSel: lockSel, _emojis: EMOJIS, _satBar: satBar, _mEl: mEl, _eaNewest: eaNewest, _vpCalc: vpCalc, _vol: function(){ return VOL; }, _volNoHist: volNoHist, _static: function(){ return staticCache; }, _volMerge: volMerge,
@@ -93567,7 +93681,7 @@ window.__stAZ = (function () {
     // the member's own timeframes, shared with Trade Replay (19 Oct 2026)
     ctfList: function(){ return (CFG.ctf || []).filter(function(n){ return !!TFL[n]; }).slice().sort(function(a, b){ return a - b; }); }, ctfLbl: tfLbl,
     ctfAdd: function(n){ n = Math.round(+n); if (!(n >= 1 && n <= 1440)) return false; if (TF_STD.indexOf(n) >= 0) return true; tfReg(n); if ((CFG.ctf || []).indexOf(n) < 0) { CFG.ctf = (CFG.ctf || []).concat([n]); save(); } return true; },
-    ctfDel: function(n){ if ((CFG.ctf || []).indexOf(n) < 0) return; if (S) { tfDel(n); return; } CFG.ctf = CFG.ctf.filter(function(x){ return x !== n; }); (CFG.tfs || []).forEach(function(tf, k){ if (tf === n) CFG.tfs[k] = TF_STD.filter(function(x){ return x <= n; }).pop() || 1; }); tfUnreg(n); save(); }, _tfReg: tfReg, _tfDel: tfDel, _tfAddMenu: function(i){ var b = document.querySelector('.stpr-tfadd[data-tfadd="' + (i || 0) + '"]'); if (b) tfAddMenu(i || 0, b); return !!b; }, _tfs: function(){ return { TFS: TFS.slice(0), TFL: TFL, SRC: SRC, LOOK: LOOK, SHOW: SHOW }; },
+    ctfDel: function(n){ if ((CFG.ctf || []).indexOf(n) < 0) return; if (S) { tfDel(n); return; } CFG.ctf = CFG.ctf.filter(function(x){ return x !== n; }); (CFG.tfs || []).forEach(function(tf, k){ if (tf === n) CFG.tfs[k] = TF_STD.filter(function(x){ return x <= n; }).pop() || 1; }); tfUnreg(n); save(); }, _tfReg: tfReg, _tfDel: tfDel, _tfAddMenu: function(i){ var b = SD.querySelector('.stpr-tfadd[data-tfadd="' + (i || 0) + '"]'); if (b) tfAddMenu(i || 0, b); return !!b; }, _tfs: function(){ return { TFS: TFS.slice(0), TFL: TFL, SRC: SRC, LOOK: LOOK, SHOW: SHOW }; },
     _lvTr: function(rows){ LTR.rows = (rows || []).map(lvTrNorm).filter(Boolean); LTR.at = Date.now(); if (S && S.live) render(); }, _tmAt: function(i, x, y){ return tmAt(panes[i || 0], x, y); }, _rtGo: function(i){ rtGo(panes[i || 0]); }, _rtOff: function(i){ return rtOff(panes[i || 0]); }, _tmCardText: function(i, tk){ var p = panes[i || 0], x = p && lvTrList(PS(p)).filter(function(q){ return q.ticket === String(tk); })[0]; if (!x) return null; var c = document.createElement('div'); tmCard(p, { g: { list: [x] }, x: 100, top: 100, bot: 110, above: true }, c); return c.textContent; }, _tmk: function(i){ var p = panes[i || 0]; return p ? p._tmk : null; }, _arw: function(i){ var p = panes[i || 0]; return (p && p.series.__stArw) ? p.series.__stArw.items : []; } };
 })();
 </script>

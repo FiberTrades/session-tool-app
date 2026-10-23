@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Live Charts · Session Terminal</title>
+<style>html, body { margin: 0; height: 100%; overflow: hidden; background: #121116; }</style>
+</head>
+<body>
+<script>
+// Live Charts in a window of its own (Nestor, 23 Oct 2026: it used to be a second copy of the app starting up, and his other chart
+// windows paused while it did - "do this"). The app window that opened it draws all of Live Charts in here - its bars, the charts, the
+// EA panel, the Toolbox - as it draws a chart window, so nothing starts again when it opens or closes.
+// If that app window closes, this page becomes the app itself (?livecharts=1, with Live Charts alone in it, as it was before) and keeps
+// the chart windows; if it reloads, the new app window takes this one again (after 20 s with none, this page becomes the app itself too).
+(function () {
+  var q = new URLSearchParams(location.search), sym = q.get('sym') || '', P = null, lost = 0, booting = false;
+  // the app window's charts opened from here: this window opens them (a click here allows it), the app window draws them
+  window.__stOpen = function (u, n, f) { return window.open(u, n, f); };
+  function full() { if (booting) return; booting = true;
+    var s = window.__stSym || sym, out = (window.__stOut || []).filter(function (k) { return k >= 1 && k <= 7; });
+    window.__stPractice = null;
+    location.replace('app.html?livecharts=1' + (s ? '&sym=' + encodeURIComponent(s) : '') + (out.length ? '&out=' + out.join(',') : '')); }
+  if (!window.opener) { full(); return; }
+  function tick() {
+    var op = null, gone = true; try { op = window.opener; gone = !op || op.closed; } catch (e) {}
+    if (gone) { full(); return true; }   // the app window closed: this one becomes it
+    if (P) { var keep = false; try { keep = !window.__stFree && op.__stPractice === P && P._stageHas(window); } catch (e) {}
+      if (keep) { lost = 0; return false; }
+      P = null; window.__stPractice = null; if (!lost) lost = Date.now(); }   // let go (the app window going), or it is another app now
+    var p = null, r = null; try { p = op.__stPractice; } catch (e) {}
+    try { if (p && p._stageReady) r = p._stageReady(window, window.__stSym || sym); } catch (e) {}
+    if (r === true) { P = p; window.__stPractice = p; window.__stFree = 0; lost = 0; return false; }   // chart windows opened from here find it here
+    if (r === false) { window.close(); return true; }
+    if (!lost) lost = Date.now();
+    if (Date.now() - lost > 20000) { full(); return true; }   // no app window takes it: it becomes one
+    return false; }
+  // every quarter second until it is drawn, every second after
+  function loop() { var stop = false; try { stop = tick(); } catch (e) {} if (!stop) setTimeout(loop, P ? 1000 : 250); }
+  window.__stAskNow = function () { try { tick(); } catch (e) {} };   // its look and chart library are in: ask again at once
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', loop); else loop();
+})();
+</script>
+</body>
+</html>

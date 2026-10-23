@@ -207,6 +207,11 @@ def main():
         except Exception:
             pass
         mob = os.environ.get('E2E_MOBILE', '')   # e.g. 375x812: a phone's screen, with touch (22 Oct 2026)
+        if not mob:
+            # the window's size set here, not left to the desktop: with the monitor off Windows shrank the headless window to 500 x 320
+            # (23 Oct 2026, a night run) and every layout check failed
+            try: cdp.call('Emulation.setDeviceMetricsOverride', width=1280, height=1000, deviceScaleFactor=1, mobile=False)
+            except Exception: pass
         if mob:
             try:
                 mw, mh = [int(v) for v in mob.lower().split('x')]
