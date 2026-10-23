@@ -49064,6 +49064,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
         renderCalendarFromCache();
       }
       try { if (window.__stNudge && typeof window.__stNudge.results === 'function') window.__stNudge.results(rows); } catch (e) { /* non-fatal */ }
+      try { if (window.__stPractice && window.__stPractice._newsActuals) window.__stPractice._newsActuals(rows); } catch (e) { /* non-fatal */ }   // the charts' news discs (newsMerge)
       return { rows: rows.length, changed: changed };
     } catch (e) { _calAct.busy = false; return null; }
   }
@@ -91608,9 +91609,38 @@ window.__stAZ = (function () {
     if (!S) return; var key = S.day, sb = sbc(); if (NEWS.key === key) return; NEWS.key = key; NEWS.rows = [];
     if (!sb || !uidNow()) return;
     try { var r = await sb.from('calendar_events').select('at,currency,title,impact,forecast,previous,actual').gte('at', new Date((S.f.open - 3 * 3600) * 1000).toISOString()).lt('at', new Date(S.f.close * 1000).toISOString()).order('at', { ascending: true });
-      if (r && !r.error && S && S.day === key) NEWS.rows = r.data || []; } catch (e) {}
+      if (r && !r.error && S && S.day === key) { NEWS.rows = r.data || []; NEWS.at = Date.now(); } } catch (e) {}
     drawAll();
   }
+  /* A release's figure lands minutes after it (actuals-quick fills calendar_events about 3, 8 and 18 minutes on), so the discs
+     read it as it comes - no reopening the chart (Nestor, 23 Oct 2026: "make sure the news dots on the charts are updated instantly
+     and dont rely on me having to manually reload the charts"). Live Charts' clock asks newsTick every second; it reads the table
+     on the calendar's timing (every 15 s from 2 to 22 minutes after a red or orange release with a forecast, then each minute to
+     45, then every 5 minutes for 4 hours for a corrected figure), unless the calendar has just read it and handed the rows over
+     (newsActuals, from _calActualsFromDb). */
+  function newsMerge(rows){ if (!rows || !rows.length || !NEWS.rows.length) return 0; var by = {}, n = 0;
+    var k = function(r){ var d = new Date(r.at); return (isNaN(d) ? String(r.at) : d.toISOString()) + '|' + String(r.currency || '').toUpperCase() + '|' + (r.title || ''); };
+    rows.forEach(function(r){ if (r) by[k(r)] = r; });
+    NEWS.rows.forEach(function(e){ var r = by[k(e)]; if (!r) return;
+      ['actual', 'forecast', 'previous'].forEach(function(f){ var v = r[f]; if (v != null && v !== '' && e[f] !== v) { e[f] = v; n++; } }); });
+    if (n) { dirty(); panes.forEach(function(p){ try { if (p.card && p.card.style.display === 'block' && p._ncHit) newsCard(p, p._ncHit); } catch (e) {} }); }   // an open card shows it too
+    return n; }
+  function newsActuals(rows){ if (!S || !S.live) return 0; NEWS.at = Date.now(); return newsMerge(rows); }
+  function newsEvery(){ var now = Date.now(), every = 0;
+    NEWS.rows.forEach(function(e){ var c = impCls(e.impact); if (c === 'hol' || !/high|medium/i.test(String(e.impact || ''))) return;
+      if (!/\d/.test(e.forecast || '') && !/\d/.test(e.previous || '')) return;
+      var age = now - Date.parse(e.at), has = e.actual != null && e.actual !== '', want = 0; if (!(age >= 0)) return;
+      if (!has && age >= 2 * 60000 && age <= 22 * 60000) want = 15000;
+      else if (!has && age > 22 * 60000 && age <= 45 * 60000) want = 60000;
+      else if (c === 'high' && age <= 4 * 3600000) want = 5 * 60000;
+      if (want && (!every || want < every)) every = want; });
+    return every; }
+  async function newsTick(){ if (!S || !S.live || NEWS.busy || !NEWS.rows.length || NEWS.key !== S.day) return;
+    var every = newsEvery(); if (!every || Date.now() - (NEWS.at || 0) < every - 1000) return;
+    var sb = sbc(), key = S.day; if (!sb || !uidNow()) return; NEWS.busy = true; NEWS.at = Date.now();
+    try { var r = await sb.from('calendar_events').select('at,currency,title,impact,forecast,previous,actual').gte('at', new Date((S.f.open - 3 * 3600) * 1000).toISOString()).lt('at', new Date(S.f.close * 1000).toISOString());
+      if (r && !r.error && S && S.day === key) newsMerge(r.data || []); } catch (e) {}
+    NEWS.busy = false; }
   function impCls(imp){ var s = String(imp || '').toLowerCase(); return /holiday/.test(s) ? 'hol' : (/high/.test(s) ? 'high' : 'med'); }
   function impRank(e){ var c = impCls(e.impact); return c === 'high' ? 2 : (c === 'med' ? 1 : 0); }
   function drawNews(p, g, pw, ph){
@@ -91643,8 +91673,9 @@ window.__stAZ = (function () {
   function newsAt0(p, x, y){ var best = null, bd = 1e9; (p._news || []).forEach(function(h){ var dx = Math.abs(h.x - x), dy = Math.abs(h.y - y); if (dx <= 11 && dy <= 11 && dx * dx + dy * dy < bd) { bd = dx * dx + dy * dy; best = h; } }); return best; }
   function newsCard(p, hit){
     var c = p.card; if (!c) return; var tm0 = p._tmShow ? p._tmShow.e : null; p._tmShow = (hit && hit.tm) ? hit : null; if (tm0 !== (p._tmShow ? p._tmShow.e : null)) dirty();   // its path on the chart
-    if (!hit) { c.style.display = 'none'; return; }
-    if (hit.tm) { tmCard(p, hit, c); return; }
+    if (!hit) { p._ncHit = null; c.style.display = 'none'; return; }
+    if (hit.tm) { p._ncHit = null; tmCard(p, hit, c); return; }
+    p._ncHit = hit;   // a figure that lands while it is open is shown in it (newsMerge)
     var e = hit.e, t = Math.floor(Date.parse(e.at) / 1000), list = hit.list || [e], many = list.length > 1;
     var grid = function(x){ return impCls(x.impact) === 'hol' ? '' : '<div class="strp-nc-grid">' + [[T('Actual', 'Real'), x.actual], [T('Forecast', 'Previsión'), x.forecast], [T('Previous', 'Anterior'), x.previous]].map(function(r){ return '<div class="strp-nc-k">' + esc(r[0]) + '</div><div class="strp-nc-v">' + esc(r[1] == null || r[1] === '' ? '—' : r[1]) + '</div>'; }).join('') + '</div>'; };
     var when = '<div class="strp-nc-when">' + esc(dshort(new Date(t * 1000)) + ' ' + hm(t)) + (many ? ' · ' + T(list.length + ' releases', list.length + ' publicaciones') : '') + '</div>';
@@ -92825,6 +92856,7 @@ window.__stAZ = (function () {
     var gsg = (S.ea ? 1 : 0) + '|' + (lvFresh(S) ? 1 : 0) + '|' + (nowS() >= S.f.close ? 1 : 0) + '|' + ((S.ea && S.ea.raw) || S.sym.name);
     if (!LV.grAt || Date.now() - LV.grAt > 5000 || LV.grSig !== gsg) { LV.grAt = Date.now(); LV.grSig = gsg; try { if (window.__stLiveGreet) window.__stLiveGreet(); } catch (e) {} }   // the Assistant's line above the charts
     if (Date.now() - (LV.paAt || 0) > 60000) lvAlertsPull();
+    newsTick();   // a release's figure as it lands
     lvTrTick();   // the closed trades' arrows
     lvAlgoTick();   // MT5's Algo Trading off (EA 9.06)
   }
@@ -93683,6 +93715,8 @@ window.__stAZ = (function () {
     ctfList: function(){ return (CFG.ctf || []).filter(function(n){ return !!TFL[n]; }).slice().sort(function(a, b){ return a - b; }); }, ctfLbl: tfLbl,
     ctfAdd: function(n){ n = Math.round(+n); if (!(n >= 1 && n <= 1440)) return false; if (TF_STD.indexOf(n) >= 0) return true; tfReg(n); if ((CFG.ctf || []).indexOf(n) < 0) { CFG.ctf = (CFG.ctf || []).concat([n]); save(); } return true; },
     ctfDel: function(n){ if ((CFG.ctf || []).indexOf(n) < 0) return; if (S) { tfDel(n); return; } CFG.ctf = CFG.ctf.filter(function(x){ return x !== n; }); (CFG.tfs || []).forEach(function(tf, k){ if (tf === n) CFG.tfs[k] = TF_STD.filter(function(x){ return x <= n; }).pop() || 1; }); tfUnreg(n); save(); }, _tfReg: tfReg, _tfDel: tfDel, _tfAddMenu: function(i){ var b = SD.querySelector('.stpr-tfadd[data-tfadd="' + (i || 0) + '"]'); if (b) tfAddMenu(i || 0, b); return !!b; }, _tfs: function(){ return { TFS: TFS.slice(0), TFL: TFL, SRC: SRC, LOOK: LOOK, SHOW: SHOW }; },
+    _newsActuals: newsActuals, _news: function(){ return NEWS; }, _newsEvery: newsEvery, _newsTick: newsTick,
+    _newsCard: function(i, k){ var p = panes[i || 0]; if (!p) return null; var h = k == null ? null : (p._news || [])[k]; newsCard(p, h || null); return h ? (p.card ? p.card.textContent : '') : null; },
     _lvTr: function(rows){ LTR.rows = (rows || []).map(lvTrNorm).filter(Boolean); LTR.at = Date.now(); if (S && S.live) render(); }, _tmAt: function(i, x, y){ return tmAt(panes[i || 0], x, y); }, _rtGo: function(i){ rtGo(panes[i || 0]); }, _rtOff: function(i){ return rtOff(panes[i || 0]); }, _tmCardText: function(i, tk){ var p = panes[i || 0], x = p && lvTrList(PS(p)).filter(function(q){ return q.ticket === String(tk); })[0]; if (!x) return null; var c = document.createElement('div'); tmCard(p, { g: { list: [x] }, x: 100, top: 100, bot: 110, above: true }, c); return c.textContent; }, _tmk: function(i){ var p = panes[i || 0]; return p ? p._tmk : null; }, _arw: function(i){ var p = panes[i || 0]; return (p && p.series.__stArw) ? p.series.__stArw.items : []; } };
 })();
 </script>
