@@ -485,6 +485,18 @@
     // zoomed again and Live Charts left at once, its save still waiting: saved as the charts go, not lost with them (19 Oct 2026)
     zl = zp.n - 1; P._zoom(0, { from: zl - 76, to: zl + 4 });
     for (k = 0; k < 80; k++) { await W(50); zr0 = zp.chart.timeScale().getVisibleLogicalRange(); if (zp._vt && zr0 && Math.abs(zr0.to - zr0.from - 80) < 1.5) break; }
+    // the panel folded stays folded, in and out of the tab (Nestor, 23 Oct 2026: "the EA needs to remember if i collapse or if i minimise
+    // it ... everytime i leave the tab and come back the EA is always open all the way down the chart")
+    var mmFolded = function () { return !!document.getElementById('stpr-mm') && !document.querySelector('#stpr-mm .stpr-mm-b'); };
+    var mmBack = async function () { document.querySelector('.tab[data-page="trades"]').click(); for (k = 0; k < 60 && P._panes().length; k++) await W(50); await W(300);
+      document.querySelector('.tab[data-page="livecharts"]').click(); for (k = 0; k < 80 && !(LC._mmLive() && P._panes().length && P._panes()[0].n > 30); k++) await W(200); await W(800); };
+    document.querySelector('#stpr-mm [data-mm="col"]').click(); await W(300);
+    check('the panel folded with its −', mmFolded());
+    await mmBack();
+    check('...Live Charts left and opened again (the EA\'s settings put in afresh): still folded', LC._mmLive() && mmFolded(), [LC._mmLive(), mmFolded()]);
+    document.querySelector('#stpr-mm [data-mm="col"]').click(); await W(300);
+    await mmBack();
+    check('...opened with its +, left and back: still open', LC._mmLive() && !mmFolded(), [LC._mmLive(), mmFolded()]);
     document.querySelector('.tab[data-page="trades"]').click();
     for (k = 0; k < 60 && P._panes().length; k++) await W(50);
     var zf = null; try { zf = JSON.parse(localStorage.getItem('st_lc_view') || '{}')['0|' + zp.tf]; } catch (e) {}

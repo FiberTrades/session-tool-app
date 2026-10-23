@@ -179,7 +179,7 @@ def main():
         L.call('Page.addScriptToEvaluateOnNewDocument', source='window.__stLcForce = true;'); ev(L, 'window.__stLcForce = true; 1')
         watch('Live Charts to its own window again', ids, L, 40, done)
         ev(L, 'window.close(); 1')
-        watch("Live Charts' window closed by hand", ids, M, 40, done_m)
+        watch("Live Charts' window closed by hand", ids, M, 40, done_m, max_still=1.0)
         check('...Live Charts back in the app with charts 2 and 3 still in their windows', ev(M, done_m), where(M))
 
         # 5. once more to its own window, then the app itself closed: Live Charts' window and its chart windows stay as they are
