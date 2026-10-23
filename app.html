@@ -87808,6 +87808,13 @@ window.__stAZ = (function () {
   .stpr-grid { position: absolute; inset: 0; display: grid; gap: 2px; background: var(--border); }
   /* the arrangement: layApply sets the columns, the rows and each chart's cell (LAYS) */
   .stpr-grid { grid-template-columns: var(--gc, 1fr); grid-template-rows: var(--gr, 1fr); }
+  /* a border between two charts: drag it to resize them (layHandles) */
+  .stpr-gh { position: absolute; z-index: 7; touch-action: none; }
+  .stpr-gh.c { width: 8px; margin-left: -4px; cursor: col-resize; } .stpr-gh.r { height: 8px; margin-top: -4px; cursor: row-resize; }
+  .stpr-gh::after { content: ''; position: absolute; background: transparent; transition: background .12s; }
+  .stpr-gh.c::after { left: 3px; width: 2px; top: 0; bottom: 0; } .stpr-gh.r::after { top: 3px; height: 2px; left: 0; right: 0; }
+  @media (hover: hover) { .stpr-gh:hover::after { background: var(--accent); } }
+  .stpr-gh.on::after { background: var(--accent); }
   .stpr-grid > .stpr-pane { grid-column: var(--pc, auto); grid-row: var(--pr, auto); }
   .stpr-pane { position: relative; background: #121116; min-width: 0; min-height: 0; touch-action: none; }
   .stpr-pc { position: absolute; inset: 0; }
@@ -88874,7 +88881,7 @@ window.__stAZ = (function () {
      zoom) put its whole old block back over the PC's. Now each setting carries the time it was last changed (_kt) and each one goes the
      way of the newer; they are read again when the app comes back into view; and the ones that belong to the device stay its own (how
      many charts, full screen, the chart in hand). */
-  var CFG_LOCAL = { recent: 1, max: 1, layout: 1, lv: 1, act: 1, savedAt: 1, _kt: 1, _kt0: 1 };
+  var CFG_LOCAL = { recent: 1, max: 1, layout: 1, lv: 1, lsz: 1, act: 1, savedAt: 1, _kt: 1, _kt0: 1 };
   function cfgKt(){ if (!CFG._kt || typeof CFG._kt !== 'object') { var prev = null; try { prev = JSON.parse(localStorage.getItem(LS_CFG) || 'null'); } catch (e) {} CFG._kt = {}; CFG._kt0 = (prev && prev.savedAt) || CFG.savedAt || 0; } return CFG._kt; }
   // what this save changed, against the last one stored here: those settings are stamped now
   function cfgStamp(){ var kt = cfgKt(), now = Date.now(), cur = cfgPractice(), prev = null; try { prev = JSON.parse(localStorage.getItem(LS_CFG) || 'null'); } catch (e) {} if (!prev) return;
@@ -91856,10 +91863,42 @@ window.__stAZ = (function () {
   var LAYD = { 1: 'x', 2: 'h', 3: 'L', 4: 'x', 5: 'L4', 6: 'g', 7: 'L6', 8: 'g' };
   function layV(n){ var o = LAYS[n]; if (!o) return 'x'; var v = CFG.lv && CFG.lv[n]; return o[v] ? v : LAYD[n]; }
   // the arrangement of the charts in this window, on the charts already there (each keeps its candles and view)
-  function layApply(m){ var g = $('stpr-grid'); if (!g) return; var v = layV(m), L = LAYS[m] && LAYS[m][v], fr = function(a){ return a.map(function(x){ return x + 'fr'; }).join(' '); };
-    g.className = 'stpr-grid l' + m + ' v' + v; g.style.setProperty('--gc', L ? fr(L.c) : '1fr'); g.style.setProperty('--gr', L ? fr(L.r) : '1fr');
+  function layApply(m){ var g = $('stpr-grid'); if (!g) return; var v = layV(m), L = LAYS[m] && LAYS[m][v], fr = function(a){ return a.map(function(x){ return x + 'fr'; }).join(' '); }, Z = L ? laySizes(m, v, L) : null;
+    g.className = 'stpr-grid l' + m + ' v' + v; g.style.setProperty('--gc', L ? fr(Z.c) : '1fr'); g.style.setProperty('--gr', L ? fr(Z.r) : '1fr');
     var k = 0; Array.prototype.forEach.call(g.children, function(el){ if (!el.classList.contains('stpr-pane')) return; var c = L && L.a[k++];
-      el.style.setProperty('--pc', c ? c[0] + ' / span ' + (c[2] || 1) : 'auto'); el.style.setProperty('--pr', c ? c[1] + ' / span ' + (c[3] || 1) : 'auto'); }); }
+      el.style.setProperty('--pc', c ? c[0] + ' / span ' + (c[2] || 1) : 'auto'); el.style.setProperty('--pr', c ? c[1] + ' / span ' + (c[3] || 1) : 'auto'); });
+    try { layHandles(g, L, m, v, Z); } catch (e) {} }
+  /* The borders between the charts drag to resize them, as TradingView's (Nestor, 23 Oct 2026: "when the charts are like this i need to be
+     able to drag the charts borders to resize the charts however i want them to be"): a grip on each border two charts share, and only
+     where they share it; the sizes kept per arrangement on this device (CFG.lsz, as the layout is); a double-click on a border puts
+     that arrangement back as it was. Not on a phone, where the charts are one under another. */
+  function laySizes(m, v, L){ var z = CFG.lsz && CFG.lsz[m + '|' + v]; return { c: (z && Array.isArray(z.c) && z.c.length === L.c.length) ? z.c : L.c, r: (z && Array.isArray(z.r) && z.r.length === L.r.length) ? z.r : L.r }; }
+  function layHandles(g, L, m, v, Z){ Array.prototype.slice.call(g.querySelectorAll('.stpr-gh')).forEach(function(h){ h.remove(); });
+    if (!L || !Z || phone() || getComputedStyle(g).display !== 'grid') return;
+    var cs = Z.c, rs = Z.r, nc = cs.length, nr = rs.length, np = g.querySelectorAll('.stpr-pane').length, occ = {};
+    for (var i = 0; i < np && i < L.a.length; i++) { var a = L.a[i]; for (var x = a[0]; x < a[0] + (a[2] || 1); x++) for (var y = a[1]; y < a[1] + (a[3] || 1); y++) occ[x + ',' + y] = i; }
+    var sum = function(arr, k0, k1){ var t = 0; for (var j = k0; j <= k1; j++) t += arr[j]; return t; }, TC = sum(cs, 0, nc - 1), TR = sum(rs, 0, nr - 1);
+    var at = function(arr, T, n, k, off){ return 'calc((100% - ' + ((n - 1) * 2) + 'px) * ' + (sum(arr, 0, k - 1) / T).toFixed(5) + ' + ' + (k * 2 + off) + 'px)'; };   // where track k (0-based) starts, + off px
+    var len = function(arr, T, n, k0, k1){ return 'calc((100% - ' + ((n - 1) * 2) + 'px) * ' + (sum(arr, k0, k1) / T).toFixed(5) + ' + ' + ((k1 - k0) * 2) + 'px)'; };
+    var segs = function(nAlong, vis){ var out = [], s0 = null; for (var j = 1; j <= nAlong + 1; j++) { var on = j <= nAlong && vis(j); if (on && s0 == null) s0 = j; if (!on && s0 != null) { out.push([s0, j - 1]); s0 = null; } } return out; };
+    var shared = function(p1, p2){ return p1 != null && p2 != null && p1 !== p2; };
+    var grip = function(dir, k, s0, s1){ var h = g.ownerDocument.createElement('div'); h.className = 'stpr-gh ' + dir; h.setAttribute('data-k', k);
+      if (dir === 'c') { h.style.left = at(cs, TC, nc, k, -1); h.style.top = at(rs, TR, nr, s0 - 1, 0); h.style.height = len(rs, TR, nr, s0 - 1, s1 - 1); }
+      else { h.style.top = at(rs, TR, nr, k, -1); h.style.left = at(cs, TC, nc, s0 - 1, 0); h.style.width = len(cs, TC, nc, s0 - 1, s1 - 1); }
+      h.addEventListener('pointerdown', function(e){ if (e.button !== 0) return; e.preventDefault(); e.stopPropagation();
+        var cst = getComputedStyle(g), tr = (dir === 'c' ? cst.gridTemplateColumns : cst.gridTemplateRows).split(' ').map(parseFloat); if (tr.length !== (dir === 'c' ? nc : nr) || tr.some(isNaN)) return;
+        var a0 = tr[k - 1], tot = a0 + tr[k], MIN = Math.min(dir === 'c' ? 140 : 90, tot / 2), p0 = dir === 'c' ? e.clientX : e.clientY, last = tr.slice();
+        h.classList.add('on'); try { h.setPointerCapture(e.pointerId); } catch (x) {}
+        var mv = function(ev){ var a1 = Math.max(MIN, Math.min(tot - MIN, a0 + (dir === 'c' ? ev.clientX : ev.clientY) - p0)); last = tr.slice(); last[k - 1] = a1; last[k] = tot - a1;
+          g.style.setProperty(dir === 'c' ? '--gc' : '--gr', last.map(function(q){ return q.toFixed(1) + 'fr'; }).join(' ')); h.style.transform = (dir === 'c' ? 'translateX(' : 'translateY(') + (a1 - a0) + 'px)'; dirty(); };
+        var up = function(){ h.removeEventListener('pointermove', mv); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up); h.classList.remove('on');
+          var T = sum(last, 0, last.length - 1), z = Object.assign({ c: cs.slice(), r: rs.slice() }, (CFG.lsz && CFG.lsz[m + '|' + v]) || {}); z[dir] = last.map(function(q){ return Math.round(q / T * 10000) / 100; });
+          CFG.lsz = Object.assign({}, CFG.lsz || {}); CFG.lsz[m + '|' + v] = z; save(); layApply(m); dirty(); };
+        h.addEventListener('pointermove', mv); h.addEventListener('pointerup', up); h.addEventListener('pointercancel', up); });
+      h.addEventListener('dblclick', function(e){ e.preventDefault(); e.stopPropagation(); if (!(CFG.lsz && CFG.lsz[m + '|' + v])) return; CFG.lsz = Object.assign({}, CFG.lsz); delete CFG.lsz[m + '|' + v]; save(); layApply(m); dirty(); });
+      g.appendChild(h); };
+    for (var kc = 1; kc < nc; kc++) segs(nr, function(y){ return shared(occ[kc + ',' + y], occ[(kc + 1) + ',' + y]); }).forEach(function(sg){ grip('c', kc, sg[0], sg[1]); });
+    for (var kr = 1; kr < nr; kr++) segs(nc, function(x){ return shared(occ[x + ',' + kr], occ[x + ',' + (kr + 1)]); }).forEach(function(sg){ grip('r', kr, sg[0], sg[1]); }); }
   async function setLayout(n, v){ if (!S || !(n >= 1 && n <= 8)) return; if (menuFor === 'lay') closeMenu();
     if (v && LAYS[n] && LAYS[n][v]) { CFG.lv = Object.assign({}, CFG.lv || {}); CFG.lv[n] = v; }
     if (n === CFG.layout && panes.length === n) { save(); layApply(mainN()); paintLay(); dirty(); return; }   // the same charts, another arrangement
