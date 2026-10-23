@@ -343,6 +343,20 @@
     var rin = mmb.querySelector('[data-mmi="rval"]'); rin.focus(); rin.value = '300'; rin.dispatchEvent(new Event('input', { bubbles: true })); rin.dispatchEvent(new Event('change', { bubbles: true })); rin.blur();
     for (k = 0; k < 40 && !(LC._mmLive() && P._cfg().mm.riskAmt === 300 && document.querySelector('#stpr-mm [data-mmi="rval"]').value === '300.00'); k++) await W(150);   // the EA's settings come back and the panel shows them
     check('a change in the panel goes to the EA ("cfg", signed) and stays: risk 300.00', P._cfg().mm.riskAmt === 300 && document.querySelector('#stpr-mm [data-mmi="rval"]').value === '300.00' && (JSON.parse(localStorage.getItem('st_practice_cfg') || '{}').mm || {}).riskAmt === practiceRisk, [P._cfg().mm.riskAmt, document.querySelector('#stpr-mm [data-mmi="rval"]').value, (JSON.parse(localStorage.getItem('st_practice_cfg') || '{}').mm || {}).riskAmt, practiceRisk]);
+    // the EA refusing a change (App trading off - Nestor's VPS copy, 23 Oct 2026): the panel goes back to what the EA has, it never keeps
+    // showing the typed value (it read £500 while the EA risked £50)
+    await W(2500);   // the 300 on its way (0.5 s) and the EA's settings back with it, before the EA here starts refusing
+    var acct0 = window.__stTM.acct, asked = 0; window.__stTM.acct = function (o) { if (o && o.a === 'cfg') { asked++; return Promise.resolve({ ok: false, why: 'off' }); } return acct0.apply(this, arguments); };
+    try {
+      var rin2 = document.querySelector('#stpr-mm [data-mmi="rval"]'); rin2.focus(); rin2.value = '777'; rin2.dispatchEvent(new Event('input', { bubbles: true })); rin2.dispatchEvent(new Event('change', { bubbles: true })); rin2.blur();
+      var typed = P._cfg().mm.riskAmt;
+      for (k = 0; k < 30 && !(asked && document.querySelector('#stpr-mm [data-mmi="rval"]').value === '300.00'); k++) await W(150);
+      var fl = document.getElementById('stpr-flash');
+      check('a change the EA refuses (App trading off): the panel goes back to the EA\'s 300.00, and says why - with the VPS way to switch it on', typed === 777 && asked === 1 && P._cfg().mm.riskAmt === 300 && document.querySelector('#stpr-mm [data-mmi="rval"]').value === '300.00' && fl && /App trading is OFF/.test(fl.textContent) && /VPS/.test(fl.textContent),
+        [typed, asked, P._cfg().mm.riskAmt, document.querySelector('#stpr-mm [data-mmi="rval"]').value, fl && fl.textContent]);
+      await W(900);
+      check('...and nothing is sent again', asked === 1, asked);
+    } finally { window.__stTM.acct = acct0; }
     var ch0 = LC._chimes();
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', bubbles: true })); await W(200);
     check('the execution key arms it on Live Charts: the stop, entry and target lines where the order would go', P._s().exec && P._lines(0).some(function (l) { return /^SL /.test(l.title || l.t || ''); }), P._lines(0).map(function (l) { return l.title || l.t; }));

@@ -24,6 +24,13 @@
     var br = btn.getBoundingClientRect(), d = dims();
     ok('the mouse near the bottom right corner: the button there, left of the price scale and above the times', shown() && br.right <= r.left + d.pw && br.right > r.left + d.pw - 30 && br.bottom <= r.top + d.ph && br.bottom > r.top + d.ph - 30, [shown(), br.right, r.left + d.pw, br.bottom, r.top + d.ph]);
     ok('...with its name and key: Scroll to the most recent bar (Alt+Shift+→)', /Scroll to the most recent bar/.test(btn.title) && /Alt\+Shift/.test(btn.title), btn.title);
+    // Live Charts puts its Spread label in that corner (lvBadges' p.cdb, made the same way here): the button sits above it (Nestor, 23 Oct 2026:
+    // "i need this button slightly higher out the way of the spread")
+    var cdb = document.createElement('div'); cdb.className = 'slx-info stpr-cdb'; cdb.textContent = 'Spread 0.1p'; cdb.style.right = (p.chart.priceScale('right').width() + 8) + 'px'; cdb.style.bottom = (ts.height() + 8) + 'px'; p.el.appendChild(cdb); p.cdb = cdb;
+    mv(dims().pw / 2, dims().ph / 2); await W(50); mv(dims().pw - 40, dims().ph - 40); await W(50);
+    var br2 = btn.getBoundingClientRect(), cr = cdb.getBoundingClientRect();
+    ok('with the Spread label in the corner: the button just above it, clear of it', shown() && br2.bottom <= cr.top - 3 && br2.bottom > cr.top - 14 && br2.right <= r.left + dims().pw, [shown(), br2.bottom, cr.top, cr.bottom]);
+    cdb.remove(); p.cdb = null; mv(dims().pw / 2, dims().ph / 2); await W(50); mv(dims().pw - 40, dims().ph - 40); await W(50);
     btn.click(); await W(700);
     var r1 = ts.getVisibleLogicalRange();
     ok('pressed: the latest candle back on screen at the same zoom, and the button gone', !P._rtOff(0) && Math.abs((r1.to - r1.from) - span0) < 1 && r1.to >= p.n - 1 && !shown(), [P._rtOff(0), r1.to - r1.from, span0, r1.to, p.n - 1, shown()]);
