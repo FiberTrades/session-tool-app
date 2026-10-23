@@ -35,6 +35,7 @@ declare
   v_now  timestamp;
   v_sn   text;
   v_ok   boolean := false;
+  v_new  boolean := false;
 begin
   if v_uid is null then raise exception 'signed out'; end if;
   if v_body = '' then raise exception 'empty body'; end if;
@@ -77,6 +78,7 @@ begin
        nullif(btrim(coalesce(p_name, '')), ''),
        nullif(btrim(coalesce(p_avatar, '')), ''))
     returning id into v_id;
+    v_new := true;
   end if;
 
   -- The post this one corrects: removed where the leaderboard cannot be changed by it (see the top of this file).
@@ -96,12 +98,21 @@ begin
           from public.journals j where j.user_id = v_uid;
         v_tz   := coalesce(v_tz, 'Europe/London');
         v_sess := coalesce(v_sess, time '08:00');
-        v_old  := o.created_at at time zone v_tz;
+        -- the earlier post's scored moment: its own, or the one it carried over from the post it replaced
+        v_old  := coalesce((select sa.scored_at from public.channel_message_scored_at sa where sa.message_id = o.id),
+                           o.created_at) at time zone v_tz;
         v_now  := now() at time zone v_tz;
         if v_slug = 'pre-session-bias' then
           v_ok := v_old::date = v_now::date and not (v_old::time < v_sess and v_now::time >= v_sess);
         elsif v_slug = 'post-session-review' then
-          v_ok := v_old::date = v_now::date;
+          -- 23 Oct 2026: the new post always takes its place. When the earlier one is another day's review, the
+          -- new post also takes its moment, so it still counts for that day (and leaves today's review free).
+          v_ok := true;
+          if v_new and v_old::date <> v_now::date then
+            insert into public.channel_message_scored_at (message_id, scored_at)
+            values (v_id, v_old at time zone v_tz)
+            on conflict (message_id) do nothing;
+          end if;
         elsif v_slug = 'weekend-review' then
           v_ok := date_trunc('week', v_old) = date_trunc('week', v_now)
               and date_trunc('week', v_old - interval '3 days') = date_trunc('week', v_now - interval '3 days');

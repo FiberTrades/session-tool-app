@@ -1,8 +1,8 @@
 (async function () {
-  // A trade closed at its take profit reads as the TP (Nestor, 22 Oct 2026: "if i want a 20pips TP i expect to get a 20pips TP like
-  // i would in MT5! fix this!"). His 16.76-lot sell: TP 1.12201, MT5's deal filled at 1.12206. Charts now show the TP's pips and R,
-  // as the journal records a win, with MT5's fill beside them; the money stays what really came. Made-up trades on the real shared
-  // candles (signed out): Trade Replay on Thu 1 Oct 2026, Live Charts with stand-in MT5 history.
+  // A trade closed at its take profit is marked TP, with MT5's fill against it (Nestor, 22 Oct 2026: "if i want a 20pips TP i expect
+  // to get a 20pips TP like i would in MT5! fix this!"). His 16.76-lot sell: TP 1.12201, MT5's deal filled at 1.12206. 23 Oct 2026:
+  // "i rather you kept this figures real too" - the pips, R and money are the fill's. Made-up trades on the real shared candles
+  // (signed out): Trade Replay on Thu 1 Oct 2026, Live Charts with stand-in MT5 history.
   // Run: python tests/browser_test.py tests/tpfill_e2e.js
   var W = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
   var out = [], ok = function (name, cond, got) { out.push({ name: name, ok: !!cond, got: got === undefined ? null : got }); };
@@ -15,11 +15,11 @@
       openTime: '2026-10-01T09:00:00Z', closeTime: '2026-10-01T10:00:00Z', slPips: 4, _tpPips: 20, _riskGbp: 500, pnl: 2359.81 };
     R.open(trade); for (var k = 0; k < 120 && !(R._s() && R._s().chart && R._s().bars && R._s().bars.length); k++) await W(100); await W(800);
     var hr = document.getElementById('strp-hr').textContent, hp = document.getElementById('strp-hp').textContent;
-    ok('Trade Replay header: the TP\'s R (+5.00R, not +4.88R)', /^\+5\.00R$/.test(hr.trim()), hr);
-    ok('...the TP\'s pips with "TP" and MT5\'s fill beside them, and the real money', /\+20\.0p TP/.test(hp) && /−0\.5p fill/.test(hp) && /2,?359\.81/.test(hp), hp);
+    ok('Trade Replay header: the real R as filled (+4.88R, not the TP\'s +5.00R)', /^\+4\.8[78]R$/.test(hr.trim()), hr);
+    ok('...the real pips marked "TP" with MT5\'s fill against it, and the real money', /\+19\.5p TP/.test(hp) && /−0\.5p fill/.test(hp) && /2,?359\.81/.test(hp), hp);
     var sc = document.getElementById('strp-scrub'); sc.value = sc.max; sc.dispatchEvent(new Event('input', { bubbles: true })); await W(300);
     var live = document.getElementById('strp-live').textContent;
-    ok('...at the close, its P&L line: +5.00R, the real money, +20.0p, closed at TP (−0.5p fill)', /\+5\.00R/.test(live) && /2,?359\.81/.test(live) && /\+20\.0p/.test(live) && /closed at TP/.test(live) && /−0\.5p fill/.test(live), live);
+    ok('...at the close, its P&L line: the real +4.88R, money and +19.5p, closed at TP (−0.5p fill)', /\+4\.8[78]R/.test(live) && /2,?359\.81/.test(live) && /\+19\.5p/.test(live) && /closed at TP/.test(live) && /−0\.5p fill/.test(live), live);
     try { document.getElementById('strp-close').click(); } catch (e) {} await W(300);
     // a trade closed well before its TP stays as it was
     var t2 = Object.assign({}, trade, { mt5Ticket: 999999912, closePrice: Math.round((e0 - 0.0012) * 1e5) / 1e5, pnl: 1400 });
@@ -49,7 +49,7 @@
         pnl: 120, risk_gbp: 40, login: '', sl_moves: [[b0.time, r5(e + 0.0004)]], tp_moves: [[b0.time, r5(e - 0.0020)]], sl_pips: 4, tp_pips: 20 }]);
     await W(300);
     var c1 = P._tmCardText(0, 8801), c2 = P._tmCardText(0, 8802);
-    ok('Live Charts card, closed at its TP: +20 pips · +5.00R, the exit marked TP', c1 && /Result\+20(\.0)? pips · \+5\.00R/.test(c1) && /TP/.test(c1), c1);
+    ok('Live Charts card, closed at its TP: the real +19.5 pips · +4.72R (money over risk), the exit marked TP', c1 && /Result\+19\.5 pips · \+4\.72R/.test(c1) && /TP/.test(c1), c1);
     ok('...MT5\'s fill beside it (−0.5 pips, TP price → fill price) and the real money', c1 && /TP fill−0\.5 pips/.test(c1) && /2,?359\.81/.test(c1), c1);
     ok('a trade closed before its TP: its own result (+12 pips, 3.00R from the money), no TP fill line', c2 && /Result\+12(\.0)? pips · \+3\.00R/.test(c2) && !/TP fill/.test(c2), c2);
     P._lvTr([]);

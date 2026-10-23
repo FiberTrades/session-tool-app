@@ -419,6 +419,7 @@ begin
            and tv0.pnl is not null
            and not exists (select 1 from tacc ta join sep_acc sa on sa.user_id = ta.user_id and sa.acc_id = ta.acc_id
                             where ta.user_id = tv0.user_id and ta.ticket = tv0.ticket::text)   -- not on an account kept separate
+           and not exists (select 1 from lb_excluded_trades x where x.user_id = tv0.user_id and x.ticket = tv0.ticket)   -- left out by the admin (lb_excluded_trades: test trades)
         union all
         select jt.* from jtr jt
          where not exists (select 1 from sep_acc sa where sa.user_id = jt.user_id and sa.acc_id = jt.acc_m)
@@ -686,26 +687,59 @@ begin
         and (m.created_at at time zone s.tz)::date <  v_end
       group by m.sender_id
     ),
+    -- Every post in the review channel with the day it is scored for (23 Oct 2026, Nestor: "the app should be able
+    -- to identify what happened there and not deduct me points from thursday and friday" - he corrected Thursday's
+    -- review after midnight, the copy landed on Friday, and both days lost their review). Two rules:
+    --   * A review that took the place of the member's own review from another day keeps that review's moment
+    --     (channel_message_scored_at, written by st_post_review): correcting Thursday's review on Friday is still
+    --     Thursday's review, and Friday's own review still counts for Friday.
+    --   * A review posted after midnight, before the member's session starts, counts for the day before when that
+    --     day has no review posted after its own session start. Being after midnight, it is after that day's last
+    --     close. A member who always reviews after midnight is covered night after night: an early post never
+    --     blocks the next one.
+    -- review_ok_dates (the per-day rules) and review (the count) both read it, so they cannot disagree.
+    rev_posts as (
+      select q.user_id,
+             case when q.early and not exists (
+                    select 1 from channel_messages m2
+                      left join channel_message_scored_at sa2 on sa2.message_id = m2.id
+                     where m2.channel_id = ch_review and m2.sender_id = q.user_id
+                       and (coalesce(sa2.scored_at, m2.created_at) at time zone q.tz)::date = q.at_l::date - 1
+                       and (coalesce(sa2.scored_at, m2.created_at) at time zone q.tz)::time >= q.sess_start)
+                  then q.at_l::date - 1 else q.at_l::date end as d,
+             q.at_l, q.tz, q.end_log
+      from (
+        select m.sender_id as user_id, s.tz, s.sess_start, s.end_log,
+               (coalesce(sa.scored_at, m.created_at) at time zone s.tz) as at_l,
+               (coalesce(sa.scored_at, m.created_at) at time zone s.tz)::time < s.sess_start as early
+        from channel_messages m
+        join sess s on s.user_id = m.sender_id
+        left join channel_message_scored_at sa on sa.message_id = m.id
+        where ch_review is not null and m.channel_id = ch_review
+      ) q
+    ),
+    review_ok_dates as (
+      select distinct rp.user_id, rp.d
+      from rev_posts rp
+      where (rp.d < rp.at_l::date   -- counted for the day before: after that day's last close
+             or rp.at_l::time >= coalesce(
+                  nullif(rp.end_log ->> to_char(rp.d,'YYYY-MM-DD'), '')::time,
+                  (select max((t2.close_time at time zone rp.tz)::time)
+                     from trades_verified t2
+                    where t2.user_id = rp.user_id
+                      and t2.close_time is not null
+                      and not exists (select 1 from tacc ta join sep_acc sa on sa.user_id = ta.user_id and sa.acc_id = ta.acc_id
+                                       where ta.user_id = t2.user_id and ta.ticket = t2.ticket::text)
+                      and not exists (select 1 from lb_excluded_trades x where x.user_id = t2.user_id and x.ticket = t2.ticket)
+                      and (t2.close_time at time zone rp.tz)::date = rp.d),
+                  time '00:00'))   -- no trades that day: any time counts
+        and rp.d >= v_start
+        and rp.d <  v_end
+    ),
     review as (
-      select m.sender_id as user_id,
-             count(distinct (m.created_at at time zone s.tz)::date) as days
-      from channel_messages m
-      join sess s on s.user_id = m.sender_id
-      where ch_review is not null and m.channel_id = ch_review
-        and (m.created_at at time zone s.tz)::time >= coalesce(
-              nullif(s.end_log ->> to_char((m.created_at at time zone s.tz)::date,'YYYY-MM-DD'), '')::time,
-              (select max((t2.close_time at time zone coalesce(s.tz,'Europe/London'))::time)
-                 from trades_verified t2
-                where t2.user_id = m.sender_id
-                  and t2.close_time is not null
-                  and not exists (select 1 from tacc ta join sep_acc sa on sa.user_id = ta.user_id and sa.acc_id = ta.acc_id
-                                   where ta.user_id = t2.user_id and ta.ticket = t2.ticket::text)
-                  and (t2.close_time at time zone coalesce(s.tz,'Europe/London'))::date
-                      = (m.created_at at time zone coalesce(s.tz,'Europe/London'))::date),
-              time '00:00')   -- no trades that day: any time counts
-        and (m.created_at at time zone s.tz)::date >= v_start
-        and (m.created_at at time zone s.tz)::date <  v_end
-      group by m.sender_id
+      select user_id, count(*) as days
+      from review_ok_dates
+      group by user_id
     ),
     weekly as (
       select m.sender_id as user_id,
@@ -832,26 +866,6 @@ begin
       join sess s on s.user_id = m.sender_id
       where ch_bias is not null and m.channel_id = ch_bias
         and (m.created_at at time zone s.tz)::time <  s.sess_start
-        and (m.created_at at time zone s.tz)::date >= v_start
-        and (m.created_at at time zone s.tz)::date <  v_end
-    ),
-    review_ok_dates as (
-      select distinct m.sender_id as user_id,
-             (m.created_at at time zone coalesce(s.tz,'Europe/London'))::date as d
-      from channel_messages m
-      join sess s on s.user_id = m.sender_id
-      where ch_review is not null and m.channel_id = ch_review
-        and (m.created_at at time zone s.tz)::time >= coalesce(
-              nullif(s.end_log ->> to_char((m.created_at at time zone s.tz)::date,'YYYY-MM-DD'), '')::time,
-              (select max((t2.close_time at time zone coalesce(s.tz,'Europe/London'))::time)
-                 from trades_verified t2
-                where t2.user_id = m.sender_id
-                  and t2.close_time is not null
-                  and not exists (select 1 from tacc ta join sep_acc sa on sa.user_id = ta.user_id and sa.acc_id = ta.acc_id
-                                   where ta.user_id = t2.user_id and ta.ticket = t2.ticket::text)
-                  and (t2.close_time at time zone coalesce(s.tz,'Europe/London'))::date
-                      = (m.created_at at time zone coalesce(s.tz,'Europe/London'))::date),
-              time '00:00')   -- no trades that day: any time counts
         and (m.created_at at time zone s.tz)::date >= v_start
         and (m.created_at at time zone s.tz)::date <  v_end
     ),
@@ -1203,6 +1217,15 @@ begin
 
 end;
 $function$;
+
+-- 2026-10-23, A REVIEW KEEPS ITS DAY. Nestor posted Thursday's review at 17:43, corrected it at 00:02 Friday
+-- (st_post_review kept both: another day), deleted the original by hand, corrected again at 00:39. The 00:39 copy
+-- scored as Friday's review: Thursday missed (-10) and Friday's real review earned nothing. Now (rev_posts):
+-- a correction of another day's review keeps that review's moment (channel_message_scored_at), and a review
+-- posted after midnight, before the session starts, counts for the day before when that day has none after its
+-- own session start. Also lb_excluded_trades: trades the admin leaves out (his 19 Oct XAUUSD tests on an
+-- unlinked demo login, judged as 70K trades: max trades broken and Monday's review "before the last close").
+-- See supabase/lb_review_day.sql.
 
 -- 2026-09-06, A REVIEWED WEEK BELONGS TO THE MONTH IT ENDS IN, not the month its Monday falls in.
 -- weekly_post_weeks filtered a reviewed week into a period by its Monday:
