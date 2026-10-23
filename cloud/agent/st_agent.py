@@ -26,7 +26,7 @@ TEMPLATE = "/home/st/mt5-template"
 WINE = "/opt/wine-staging/bin/wine"      # staging in Windows 11 mode: stable Wine trips MT5's debugger check since 18 Oct 2026
 MEMBERS = "/home/st/members"
 EA_SRC = "/opt/st/ea/MinimalistManager.ex5"
-EA_NAME = "SessionTerminal\\MinimalistManager"      # under MQL5\Experts
+PROFILE = "STCloud"         # the chart set the agent writes before each start (write_profile)
 SEED_COMMON = "/opt/st/seed-common.ini"      # MT5's saved settings, see prepare()
 SEED_SERVERS = "/opt/st/servers-ftmo.dat"     # FTMO's server list
 POLL = 10
@@ -90,12 +90,12 @@ def utf16(path, text):
         f.write(b"\xff\xfe" + text.replace("\n", "\r\n").encode("utf-16-le"))
 
 
-def preset(acc):
-    """The EA's inputs: the sync token, App trading, and the settings this account's EA last reported - from the PC it
-    ran on before, or from this server (23 Oct 2026, "settings follow the account": a fresh MT5 has none of the panel's
-    saved state, and the EA would start on factory risk). Partial-close shares live only in the panel and don't carry."""
+def inputs(acc, e):
+    """The EA's inputs: the sync token, App trading, and the settings this account's EA last reported on that symbol -
+    from the PC it ran on before, or from this server (23 Oct 2026, "settings follow the account": a fresh MT5 has none
+    of the panel's saved state, and the EA would start on factory risk). Partial-close shares live only in the panel."""
     ln = ["InpSyncToken=%s" % (acc.get("token") or ""), "InpAppTrade=%s" % ("true" if acc.get("app_trading") else "false")]
-    e = acc.get("ea") or {}
+    e = e or {}
     num = lambda k: (float(e[k]) if isinstance(e.get(k), (int, float)) or re.match(r"^-?\d+(\.\d+)?$", str(e.get(k, ""))) else None)
     yes = lambda k: ("true" if e.get(k) in (True, "true", 1) else "false") if k in e else None
     pick = {
@@ -111,7 +111,83 @@ def preset(acc):
     for k, v in pick.items():
         if v is not None:
             ln.append("%s=%s" % (k, ("%g" % v) if isinstance(v, float) else v))
-    return "\n".join(ln) + "\n"
+    return ln
+
+
+def symbols(acc):
+    """The charts to open: every symbol the account's EA ran on in the last 30 days (cloud-agent's "eas"), each with its
+    own settings, plus any symbol named for it in /etc/st-agent/extra-symbols.json ({"<login>": ["XAUUSD"]}); else EURUSD."""
+    out = [(x.get("symbol"), x.get("settings")) for x in (acc.get("eas") or []) if x.get("symbol")]
+    try:
+        extra = json.load(open("/etc/st-agent/extra-symbols.json")).get(str(acc["login"]), [])
+    except Exception:
+        extra = []
+    for sym in extra:
+        if sym not in [o[0] for o in out]:
+            out.append((sym, None))
+    return out or [("EURUSD", acc.get("ea"))]
+
+
+CHART = r"""<chart>
+id=%(id)d
+symbol=%(sym)s
+period_type=0
+period_size=15
+scale=4
+mode=1
+grid=0
+volume=0
+scroll=1
+shift=1
+ohlc=0
+tradelines=1
+tradehistory=1
+windows_total=1
+
+<expert>
+name=MinimalistManager
+path=Experts\SessionTerminal\MinimalistManager.ex5
+expertmode=1
+<inputs>
+%(inputs)s
+</inputs>
+</expert>
+
+<window>
+height=100.000000
+objects=0
+
+<indicator>
+name=Main
+path=
+apply=1
+show_data=1
+scale_inherit=0
+scale_line=0
+scale_line_percent=50
+scale_line_value=0.000000
+scale_fix_min=0
+scale_fix_min_val=0.000000
+scale_fix_max=0
+scale_fix_max_val=0.000000
+expertmode=0
+fixed_height=-1
+</indicator>
+</window>
+</chart>
+"""
+
+
+def write_profile(acc, ad):
+    """MT5's chart set for this account, written fresh before every start: one M15 chart per symbol, each with the EA
+    and that symbol's settings (multi-symbol, 23 Oct 2026). Charts opened by a start file were saved and piled up - one
+    more EURUSD chart per restart - so the start file opens none now; MT5 opens this set (ProfileLast)."""
+    pd = os.path.join(ad, "MQL5", "Profiles", "Charts", PROFILE)
+    shutil.rmtree(pd, ignore_errors=True)
+    os.makedirs(pd, exist_ok=True)
+    for i, (sym, e) in enumerate(symbols(acc)):
+        utf16(os.path.join(pd, "chart%02d.chr" % (i + 1)),
+              CHART % {"id": 133846014025810000 + i + 1, "sym": sym, "inputs": "\n".join(inputs(acc, e))})
 
 
 def prepare(acc):
@@ -146,9 +222,7 @@ def prepare(acc):
     dst = os.path.join(ex, "MinimalistManager.ex5")
     if os.path.exists(EA_SRC) and (not os.path.exists(dst) or open(dst, "rb").read() != open(EA_SRC, "rb").read()):
         shutil.copyfile(EA_SRC, dst)
-    pr = os.path.join(ad, "MQL5", "Presets")
-    os.makedirs(pr, exist_ok=True)
-    utf16(os.path.join(pr, "st-cloud.set"), preset(acc))
+    write_profile(acc, ad)
     as_st([os.path.join(pre, "drive_c", "ST")])
     return ad
 
@@ -161,7 +235,7 @@ def start_ini(acc, ad, password):
         "[Experts]", "Enabled=1", "AllowLiveTrading=1", "AllowDllImport=0", "Account=0", "Profile=0",
         # no WebRequest lines here: MT5 keeps its allowed addresses encrypted in Config/common.ini (seeded by the agent),
         # and a plain list in the start file replaced them with nothing (23 Oct 2026)
-        "[StartUp]", "Expert=%s" % EA_NAME, "ExpertParameters=st-cloud.set", "Symbol=EURUSD", "Period=M15", "",
+        "[Charts]", "ProfileLast=%s" % PROFILE, "",
     ]))
     os.chmod(p, 0o600)
     subprocess.run(["chown", "st:st", p], check=False)

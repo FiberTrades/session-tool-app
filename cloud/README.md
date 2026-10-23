@@ -42,8 +42,12 @@ seeded into each account as `/opt/st/servers-ftmo.dat`. Another firm needs its o
    (`/opt/st/ea/MinimalistManager.ex5`, Nestor's own build) and a preset with the token and App trading.
 4. MT5 starts with a start file holding the login. That file is deleted once MT5 has signed in, or after 2 minutes.
    Each terminal runs in the member's time zone, because the EA's daily reset follows the machine's clock.
-5. Status goes back to the card: starting, running (signed in), or error (with MT5's reason).
-6. When the member removes the account, the terminal stops and its folder is deleted. A member with no accounts
+5. **One chart per symbol.** Before each start the agent writes MT5's chart set `STCloud`: one M15 chart for every
+   symbol the account's EA reported from in the last 30 days, plus any in `/etc/st-agent/extra-symbols.json`. Each chart
+   carries the EA with that symbol's own settings. MT5 opens the set through `ProfileLast` in the start file. Charts
+   opened by a start file's `[StartUp]` were saved and piled up, one more per restart.
+6. Status goes back to the card: starting, running (signed in), or error (with MT5's reason).
+7. When the member removes the account, the terminal stops and its folder is deleted. A member with no accounts
    left loses their prefix too.
 
 ## Secrets (never in the repo)

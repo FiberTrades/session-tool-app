@@ -53,14 +53,22 @@ Deno.serve(async (req) => {
     // The EA settings that account last reported, from whichever MT5 ran it (23 Oct 2026, "settings follow the account"):
     // the server starts its EA with them, so an account moved from a PC keeps its risk, stops, TP, BE and daily limit.
     // EURUSD first (the chart the server opens), else the account's most recent report.
-    const eaOf: Record<string, unknown> = {};
+    // And every symbol that account's EA ran on in the last 30 days, each with its own settings (23 Oct 2026, "the
+    // multiple assets users trade"): the server opens one EA chart per symbol - an order from the app, break-even and
+    // the symbol's candles for Replay all need the EA on that symbol's chart.
+    const eaOf: Record<string, unknown> = {}, easOf: Record<string, { symbol: string; settings: unknown }[]> = {};
     const logins = [...new Set((rows || []).map((r) => String(r.login)))];
     if (logins.length) {
       const { data: es } = await admin.from("ea_settings").select("user_id,login,symbol,settings,updated_at").in("login", logins)
         .order("updated_at", { ascending: false });
+      const since = Date.now() - 30 * 864e5;
       (es || []).forEach((e) => {
         const k = e.user_id + "|" + e.login, cur = eaOf[k] as { symbol?: string } | undefined;
         if (!cur || (cur.symbol !== "EURUSD" && e.symbol === "EURUSD")) eaOf[k] = { symbol: e.symbol, settings: e.settings };
+        if (Date.parse(e.updated_at) >= since && /^[A-Za-z0-9._#+-]{1,32}$/.test(e.symbol || "")) {
+          const l = easOf[k] = easOf[k] || [];
+          if (!l.some((x) => x.symbol === e.symbol)) l.push({ symbol: e.symbol, settings: e.settings });
+        }
       });
     }
     return json({
@@ -69,6 +77,7 @@ Deno.serve(async (req) => {
         app_trading: r.app_trading, status: r.status,
         token: tokens[r.user_id] || null, tz: tzs[r.user_id] || "Europe/London",
         ea: (eaOf[r.user_id + "|" + r.login] as { settings?: unknown } | undefined)?.settings || null,
+        eas: easOf[r.user_id + "|" + r.login] || [],
       })),
     });
   }
