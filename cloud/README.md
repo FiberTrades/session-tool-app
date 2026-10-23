@@ -37,9 +37,11 @@ seeded into each account as `/opt/st/servers-ftmo.dat`. Another firm needs its o
    run. The function checks the agent secret (`CLOUD_AGENT_KEY`) and returns the accounts with the member's sync token
    and time zone. If a terminal is still running from before an agent restart, the agent adopts it rather than
    starting a second one.
-3. Per member: one Wine prefix (`/home/st/members/<user>`), so all their accounts share MT5's Common folder, where the
-   EA's Lead/Follow copier files live. Per account: a portable MT5 (`C:\ST\<login>`), the EA
-   (`/opt/st/ea/MinimalistManager.ex5`, Nestor's own build) and a preset with the token and App trading.
+3. Per account: its own Wine prefix (`/home/st/members/<user>.<login>`) with a portable MT5 (`C:\ST\<login>`), the EA
+   (`/opt/st/ea/MinimalistManager.ex5`, Nestor's own build) and a preset with the token and App trading. Two MT5s
+   in one prefix share its virtual desktop, which lives on the first one's screen, so the second died at start with
+   an X `BadWindow` error (23 Oct 2026). A member's accounts share MT5's Common folder, where the EA's Lead/Follow
+   copier files live: `/home/st/members/<user>.common`, linked into each prefix.
 4. MT5 starts with a start file holding the login. That file is deleted once MT5 has signed in, or after 2 minutes.
    Each terminal runs in the member's time zone, because the EA's daily reset follows the machine's clock.
 5. **One chart per symbol.** Before each start the agent writes MT5's chart set `STCloud`: one M15 chart for every
@@ -47,8 +49,8 @@ seeded into each account as `/opt/st/servers-ftmo.dat`. Another firm needs its o
    carries the EA with that symbol's own settings. MT5 opens the set through `ProfileLast` in the start file. Charts
    opened by a start file's `[StartUp]` were saved and piled up, one more per restart.
 6. Status goes back to the card: starting, running (signed in), or error (with MT5's reason).
-7. When the member removes the account, the terminal stops and its folder is deleted. A member with no accounts
-   left loses their prefix too.
+7. When the member removes the account, the terminal stops and its prefix is deleted. A member with no accounts
+   left loses their Common folder too.
 
 ## Secrets (never in the repo)
 

@@ -3,18 +3,21 @@
 
 Every few seconds it asks cloud-agent (Supabase edge function) which MT5 accounts this host should run, and makes it so:
 
-  - a member gets their own Wine prefix (/home/st/members/<user>), copied from the clean MT5 template, so all of a
-    member's accounts share one Common folder - the EA's Lead/Follow copier talks through files there;
+  - every account gets its own Wine prefix (/home/st/members/<user>.<login>), copied from the clean MT5 template; a
+    member's accounts share one Common folder (/home/st/members/<user>.common, linked into each prefix) - the EA's
+    Lead/Follow copier talks through files there;
   - each account runs its own portable MT5 (C:\\ST\\<login>) with the Session Terminal EA on a chart, its sync token
     and App trading set from the start, in the member's own time zone (the EA's daily reset follows the clock);
   - the MT5 password arrives encrypted with this host's public key; it is opened here, written into the terminal's
     start file only for the moment MT5 starts, and that file is deleted once MT5 has signed in (or after 2 minutes);
-  - an account that is no longer asked for is stopped and its folder deleted; a member with none left loses the prefix;
+  - an account that is no longer asked for is stopped and its prefix deleted; a member with none left loses the Common folder;
   - what happened is reported back: starting, running (signed in), error (with MT5's own reason).
 
 Nothing here ever places or changes a trade: MT5 and the EA do what the member does in the app.
 """
 import base64, glob, hashlib, json, os, re, shutil, signal, subprocess, sys, time, urllib.request
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
@@ -36,6 +39,21 @@ BOOT_INI_TTL = 120          # seconds the start file (with the password) may liv
 RESTART_BACKOFF = [10, 30, 60, 300, 900]
 
 state = {}                  # account id -> {"proc", "started", "fails", "next", "status", "ini"}
+NY = ZoneInfo("America/New_York")
+
+
+def fx_paused():
+    """No prices from Friday 17:00 to Sunday 17:00 New York time, at the daily rollover around 17:00, nor on 25 Dec and
+    1 Jan - and the EA's "MM alive" line only comes with prices (it runs on MT5's server clock), so its log is quiet
+    then by design. 23 Oct 2026: the demo was restarted as "stopped answering" minutes after Friday's close. Each window
+    runs on until prices have been back for EA_QUIET."""
+    t = datetime.now(NY)
+    m, wd, back = t.hour * 60 + t.minute, t.weekday(), 17 * 60 + 15 + EA_QUIET // 60
+    if (t.month, t.day) in ((12, 25), (1, 1)):
+        return True
+    if wd == 5 or (wd == 4 and m >= 16 * 60 + 55) or (wd == 6 and m < back):
+        return True
+    return 16 * 60 + 55 <= m < back
 
 
 def log(*a):
@@ -74,7 +92,13 @@ def safe(s):
 
 
 def prefix_of(acc):
-    return os.path.join(MEMBERS, safe(acc["user"]))
+    """One Wine prefix per MT5 account (23 Oct 2026). Two MT5s in one prefix share its virtual desktop, which lives on
+    the first one's screen: the second (his 70K beside the demo) died at every start with an X "BadWindow" error."""
+    return os.path.join(MEMBERS, "%s.%s" % (safe(acc["user"]), safe(acc["login"])))
+
+
+def common_of(acc):
+    return os.path.join(MEMBERS, "%s.common" % safe(acc["user"]))
 
 
 def adir_of(acc):
@@ -195,8 +219,11 @@ def prepare(acc):
     pre = prefix_of(acc)
     if not os.path.isdir(pre):
         os.makedirs(MEMBERS, exist_ok=True)
-        subprocess.run(["cp", "-a", TEMPLATE, pre], check=True)
+        shutil.rmtree(pre + ".tmp", ignore_errors=True)
+        subprocess.run(["cp", "-a", TEMPLATE, pre + ".tmp"], check=True)      # a half copy is never taken for a prefix
+        os.rename(pre + ".tmp", pre)
         as_st([pre])
+    link_common(acc, pre)
     ad = adir_of(acc)
     if not os.path.isdir(ad):
         os.makedirs(os.path.dirname(ad), exist_ok=True)
@@ -225,6 +252,22 @@ def prepare(acc):
     write_profile(acc, ad)
     as_st([os.path.join(pre, "drive_c", "ST")])
     return ad
+
+
+def link_common(acc, pre):
+    """MT5's Common folder - where the copier's Lead and Follow EAs leave their files - is one folder per member,
+    linked into each of the member's prefixes, so their accounts still find each other."""
+    mq = os.path.join(pre, "drive_c", "users", "st", "AppData", "Roaming", "MetaQuotes")
+    cm, shared = os.path.join(mq, "Terminal", "Common"), common_of(acc)
+    if os.path.islink(cm):
+        return
+    os.makedirs(shared, exist_ok=True)
+    if os.path.isdir(cm):                        # files written before the link: keep them
+        subprocess.run(["cp", "-a", cm + "/.", shared], check=False)
+        shutil.rmtree(cm)
+    os.makedirs(os.path.dirname(cm), exist_ok=True)
+    os.symlink(shared, cm)
+    as_st([mq, shared])
 
 
 def start_ini(acc, ad, password):
@@ -305,17 +348,24 @@ def check(acc):
             pass
         s["ini"] = None
     if bad and not signed:
-        reason = "Invalid account" if "invalid account" in bad.lower() else "MT5 could not sign in"
-        report(acc, "error", reason + ": check the login, password and server, then remove and add the account again.")
-        stop(acc)
-        s["next"] = time.time() + 6 * 3600
+        why = re.search(r"failed \(([^)]*)\)", bad)
+        why = why.group(1) if why else "no reason given"
+        if "invalid" in why.lower():
+            report(acc, "error", "MT5 could not sign in (%s): check the login, password and server, then remove and add "
+                                 "the account again." % why)
+            stop(acc)
+            s["next"] = time.time() + 6 * 3600
+            return
+        # the broker's own side - "Service is not available", "No connection" (his 70K on FTMO-Server4 the minute the
+        # market closed, 23 Oct 2026): nothing wrong with the account, and MT5 keeps trying by itself, so leave it running
+        report(acc, "starting", "%s is not letting anyone sign in right now (%s). MT5 keeps trying." % (acc["server"], why))
         return
     if signed:
         # the EA itself: it writes "MM alive" to its log every minute, so a log quiet for EA_QUIET means it stopped
         # (MT5 still signed in, nothing managing the trades) - say so and start MT5 again
         el = glob.glob(os.path.join(ad, "MQL5", "logs", "*.log"))
         quiet = (time.time() - max(os.path.getmtime(f) for f in el)) if el else None
-        if time.time() - s.get("started", 0) > EA_QUIET and (quiet is None or quiet > EA_QUIET):
+        if time.time() - s.get("started", 0) > EA_QUIET and (quiet is None or quiet > EA_QUIET) and not fx_paused():
             report(acc, "error", "The EA stopped answering; MT5 is being started again.")
             stop(acc)
             s["fails"] = s.get("fails", 0) + 1
@@ -363,22 +413,29 @@ def tick():
             log("removed", aid)
     for a in accounts:
         s = state.setdefault(a["id"], {"fails": 0, "next": 0})
-        s["dir"], s["login"] = adir_of(a), a["login"]
+        s["dir"], s["login"] = prefix_of(a), a["login"]
         if not alive(a):
             if s.get("proc") is not None:        # it was running and stopped: back off before the next start
                 s["fails"] = s.get("fails", 0) + 1
                 s["next"] = time.time() + RESTART_BACKOFF[min(s["fails"] - 1, len(RESTART_BACKOFF) - 1)]
                 s["proc"] = None
+            if s.get("ini"):                     # MT5 died before signing in: its start file (the password) goes now,
+                try:                             # not at the next start - check() only runs for a live MT5
+                    os.remove(s["ini"])
+                except FileNotFoundError:
+                    pass
+                s["ini"] = None
             launch(a)
         else:
+            s.setdefault("started", time.time())  # adopted after an agent restart: the EA gets the same grace as a fresh start
             check(a)
-    # members with no account left: their prefix goes too
-    users = {safe(a["user"]) for a in accounts}
+    # anything else under members/ - a removed account's prefix, the Common folder of a member with no account left
+    keep = {prefix_of(a) for a in accounts} | {common_of(a) for a in accounts} | {x.get("dir") for x in state.values()}
     for d in glob.glob(os.path.join(MEMBERS, "*")):
-        if os.path.basename(d) not in users and not any(os.path.dirname(os.path.dirname(os.path.dirname(x.get("dir") or ""))) == d for x in state.values()):
+        if d not in keep:
             subprocess.run(["pkill", "-f", d], check=False)
             shutil.rmtree(d, ignore_errors=True)
-            log("member folder removed", d)
+            log("folder removed", d)
 
 
 def main():
