@@ -28,6 +28,10 @@ wineboot --init
 wineserver -w
 # Windows 11: with staging, the mode in which MT5's debugger check passes
 wine reg add 'HKEY_CURRENT_USER\Software\Wine' /v Version /t REG_SZ /d win11 /f
+# Wine's own virtual desktop: MT5's dialogs (Options, the account wizard) are layered windows that draw black - or not
+# at all - straight on the X screen; inside the virtual desktop Wine draws them itself (23 Oct 2026)
+wine reg add 'HKEY_CURRENT_USER\Software\Wine\Explorer' /v Desktop /t REG_SZ /d Default /f
+wine reg add 'HKEY_CURRENT_USER\Software\Wine\Explorer\Desktops' /v Default /t REG_SZ /d 1280x800 /f
 wineserver -w
 
 echo "== MetaTrader 5 (MetaQuotes' official installer)"

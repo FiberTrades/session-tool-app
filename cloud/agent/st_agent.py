@@ -27,7 +27,8 @@ WINE = "/opt/wine-staging/bin/wine"      # staging in Windows 11 mode: stable Wi
 MEMBERS = "/home/st/members"
 EA_SRC = "/opt/st/ea/MinimalistManager.ex5"
 EA_NAME = "SessionTerminal\\MinimalistManager"      # under MQL5\Experts
-ALLOWED = "https://figozyxoyobixadhqewr.supabase.co;https://live.sessionterminal.com"
+SEED_COMMON = "/opt/st/seed-common.ini"      # MT5's saved settings, see prepare()
+SEED_SERVERS = "/opt/st/servers-ftmo.dat"     # FTMO's server list
 POLL = 10
 BOOT_INI_TTL = 120          # seconds the start file (with the password) may live
 RESTART_BACKOFF = [10, 30, 60, 300, 900]
@@ -95,6 +96,22 @@ def prepare(acc):
     if not os.path.isdir(ad):
         os.makedirs(os.path.dirname(ad), exist_ok=True)
         subprocess.run(["cp", "-a", os.path.join(pre, "drive_c", "Program Files", "MetaTrader 5"), ad], check=True)
+    # MT5's own settings, saved once through its Options window on this host (23 Oct 2026): Algo Trading on, the two
+    # "disable when changed" boxes off, and the EA's two web addresses - which MT5 only accepts in its own encrypted form,
+    # so they cannot be written by hand. And the brokers' server lists (FTMO's), without which a fresh MT5 can't find
+    # the account's server. Seeded into an account that lacks them (a prefix copied before the template had them).
+    cfg = os.path.join(ad, "Config")
+    os.makedirs(cfg, exist_ok=True)
+    ci = os.path.join(cfg, "common.ini")
+    try:
+        has = os.path.exists(ci) and "WebRequestUrl=" in open(ci, "rb").read().decode("utf-16-le", "ignore")
+    except Exception:
+        has = False
+    if not has and os.path.exists(SEED_COMMON):
+        shutil.copyfile(SEED_COMMON, ci)
+    sv = os.path.join(cfg, "servers.dat")
+    if os.path.exists(SEED_SERVERS) and (not os.path.exists(sv) or os.path.getsize(sv) < os.path.getsize(SEED_SERVERS)):
+        shutil.copyfile(SEED_SERVERS, sv)
     ex = os.path.join(ad, "MQL5", "Experts", "SessionTerminal")
     os.makedirs(ex, exist_ok=True)
     dst = os.path.join(ex, "MinimalistManager.ex5")
@@ -114,7 +131,8 @@ def start_ini(acc, ad, password):
         "[Common]", "Login=%s" % acc["login"], "Password=%s" % password, "Server=%s" % acc["server"],
         "NewsEnable=0", "ProxyEnable=0", "CertInstall=0",
         "[Experts]", "Enabled=1", "AllowLiveTrading=1", "AllowDllImport=0", "Account=0", "Profile=0",
-        "WebRequest=1", "WebRequestUrl=%s" % ALLOWED,
+        # no WebRequest lines here: MT5 keeps its allowed addresses encrypted in Config/common.ini (seeded by the agent),
+        # and a plain list in the start file replaced them with nothing (23 Oct 2026)
         "[StartUp]", "Expert=%s" % EA_NAME, "ExpertParameters=st-cloud.set", "Symbol=EURUSD", "Period=M15", "",
     ]))
     os.chmod(p, 0o600)
@@ -122,10 +140,18 @@ def start_ini(acc, ad, password):
     return p
 
 
+def running(login):
+    """This account's MT5, if it runs - started by this agent or by an earlier run of it (MT5 outlives an agent restart)."""
+    r = subprocess.run(["pgrep", "-u", "st", "-f", "drive_c/ST/%s/terminal64.exe" % safe(login)], capture_output=True, text=True)
+    return [int(p) for p in r.stdout.split() if p.strip().isdigit()]
+
+
 def alive(acc):
     s = state.get(acc["id"]) or {}
     pr = s.get("proc")
-    return pr is not None and pr.poll() is None
+    if pr is not None and pr.poll() is None:
+        return True
+    return bool(running(acc["login"]))       # adopted: never a second MT5 for one account
 
 
 def launch(acc):
@@ -146,7 +172,7 @@ def launch(acc):
     win_ini = "C:\\ST\\%s\\st-start.ini" % safe(acc["login"])
     cmd = ["runuser", "-u", "st", "--", "env"] + ["%s=%s" % kv for kv in env.items() if kv[0] in
            ("WINEPREFIX", "WINEARCH", "WINEDEBUG", "WINEDLLOVERRIDES", "TZ", "HOME", "USER")] + \
-          ["xvfb-run", "-a", "-s", "-screen 0 1280x800x24", WINE, os.path.join(ad, "terminal64.exe"), "/portable",
+          ["xvfb-run", "-a", "-s", "-screen 0 1280x800x24", "/opt/st/run-in-x.sh", WINE, os.path.join(ad, "terminal64.exe"), "/portable",
            "/config:" + win_ini]
     s["proc"] = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
     s["started"], s["ini"] = time.time(), ini
@@ -201,6 +227,9 @@ def stop(acc_or_id, wipe_dir=None):
             except Exception:
                 pass
     s["proc"] = None
+    if s.get("login"):                         # also one adopted from an earlier run of the agent
+        subprocess.run(["pkill", "-u", "st", "-f", "drive_c/ST/%s/terminal64.exe" % safe(s["login"])], check=False)
+        subprocess.run(["pkill", "-u", "st", "-f", "C:.ST.%s.terminal64.exe" % safe(s["login"])], check=False)
     if s.get("ini"):
         try:
             os.remove(s["ini"])
@@ -222,7 +251,7 @@ def tick():
             log("removed", aid)
     for a in accounts:
         s = state.setdefault(a["id"], {"fails": 0, "next": 0})
-        s["dir"] = adir_of(a)
+        s["dir"], s["login"] = adir_of(a), a["login"]
         if not alive(a):
             if s.get("proc") is not None:        # it was running and stopped: back off before the next start
                 s["fails"] = s.get("fails", 0) + 1

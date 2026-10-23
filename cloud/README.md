@@ -15,6 +15,19 @@ only the admin can add an account.
 system" under Wine 9/10/11 stable. Wine staging in Windows 11 mode starts it (tested 23 Oct 2026). Mono and Gecko are
 switched off (`WINEDLLOVERRIDES=mscoree,mshtml=`) because their installers open a dialog nobody can click.
 
+**Once per host, by hand (23 Oct 2026):** MT5 only takes the EA's two web addresses in its own encrypted form, so they
+cannot be written into a file. Open one MT5 *without* a start file, then go to Tools > Options > Expert Advisors:
+tick Allow algorithmic trading, untick the two "Disable ... when changed" boxes, tick Allow WebRequest, and add
+https://figozyxoyobixadhqewr.supabase.co and https://live.sessionterminal.com. Close it, then copy its
+`Config/common.ini` to `/opt/st/seed-common.ini` and into the template's MT5. A fresh copy keeps all of it (checked).
+To drive a terminal's screen, use `stx <login> <xdotool args>`; `stx <login> shot f.png` takes a screenshot.
+
+Each terminal's screen also runs openbox (`agent/run-in-x.sh`). Without a window manager, windows can't be focused
+and menus draw black. Wine's virtual desktop (set in `install-mt5.sh`) draws MT5's layered dialogs.
+
+**Brokers:** a fresh MT5 only knows MetaQuotes' servers. FTMO's list (`servers.dat`, from Nestor's FTMO MT5) is
+seeded into each account as `/opt/st/servers-ftmo.dat`. Another firm needs its own list.
+
 ## How an account runs
 
 1. The member adds it in Settings > MT5 > MT5 in the cloud. The password is sealed in the browser with the host's
@@ -22,7 +35,8 @@ switched off (`WINEDLLOVERRIDES=mscoree,mshtml=`) because their installers open 
    (`supabase/cloud_mt5.sql`).
 2. `agent/st_agent.py` (root, `st-agent.service`) asks the `cloud-agent` edge function every 10 s which accounts to
    run. The function checks the agent secret (`CLOUD_AGENT_KEY`) and returns the accounts with the member's sync token
-   and time zone.
+   and time zone. If a terminal is still running from before an agent restart, the agent adopts it rather than
+   starting a second one.
 3. Per member: one Wine prefix (`/home/st/members/<user>`), so all their accounts share MT5's Common folder, where the
    EA's Lead/Follow copier files live. Per account: a portable MT5 (`C:\ST\<login>`), the EA
    (`/opt/st/ea/MinimalistManager.ex5`, Nestor's own build) and a preset with the token and App trading.
