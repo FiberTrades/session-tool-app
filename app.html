@@ -56261,6 +56261,12 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
         // stored directly, with no arithmetic that a later trade could invalidate.
         const curVal = curInp ? parseFloat(curInp.value) : NaN;
         if (acc && !isNaN(curVal) && curVal > 0) acc.balanceAtSetup = curVal;
+        // Started from an MT5 login's "A new account" (23 Oct 2026): that login's trades go into it
+        try {
+          const lg = window.__stLinkOnAdd;
+          if (acc && lg) { if (!data.mt5LoginMap || typeof data.mt5LoginMap !== 'object') data.mt5LoginMap = {}; data.mt5LoginMap[lg] = acc.id; }
+          window.__stLinkOnAdd = null; const nt = document.getElementById('settings-account-add-link'); if (nt) nt.remove();
+        } catch (e) {}
         saveData();
         nameInp.value = '';
         balInp.value = '';
@@ -77928,7 +77934,8 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
       var map = (typeof data !== 'undefined' && data && data.mt5LoginMap) || {}, cur = map[x.lg] || '', accs = journalAccts();
       if (cur && !accs.some(function (a) { return a.id === cur; })) cur = '';   // linked to an account that is gone: the active one, as everywhere
       var opts = '<option value=""' + (cur ? '' : ' selected') + '>' + esc(T('Not linked: your active account', 'Sin vincular: tu cuenta activa')) + '</option>'
-        + accs.map(function (a) { return '<option value="' + esc(a.id) + '"' + (a.id === cur ? ' selected' : '') + '>' + esc(accName(a)) + '</option>'; }).join('');
+        + accs.map(function (a) { return '<option value="' + esc(a.id) + '"' + (a.id === cur ? ' selected' : '') + '>' + esc(accName(a)) + '</option>'; }).join('')
+        + '<option value="__new">' + esc(T('+ A new account', '+ Una cuenta nueva')) + '</option>';
       var chips = '';
       if (x.on) {
         if (x.al === true) chips += chip('', T('Algo Trading on', 'Trading algor\u00edtmico activado'));
@@ -78144,10 +78151,12 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     bg.innerHTML = '<div class="modal mdl-new mt5c-ask" role="dialog" aria-modal="true" aria-labelledby="mt5c-ask-h" style="max-width:460px;">'
       + '<div class="modal-header"><div class="modal-title" id="mt5c-ask-h">' + T('New MT5 account connected', 'Nueva cuenta MT5 conectada') + '</div></div>'
       + '<p class="mt5c-ask-sub">MT5 <b>' + esc(x.lg) + '</b>' + (syms ? ' \u00b7 ' + esc(syms) : '') + (x.v ? ' \u00b7 EA ' + esc(x.v) : '') + '. ' + T('Which of your accounts do its trades go into?', '\u00bfA cu\u00e1l de tus cuentas van sus operaciones?') + '</p>'
-      + '<div class="mt5c-ask-list">' + accs.map(function (a) { return '<button type="button" class="mt5c-btn" data-mt5c-ask="' + esc(a.id) + '">' + esc(accName(a)) + '</button>'; }).join('') + '</div>'
+      + '<div class="mt5c-ask-list">' + accs.map(function (a) { return '<button type="button" class="mt5c-btn" data-mt5c-ask="' + esc(a.id) + '">' + esc(accName(a)) + '</button>'; }).join('')
+      + '<button type="button" class="mt5c-btn" data-mt5c-ask="__new">' + T('+ A new account', '+ Una cuenta nueva') + '</button></div>'
       + '<p class="mt5c-ask-hint">' + T('You can change it any time in Settings \u2192 MT5.', 'Puedes cambiarlo cuando quieras en Ajustes \u2192 MT5.') + '</p>'
       + '<div class="modal-actions"><button type="button" class="settings-btn" data-mt5c-ask="">' + T('Decide later', 'Decidir m\u00e1s tarde') + '</button></div></div>';
     var close = function (id) {
+      if (id === '__new') { id = ''; setTimeout(function () { newFor(x.lg); }, 0); }
       try { data.mt5Asked[x.lg] = Date.now(); if (id) { if (!data.mt5LoginMap || typeof data.mt5LoginMap !== 'object') data.mt5LoginMap = {}; data.mt5LoginMap[x.lg] = id; } if (typeof saveData === 'function') saveData(); } catch (e) {}
       try { if (typeof window.renderSettingsAccountsList === 'function') window.renderSettingsAccountsList(); } catch (e) {}
       try { document.removeEventListener('keydown', onKey, true); } catch (e) {}
@@ -78165,6 +78174,23 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
       var n = document.querySelector('.settings-nav-item[data-section="mt5c"]'); if (n) n.click();
     } catch (e) {}
   }
+  // "+ A new account" (23 Oct 2026: his demo login could only go into his one account, so Live Charts named it "FTMO 70K"):
+  // Settings -> Accounts' Add form, named after the login; pressing Add links the login to the new account
+  function newFor(lg) {
+    try {
+      window.__stLinkOnAdd = String(lg);
+      var bg = document.getElementById('settings-modal-bg');
+      if (!(bg && bg.classList.contains('show'))) { var g = document.getElementById('settings-gear'); if (g) g.click(); }
+      var n = document.querySelector('.settings-nav-item[data-section="accounts"]'); if (n) n.click();
+      var nm = document.getElementById('settings-account-add-name'), card = nm && nm.closest('.set-card');
+      if (nm && !nm.value) nm.value = 'MT5 ' + lg;
+      var p = document.getElementById('settings-account-add-link');
+      if (card && !p) { p = document.createElement('p'); p.id = 'settings-account-add-link'; p.className = 'set-intro'; card.insertBefore(p, card.children[1] || null); }
+      if (p) p.textContent = T('MT5 ' + lg + '’s trades go into this account once you press Add. Name it and give the balance it started with.', 'Las operaciones de MT5 ' + lg + ' van a esta cuenta en cuanto pulses Añadir. Ponle nombre y el saldo con el que empezó.');
+      setTimeout(function () { try { if (card) card.scrollIntoView({ block: 'center' }); if (nm) { nm.focus(); nm.select(); } } catch (e) {} }, 150);
+    } catch (e) {}
+  }
+  window.__stMt5NewFor = newFor;
   function link(lg, id) {
     try {
       if (!data.mt5LoginMap || typeof data.mt5LoginMap !== 'object') data.mt5LoginMap = {};
@@ -78208,7 +78234,9 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     if (t0.closest('#mt5c-home [data-mt5c-x]')) { try { data.mt5cHide = Date.now(); if (typeof saveData === 'function') saveData(); } catch (er) {} home(); return; }
     if (t0.closest('#mt5-connect-open')) { try { var x = document.getElementById('mt5-modal-close'); if (x) x.click(); } catch (er) {} openTab(); return; }
   });
-  document.addEventListener('change', function (e) { var sel = e.target && e.target.closest && e.target.closest('select[data-mt5c-acc]'); if (sel) link(sel.getAttribute('data-mt5c-acc'), sel.value); });
+  document.addEventListener('change', function (e) { var sel = e.target && e.target.closest && e.target.closest('select[data-mt5c-acc]'); if (!sel) return;
+    if (sel.value === '__new') { render(true); newFor(sel.getAttribute('data-mt5c-acc')); return; }   // the list goes back to what it was until Add
+    link(sel.getAttribute('data-mt5c-acc'), sel.value); });
   document.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target && e.target.closest && e.target.closest('#mt5c-body [data-cl-f]')) { e.preventDefault(); clAdd(); } });
   document.addEventListener('change', function (e) { var sel = e.target && e.target.closest && e.target.closest('select[data-mt5c-role]'); if (!sel) return;
     window.__stCopyWish.set(sel.getAttribute('data-mt5c-role'), sel.value).then(function () { render(true); }); render(true); });   // the copier's role, for that account's EAs (9.10)
