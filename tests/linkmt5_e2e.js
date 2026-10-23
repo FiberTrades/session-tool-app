@@ -30,24 +30,27 @@
   var nav = modal.querySelector('.settings-nav-item[data-section="accounts"]'); if (nav) nav.click();
   await W(500); try { renderSettingsAccountsList(); } catch (e) {} await W(400);
   var rowOf = function (nm) { return Array.from(modal.querySelectorAll('.settings-account-row')).filter(function (r) { return r.querySelector('.san-txt') && r.querySelector('.san-txt').textContent === nm; })[0]; };
-  var line = function (r) { return ((r && r.querySelector('.settings-account-mt5')) || {}).textContent || ''; };
+  // Since 23 Oct 2026 (the Accounts tab rebuilt): an account's MT5 numbers are chips in its line, and its MT5 part is in it opened
+  var line = function (r) { return ((r && r.querySelector('.sacc-chips')) || {}).textContent || ''; };
+  var openRow = async function (nm) { var a = data.accounts.filter(function (x) { return x.name === nm; })[0]; window.__stAccOpenId = a && a.id; renderSettingsAccountsList(); await W(200); return rowOf(nm); };
   var r1 = rowOf('FTMO 70K - Challenge'), r3 = rowOf('FTMO 70K - Demo');
   if (!r1 || !r3) { ok('the account rows are on screen', false, modal.innerText.slice(0, 200)); return out; }
-  ok('each account shows its MT5 number with "change in Settings → MT5"', /MT5 541419576 · change in Settings → MT5/.test(line(r1)) && /MT5 1514906945 · change in Settings → MT5/.test(line(r3)), [line(r1), line(r3)]);
+  ok('each account shows its MT5 number in its line', /MT5 541419576/.test(line(r1)) && /MT5 1514906945/.test(line(r3)), [line(r1), line(r3)]);
   ok('the Link MT5 window is gone: no Link MT5 account in any Options menu', !modal.querySelector('[data-action="linkmt5"]') && typeof window.__stLinkMt5 === 'undefined');
   data.mt5LoginMap = { '541419576': a1.id, '999000': 'acc_deleted_long_ago' }; renderSettingsAccountsList(); await W(200);
-  r3 = rowOf('FTMO 70K - Demo');
-  ok('with two accounts, one with no MT5 account says so: "No MT5 account · link one in Settings → MT5"', /No MT5 account · link one in Settings → MT5/.test(line(r3)), line(r3));
-  data.mt5LoginMap['1514906945'] = a3.id; renderSettingsAccountsList(); await W(200);
-  rowOf('FTMO 70K - Challenge').querySelector('[data-action="gomt5c"]').click(); await W(500);
-  var sec = document.getElementById('mt5c-sec'), mnav = modal.querySelector('.settings-nav-item[data-section="mt5c"]');
-  ok('pressing it opens Settings → MT5', mnav.classList.contains('active') && sec.style.display !== 'none');
+  r3 = await openRow('FTMO 70K - Demo');
+  var m3 = r3 && r3.querySelector('[data-slot="mt5"]');
+  ok('opened, an account with no MT5 account says so, with Connect MT5', m3 && /No MT5 account linked/.test(m3.textContent) && m3.querySelector('[data-sacc-conn]'), m3 && m3.textContent);
+  data.mt5LoginMap['1514906945'] = a3.id;
+  m3.querySelector('[data-sacc-conn]').click(); await W(500);
+  var sec = document.getElementById('mt5c-body'), cn = document.getElementById('sacc-conn');
+  ok('Connect MT5 opens MT5 connections in Accounts', cn && cn.open && cn.contains(sec));
   window.__stMt5c.render(); await W(100);
   var eaLine = function (lg) { return sec.querySelector('[data-mt5c-login="' + lg + '"]'); }, pick = function (lg) { var e = eaLine(lg); return e && e.querySelector('select[data-mt5c-acc]'); };
   ok('Settings → MT5 lists the EA\'s MT5 accounts with where their trades go: 541419576 → the Challenge, 777888 not linked', pick('541419576') && pick('541419576').value === a1.id && pick('777888') && pick('777888').value === '', [pick('541419576') && pick('541419576').value, pick('777888') && pick('777888').value]);
   ok('...and a linked MT5 account no EA has reported yet, so it can be changed there too ("Not seen from your EA yet"); not one linked to a deleted account', pick('1514906945') && pick('1514906945').value === a3.id && /Not seen from your EA yet/.test(eaLine('1514906945').textContent) && !eaLine('999000'), eaLine('1514906945') && eaLine('1514906945').textContent);
   var sel = pick('777888'); sel.value = a3.id; sel.dispatchEvent(new Event('change', { bubbles: true })); await W(200);
-  ok('Trades go into links it, and the Accounts row shows it', data.mt5LoginMap['777888'] === a3.id && /777888/.test(line(rowOf('FTMO 70K - Demo'))), [data.mt5LoginMap['777888'], line(rowOf('FTMO 70K - Demo'))]);
+  ok('Trades go into links it, and the Accounts line shows it', data.mt5LoginMap['777888'] === a3.id && /777888/.test(line(rowOf('FTMO 70K - Demo'))), [data.mt5LoginMap['777888'], line(rowOf('FTMO 70K - Demo'))]);
   sel = pick('777888'); sel.value = ''; sel.dispatchEvent(new Event('change', { bubbles: true })); await W(200);
   ok('...and Not linked takes it off', !('777888' in data.mt5LoginMap));
   modal.querySelector('.modal-close').click(); await W(300);

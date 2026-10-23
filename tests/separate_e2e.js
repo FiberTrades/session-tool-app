@@ -118,7 +118,12 @@
   await W(500);
   try { renderSettingsAccountsList(); } catch (e) {}
   await W(400);
-  var rows = Array.from(modal.querySelectorAll('.settings-account-row')), rowOf = function (nm) { return rows.filter(function (r) { return r.querySelector('.san-txt') && r.querySelector('.san-txt').textContent === nm; })[0]; };
+  // Since 23 Oct 2026 an account's line opens to its settings (its type switch, the test note): rowOf opens the one asked for
+  var rows = Array.from(modal.querySelectorAll('.settings-account-row')), rowOf = function (nm) {
+    var a = (data.accounts || []).filter(function (x) { return x.name === nm; })[0];
+    if (a && window.__stAccOpenId !== a.id) { window.__stAccOpenId = a.id; try { renderSettingsAccountsList(); } catch (e) {} }
+    rows = Array.from(modal.querySelectorAll('.settings-account-row'));
+    return rows.filter(function (r) { return r.querySelector('.san-txt') && r.querySelector('.san-txt').textContent === nm; })[0]; };
   var r3 = rowOf('Demo 70K'), r1 = rowOf('Live 70K');
   if (!r3 || !r1) { ok('Settings: the account rows are on screen', false, [rows.length, modal.innerText.slice(0, 200)]); return out; }
   ok('Settings: the test account wears a Test badge and says what it means', !!r3 && /^test$/i.test(((r3.querySelector('.settings-account-badge') || {}).textContent || '').trim()) && /^Test account:/i.test(((r3.querySelector('.settings-account-sepnote') || {}).textContent || '').trim()) && /leaderboard/.test(r3.querySelector('.settings-account-sepnote').textContent), r3 && r3.innerText.slice(0, 200));

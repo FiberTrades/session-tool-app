@@ -20,7 +20,10 @@
     return kids.slice(first < 0 ? 0 : first).filter(function (el) { return !el.classList.contains('set-row') && !el.classList.contains('set-block') && el.tagName !== 'SCRIPT' && el.tagName !== 'STYLE' && getComputedStyle(el).display !== 'none'; })
       .map(function (el) { return (el.id || el.className || el.tagName) + ': ' + el.textContent.trim().slice(0, 40); }); };
   ok('Session: every setting is a row', loose('session').length === 0, loose('session'));
-  ok('Profile and Risk rules too', loose('profile').length === 0 && loose('risk_rules').length === 0, [loose('profile'), loose('risk_rules')]);
+  ok('Profile too', loose('profile').length === 0, loose('profile'));
+  // Risk rules is part of Accounts since 23 Oct 2026: its boxes are rows of the opened account (or still of its own section)
+  var riskIds = ['settings-risk-max-dd', 'settings-risk-firm-daily', 'settings-risk-max-loss', 'settings-risk-max-trade', 'settings-risk-profit-target', 'settings-risk-be-threshold', 'settings-risk-max-trades', 'settings-risk-consistency'];
+  ok('...and every risk rule is a row', riskIds.every(function (id) { var e = document.getElementById(id); return e && e.closest('.set-row'); }), riskIds.filter(function (id) { var e = document.getElementById(id); return !(e && e.closest('.set-row')); }));
 
   // ---- Trade alerts: a row like Live nudges, not a strip across the whole width ----
   var tr = document.getElementById('settings-nudges-trades').closest('.set-row'), ln = document.getElementById('settings-nudges-on').closest('.set-row');
@@ -60,8 +63,9 @@
   var secOf = function (k) { return bg.querySelector('.settings-section[data-section="' + k + '"]'); };
   var showTab = async function (k) { var nb = bg.querySelector('.settings-nav-item[data-section="' + k + '"]'); if (nb) { nb.style.display = ''; nb.click(); } await W(500); return secOf(k); };
   var acc = await showTab('accounts');
-  ok('Accounts: three cards under their headings - your accounts, add an account, payouts', acc && acc.querySelectorAll(':scope > .set-card').length === 3 && acc.querySelectorAll(':scope > .set-h').length === 3
-    && !!acc.querySelector('.sacc-card #settings-accounts-list') && !!acc.querySelector('.spo-card #settings-payouts-list'), acc && acc.querySelectorAll(':scope > *').length);
+  // rebuilt 23 Oct 2026: your accounts (each opens), + Add account (the form behind it), MT5 connections; payouts inside each account
+  ok('Accounts: your accounts in a card with + Add account; the Add form behind it; MT5 connections under them', acc && !!acc.querySelector('.sacc-card #settings-accounts-list') && !!acc.querySelector('.sacc-card #sacc-add-open')
+    && !!acc.querySelector('#sacc-add-wrap .set-card #settings-account-add-name') && !!acc.querySelector('#sacc-conn #mt5c-body'), acc && acc.querySelectorAll(':scope > *').length);
   var addRows = acc.querySelectorAll('.set-card .set-row'), addIds = ['settings-account-add-name', 'settings-account-add-balance', 'settings-account-add-current', 'settings-account-add-create'];
   ok('...adding an account is a row each: name, starting balance, balance now, Add - each control on the right', addIds.every(function (id) { var e = document.getElementById(id); return e && e.closest('.set-r') && e.closest('.set-card'); }), addRows.length);
   var tallest = Array.prototype.reduce.call(bg.querySelectorAll('.set-card input, .set-card textarea'), function (m, e) { return e.offsetParent ? Math.max(m, e.getBoundingClientRect().height) : m; }, 0);

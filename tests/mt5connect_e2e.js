@@ -23,8 +23,9 @@
 
     // ---- the tab ----
     card.querySelector('[data-mt5c-go]').click(); await W(400);
-    var bg = document.getElementById('settings-modal-bg'), sec = document.getElementById('mt5c-sec'), nav = document.querySelector('.settings-nav-item[data-section="mt5c"]');
-    ok('Connect MT5 opens Settings on the MT5 tab, right after Accounts', bg.classList.contains('show') && nav.classList.contains('active') && sec.style.display !== 'none' && nav.previousElementSibling.getAttribute('data-section') === 'accounts' && nav.textContent.trim() === 'MT5', [nav.className, sec.style.display]);
+    // MT5 is part of Accounts since 23 Oct 2026: its MT5 connections, opened
+    var bg = document.getElementById('settings-modal-bg'), sec = document.getElementById('mt5c-body'), nav = document.querySelector('.settings-nav-item[data-section="accounts"]'), cn = document.getElementById('sacc-conn');
+    ok('Connect MT5 opens Settings on Accounts with MT5 connections open', bg.classList.contains('show') && nav.classList.contains('active') && cn && cn.open && cn.contains(sec), [nav.className, cn && cn.open]);
     ok('...and the live line may join while it is open (to hear Algo Trading), without asking for prices', M.visible() === true);
     var stepEls = sec.querySelectorAll('[data-mt5c-step]'), stepN = function (n) { return sec.querySelector('[data-mt5c-step="' + n + '"]'); };
     var link = stepN(1) && stepN(1).querySelector('a.mt5c-btn');
