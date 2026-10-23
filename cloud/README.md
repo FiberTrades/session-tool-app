@@ -61,3 +61,11 @@ seeded into each account as `/opt/st/servers-ftmo.dat`. Another firm needs its o
 
 Nestor compiles it. It is copied to `/opt/st/ea/MinimalistManager.ex5` only with his OK, and the agent puts it into
 each account at the next start.
+
+## The live relay (since 23 Oct 2026)
+
+`relay/server.py` runs here too, as `st-relay` (`cloud/relay/st-relay.service`: 127.0.0.1:8080, DynamicUser) behind Caddy
+(`cloud/relay/Caddyfile`), which holds the `live.sessionterminal.com` certificate (Let's Encrypt, renewed by Caddy).
+DNS: GoDaddy A record `live` -> 81.0.249.218 (was a CNAME to Railway). The firewall allows 80/443 for Caddy only.
+`/etc/hosts` maps `live.sessionterminal.com` to 127.0.0.1, so the cloud MT5s reach the relay on the same machine whatever
+an outside resolver still caches. Health: `https://live.sessionterminal.com/health` (rooms, conns, msgs, up_s).
