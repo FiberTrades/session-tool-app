@@ -62,7 +62,7 @@
   window.__stEA.apply({ login: '555111', symbol: 'GBPUSD', ea_version: '9.06', updated_at: new Date().toISOString(), settings: { unit: 'pips' } });
   for (var k = 0; k < 20 && !ask(); k++) await W(200);
   var at = ask() ? ask().innerText.replace(/\s+/g, ' ') : '';
-  ok('a new MT5 account connects with 2 accounts: it asks which one its trades go into', ask() && /New MT5 account connected/.test(at) && /555111/.test(at) && /GBPUSD/.test(at) && /FTMO 70K - Challenge/.test(at) && /FTMO 70K - Demo/.test(at) && /Decide later/i.test(at) && /Settings → MT5/.test(at), at.slice(0, 220));
+  ok('a new MT5 account connects with 2 accounts: it asks which one its trades go into', ask() && /New MT5 account connected/.test(at) && /555111/.test(at) && /GBPUSD/.test(at) && /FTMO 70K - Challenge/.test(at) && /FTMO 70K - Demo/.test(at) && /Decide later/i.test(at) && /Settings → Accounts/.test(at), at.slice(0, 220));
   ask().querySelector('[data-mt5c-ask="' + a3.id + '"]').click(); await W(300);
   ok('picking one links it and closes the question', !ask() && data.mt5LoginMap['555111'] === a3.id && !!data.mt5Asked['555111'], data.mt5LoginMap['555111']);
   await W(2000);

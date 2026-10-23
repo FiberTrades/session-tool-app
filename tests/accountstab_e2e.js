@@ -75,6 +75,42 @@
       ok('a prop firm account\'s MT5 withdrawal: a paid payout, from MT5, no question asked' + (live ? ' (skipped: session live)' : ''), live || (po && po.status === 'paid' && po.source === 'mt5' && po.amount === 2000 && !document.getElementById('po-backdrop')), po);
       window.STCloud.pullBalanceOps = keepPull; window.STCloud.handleBalanceOp = keepH;
     }
+    // ---- MT5 in the cloud, merged into Accounts (23 Oct 2026: "why isnt MT5 in the cloud merged with your accounts?"): only for
+    //      Nestor for now (cloudOn), so stand-ins here - nothing reaches the server ----
+    var M = window.__stMt5c, keep = { on: M.cloudOn, cloud: M.cloud, add: M.cloudAdd, rm: M.cloudRm }, rowsC = [], calls = [];
+    M.cloudOn = function () { return true; }; M.cloud = function () { return rowsC; };
+    M.cloudAdd = function (lg, sv, pw, app) { calls.push(['add', lg, sv, !!pw, app]); rowsC.push({ id: 'cl-' + lg, login: +lg, server: sv, status: 'starting', status_at: new Date().toISOString(), app_trading: app, symbols: null }); return Promise.resolve({ ok: true, id: 'cl-' + lg }); };
+    M.cloudRm = function (id) { calls.push(['rm', id]); rowsC = rowsC.filter(function (r) { return r.id !== id; }); return Promise.resolve(); };
+    window.__stAccOpenId = null; window.renderSettingsAccountsList(); await W(200);
+    document.getElementById('sacc-add-open').click(); await W(200);
+    var ac = document.getElementById('sacc-addcloud');
+    ok('Cloud on: + Add account leads with "run it in the cloud" (login, server, password), the hand-made account under it', ac && ac.querySelector('[data-sacc-af="login"]') && ac.querySelector('[data-sacc-af="pw"]') && /Or add one by hand/.test(document.getElementById('sacc-add-wrap').textContent));
+    ac.querySelector('[data-sacc-af="login"]').value = '7770002'; ac.querySelector('[data-sacc-af="server"]').value = 'FTMO-Demo'; ac.querySelector('[data-sacc-af="pw"]').value = 'not-a-real-password';
+    ac.querySelector('[data-sacc-ago]').click(); await W(500);
+    var na = (data.accounts || []).filter(function (a) { return (data.mt5LoginMap || {})['7770002'] === a.id; })[0];
+    ok('Add and start in the cloud: the server is asked, an account is made and linked to the login, FTMO marks it prop firm, it opens', calls[0] && calls[0][0] === 'add' && calls[0][1] === '7770002' && calls[0][3] === true && na && na.kind === 'challenge' && window.__stAccOpenId === na.id && document.getElementById('sacc-add-wrap').hidden, [calls, na && na.name]);
+    ok('...its password field is emptied', !ac.querySelector('[data-sacc-af="pw"]').value);
+    window.__stEA.apply({ login: '7770002', symbol: 'EURUSD', ea_version: '9.13', updated_at: new Date().toISOString(), settings: { currency: 'GBP', company: 'FTMO Global Markets Ltd', server: 'FTMO-Demo', start_bal: 10000 } });
+    window.__stAccFill(true); await W(300);
+    ok('when MT5 reports, its name and starting balance fill themselves in (FTMO 10K - here "(2)", beside the FTMO 10K - Challenge already there)', /^FTMO 10K( \(2\))?$/.test(na.name) && na.startingBalance === 10000 && !na._nameAuto && !na._sbAuto, [na.name, na.startingBalance]);
+    ok('...and its line says Cloud', /Cloud/i.test(item(na.id).querySelector('.sacc-chips').textContent), item(na.id).querySelector('.sacc-chips').textContent);
+    // a PC account moved to the cloud, then removed
+    window.__stAccOpenId = a2.id; window.renderSettingsAccountsList(); await W(250);
+    var mvb = item(a2.id).querySelector('[data-sacc-clopen="1514994373"]');
+    ok('an account on the PC: Move to the cloud', !!mvb);
+    mvb.click(); await W(200);
+    var sv = document.querySelector('[data-sacc-clf="server"]'), pw = document.querySelector('[data-sacc-clf="pw"]');
+    ok('...opens its form: server, password, trading from the app, and to close MT5 on the PC', sv && pw && /Close MT5 on your PC/.test(item(a2.id).textContent));
+    sv.value = 'FTMO-Demo'; pw.value = 'not-a-real-password'; document.querySelector('[data-sacc-clgo="1514994373"]').click(); await W(400);
+    ok('...Start it in the cloud asks the server for that login', calls.some(function (c) { return c[0] === 'add' && c[1] === '1514994373' && c[2] === 'FTMO-Demo'; }), calls);
+    var rmb = item(a2.id).querySelector('[data-sacc-clrm]');
+    ok('a cloud account: Remove from the cloud', !!rmb);
+    rmb.click(); await W(150);
+    ok('...asks for a second press first', /Press again/.test(item(a2.id).querySelector('[data-sacc-clrm]').textContent) && !calls.some(function (c) { return c[0] === 'rm'; }));
+    item(a2.id).querySelector('[data-sacc-clrm]').click(); await W(300);
+    ok('...and the second press removes it', calls.some(function (c) { return c[0] === 'rm' && c[1] === 'cl-1514994373'; }), calls);
+    ok('MT5 connections becomes "your own MT5 instead"', /Your own MT5 instead/.test(document.getElementById('sacc-conn-t').textContent));
+    M.cloudOn = keep.on; M.cloud = keep.cloud; M.cloudAdd = keep.add; M.cloudRm = keep.rm;
   } catch (e) { ok('test ran', false, String(e && e.stack || e)); }
   return out;
 })()

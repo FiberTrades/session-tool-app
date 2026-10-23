@@ -152,7 +152,7 @@
     // ---- the MT5 import window ----
     document.getElementById('mt5-import-btn').click(); await W(300);
     var go = document.getElementById('mt5-connect-open');
-    ok('the import window: "Set up auto-sync: Settings → MT5" instead of the old steps; the manual export help stays', go && /Settings → MT5/.test(go.textContent) && !document.getElementById('mt5-help-auto-body') && !document.getElementById('mt5-help-copier-body') && !!document.getElementById('mt5-help-export-body'), go && go.textContent);
+    ok('the import window: "Set up auto-sync: Settings → Accounts" (MT5 is part of Accounts since 23 Oct 2026) instead of the old steps; the manual export help stays', go && /Settings → Accounts/.test(go.textContent) && !document.getElementById('mt5-help-auto-body') && !document.getElementById('mt5-help-copier-body') && !!document.getElementById('mt5-help-export-body'), go && go.textContent);
     go.click(); await W(400);
     ok('...pressing it closes the import window and opens Settings on MT5', !document.getElementById('mt5-modal-bg').classList.contains('show') && bg.classList.contains('show') && nav.classList.contains('active'));
     bg.querySelector('.modal-close').click(); await W(200);
