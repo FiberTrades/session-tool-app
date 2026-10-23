@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "9.10"
+#property version   "9.11"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -667,6 +667,7 @@ string g_flashMsg="";
 ulong  g_flashUntil=0;
 // v9.08: this account's EA running on MetaQuotes' VPS makes this copy stand aside (AsideTick, before OnInit)
 bool   g_onVps=false;          // this terminal is the MT5 VPS (TERMINAL_VPS)
+bool   g_inCloud=false;        // v9.11: this terminal is Session Terminal's own server (its MT5 lives in C:\ST\<login>)
 bool   g_aside=false;          // the VPS copy of this account is running: this copy does nothing
 bool   g_vpsHold=false;        // the first ask failed and this account had a VPS copy today: aside until an answer comes
 uint   g_vpsT0=0;              // v9.09: when this copy started (GetTickCount): it asks every minute for its first 15 minutes
@@ -3589,8 +3590,8 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.10\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
-                            g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY)));
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.11\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\",\"cloud\":%s}}",
+                            g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY),g_inCloud?"true":"false"));
   }
 // v8.86 (Nestor, 2 Oct 2026: "nudges for when my trade gets moved to BE, TP hit, SL hit, taken out for BE"):
 // why a position closed - the broker's stop loss, take profit or stop out, by hand, or by the EA.
@@ -3980,7 +3981,7 @@ void LwOpen()
 // v9.06: MT5's Algo Trading button (and this EA's own "Allow Algo Trading") - off, no order can be placed, from here or from the app
 bool AlgoOn(){ return TerminalInfoInteger(TERMINAL_TRADE_ALLOWED)!=0 && MQLInfoInteger(MQL_TRADE_ALLOWED)!=0; }
 int  g_lwAl=-1;                       // v9.06: Algo Trading as last told to the app
-string LwHi(){ return StringFormat("{\"v\":\"9.10\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
+string LwHi(){ return StringFormat("{\"v\":\"9.11\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d,\"cl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0,g_inCloud?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
 // v9.06 (Nestor, 19 Oct 2026: "whatever messages appear in MT5 i need to also see them in the app"): every message this EA writes on its
 // chart (Flash) goes to Session Terminal too, which shows it on Live Charts. Only while the line is up; nothing is queued.
 void LwMsg(string m)
@@ -7775,6 +7776,7 @@ int OnInit()
    CE_Sweep();         // Trade Replay: resume/queue candle exports
    HB_Load(); HB_AddSymbol(_Symbol); HB_ScanSymbols();   // v8.7: deep replay history for what you trade
 
+   g_inCloud=(StringFind(TerminalInfoString(TERMINAL_PATH),"C:\\ST\\")==0);   // v9.11 (23 Oct 2026): says so in its "hi" and settings, so the app can warn when the same account also runs on a PC
    g_onVps=(TerminalInfoInteger(TERMINAL_VPS)!=0);   // v9.08: on MetaQuotes' VPS this copy reports; anywhere else it stands aside while that one runs
    if(g_onVps) Print("Session Terminal: running on your MT5 VPS - a copy of this EA on your PC stands aside while this one runs.");
    AsideTick(true);

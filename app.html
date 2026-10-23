@@ -77621,7 +77621,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
    candle). "who" asks the EAs which charts they run on ("hi"), "hist" asks for a chart's last 1-minute candles ("bars"). */
 (function(){
   'use strict';
-  var ch = null, name = '', joined = false, joining = false, watching = false, lastWatch = 0, lastKey = '', lastMs = 0, idleAt = 0, eas = {}, easL = {}, stat = { ticks: 0, at: 0, last: null, watchSent: 0, px: 0, bars: 0 };
+  var ch = null, name = '', joined = false, joining = false, watching = false, lastWatch = 0, lastKey = '', lastMs = 0, idleAt = 0, eas = {}, easL = {}, where2 = {}, stat = { ticks: 0, at: 0, last: null, watchSent: 0, px: 0, bars: 0 };
   function client(){ return window.__stSB || null; }
   function token(){ try { return (window.STCloud && window.STCloud.syncToken) || ''; } catch (e) { return ''; } }
   function mentor(){ try { return !!new URLSearchParams(location.search).get('mv'); } catch (e) { return false; } }
@@ -77707,7 +77707,10 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
       var hook = function (x) { return x.on('broadcast', { event: 'tick' }, onTick)
         .on('broadcast', { event: 'hi' }, function (m) {                                       // an EA has just (re)joined, or answers "who"
           // al: MT5's Algo Trading on (EA 9.06)
-          var p = (m && m.payload) || {}; if (p.sym) { eas[p.sym] = { v: String(p.v || ''), dg: +p.dg || null, lg: p.lg != null ? String(p.lg) : null, tm: +p.tm === 1, rl: +p.rl === 1, al: p.al == null ? null : +p.al === 1, mb: p.mb == null ? null : +p.mb, vp: +p.vp === 1, at: Date.now() }; if (p.lg != null) easL[p.sym + '|' + p.lg] = eas[p.sym]; }
+          var p = (m && m.payload) || {}; if (p.sym) { eas[p.sym] = { v: String(p.v || ''), dg: +p.dg || null, lg: p.lg != null ? String(p.lg) : null, tm: +p.tm === 1, rl: +p.rl === 1, al: p.al == null ? null : +p.al === 1, mb: p.mb == null ? null : +p.mb, vp: +p.vp === 1, cl: +p.cl === 1, at: Date.now() }; if (p.lg != null) easL[p.sym + '|' + p.lg] = eas[p.sym]; }
+          // EA 9.11 says where it runs (cl: Session Terminal's server). The same account answering from the server AND from
+          // somewhere else means two EAs act on it - every break-even, close and copy twice (23 Oct 2026): where2 remembers both
+          if (p.sym && p.lg != null && p.cl != null) { var wk = String(p.lg) + '|' + p.sym; (where2[wk] = where2[wk] || {})[+p.cl === 1 ? 'cloud' : 'pc'] = Date.now(); }
           if (watching) watchNow(); })
         .on('broadcast', { event: 'unwatch' }, function () { if (watching) watchNow(); })      // another window stopped; this one still looks
         .on('broadcast', { event: 'px' }, function (m) { stat.px++; try { if (window.__stLC) window.__stLC.px(m && m.payload); } catch (e) {} })
@@ -77754,6 +77757,10 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
                           joined: function () { return !!anyJoined(); },
                           relay: function () { return { url: relayURL(), joined: relayJoined(), ea: relayEA() }; },   // the relay: joined, an EA on it
                           easL: function () { return easL; },                                         // the EAs by chart symbol and account
+                          // EA 9.11: an account whose EA answered from Session Terminal's server AND from elsewhere (a PC, a VPS) within the
+                          // last 15 minutes - two EAs acting on one account (the app asks "who" again every few minutes while cloud accounts run)
+                          twice: function (lg) { var now = Date.now(), out = false; Object.keys(where2).forEach(function (k) { var w = where2[k]; if (k.split('|')[0] === String(lg) && w.cloud && w.pc && now - w.cloud < 900000 && now - w.pc < 900000) out = true; }); return out; },
+                          _where2: function () { return where2; },
                           cmd: function (c) { if (!anyJoined()) return false; send('cmd', c); return true; } };   // a trade command to the EAs
 })();
 </script>
@@ -77929,6 +77936,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
         if (x.live.length) chips += x.rl ? chip('', T('Live prices on', 'Precios en vivo activados')) : chip('warn', T('Live prices slower', 'Precios en vivo m\u00e1s lentos'), T('Add the second web address in step 4 for live prices at full speed.', 'A\u00f1ade la segunda direcci\u00f3n web del paso 4 para precios en vivo a toda velocidad.'));
       } else if (x.mapOnly) chips += chip('idle', T('Not seen from your EA yet', 'A\u00fan no vista desde tu EA'));
       else chips += chip('idle', T('Last seen ', 'Visto el ') + esc(stamp(x.at)));
+      if (clTwice(x.lg)) chips += chip('off', T('Running twice: PC and cloud', 'Funciona dos veces: PC y nube'), T('This account’s EA is answering from your PC (or another MT5) and from the cloud server: every break-even, close and copy would happen twice. Turn Algo Trading off in the other MT5, or close it.', 'El EA de esta cuenta responde desde tu PC (u otro MT5) y desde el servidor en la nube: cada break-even, cierre y copia se haría dos veces. Desactiva el Trading algorítmico en el otro MT5, o ciérralo.'));
       var cw = window.__stCopyWish, cr = cw.role(x.lg), cs = cw.state(x.lg), cwant = (cs && !cs.err && cs.role !== cr && Date.now() - cs.at < 180000) ? cs.role : '', cshow = cwant || cr;
       var cpOpts = [['off', T('Off', 'Apagado')], ['lead', T('Lead', 'L\u00edder')], ['follow', T('Follow', 'Seguidor')]].map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === cshow ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('');
       var cpOld = !!x.v && ver(x.v) < 9010;
@@ -77991,6 +77999,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
      server's public key (cloud_hosts, RSA-OAEP SHA-256) before it is sent, so only that server can open it; removing the account
      deletes it there. Only the admin sees this while it is tested (cloud_mt5's insert policy checks st_is_admin too). */
   var CL = { rows: null, host: null, open: false, busy: false, err: '', at: 0, sure: null };
+  function clTwice(lg) { try { return !!(window.__stLiveLine && window.__stLiveLine.twice && window.__stLiveLine.twice(lg)); } catch (e) { return false; } }
   function clAdm() { try { return !!(window.currentUser && String(window.currentUser.email || '').toLowerCase() === 'be.o2@hotmail.com'); } catch (e) { return false; } }
   function clLoad() {
     var sb = window.__stSB; if (!sb || !clAdm()) return; CL.at = Date.now();
@@ -78037,8 +78046,12 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
       + '<p class="set-intro" style="margin:12px 0">' + T('Your MT5 runs on Session Terminal’s server day and night, with the EA on it: trading from the app, live charts, alerts, nudges and the copier keep working with your computer off. Nothing to install. <b>Testing: only you see this.</b>',
         'Tu MT5 funciona en el servidor de Session Terminal día y noche, con el EA puesto: operar desde la app, los gráficos en vivo, las alertas, los avisos y el copiador siguen con tu ordenador apagado. Nada que instalar. <b>En pruebas: solo tú lo ves.</b>') + '</p>';
     rows.forEach(function (r) {
-      var st = r.status === 'running' ? chip('', T('Signed in', 'Conectada')) : r.status === 'starting' ? chip('warn', T('Starting…', 'Arrancando…'))
+      // the server reports each account every minute: 4 minutes of silence = the server (or its agent) has stopped
+      var quiet = (r.status === 'running' || r.status === 'starting') && r.status_at && Date.now() - Date.parse(r.status_at) > 4 * 60000;
+      var st = quiet ? chip('off', T('Not answering since ', 'Sin responder desde las ') + esc(new Date(Date.parse(r.status_at)).toTimeString().slice(0, 5)))
+        : r.status === 'running' ? chip('', T('Signed in', 'Conectada')) : r.status === 'starting' ? chip('warn', T('Starting…', 'Arrancando…'))
         : r.status === 'error' ? chip('off', T('Problem', 'Problema')) : chip('idle', T('Waiting for the server', 'Esperando al servidor'));
+      if (clTwice(r.login)) st += chip('off', T('Running twice: PC and cloud', 'Funciona dos veces: PC y nube'), T('This account’s EA is also answering from another MT5 (your PC?). Turn Algo Trading off there, or close it, or every action happens twice.', 'El EA de esta cuenta también responde desde otro MT5 (¿tu PC?). Desactiva allí el Trading algorítmico, o ciérralo, o cada acción se hará dos veces.'));
       h += '<div class="mt5c-ea"><b>MT5 ' + esc(r.login) + '</b><span>' + esc(r.server) + (r.app_trading ? '' : ' · ' + T('trading from the app off', 'operar desde la app desactivado')) + '</span>' + st
         + (r.status_msg && r.status !== 'running' ? '<span class="set-sub">' + esc(r.status_msg) + '</span>' : '')
         + '<span class="mt5c-end"><button type="button" class="mt5c-btn" data-cl-rm="' + esc(r.id) + '">' + (CL.sure === r.id ? T('Press again to remove', 'Pulsa otra vez para quitarla') : T('Remove', 'Quitar')) + '</button></span></div>';
@@ -78202,7 +78215,10 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
   function tick() {
     try {
       if (signedIn() && !eaReady() && !S.seedTried && Date.now() - S.t0 > 8000) { S.seedTried = true; pull(true); }   // no live feed to read them: read once here
-      if (visible()) { render(); if (signedIn() && Date.now() - S.pullAt > (seenN() ? 60000 : 20000)) pull(false); if (clAdm() && Date.now() - CL.at > 8000) clLoad(); }
+      if (visible()) { render(); if (signedIn() && Date.now() - S.pullAt > (seenN() ? 60000 : 20000)) pull(false); if (clAdm() && Date.now() - CL.at > 8000) clLoad();
+        // while this is open, ask the EAs "who" every 5 minutes: each answers with where it runs (9.11), which is how an
+        // account running twice (PC and cloud) is seen
+        if (Date.now() - (S.whoAt || 0) > 300000) { S.whoAt = Date.now(); try { if (window.__stLiveLine && window.__stLiveLine._send) window.__stLiveLine._send('who'); } catch (e) {} } }
       home(); askCheck();
     } catch (e) {}
   }

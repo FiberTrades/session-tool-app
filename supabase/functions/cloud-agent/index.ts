@@ -7,8 +7,10 @@
 //
 //    GET  ?host=uk1                      the accounts that host should run: login, server, the encrypted password
 //                                        (only the host can open it), the member's sync token for the EA, their
-//                                        time zone (the EA's daily reset follows the machine's clock) and App trading.
-//    POST {host, id, status, msg}        what happened to one: starting | running | error.
+//                                        time zone (the EA's daily reset follows the machine's clock), App trading,
+//                                        and the EA settings that account last reported (its starting inputs).
+//    POST {host, id, status, msg}        what happened to one: starting | running | error. Sent every minute too,
+//                                        so status_at doubles as the server's heartbeat (nudge-cron's cloud watch).
 //
 //  No sign-in from the app: deploy with "Verify JWT" OFF; the secret is the check.
 // ============================================================
@@ -48,11 +50,25 @@ Deno.serve(async (req) => {
       const { data: js } = await admin.from("journals").select("user_id,tz:data->settings->>tz").in("user_id", users);
       (js || []).forEach((j: { user_id: string; tz: string | null }) => { if (j.tz) tzs[j.user_id] = j.tz; });
     }
+    // The EA settings that account last reported, from whichever MT5 ran it (23 Oct 2026, "settings follow the account"):
+    // the server starts its EA with them, so an account moved from a PC keeps its risk, stops, TP, BE and daily limit.
+    // EURUSD first (the chart the server opens), else the account's most recent report.
+    const eaOf: Record<string, unknown> = {};
+    const logins = [...new Set((rows || []).map((r) => String(r.login)))];
+    if (logins.length) {
+      const { data: es } = await admin.from("ea_settings").select("user_id,login,symbol,settings,updated_at").in("login", logins)
+        .order("updated_at", { ascending: false });
+      (es || []).forEach((e) => {
+        const k = e.user_id + "|" + e.login, cur = eaOf[k] as { symbol?: string } | undefined;
+        if (!cur || (cur.symbol !== "EURUSD" && e.symbol === "EURUSD")) eaOf[k] = { symbol: e.symbol, settings: e.settings };
+      });
+    }
     return json({
       accounts: (rows || []).map((r) => ({
         id: r.id, user: r.user_id, login: r.login, server: r.server, enc_password: r.enc_password,
         app_trading: r.app_trading, status: r.status,
         token: tokens[r.user_id] || null, tz: tzs[r.user_id] || "Europe/London",
+        ea: (eaOf[r.user_id + "|" + r.login] as { settings?: unknown } | undefined)?.settings || null,
       })),
     });
   }

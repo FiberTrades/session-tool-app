@@ -30,6 +30,8 @@ EA_NAME = "SessionTerminal\\MinimalistManager"      # under MQL5\Experts
 SEED_COMMON = "/opt/st/seed-common.ini"      # MT5's saved settings, see prepare()
 SEED_SERVERS = "/opt/st/servers-ftmo.dat"     # FTMO's server list
 POLL = 10
+HEARTBEAT = 60              # seconds between status reports while nothing changes
+EA_QUIET = 300              # the EA writes "MM alive" to its log every minute: 5 minutes of silence = it stopped
 BOOT_INI_TTL = 120          # seconds the start file (with the password) may live
 RESTART_BACKOFF = [10, 30, 60, 300, 900]
 
@@ -48,13 +50,16 @@ def api(method, body=None, query=""):
 
 
 def report(acc, status, msg=""):
+    """A change goes at once; the same state again each minute - status_at is the heartbeat nudge-cron watches."""
     s = state.setdefault(acc["id"], {})
-    if s.get("status") == (status, msg):
+    same = s.get("status") == (status, msg)
+    if same and time.time() - s.get("sent_at", 0) < HEARTBEAT:
         return
     try:
         api("POST", {"host": HOST, "id": acc["id"], "status": status, "msg": msg})
-        s["status"] = (status, msg)
-        log(acc["login"], status, msg)
+        s["status"], s["sent_at"] = (status, msg), time.time()
+        if not same:
+            log(acc["login"], status, msg)
     except Exception as e:
         log("report failed", acc["login"], e)
 
@@ -83,6 +88,30 @@ def as_st(cmd):
 def utf16(path, text):
     with open(path, "wb") as f:
         f.write(b"\xff\xfe" + text.replace("\n", "\r\n").encode("utf-16-le"))
+
+
+def preset(acc):
+    """The EA's inputs: the sync token, App trading, and the settings this account's EA last reported - from the PC it
+    ran on before, or from this server (23 Oct 2026, "settings follow the account": a fresh MT5 has none of the panel's
+    saved state, and the EA would start on factory risk). Partial-close shares live only in the panel and don't carry."""
+    ln = ["InpSyncToken=%s" % (acc.get("token") or ""), "InpAppTrade=%s" % ("true" if acc.get("app_trading") else "false")]
+    e = acc.get("ea") or {}
+    num = lambda k: (float(e[k]) if isinstance(e.get(k), (int, float)) or re.match(r"^-?\d+(\.\d+)?$", str(e.get(k, ""))) else None)
+    yes = lambda k: ("true" if e.get(k) in (True, "true", 1) else "false") if k in e else None
+    pick = {
+        "InpRiskMode": {"percent": 0, "amount": 1, "lots": 2}.get(e.get("risk_mode")),
+        "InpRiskPercent": num("risk_percent"), "InpRiskAmount": num("risk_amount"), "InpFixedLot": num("fixed_lot"),
+        "InpMinSLpips": num("sl_min"), "InpMaxSLpips": num("sl_max"),
+        "InpTPMode": {"rr": 0, "pips": 1}.get(e.get("tp_mode")), "InpTP_On": yes("tp_on"),
+        "InpTP_Val": num("tp_value"), "InpTP_Pct": num("tp_close_pct"),
+        "InpUseBE": yes("be_on"), "InpBE_RR": num("be_trigger_r"),
+        "InpBE_OffMode": {"pips": 0, "rr": 1}.get(e.get("be_offset_mode")), "InpBE_Offset": num("be_offset"),
+        "InpMaxTradesDay": (int(num("max_trades_day")) if num("max_trades_day") is not None else None),
+    }
+    for k, v in pick.items():
+        if v is not None:
+            ln.append("%s=%s" % (k, ("%g" % v) if isinstance(v, float) else v))
+    return "\n".join(ln) + "\n"
 
 
 def prepare(acc):
@@ -119,8 +148,7 @@ def prepare(acc):
         shutil.copyfile(EA_SRC, dst)
     pr = os.path.join(ad, "MQL5", "Presets")
     os.makedirs(pr, exist_ok=True)
-    utf16(os.path.join(pr, "st-cloud.set"),
-          "InpSyncToken=%s\nInpAppTrade=%s\n" % (acc.get("token") or "", "true" if acc.get("app_trading") else "false"))
+    utf16(os.path.join(pr, "st-cloud.set"), preset(acc))
     as_st([os.path.join(pre, "drive_c", "ST")])
     return ad
 
@@ -209,6 +237,16 @@ def check(acc):
         s["next"] = time.time() + 6 * 3600
         return
     if signed:
+        # the EA itself: it writes "MM alive" to its log every minute, so a log quiet for EA_QUIET means it stopped
+        # (MT5 still signed in, nothing managing the trades) - say so and start MT5 again
+        el = glob.glob(os.path.join(ad, "MQL5", "logs", "*.log"))
+        quiet = (time.time() - max(os.path.getmtime(f) for f in el)) if el else None
+        if time.time() - s.get("started", 0) > EA_QUIET and (quiet is None or quiet > EA_QUIET):
+            report(acc, "error", "The EA stopped answering; MT5 is being started again.")
+            stop(acc)
+            s["fails"] = s.get("fails", 0) + 1
+            s["next"] = time.time() + RESTART_BACKOFF[min(s["fails"] - 1, len(RESTART_BACKOFF) - 1)]
+            return
         s["fails"] = 0
         report(acc, "running", "Signed in on %s" % acc["server"])
 

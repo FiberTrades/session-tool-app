@@ -325,8 +325,8 @@ function reasonOf(v: unknown) { const x = String(v ?? ""); return ["sl", "tp", "
 // trade count and the currency are facts about the moment - are sent for display, never counted
 // as a CHANGE to the settings. So is the trade copier's state (EA 8.83: role, the Lead a Follow
 // account copies, how many follow accounts a Lead has) - it is how the app groups copies, not a
-// risk setting the member changed.
-const VOLATILE = new Set(["risk_money", "trades_today", "currency", "copy_role", "copy_lead", "copy_followers"]);
+// risk setting the member changed. Nor is where the EA runs (EA 9.11, 23 Oct 2026: "cloud" - on Session Terminal's server).
+const VOLATILE = new Set(["risk_money", "trades_today", "currency", "copy_role", "copy_lead", "copy_followers", "cloud"]);
 function changedKeys(a: any, b: any): string[] {
   const out: string[] = [];
   const keys = new Set([...Object.keys(a ?? {}), ...Object.keys(b ?? {})]);

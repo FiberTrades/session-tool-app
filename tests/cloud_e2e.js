@@ -61,6 +61,18 @@
     var tx = card();
     ok('each account with its state: waiting, signed in, problem with MT5\'s reason', /MT5 1520001234/.test(tx) && /Waiting for the server/.test(tx) && /Signed in/.test(tx) && /Problem/.test(tx) && /Invalid account/.test(tx), tx.slice(-500));
     ok('trading from the app off is said on its row', /trading from the app off/.test(tx));
+    // the server reports every minute: a running account last heard from 10 minutes ago is not answering
+    rows[1].status_at = new Date(Date.now() - 10 * 60000).toISOString();
+    // EA 9.11 says where it runs: the same account answering from the cloud AND a PC is running twice
+    var w2 = window.__stLiveLine && window.__stLiveLine._where2 ? window.__stLiveLine._where2() : null;
+    if (w2) w2['1520001234|EURUSD'] = { cloud: Date.now(), pc: Date.now() };
+    window.__stMt5c.render(); await W(9500);
+    tx = card();
+    ok('a running account the server stopped reporting: Not answering since (its last report)', /Not answering since \d\d:\d\d/.test(tx), tx.slice(-400));
+    ok('an account whose EA answers from the cloud and a PC: Running twice', !!w2 && /Running twice: PC and cloud/.test(tx), tx.slice(-400));
+    if (w2) w2['1520001234|EURUSD'] = { cloud: Date.now() };
+    window.__stMt5c.render(); await W(300);
+    ok('...only the cloud answering: no warning', !/Running twice/.test(card()));
     var rm = body.querySelector('[data-cl-rm="a3"]'); rm.click(); await W(200);
     ok('Remove asks to be pressed again', /Press again to remove/.test(card()) && deleted.length === 0);
     body.querySelector('[data-cl-rm="a3"]').click(); await W(400);
