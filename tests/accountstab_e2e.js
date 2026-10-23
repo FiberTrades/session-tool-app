@@ -86,6 +86,7 @@
     var ac = document.getElementById('sacc-addcloud');
     ok('Cloud on: + Add account leads with "run it in the cloud" (login, server, password), the hand-made account under it', ac && ac.querySelector('[data-sacc-af="login"]') && ac.querySelector('[data-sacc-af="pw"]') && /Or add one by hand/.test(document.getElementById('sacc-add-wrap').textContent));
     ac.querySelector('[data-sacc-af="login"]').value = '7770002'; ac.querySelector('[data-sacc-af="server"]').value = 'FTMO-Demo'; ac.querySelector('[data-sacc-af="pw"]').value = 'not-a-real-password';
+    var ak = ac.querySelector('[data-sacc-af="ack"]'); if (ak) ak.checked = true;   // the prop-firm line, ticked once
     ac.querySelector('[data-sacc-ago]').click(); await W(500);
     var na = (data.accounts || []).filter(function (a) { return (data.mt5LoginMap || {})['7770002'] === a.id; })[0];
     ok('Add and start in the cloud: the server is asked, an account is made and linked to the login, FTMO marks it prop firm, it opens', calls[0] && calls[0][0] === 'add' && calls[0][1] === '7770002' && calls[0][3] === true && na && na.kind === 'challenge' && window.__stAccOpenId === na.id && document.getElementById('sacc-add-wrap').hidden, [calls, na && na.name]);

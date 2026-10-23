@@ -25,7 +25,10 @@
     card.querySelector('[data-mt5c-go]').click(); await W(400);
     // MT5 is part of Accounts since 23 Oct 2026: its MT5 connections, opened
     var bg = document.getElementById('settings-modal-bg'), sec = document.getElementById('mt5c-body'), nav = document.querySelector('.settings-nav-item[data-section="accounts"]'), cn = document.getElementById('sacc-conn');
-    ok('Connect MT5 opens Settings on Accounts with MT5 connections open', bg.classList.contains('show') && nav.classList.contains('active') && cn && cn.open && cn.contains(sec), [nav.className, cn && cn.open]);
+    // since 24 Oct 2026 a signed-in member's card opens + Add account at the cloud form; the EA steps are under MT5 connections
+    ok('Connect MT5 opens Settings on Accounts, + Add account open at the cloud form', bg.classList.contains('show') && nav.classList.contains('active') && !document.getElementById('sacc-add-wrap').hidden && !!document.querySelector('[data-sacc-af="login"]'), nav.className);
+    window.__stAccConn(true); await W(400);
+    ok('...and MT5 connections (the EA on your own PC) opens below', cn && cn.open && cn.contains(sec), cn && cn.open);
     ok('...and the live line may join while it is open (to hear Algo Trading), without asking for prices', M.visible() === true);
     var stepEls = sec.querySelectorAll('[data-mt5c-step]'), stepN = function (n) { return sec.querySelector('[data-mt5c-step="' + n + '"]'); };
     var link = stepN(1) && stepN(1).querySelector('a.mt5c-btn');

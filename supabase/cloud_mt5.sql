@@ -5,13 +5,14 @@
 -- SHA-256) before it leaves the page. Only that server holds the private key, so the database, the app and the admin
 -- see ciphertext only. A member controls their account: removing the row stops that MT5 and deletes its folder and
 -- stored login on the server (FTMO, 23 Oct: "each trader should retain control of their own accounts").
--- While it is tested, only the admin can add one (cloud_mt5_own_insert checks st_is_admin()).
+-- Open to every signed-in member since 24 Oct 2026 (see the end of this file): a trial member 1 account, a paid member 5,
+-- a server its capacity.
 
 create table if not exists public.cloud_hosts (
   id         text primary key,                 -- e.g. 'uk1'
   region     text not null,
   public_key text not null,                    -- SPKI, base64
-  capacity   int  not null default 35,
+  capacity   int  not null default 15,    -- MT5 + EA ~600-700 MB all-in; uk1 has 12 GB
   active     boolean not null default true,
   created_at timestamptz not null default now()
 );
@@ -80,3 +81,28 @@ begin
 end $$;
 revoke all on function public.st_cloud_set_symbols(uuid, text[]) from public, anon;
 grant execute on function public.st_cloud_set_symbols(uuid, text[]) to authenticated;
+
+-- MT5 in the cloud open to every member, trial included (24 Oct 2026, Nestor: "i need users to have access to these
+-- features", "trial users are only allowed to sync 1 account"). The insert policy drops st_is_admin(); the trigger refuses
+-- a full server (cloud_full), a trial member's second account (cloud_trial_limit) and a paid member's sixth
+-- (cloud_user_limit). The admin is only held by the server's capacity. The app turns each code into its own sentence.
+drop policy if exists cloud_mt5_own_insert on public.cloud_mt5;
+create policy cloud_mt5_own_insert on public.cloud_mt5 for insert to authenticated
+  with check (user_id = auth.uid() and status = 'pending');
+create or replace function public.st_cloud_mt5_room() returns trigger language plpgsql security definer set search_path to 'public' as $$
+declare cap int; n int; mine int; lim int;
+begin
+  select capacity into cap from public.cloud_hosts where id = new.host_id;
+  select count(*) into n from public.cloud_mt5 where host_id = new.host_id;
+  if cap is not null and n >= cap then raise exception 'cloud_full'; end if;
+  if public.st_is_admin() then return new; end if;
+  lim := case when public.st_my_plan() = 'trial' then 1 else 5 end;
+  select count(*) into mine from public.cloud_mt5 where user_id = new.user_id;
+  if mine >= lim then raise exception '%', case when lim = 1 then 'cloud_trial_limit' else 'cloud_user_limit' end; end if;
+  return new;
+end $$;
+drop trigger if exists cloud_mt5_room on public.cloud_mt5;
+create trigger cloud_mt5_room before insert on public.cloud_mt5 for each row execute function public.st_cloud_mt5_room();
+-- uk1 was made with capacity 35 (the first default); 15 is what its 12 GB holds.
+alter table public.cloud_hosts alter column capacity set default 15;
+update public.cloud_hosts set capacity = 15 where id = 'uk1';

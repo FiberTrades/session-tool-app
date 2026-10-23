@@ -35,7 +35,11 @@
     ok('the admin: + Add account leads with running it in the cloud', !!ac && /run it in the cloud/i.test(ac.textContent));
     ok('the form: login, server, password (hidden) and Allow trading from the app (ticked)', f('login') && f('server') && f('pw') && f('pw').type === 'password' && f('app') && f('app').checked);
     var errT = function () { var e = ac.querySelector('[data-sacc-aerr]'); return e && !e.hidden ? e.textContent : ''; };
-    f('login').value = '15x'; f('server').value = 'FTMO-Demo'; f('pw').value = DUMMY; ac.querySelector('[data-sacc-ago]').click(); await W(300);
+    // the prop-firm note: ticked once before the first cloud account (24 Oct 2026)
+    f('login').value = '1520001234'; f('server').value = 'FTMO-Demo'; f('pw').value = DUMMY; ac.querySelector('[data-sacc-ago]').click(); await W(300);
+    ok('the first time, the prop-firm line must be ticked', /Tick the line about your prop firm/.test(errT()) && inserted.length === 0 && !!f('ack'), errT());
+    f('ack').checked = true;
+    f('login').value = '15x'; ac.querySelector('[data-sacc-ago]').click(); await W(300);
     ok('a login that is not a number is refused, in words', /digits only/.test(errT()) && inserted.length === 0, errT());
     f('login').value = '1520001234'; f('pw').value = DUMMY;
     ac.querySelector('[data-sacc-ago]').click();
@@ -78,10 +82,12 @@
     ok('Remove from the cloud asks to be pressed again', /Press again to remove/.test(rm().textContent) && deleted.length === 0);
     rm().click(); await W(500);
     ok('...pressed again, it is removed from the cloud', deleted.length === 1 && deleted[0] === 'a3', deleted);
-    // not the admin: no cloud anywhere
+    // every signed-in member has it since 24 Oct 2026; signed out, nobody
     window.currentUser = { id: '00000000-0000-0000-0000-000000000002', email: 'someone@example.com' };
     window.renderSettingsAccountsList(); await W(300);
-    ok('anyone else does not see it while it is tested (no cloud form, no Move to the cloud)', !document.getElementById('sacc-addcloud') && !document.querySelector('[data-sacc-clopen], [data-sacc-clrm]'));
+    ok('any signed-in member has it (the cloud form)', !!document.getElementById('sacc-addcloud'));
+    window.currentUser = null; window.renderSettingsAccountsList(); await W(300);
+    ok('signed out: no cloud form, no Move to the cloud', !document.getElementById('sacc-addcloud') && !document.querySelector('[data-sacc-clopen], [data-sacc-clrm]'));
     window.__stSB.from = realFrom;
     out.push({ name: 'sealed sample for the server-side check: ' + (p.enc_password || ''), ok: !!p.enc_password });
   } catch (e) { ok('test ran', false, String(e && e.stack || e)); }
