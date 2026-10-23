@@ -898,6 +898,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .mt5c-chip.warn { background: rgba(245,185,66,.12); color: #F5B942; }
   .mt5c-chip.idle { background: #24222b; color: var(--text-dim); }
   .mt5c-acc { display: inline-flex; align-items: center; gap: 8px; color: var(--text-dim); }
+  /* MT5 in the cloud (23 Oct 2026): the account form */
+  #settings-modal-bg .cl-form { display: grid; gap: 10px; max-width: 440px; padding: 12px 0 4px; border-top: 1px solid var(--border); }
+  #settings-modal-bg .cl-form label { display: grid; gap: 5px; font: 12px Inter, system-ui, sans-serif; color: var(--text-dim); }
+  #settings-modal-bg .cl-form label.cl-chk { display: flex; align-items: center; gap: 8px; color: var(--text-mid); }
+  #settings-modal-bg .cl-btns { display: flex; gap: 8px; flex-wrap: wrap; }
   .mt5c-end { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }   /* Trades go into + Remove, on the row's right */
   #settings-modal-bg .mt5c-acc .mt5c-pick { width: auto; min-width: 190px; height: 32px; padding: 0 10px; font: 12px Inter, system-ui, sans-serif; }
   .mt5c-l { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 0 12px; }
@@ -77978,7 +77983,78 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
       + '</p></div><div class="set-r"><button type="button" class="mt5c-btn" data-mt5c-vps aria-expanded="' + (S.vps ? 'true' : 'false') + '">' + (S.vps ? T('Hide', 'Ocultar') : T('Show how', 'Ver c\u00f3mo')) + '</button></div></div>'
       + (S.vps ? '<div class="mt5c-more"><ol class="mt5c-ol">' + VPS_STEPS.map(function (q) { return '<li><b>' + T(q[0], q[2]) + '</b> ' + T(q[1], q[3]) + '</li>'; }).join('') + '</ol>'
         + '<p class="mt5c-note">' + T('Using the Trade Copier? It links MT5s on the same computer, and each VPS runs one account, so your Follow accounts stay in MT5 on your PC and copy while it\u2019s on.', '\u00bfUsas el copiador de operaciones? Une MT5 del mismo ordenador, y cada VPS lleva una cuenta, as\u00ed que tus cuentas Follow siguen en MT5 en tu PC y copian mientras est\u00e1 encendido.') + '</p></div>' : '') + '</div>';
+    h += cloudHtml();
     return h;
+  }
+  /* MT5 in the cloud (23 Oct 2026, Nestor: "how much would it cost me to have a server ... find me the cheapest way"): the member's
+     MT5 runs on Session Terminal's own server with the EA, day and night (cloud/ in the repo). The password is sealed here with the
+     server's public key (cloud_hosts, RSA-OAEP SHA-256) before it is sent, so only that server can open it; removing the account
+     deletes it there. Only the admin sees this while it is tested (cloud_mt5's insert policy checks st_is_admin too). */
+  var CL = { rows: null, host: null, open: false, busy: false, err: '', at: 0, sure: null };
+  function clAdm() { try { return !!(window.currentUser && String(window.currentUser.email || '').toLowerCase() === 'be.o2@hotmail.com'); } catch (e) { return false; } }
+  function clLoad() {
+    var sb = window.__stSB; if (!sb || !clAdm()) return; CL.at = Date.now();
+    sb.from('cloud_mt5').select('id,login,server,status,status_msg,status_at,created_at,app_trading').order('created_at')
+      .then(function (r) { if (r && !r.error) { CL.rows = r.data || []; render(); } }, function () {});
+    if (!CL.host) sb.from('cloud_hosts').select('id,region,public_key').eq('active', true).order('id').limit(1)
+      .then(function (r) { if (r && !r.error && r.data && r.data[0]) CL.host = r.data[0]; }, function () {});
+  }
+  function clB64(buf) { var a = new Uint8Array(buf), s = ''; for (var i = 0; i < a.length; i++) s += String.fromCharCode(a[i]); return btoa(s); }
+  function clSeal(pub, text) {
+    var der = Uint8Array.from(atob(pub), function (c) { return c.charCodeAt(0); });
+    return crypto.subtle.importKey('spki', der.buffer, { name: 'RSA-OAEP', hash: 'SHA-256' }, false, ['encrypt'])
+      .then(function (k) { return crypto.subtle.encrypt({ name: 'RSA-OAEP' }, k, new TextEncoder().encode(text)); }).then(clB64);
+  }
+  function clField(k) { var el = body(), i = el && el.querySelector('[data-cl-f="' + k + '"]'); return i ? (i.type === 'checkbox' ? i.checked : String(i.value || '').trim()) : ''; }
+  function clClear() { var el = body(); if (el) el.querySelectorAll('[data-cl-f]').forEach(function (i) { if (i.type !== 'checkbox') i.value = ''; }); }
+  function clAdd() {
+    if (CL.busy) return;
+    var lg = clField('login'), sv = clField('server'), pw = clField('pw'), app = clField('app');
+    CL.err = !/^\d{3,12}$/.test(lg) ? T('The login is the account number: digits only.', 'El login es el número de la cuenta: solo dígitos.')
+      : !sv ? T('Type the server, as the firm wrote it (e.g. FTMO-Demo).', 'Escribe el servidor tal como lo da la firma (p. ej. FTMO-Demo).')
+      : !pw ? T('Type the account’s password.', 'Escribe la contraseña de la cuenta.')
+      : !CL.host ? T('The server can’t be reached right now. Try again in a minute.', 'Ahora no se llega al servidor. Prueba otra vez en un minuto.') : '';
+    if (CL.err) { render(true); return; }
+    CL.busy = true; render(true);
+    clSeal(CL.host.public_key, pw).then(function (enc) {
+      pw = ''; var i = body() && body().querySelector('[data-cl-f="pw"]'); if (i) i.value = '';
+      return window.__stSB.from('cloud_mt5').insert({ host_id: CL.host.id, login: +lg, server: sv, enc_password: enc, app_trading: !!app }).select('id');
+    }).then(function (r) {
+      CL.busy = false;
+      if (r && r.error) { CL.err = /duplicate|unique/i.test(String(r.error.message || '')) ? T('That account is already in the cloud.', 'Esa cuenta ya está en la nube.') : String(r.error.message || r.error); render(true); return; }
+      clClear(); CL.open = false; CL.err = ''; render(true); clLoad();
+    }, function (e) { CL.busy = false; CL.err = String((e && e.message) || e); render(true); });
+  }
+  function clRm(id) {
+    if (CL.sure !== id) { CL.sure = id; render(true); setTimeout(function () { if (CL.sure === id) { CL.sure = null; render(true); } }, 5000); return; }
+    CL.sure = null; var sb = window.__stSB; if (!sb) return;
+    sb.from('cloud_mt5').delete().eq('id', id).then(function () { clLoad(); }, function () { clLoad(); });
+  }
+  function cloudHtml() {
+    if (!clAdm()) return '';
+    var rows = CL.rows || [];
+    var h = '<div class="set-h">' + T('MT5 in the cloud', 'MT5 en la nube') + '</div><div class="set-card">'
+      + '<p class="set-intro" style="margin:12px 0">' + T('Your MT5 runs on Session Terminal’s server day and night, with the EA on it: trading from the app, live charts, alerts, nudges and the copier keep working with your computer off. Nothing to install. <b>Testing: only you see this.</b>',
+        'Tu MT5 funciona en el servidor de Session Terminal día y noche, con el EA puesto: operar desde la app, los gráficos en vivo, las alertas, los avisos y el copiador siguen con tu ordenador apagado. Nada que instalar. <b>En pruebas: solo tú lo ves.</b>') + '</p>';
+    rows.forEach(function (r) {
+      var st = r.status === 'running' ? chip('', T('Signed in', 'Conectada')) : r.status === 'starting' ? chip('warn', T('Starting…', 'Arrancando…'))
+        : r.status === 'error' ? chip('off', T('Problem', 'Problema')) : chip('idle', T('Waiting for the server', 'Esperando al servidor'));
+      h += '<div class="mt5c-ea"><b>MT5 ' + esc(r.login) + '</b><span>' + esc(r.server) + (r.app_trading ? '' : ' · ' + T('trading from the app off', 'operar desde la app desactivado')) + '</span>' + st
+        + (r.status_msg && r.status !== 'running' ? '<span class="set-sub">' + esc(r.status_msg) + '</span>' : '')
+        + '<span class="mt5c-end"><button type="button" class="mt5c-btn" data-cl-rm="' + esc(r.id) + '">' + (CL.sure === r.id ? T('Press again to remove', 'Pulsa otra vez para quitarla') : T('Remove', 'Quitar')) + '</button></span></div>';
+    });
+    if (CL.open) h += '<div class="cl-form">'
+      + '<label>' + T('Login (the account number)', 'Login (el número de la cuenta)') + '<input class="settings-input" data-cl-f="login" inputmode="numeric" autocomplete="off"></label>'
+      + '<label>' + T('Server', 'Servidor') + '<input class="settings-input" data-cl-f="server" placeholder="FTMO-Demo" autocomplete="off" spellcheck="false"></label>'
+      + '<label>' + T('Password', 'Contraseña') + '<input class="settings-input" type="password" data-cl-f="pw" autocomplete="new-password"></label>'
+      + '<label class="cl-chk"><input type="checkbox" data-cl-f="app" checked>' + T('Allow trading from the app', 'Permitir operar desde la app') + '</label>'
+      + '<p class="set-sub">' + T('Your password is locked in this page with the server’s own key before it’s sent: only the server can open it, not the app and not us. Remove the account and it’s deleted from the server.',
+        'Tu contraseña se cierra en esta página con la llave del propio servidor antes de enviarse: solo el servidor puede abrirla, ni la app ni nosotros. Quita la cuenta y se borra del servidor.') + '</p>'
+      + (CL.err ? '<p class="set-sub" style="color:#E56767">' + esc(CL.err) + '</p>' : '')
+      + '<div class="cl-btns"><button type="button" class="mt5c-btn pri" data-cl-save>' + (CL.busy ? T('Adding…', 'Añadiendo…') : T('Add to the cloud', 'Añadir a la nube')) + '</button>'
+      + '<button type="button" class="mt5c-btn" data-cl-cancel>' + T('Cancel', 'Cancelar') + '</button></div></div>';
+    else h += '<div class="set-row"><div class="set-l">' + (CL.rows && !rows.length ? '<span class="set-sub">' + T('No accounts in the cloud yet.', 'Aún no hay cuentas en la nube.') + '</span>' : '') + '</div><div class="set-r"><button type="button" class="mt5c-btn pri" data-cl-open>' + T('Add an account', 'Añadir una cuenta') + '</button></div></div>';
+    return h + '</div>';
   }
   function body() { return document.getElementById('mt5c-body'); }
   function visible() {
@@ -77989,7 +78065,15 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     var el = body(); if (!el) return;
     if (visible() && signedIn() && !seenN() && !S.waitAt) S.waitAt = Date.now();
     var h = html();
-    if (force || h !== S.html) { el.innerHTML = h; S.html = h; }
+    if (force || h !== S.html) {
+      // the cloud form keeps what is typed in it (and which box has the cursor) through a repaint
+      var keep = {}, foc = null;
+      try { el.querySelectorAll('[data-cl-f]').forEach(function (i) { keep[i.getAttribute('data-cl-f')] = i.type === 'checkbox' ? i.checked : i.value; });
+        var ae = document.activeElement; if (ae && el.contains(ae) && ae.getAttribute) foc = ae.getAttribute('data-cl-f'); } catch (e) {}
+      el.innerHTML = h; S.html = h;
+      try { Object.keys(keep).forEach(function (k) { var i = el.querySelector('[data-cl-f="' + k + '"]'); if (!i) return; if (i.type === 'checkbox') i.checked = keep[k]; else i.value = keep[k]; });
+        if (foc) { var fi = el.querySelector('[data-cl-f="' + foc + '"]'); if (fi) fi.focus(); } } catch (e) {}
+    }
   }
   // Read the EA's check-ins straight from the database too: the realtime feed may be down, and the first read decides the card
   function pull(seed) {
@@ -78100,6 +78184,10 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     var c = t0.closest('[data-mt5c-copy]'); if (c) { copy(c.getAttribute('data-mt5c-copy'), c); return; }
     if (t0.closest('[data-mt5c-copier]')) { S.copier = !S.copier; render(true); return; }
     if (t0.closest('[data-mt5c-vps]')) { S.vps = !S.vps; render(true); return; }
+    if (t0.closest('[data-cl-open]')) { CL.open = true; CL.err = ''; clLoad(); render(true); var li = body() && body().querySelector('[data-cl-f="login"]'); if (li) li.focus(); return; }
+    if (t0.closest('[data-cl-cancel]')) { CL.open = false; CL.err = ''; clClear(); render(true); return; }
+    if (t0.closest('[data-cl-save]')) { clAdd(); return; }
+    var clr = t0.closest('[data-cl-rm]'); if (clr) { clRm(clr.getAttribute('data-cl-rm')); return; }
     if (t0.closest('[data-mt5c-older]')) { S.older = !S.older; render(true); return; }
     var shw = t0.closest('[data-mt5c-show]'); if (shw) { var sk = +shw.getAttribute('data-mt5c-show'); S.show[sk] = !S.show[sk]; render(true); return; }
     var rmb = t0.closest('[data-mt5c-rm]'); if (rmb) { removeLg(rmb.getAttribute('data-mt5c-rm')); return; }
@@ -78108,12 +78196,13 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     if (t0.closest('#mt5-connect-open')) { try { var x = document.getElementById('mt5-modal-close'); if (x) x.click(); } catch (er) {} openTab(); return; }
   });
   document.addEventListener('change', function (e) { var sel = e.target && e.target.closest && e.target.closest('select[data-mt5c-acc]'); if (sel) link(sel.getAttribute('data-mt5c-acc'), sel.value); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target && e.target.closest && e.target.closest('#mt5c-body [data-cl-f]')) { e.preventDefault(); clAdd(); } });
   document.addEventListener('change', function (e) { var sel = e.target && e.target.closest && e.target.closest('select[data-mt5c-role]'); if (!sel) return;
     window.__stCopyWish.set(sel.getAttribute('data-mt5c-role'), sel.value).then(function () { render(true); }); render(true); });   // the copier's role, for that account's EAs (9.10)
   function tick() {
     try {
       if (signedIn() && !eaReady() && !S.seedTried && Date.now() - S.t0 > 8000) { S.seedTried = true; pull(true); }   // no live feed to read them: read once here
-      if (visible()) { render(); if (signedIn() && Date.now() - S.pullAt > (seenN() ? 60000 : 20000)) pull(false); }
+      if (visible()) { render(); if (signedIn() && Date.now() - S.pullAt > (seenN() ? 60000 : 20000)) pull(false); if (clAdm() && Date.now() - CL.at > 8000) clLoad(); }
       home(); askCheck();
     } catch (e) {}
   }
