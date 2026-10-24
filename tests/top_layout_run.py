@@ -140,18 +140,21 @@ def desk(W, H):
 
 def phone(W, H):
     def run(c):
+        c.eval(CLOSE_TV); time.sleep(1)   # a saved "TV open" can bring it back at start-up: the off state is measured with it closed
         res = {'off': c.eval(GEO)}
         c.eval(OPEN_TV); time.sleep(3); res['on'] = c.eval(GEO); snap(c, 'ph%d_on' % W)
         res['btns'] = c.eval("(function(){var b=document.getElementById('bloomberg-floater-bigger');return !!(b&&b.offsetWidth>0);})()")
         return res
     new = session(W, H, True, 'app.html', run)
     old = session(W, H, True, '_top_old.html', run)
-    keys = ('h1', 'tabs', 'meta')
+    # Phones keep their top (logo, title, docked TV, the info row). The tabs left it on 24 Oct 2026 for a bar along the bottom
+    # (tests/navbar_e2e.js), so the info row now sits higher by exactly the tab row's old place.
     for st in ('off', 'on'):
-        diff = {k: [old[st][k], new[st][k]] for k in keys if old[st][k] != new[st][k]}
-        # Session News sits under the assistant's greeting, whose words change with the minute: a few px either way is the greeting, not the top
-        if abs(old[st]['news']['t'] - new[st]['news']['t']) > 6: diff['news'] = [old[st]['news'], new[st]['news']]
-        check('%d phone, TV %s: top exactly as before' % (W, st), not diff, diff)
+        diff = {k: [old[st][k], new[st][k]] for k in ('h1',) if old[st][k] != new[st][k]}
+        lift = old[st]['meta']['t'] - new[st]['meta']['t']
+        if not (0 < lift <= old[st]['tabs']['h'] + 40): diff['meta'] = [old[st]['meta'], new[st]['meta'], old[st]['tabs']]
+        if new[st]['tabs']['b'] - new[st]['tabs']['t'] < 40 or abs(new[st]['tabs']['l']) > 1: diff['bar'] = new[st]['tabs']
+        check('%d phone, TV %s: the top as before, the tabs gone to the bottom bar' % (W, st), not diff, diff)
     check('%d phone: the TV docked where it was' % W, old['on']['tv'] == new['on']['tv'] and new['on']['tv'] is not None, [old['on']['tv'], new['on']['tv']])
     check('%d phone: no size buttons on the full-width docked TV' % W, not new['btns'], new['btns'])
 
