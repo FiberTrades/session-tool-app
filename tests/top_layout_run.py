@@ -83,6 +83,12 @@ def desk(W, H):
         check(tag + 'TV on: never over the tabs', tv and tv['b'] <= on['tabs']['t'], [tv, on['tabs']])
         check(tag + 'TV on: the info sits under the title, left-aligned with it', on['meta']['t'] >= on['h1']['b'] and abs(on['meta']['l'] - on['h1']['l']) <= 4 and on['metaInHeader'], [on['h1'], on['meta']])
         check(tag + 'TV on: the four cells in one row', len(set(x['c']['t'] for x in on['cells'])) == 1, [x['c'] for x in on['cells']])
+        # "spread these right a bit more": first cell on the title's left edge, the last ending about 40px short of the TV, text left-aligned in each
+        cs = on['cells']
+        check(tag + 'TV on: the info spread from the title to about 40px short of the TV',
+              tv and abs(cs[0]['c']['l'] - on['h1']['l']) <= 3 and abs((tv['l'] - cs[-1]['c']['r']) - 40) <= 6,
+              [cs[0]['c'], cs[-1]['c'], on['h1'], tv])
+        check(tag + 'TV on: text left-aligned in each cell', all(abs(x['v']['l'] - x['c']['l']) <= 2 and abs(x['lab']['l'] - x['c']['l']) <= 2 for x in cs), [[x['c']['l'], x['v']['l'], x['lab']['l']] for x in cs])
         check(tag + 'TV off: no TV, header without tv-on', off['tv'] is None and not off['tvOn'], [off['tv'], off['tvOn']])
         check(tag + 'TV off: the info beside the title', off['meta']['l'] > off['h1']['r'], [off['h1'], off['meta']])
         ws = [x['c']['w'] for x in off['cells']]
