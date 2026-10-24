@@ -9,6 +9,7 @@ create table if not exists public.weekly_summaries (
   lang        text not null default 'en',
   body        text not null,
   facts       jsonb,
+  card        jsonb,                         -- the card's numbers + the two lines (since 24 Oct 2026; migration weekly_summary_card)
   model       text,
   pushed      text,                          -- sendPush's answer: sent / filtered / no-device / failed
   created_at  timestamptz not null default now(),

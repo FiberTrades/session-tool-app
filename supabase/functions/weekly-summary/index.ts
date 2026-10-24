@@ -11,6 +11,11 @@
 //  pushed to the member's phone (kind "weekly": quiet hours respected), and shown in the app on Session Bias as an assistant
 //  card until they press Got it (read_at).
 //
+//  Since 24 Oct 2026 (Nestor: "good but very text heavy ... doesnt have any charts or data displays") the card is mostly data: the
+//  week's numbers (net R, trades, win rate, days traded of planned, R per day, the best trade, the rule checks) are worked out here
+//  and stored in the row's `card`, so the card and the words always agree, and the words are two short lines - a highlight and a
+//  focus for next week - returned as JSON.
+//
 //  Budget: members whose plan has the AI greetings (paid, trial, the chat plans), one call each at low effort, and a
 //  ceiling of MAX_MEMBERS a run. Each call is logged in ai_usage (mode "weekly"), so the AI meter counts it.
 //
@@ -121,6 +126,41 @@ function realR(t: Any): number {
   }
   return res === "Win" ? r : res === "Lose" ? -1 : 0;
 }
+// The week's planned trading days: its own saved week ([] = a week off), else the usual days, without days off.
+function plannedDays(j: Any, monday: string, upTo: string): number {
+  const wc = (j && j.wc) || {}, td = j && j.s && Array.isArray(j.s.tradingDays) && j.s.tradingDays.length ? j.s.tradingDays.map(Number) : [1, 2, 3, 4, 5];
+  const days: number[] = Array.isArray(wc[monday]) ? wc[monday].map(Number) : td;
+  const off = Array.isArray(j && j.toff) ? j.toff : [];
+  let n = 0;
+  for (let i = 0; i < 7; i++) {
+    const k = addDays(monday, i); if (k > upTo) break;
+    const dow = new Date(k + "T12:00:00Z").getUTCDay();
+    if (days.indexOf(dow) < 0) continue;
+    if (off.some((r: Any) => r && r.from && r.to && k >= r.from && k <= r.to)) continue;
+    n++;
+  }
+  return n;
+}
+// The rule checks on the card: each one is kept (green) unless a nudge about it was shown that week (amber, with how many days).
+// The rules a member sets per account (trades a day, daily loss, risk per trade) show only when one is set; the others always.
+// Only nudges that mean the rule was crossed count - "less than one trade left before your daily loss" is a heads-up, not a flag.
+const RULE_CHIPS: [string, string[]][] = [
+  ["session", ["outside", "finished"]], ["trades", ["limit", "ea_trades"]], ["daily", ["daily_hit"]], ["risk", ["big_risk", "widen", "ea_risk"]],
+  ["stop", ["no_stop", "ea_sl"]], ["news", ["news_open", "news_hold"]], ["bias", ["against_bias", "no_bias"]],
+];
+function ruleChecks(j: Any, nl: Any, inWeek: (k: string) => boolean) {
+  const rr = (Array.isArray(j && j.acc) ? j.acc : []).filter((a: Any) => a && !a.separate).map((a: Any) => a.riskRules || {});
+  const on = (mode: Any, amt: Any, pct: Any) => mode === "pct" ? parseFloat(pct) > 0 : mode === "amount" ? parseFloat(amt) > 0 : (parseFloat(amt) > 0 || parseFloat(pct) > 0);
+  const set: Record<string, boolean> = {
+    trades: rr.some((r: Any) => parseFloat(r.maxTrades) > 0),
+    daily: rr.some((r: Any) => on(r.maxLossMode, r.maxLossAmount, r.maxLossPct) || on(r.firmDailyMode, r.firmDailyAmount, r.firmDailyPct)),
+    risk: rr.some((r: Any) => on(r.maxRiskMode, r.maxRiskAmount, r.maxRiskPct)),
+  };
+  return RULE_CHIPS.map(([id, rules]) => ({
+    id,
+    flagged: Object.keys(nl).filter((k) => inWeek(k) && Object.keys(nl[k] || {}).some((x) => x.indexOf("sample:") !== 0 && rules.indexOf(String(nl[k][x] && nl[k][x].rule)) >= 0)).length,
+  })).filter((c) => c.flagged > 0 || !(c.id in set) || set[c.id]);
+}
 const NUDGE_TOPIC: Record<string, string> = {
   daily_hit: "daily loss limit", daily_left: "daily loss limit", dd_left: "maximum drawdown", target_hit: "profit target reached",
   consistency: "consistency rule", ea_risk: "risk per trade", big_risk: "risk per trade", risk: "risk per trade", widen: "risk per trade",
@@ -153,7 +193,17 @@ export function weekFacts(j: Any, now: number) {
   const topics: Record<string, number> = {};
   nDays.forEach((k) => Object.keys(nl[k] || {}).forEach((x) => { const rl = nl[k][x] && nl[k][x].rule, tp = x.indexOf("sample:") !== 0 && NUDGE_TOPIC[String(rl)]; if (tp) topics[tp] = (topics[tp] || 0) + 1; }));
   const rule = j && j.wr && j.wr[isoWeek(monday)];
+  const r2 = (v: number) => Math.round(v * 100) / 100, wl = wins.length + losses.length;
+  const perDay = [0, 1, 2, 3, 4, 5, 6].map((i) => { const k = addDays(monday, i), ts = trades.filter((t) => dayOf(t) === k); return { key: k, dow: i + 1, r: r2(ts.reduce((a, t) => a + rOf(t), 0)), n: ts.length }; });
+  const card = {
+    week: monday, netR: r2(netR), trades: trades.length, wins: wins.length, losses: losses.length, bes: bes.length,
+    winRate: wl ? Math.round(wins.length / wl * 100) : null, daysTraded: tradedDays.length, plannedDays: plannedDays(j, monday, addDays(monday, 6)),
+    days: perDay.filter((d) => d.dow <= 5 || d.n > 0),   // Monday to Friday, and a weekend day only when it was traded
+    best: best && rOf(best) > 0 ? { r: r2(rOf(best)), key: dayOf(best) } : null,
+    rules: ruleChecks(j, nl, inWeek),
+  };
   return {
+    card,
     name: String((j && j.un) || "").trim().split(/\s+/)[0] || null,
     language: (j && j.s && j.s.lang === "es") ? "Spanish" : "English",
     week: { from: monday, to: addDays(monday, 6), today },
@@ -173,44 +223,45 @@ export function weekFacts(j: Any, now: number) {
 // ---------- the words ----------
 const SYSTEM = `You write a member's weekly summary for Session Terminal, a trading journal. It arrives as a phone notification and an in-app card on Sunday evening.
 
-Write 70 to 110 words of plain text in the language given in the data (English or Spanish), in three short paragraphs:
-1. Open with the best thing about their week, warmly and specifically (a winning setup, rules kept, showing up, a clean review). Good news first, always.
-2. The week in numbers: trades, wins / losses / break-evens and net R; the setup that worked best; their bias posts and reviews; the rule of the week if there is one.
-3. One thing to focus on next week, as a friendly suggestion drawn only from the data.
+The card already shows their numbers (net R, trades, win rate, days traded, R per day, the rule checks), so you write only two short lines, in the language given in the data (English or Spanish):
+- highlight: the best thing about their week, warm and specific (a winning setup, rules kept, showing up, a clean review). Good news first, always. 25 words or fewer.
+- focus: one thing to focus on next week, a friendly suggestion drawn only from the data. 25 words or fewer.
+
+Answer with JSON only, nothing before or after it: {"highlight": "...", "focus": "..."}
 
 Rules:
 - Use only the facts in the data. Every sentence must rest on a field in the data: never invent trades, numbers, setups, tools, habits or reasons.
 - Never state a mistake as fact or blame. Nudges are reminders the app showed during the week, not proof that anything went wrong. Mention them at most once, softly, by topic ("the app reminded you about your trades per day on two days - worth a look"). Never write that the member broke, exceeded, moved, widened or ignored anything.
 - Name a weekday only if it is given in the data.
 - R means risk multiple, already net of costs. Write +2.4R / -1R. No money amounts.
-- Use their first name once if given. No greeting line like "Hi" on its own, no sign-off, no headings, no bullet points, no emojis, no markdown.
+- Use their first name once at most, in the highlight. No greeting, no sign-off, no emojis, no markdown.
 - Never mention ICT, SMC or liquidity.
 - If they did not trade, praise the preparation they did (biases, reviews) and keep it short.
 - Sitting a day out (an Observation day, or no trade) is a disciplined choice. Never suggest trading more days or taking more trades.
 - Say a rule was kept only when the data says so (ruleOfTheWeek.followed true, or traded days without any nudge).
 - English is British English (colour, totalling). Check your grammar and spelling before you answer.`;
 
-function fallback(f: Any): string {
+type Lines = { highlight: string; focus: string; model: string };
+function fallback(f: Any): Lines {
   const es = f.language === "Spanish", n = f.name ? f.name + ", " : "";
-  const r = (f.netR >= 0 ? "+" : "") + Number(f.netR).toFixed(1) + "R";
-  if (!f.trades) {
-    return es ? `${n}esta semana te preparaste: ${f.biasesPosted} sesgos publicados. La próxima semana, sigue con la misma rutina y elige con calma tus operaciones.`
-      : `${n}you showed up this week: ${f.biasesPosted} bias posts. Next week, keep the same routine and pick your trades with the same calm.`;
-  }
-  const best = f.setups && f.setups[0] && f.setups[0].r > 0 ? f.setups[0].setup : null;
-  return es
-    ? `${n}${f.trades} operaciones esta semana: ${f.wins} ganadas, ${f.losses} perdidas y ${f.breakEvens} en break-even, ${r} en total.${best ? ` Tu mejor setup fue ${best}.` : ""} Publicaste ${f.biasesPosted} sesgos y revisaste ${f.reviewedTrades} operaciones.\n\nLa próxima semana, repite lo que funcionó y revisa cada operación el mismo día.`
-    : `${n}${f.trades} trades this week: ${f.wins} won, ${f.losses} lost and ${f.breakEvens} at break-even, ${r} in all.${best ? ` ${best} was your best setup.` : ""} You posted ${f.biasesPosted} biases and reviewed ${f.reviewedTrades} trades.\n\nNext week, repeat what worked and review each trade the same day.`;
+  const best = f.bestTrade ? "+" + Number(f.bestTrade.r).toFixed(2) + "R" : null;
+  const highlight = f.trades
+    ? (best ? (es ? `${n}tu mejor operación de la semana hizo ${best}.` : `${n}your best trade this week made ${best}.`)
+      : (es ? `${n}registraste ${f.trades} operaciones y ${f.biasesPosted} sesgos esta semana.` : `${n}you logged ${f.trades} trades and ${f.biasesPosted} biases this week.`))
+    : (es ? `${n}esta semana te preparaste: ${f.biasesPosted} sesgos publicados.` : `${n}you showed up this week: ${f.biasesPosted} bias posts.`);
+  const focus = es ? "La próxima semana, sigue con la misma rutina y revisa cada operación el mismo día." : "Next week, keep the same routine and review each trade the same day.";
+  return { highlight: highlight.charAt(0).toUpperCase() + highlight.slice(1), focus, model: "template" };
 }
-async function write(userId: string, f: Any, tryNo = 1): Promise<{ text: string; model: string }> {
-  if (!ANTHROPIC_API_KEY) return { text: fallback(f), model: "template" };
+const words = (x: string) => String(x).trim().split(/\s+/).filter(Boolean).length;
+async function write(userId: string, f: Any, tryNo = 1): Promise<Lines> {
+  if (!ANTHROPIC_API_KEY) return fallback(f);
   try {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
       // Sonnet 5 thinks by default and the thinking counts against max_tokens: at 420 a dry run came back cut mid-sentence, once
       // with no text at all (24 Oct 2026). Low effort, room to finish; the summary itself stays 70-110 words by the prompt.
-      body: JSON.stringify({ model: MODEL, max_tokens: 4000, output_config: { effort: "low" }, system: SYSTEM, messages: [{ role: "user", content: "The member's week, as data:\n" + JSON.stringify(f) }] }),
+      body: JSON.stringify({ model: MODEL, max_tokens: 4000, output_config: { effort: "low" }, system: SYSTEM, messages: [{ role: "user", content: "The member's week, as data:\n" + JSON.stringify(Object.assign({}, f, { card: undefined })) }] }),
     });
     const d: Any = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error((d && d.error && d.error.message) || ("Claude API " + r.status));
@@ -220,22 +271,20 @@ async function write(userId: string, f: Any, tryNo = 1): Promise<{ text: string;
         cache_creation_tokens: d.usage.cache_creation_input_tokens ?? 0, cache_read_tokens: d.usage.cache_read_input_tokens ?? 0, web_search_requests: 0 });
     } catch (_) { /* the meter never blocks the summary */ }
     const text = (Array.isArray(d.content) ? d.content : []).filter((c: Any) => c && c.type === "text").map((c: Any) => c.text).join("").trim();
-    if (text.length < 40) throw new Error("too short: " + JSON.stringify({ stop: d.stop_reason, types: (d.content || []).map((c: Any) => c && c.type), text: text.slice(0, 80) }));
-    return { text: text.replace(/\*\*/g, "").replace(/^#+\s*/gm, ""), model: MODEL };
+    const a = text.indexOf("{"), b = text.lastIndexOf("}");
+    const o = a >= 0 && b > a ? JSON.parse(text.slice(a, b + 1)) : null;
+    const clean = (x: Any) => String(x || "").replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
+    const highlight = clean(o && o.highlight), focus = clean(o && o.focus);
+    if (highlight.length < 15 || focus.length < 15 || words(highlight) > 32 || words(focus) > 32) throw new Error("not two short lines: " + text.slice(0, 160));
+    return { highlight, focus, model: MODEL };
   } catch (e) {
     console.warn("weekly-summary write", userId, tryNo, String(e));
     if (tryNo < 2) { await new Promise((r) => setTimeout(r, 4000)); return write(userId, f, tryNo + 1); }
-    return { text: fallback(f), model: "template" };
+    return fallback(f);
   }
 }
-// The push: whole sentences from the first paragraph, at least 60 characters where there are, 160 at most.
-function firstLine(text: string): string {
-  const p = String(text).split(/\n/)[0].trim(), parts = p.match(/.+?[.!?]+(\s+|$)/g) || [p];
-  let out = "";
-  for (const x of parts) { if (out && (out.length >= 60 || (out + x).length > 160)) break; out += x; }
-  out = out.trim();
-  return out.length > 160 ? out.slice(0, 157).trim() + "..." : out;
-}
+// The push: the highlight, 160 characters at most.
+function pushLine(text: string): string { const t = String(text).trim(); return t.length > 160 ? t.slice(0, 157).trim() + "..." : t; }
 
 // ---------- one member, all members ----------
 async function runOne(userId: string, now: number, o: { dry?: boolean; noModel?: boolean; lang?: string }) {
@@ -249,14 +298,16 @@ async function runOne(userId: string, now: number, o: { dry?: boolean; noModel?:
     const { data: had } = await admin.from("weekly_summaries").select("id").eq("user_id", userId).eq("week_key", week).maybeSingle();
     if (had) return { user: userId, skipped: "already sent" };
   }
-  const w = o.noModel ? { text: fallback(f), model: "template" } : await write(userId, f);
+  const w = o.noModel ? fallback(f) : await write(userId, f);
   const es = f.language === "Spanish";
-  if (o.dry) return { user: userId, dry: true, facts: f, text: w.text, model: w.model, push: { title: es ? "Tu semana" : "Your week", body: firstLine(w.text) } };
+  const card = Object.assign({}, f.card, { highlight: w.highlight, focus: w.focus });
+  const facts = Object.assign({}, f, { card: undefined });
+  if (o.dry) return { user: userId, dry: true, facts, card, model: w.model, push: { title: es ? "Tu semana" : "Your week", body: pushLine(w.highlight) } };
   const { data: ins } = await admin.from("weekly_summaries")
-    .upsert({ user_id: userId, week_key: week, lang: es ? "es" : "en", body: w.text, facts: f, model: w.model }, { onConflict: "user_id,week_key", ignoreDuplicates: true })
+    .upsert({ user_id: userId, week_key: week, lang: es ? "es" : "en", body: w.highlight + "\n\n" + w.focus, facts, card, model: w.model }, { onConflict: "user_id,week_key", ignoreDuplicates: true })
     .select("id");
   if (!ins || !ins.length) return { user: userId, skipped: "already sent" };
-  const pushed = await sendPush(admin, userId, "weekly", es ? "Tu semana" : "Your week", firstLine(w.text), "st-weekly-" + week);
+  const pushed = await sendPush(admin, userId, "weekly", es ? "Tu semana" : "Your week", pushLine(w.highlight), "st-weekly-" + week);
   await admin.from("weekly_summaries").update({ pushed }).eq("id", ins[0].id);
   return { user: userId, week, pushed, model: w.model };
 }

@@ -987,8 +987,25 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .st-week { margin: 0 0 22px; padding: 16px 18px; border: 1px solid var(--border-2); border-radius: 12px; background: var(--bg-elev); }
   .st-week[hidden] { display: none; }
   .st-week-t { font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent); }
-  .st-week-b { margin-top: 10px; font-family: 'Fraunces', serif; font-size: 16px; line-height: 1.55; letter-spacing: -0.005em; color: var(--text); white-space: pre-line; }
+  .st-week-b { margin-top: 14px; font-family: 'Fraunces', serif; font-size: 15px; line-height: 1.5; letter-spacing: -0.005em; color: var(--text); white-space: pre-line; }
   .st-week-f { display: flex; justify-content: flex-end; margin-top: 14px; }
+  /* Mostly data (24 Oct 2026): four equal tiles in the Statistics tile look, R per day, the rule checks, then two short lines. */
+  .st-wk-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+  .st-wk-tile { min-width: 0; padding: 12px 14px; border: 1px solid var(--border-2); border-radius: 10px; background: var(--bg); }
+  .st-wk-l { font-family: 'AppNum', 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-dim); }
+  .st-wk-v { margin-top: 8px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 22px; line-height: 1.1; color: var(--text); white-space: nowrap; }
+  .st-wk-v.g { color: var(--good); } .st-wk-v.r { color: var(--bad); }
+  .st-wk-s { margin-top: 5px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.04em; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .st-wk-chart { position: relative; height: 128px; margin-top: 12px; padding: 0 2px; }
+  .st-wk-chart svg { width: 100%; height: 128px; display: block; }
+  .st-wk-rules { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .st-wk-chip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 8px; border: 1px solid; font-family: 'AppNum', 'DM Mono', monospace; font-size: 10.5px; letter-spacing: 0.04em; white-space: nowrap; }
+  .st-wk-chip.ok { color: var(--good); border-color: rgba(78,205,139,.38); background: rgba(78,205,139,.07); }
+  .st-wk-chip.flag { color: rgb(232,207,99); border-color: rgba(232,207,99,.45); background: rgba(232,207,99,.07); }
+  .st-wk-chip b { font-weight: 700; }
+  @media (max-width: 600px) {
+    .st-wk-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
   .mt5c-home { display: flex; align-items: center; gap: 16px; padding: 14px 18px; margin: 0 0 22px; border: 1px solid var(--border-2); border-radius: 12px; background: var(--bg-elev); }
   .mt5c-home[hidden] { display: none; }
   .mt5c-hi { width: 38px; height: 38px; flex: none; border-radius: 10px; background: rgba(244,114,182,.12); color: var(--accent); display: inline-flex; align-items: center; justify-content: center; font: 700 11px 'AppNum','DM Mono',monospace; letter-spacing: .04em; }
@@ -29847,9 +29864,13 @@ try {
   }
 
   /* ===== The assistant's weekly summary (24 Oct 2026, Nestor: "A weekly summary from the assistant") =====
-     weekly-summary (edge function) writes it every Sunday at 18:00 London into weekly_summaries and pushes its first line to the
+     weekly-summary (edge function) writes it every Sunday at 18:00 London into weekly_summaries and pushes its highlight to the
      phone. The newest unread one shows on Session Bias as an assistant card until Got it, which marks every unread one read
-     (read_at; the only column a member may change). Never in a mentor view or a detached window. */
+     (read_at; the only column a member may change). Never in a mentor view or a detached window.
+     The card is mostly data (Nestor: "good but very text heavy ... doesnt have any charts or data displays"): four equal tiles
+     (net R, trades, win rate, days traded of planned), the week's R day by day with the best trade marked, the rule checks (green
+     when kept, amber when the app nudged about one - never red), then two short lines. The numbers come from the row's `card`,
+     worked out when the words were written so the two agree; a row without one is worked out here from the journal, the same way. */
   (function stWeekly() {
     const T = (en, es) => { try { return window._stT ? window._stT(en, es) : en; } catch (e) { return en; } };
     const esc = x => String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -29871,19 +29892,100 @@ try {
       if (a.getMonth() === b.getMonth()) return a.getDate() + ' – ' + f(b);   // 19 – 25 Oct
       return f(a) + ' – ' + f(b);
     }
+    const pad = n => String(n).padStart(2, '0');
+    const dKey = d => { const x = d instanceof Date ? d : new Date(d); return isNaN(x.getTime()) ? '' : x.getFullYear() + '-' + pad(x.getMonth() + 1) + '-' + pad(x.getDate()); };
+    const plus = (k, n) => { const x = new Date(k + 'T12:00:00'); x.setDate(x.getDate() + n); return dKey(x); };
+    const loc = () => { try { return (data.settings && data.settings.lang === 'es') ? 'es-ES' : 'en-GB'; } catch (e) { return 'en-GB'; } };
+    const wd = k => { try { return new Date(k + 'T12:00:00').toLocaleDateString(loc(), { weekday: 'short' }).replace('.', ''); } catch (e) { return k; } };
+    // The same rule checks the server works out (weekly-summary RULE_CHIPS): only nudges that mean the rule was crossed count.
+    const RULES = [['session', ['outside', 'finished']], ['trades', ['limit', 'ea_trades']], ['daily', ['daily_hit']], ['risk', ['big_risk', 'widen', 'ea_risk']],
+      ['stop', ['no_stop', 'ea_sl']], ['news', ['news_open', 'news_hold']], ['bias', ['against_bias', 'no_bias']]];
+    // A stored summary without its numbers: worked out from this journal, as the server would have.
+    function weekCard(wk) {
+      const days7 = [0, 1, 2, 3, 4, 5, 6].map(i => plus(wk, i));
+      let list = [];
+      try { list = (typeof getTradesWithLog === 'function') ? getTradesWithLog() : getAllLifetimeTrades(); } catch (e) {}
+      try { list = _noSep(list); } catch (e) {}
+      const ts = list.filter(t => t && t.result && days7.indexOf(dKey(t.date)) >= 0);
+      const rOf = t => { try { return tradeRforMath(t); } catch (e) { return 0; } }, r2 = v => Math.round(v * 100) / 100;
+      const wins = ts.filter(t => t.result === 'Win').length, losses = ts.filter(t => t.result === 'Lose').length, wl = wins + losses;
+      const best = ts.slice().sort((a, b) => rOf(b) - rOf(a))[0];
+      const wc = (data && data.weeklyCommitments) || {}, td = (data.settings && Array.isArray(data.settings.tradingDays) && data.settings.tradingDays.length) ? data.settings.tradingDays.map(Number) : [1, 2, 3, 4, 5];
+      const want = Array.isArray(wc[wk]) ? wc[wk].map(Number) : td, off = Array.isArray(data.timeOff) ? data.timeOff : [];
+      const planned = days7.filter(k => want.indexOf(new Date(k + 'T12:00:00').getDay()) >= 0 && !off.some(r => r && r.from && r.to && k >= r.from && k <= r.to)).length;
+      const nl = (data && data.nudgeLog) || {};
+      const rr = (Array.isArray(data.accounts) ? data.accounts : []).filter(a => a && !a.separate).map(a => a.riskRules || {});
+      const on = (mode, amt, pct) => mode === 'pct' ? parseFloat(pct) > 0 : mode === 'amount' ? parseFloat(amt) > 0 : (parseFloat(amt) > 0 || parseFloat(pct) > 0);
+      const set = { trades: rr.some(r => parseFloat(r.maxTrades) > 0), daily: rr.some(r => on(r.maxLossMode, r.maxLossAmount, r.maxLossPct) || on(r.firmDailyMode, r.firmDailyAmount, r.firmDailyPct)), risk: rr.some(r => on(r.maxRiskMode, r.maxRiskAmount, r.maxRiskPct)) };
+      const rules = RULES.map(([id, ks]) => ({ id: id, flagged: days7.filter(k => Object.keys(nl[k] || {}).some(x => x.indexOf('sample:') !== 0 && ks.indexOf(String(nl[k][x] && nl[k][x].rule)) >= 0)).length }))
+        .filter(c => c.flagged > 0 || !(c.id in set) || set[c.id]);
+      return { week: wk, netR: r2(ts.reduce((a, t) => a + rOf(t), 0)), trades: ts.length, wins: wins, losses: losses, bes: ts.length - wl,
+        winRate: wl ? Math.round(wins / wl * 100) : null, daysTraded: new Set(ts.map(t => dKey(t.date))).size, plannedDays: planned,
+        days: days7.map((k, i) => { const d = ts.filter(t => dKey(t.date) === k); return { key: k, dow: i + 1, r: r2(d.reduce((a, t) => a + rOf(t), 0)), n: d.length }; }).filter(d => d.dow <= 5 || d.n > 0),
+        best: best && rOf(best) > 0 ? { r: r2(rOf(best)), key: dKey(best.date) } : null, rules: rules };
+    }
+    const fR = v => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(2) + 'R';
+    // R per day: green above the zero line, red below, the best trade's day starred
+    function chartSvg(Wd, H, c) {
+      const L = 6, Rr = 6, Tp = 26, B = 22, n = c.days.length || 1;
+      const hi = Math.max(0.5, Math.max.apply(null, c.days.map(d => d.r))), lo = Math.min(0, Math.min.apply(null, c.days.map(d => d.r)));
+      const span = (hi - lo) || 1, y = v => Tp + (hi - v) / span * (H - Tp - B), bw = (Wd - L - Rr) / n;
+      const txt = (s2, x, yy, fill, w) => '<text x="' + x.toFixed(1) + '" y="' + yy.toFixed(1) + '" text-anchor="middle" font-size="11" ' + (w ? 'font-weight="700" ' : '') + 'fill="' + fill + '" font-family="DM Mono, monospace">' + s2 + '</text>';
+      let g = '<line x1="' + L + '" x2="' + (Wd - Rr) + '" y1="' + y(0).toFixed(1) + '" y2="' + y(0).toFixed(1) + '" stroke="rgba(255,255,255,.18)"/>';
+      c.days.forEach((d, i) => {
+        const cx = L + i * bw + bw / 2, w = Math.min(46, bw * 0.5);
+        if (d.n && Math.abs(d.r) > 0.004) {
+          const y1 = Math.min(y(0), y(d.r)), h = Math.max(2, Math.abs(y(d.r) - y(0)));
+          g += '<rect x="' + (cx - w / 2).toFixed(1) + '" y="' + y1.toFixed(1) + '" width="' + w.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="2" fill="' + (d.r > 0 ? '#4ECD8B' : '#E56767') + '"/>';
+        } else if (d.n) {
+          g += '<rect x="' + (cx - w / 2).toFixed(1) + '" y="' + (y(0) - 1).toFixed(1) + '" width="' + w.toFixed(1) + '" height="2" fill="rgb(120,150,220)"/>';
+        }
+        if (c.best && c.best.key === d.key) g += txt('★ ' + fR(c.best.r) + ' ' + wd(d.key), cx, Math.max(13, Math.min(y(d.r), y(0)) - 9), '#4ECD8B', true);
+        g += txt(wd(d.key), cx, H - 6, d.n ? '#c9c6d3' : '#6f6b7a');
+      });
+      return '<svg viewBox="0 0 ' + Wd + ' ' + H + '" preserveAspectRatio="none" role="img" aria-label="' + esc(T('R per day', 'R por día')) + '">' + g + '</svg>';
+    }
+    function drawChart() {
+      const el = document.getElementById('st-week'), host = el && el.querySelector('.st-wk-chart');
+      if (!host || !shownCard) return;
+      const w = Math.round(host.clientWidth);
+      if (w >= 40) host.innerHTML = chartSvg(w, Math.round(host.clientHeight) || 128, shownCard);
+    }
+    let shownCard = null;
     function paint(row) {
       const el = document.getElementById('st-week'); if (!el) return;
-      if (!row) { el.hidden = true; el.innerHTML = ''; return; }
+      if (!row) { el.hidden = true; el.innerHTML = ''; shownCard = null; return; }
+      const c = (row.card && Array.isArray(row.card.days)) ? row.card : weekCard(row.week_key);
+      shownCard = c;
+      const tile = (l, v, cls, sub) => '<div class="st-wk-tile"><div class="st-wk-l">' + esc(l) + '</div><div class="st-wk-v' + (cls ? ' ' + cls : '') + '">' + esc(v) + '</div><div class="st-wk-s">' + esc(sub || '') + '</div></div>';
+      const LBL = { session: T('In session', 'En sesión'), trades: T('Trades per day', 'Operaciones por día'), daily: T('Daily loss', 'Pérdida diaria'), risk: T('Risk per trade', 'Riesgo por operación'),
+        stop: T('Stop loss', 'Stop loss'), news: T('Red news', 'Noticias rojas'), bias: T('With your bias', 'Con tu sesgo') };
+      // green first (the rules kept), then the ones the app nudged about - amber, never red
+      const chips = (c.rules || []).filter(x => LBL[x.id]).sort((a, b) => (a.flagged ? 1 : 0) - (b.flagged ? 1 : 0)).map(x => x.flagged
+        ? '<span class="st-wk-chip flag"><b>!</b>' + esc(LBL[x.id]) + ' · ' + x.flagged + ' ' + esc(x.flagged === 1 ? T('day', 'día') : T('days', 'días')) + '</span>'
+        : '<span class="st-wk-chip ok"><b>✓</b>' + esc(LBL[x.id]) + '</span>').join('');
+      const words = (c.highlight || c.focus) ? [c.highlight, c.focus].filter(Boolean).join(' ') : (row.body || '');
       el.innerHTML = '<div class="st-week-t">' + esc(T('Your week', 'Tu semana')) + (row.week_key ? ' · ' + esc(range(row.week_key)) : '') + '</div>'
-        + '<div class="st-week-b">' + esc(row.body) + '</div>'
+        + '<div class="st-wk-tiles">'
+        + tile(T('Net R', 'R neto'), fR(c.netR), c.netR > 0.004 ? 'g' : c.netR < -0.004 ? 'r' : '', c.trades ? T('avg {A} a trade', 'media {A} por operación').replace('{A}', fR(c.netR / c.trades)) : '')
+        + tile(T('Trades', 'Operaciones'), String(c.trades), '', c.wins + ' W · ' + c.losses + ' L' + (c.bes ? ' · ' + c.bes + ' BE' : ''))
+        + tile(T('Win rate', 'Acierto'), c.winRate != null ? c.winRate + '%' : '—', '', T('break-evens left out', 'sin break-even'))
+        + tile(T('Days traded', 'Días operados'), String(c.daysTraded), '', T('of {P} planned', 'de {P} previstos').replace('{P}', String(c.plannedDays)))
+        + '</div>'
+        + '<div class="st-wk-chart"></div>'
+        + (chips ? '<div class="st-wk-rules">' + chips + '</div>' : '')
+        + (words ? '<div class="st-week-b">' + esc(words) + '</div>' : '')
         + '<div class="st-week-f"><button type="button" class="mt5c-btn" data-st-week-ok>' + esc(T('Got it', 'Entendido')) + '</button></div>';
       el.hidden = false;
+      drawChart();
     }
+    let lastW = window.innerWidth;
+    window.addEventListener('resize', () => { if (window.innerWidth === lastW) return; lastW = window.innerWidth; try { drawChart(); } catch (e) {} });
     async function load() {
       if (busy || !ready()) return;
       busy = true;
       try {
-        const r = await window.__stSB.from('weekly_summaries').select('id, week_key, body, created_at').is('read_at', null).order('created_at', { ascending: false }).limit(1);
+        const r = await window.__stSB.from('weekly_summaries').select('id, week_key, body, card, created_at').is('read_at', null).order('created_at', { ascending: false }).limit(1);
         shown = (r && Array.isArray(r.data) && r.data[0]) || null;
         paint(shown);
       } catch (e) {} finally { busy = false; }
@@ -29898,7 +30000,9 @@ try {
     // once the journal has arrived, and again whenever the app comes back to the front (Sunday evening, after the push)
     const iv = setInterval(() => { if (ready()) { clearInterval(iv); load(); } else if (++tries > 600) clearInterval(iv); }, 1000);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') load(); });
-    try { window.__stWeekly = { load: load, paint: paint }; } catch (e) {}
+    // drawn again when Session Bias comes into view (drawn while another tab was showing it has no width)
+    document.addEventListener('click', e => { if (e.target && e.target.closest && e.target.closest('.tab[data-page="bias"]')) setTimeout(() => { try { drawChart(); } catch (er) {} }, 60); });
+    try { window.__stWeekly = { load: load, paint: paint, card: weekCard }; } catch (e) {}
   })();
 
   /* ===== Every measured trade, in the excursions box (24 Oct 2026, Nestor wanted the heat chart there, not as a card of its own) =====
