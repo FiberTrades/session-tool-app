@@ -26,9 +26,38 @@
     await W(1500);
     var win = document.getElementById('stpr-win'), $ = function (s) { return document.querySelector(s); };
 
-    if (phoneNow) {   // ---- a phone: the window as it was ----
-      check('a phone: no platform, the window as it was (the tools row and the header in their places)', !win.classList.contains('plat') && !P._plat().on && $('#stpr-tb2').parentNode === win && $('#stpr-sym').closest('.stpr-hd') && !document.body.classList.contains('st-plat'),
-        [win.className, $('#stpr-tb2').parentNode.className]);
+    if (phoneNow) {   // ---- a phone: the phone layout (Nestor approved the phone mockup, 24 Oct 2026) ----
+      var wr0 = win.getBoundingClientRect();
+      check('a phone: Live fills the screen', win.classList.contains('plph') && P._plat().on && Math.abs(wr0.top) < 1 && Math.abs(wr0.left) < 1 && Math.abs(wr0.width - innerWidth) < 2 && Math.abs(wr0.height - innerHeight) < 2, [win.className, wr0.top, wr0.height, innerHeight]);
+      var nm0 = $('#stpr-grid .pl-nm'), oh0 = $('#stpr-grid .stpr-ohlc');
+      check('its legend: the name, then O H L C on the line under it, then the Session Indicator line and the account pill', nm0 && /^Euro \/ U\.S\. Dollar · 15 · /.test(nm0.textContent) && oh0 && oh0.getBoundingClientRect().top > nm0.getBoundingClientRect().top + 8 && $('.ph-ov [data-phsi]') && $('.ph-ov [data-phpill]') && /ON|OFF/.test($('[data-phpill]').textContent),
+        [nm0 && nm0.textContent, $('.ph-ov') && $('.ph-ov').textContent]);
+      var bar = $('.ph-bar'), kids = [$('.ph-logo'), $('.ph-live'), $('.ph-bar #stpr-sym'), $('.ph-tf'), $('.ph-icons #stpr-drawbtn'), $('.ph-icons #stpr-undo'), $('.ph-icons #stpr-layersbtn'), $('.ph-icons #stpr-alertsbtn')];
+      check('the bottom toolbar: the logo first, Live, the symbol, the timeframe, drawing tools, undo, Show on chart, alerts - all on screen', kids.every(function (k) { return k && k.getBoundingClientRect().width > 0 && k.getBoundingClientRect().right <= innerWidth + 1; }) && !!$('.ph-logo svg'),
+        kids.map(function (k) { return k ? Math.round(k.getBoundingClientRect().right) : null; }));
+      check('above it, docked: the open trade (or None) and a square pink Execute', (/No open trade/.test($('.ph-trade').textContent) || /lots/.test($('.ph-trade').textContent)) && $('.ph-go') && parseFloat(getComputedStyle($('.ph-go')).borderRadius) <= 4 && $('.ph-trade').getBoundingClientRect().bottom <= bar.getBoundingClientRect().top + 1);
+      $('[data-phpill]').click(); await W(1200);
+      check('the pill slides up the Trade Manager, Setup and Why in it', win.classList.contains('ph-open') && $('.ph-sheet #stpr-mm.pl-mm') && $('.ph-sheet [data-plsetup]') && $('.ph-sheet [data-plwhy]') && $('.ph-sheet').getBoundingClientRect().bottom <= innerHeight + 1, [win.className, !!$('.ph-sheet #stpr-mm.pl-mm'), !!$('.ph-sheet [data-plsetup]'), Math.round($('.ph-sheet').getBoundingClientRect().bottom), innerHeight]);
+      $('.ph-sheet .pl-x').click(); await W(600);
+      check('Execute in it: the sheet goes down, the bar says Cancel and what it places', !win.classList.contains('ph-open') && P._s().exec && $('.ph-trade [data-phx]') && /BUY|SELL/.test($('.ph-trade [data-phplace]').textContent), $('.ph-trade').textContent);
+      $('.ph-trade [data-phplace]').click();
+      for (k = 0; k < 40 && !/lots/.test($('.ph-sum') ? $('.ph-sum').textContent : ''); k++) await W(250);
+      check('...the side it places: the order fills, the bar shows the trade', /BUY|SELL/.test($('.ph-sum').textContent) && /lots/.test($('.ph-sum').textContent), $('.ph-trade').textContent);
+      $('[data-phgo]').click(); await W(500);
+      check('the sheet lists the open trade with Move to BE and Close', $('.ph-pos .ph-p') && $('.ph-pos [data-tma="close"]'), $('.ph-pos') && $('.ph-pos').textContent.slice(0, 120));
+      $('.ph-dim').click(); await W(400);
+      check('a tap outside closes it', !win.classList.contains('ph-open'));
+      $('[data-phtf]').click(); await W(300);
+      var mn = $('#stpr-menu.show'), mr = mn && mn.getBoundingClientRect();
+      check('the timeframe opens its list above the bar', mn && mr.bottom <= bar.getBoundingClientRect().top + 1 && mn.querySelector('[data-phtfv="60"]'), mr && [mr.top, mr.bottom]);
+      mn.querySelector('[data-phtfv="60"]').click(); for (k = 0; k < 40 && P._panes()[0].tf !== 60; k++) await W(150); await W(900);
+      check('...1h: the chart turns to it, the button says so', P._panes()[0].tf === 60 && $('.ph-tf').textContent.indexOf('1h') === 0, [P._panes()[0].tf, $('.ph-tf').textContent]);
+      $('.ph-logo').click(); await W(300);
+      var nv = window.__stNav ? true : (win.classList.contains('ph-navon') && document.querySelectorAll('.ph-navs [data-phnavt]').length >= 4);
+      check('the logo opens the app\'s tabs', nv, document.querySelectorAll('.ph-navs [data-phnavt]').length);
+      if (!window.__stNav) { $('.ph-navs [data-phnavt="bias"]').click(); await W(600);
+        check('...a tab from there: that page, the chart put away', document.getElementById('page-bias').classList.contains('active') && getComputedStyle(win).display === 'none' || !document.getElementById('page-livecharts').classList.contains('active'));
+        document.querySelector('.tab[data-page="livecharts"]').click(); await W(1500); }
       check('no errors', errs.length === 0, errs.slice(0, 3));
       return results;
     }
@@ -119,7 +148,7 @@
     bt.querySelector('.xx').click(); await W(300);
     var ask = Array.prototype.filter.call(document.querySelectorAll('.pl-tag'), function (t) { return t.classList.contains('ask'); })[0];
     check('✕ asks first: Close it in MT5? Close / Keep', ask && /Close it in MT5\?/.test(ask.textContent) && ask.querySelector('[data-plyes]') && ask.querySelector('[data-plno]'), ask && ask.textContent);
-    ask.querySelector('[data-plno]').click(); await W(300);
+    ask.querySelector('[data-plno]').click(); for (k = 0; k < 12 && document.querySelector('.pl-tag.ask'); k++) await W(150);
     check('...Keep: nothing sent, the tag as it was', !document.querySelector('.pl-tag.ask') && P._plat().ask === null);
     var ab = Array.prototype.map.call(document.querySelectorAll('.pl-t [data-tma]'), function (b) { return b.getAttribute('data-tma') + (b.disabled ? ':off' : ':on'); });
     check('the position\'s row: Move to BE and Close, on (MT5 manages it from here)', ab.join(',') === 'tobe:on,close:on', ab);
