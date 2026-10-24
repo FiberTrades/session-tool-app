@@ -35,9 +35,9 @@
     var r0 = rectOn(d0), legacy = px((r0.x0 + r0.x1) / 2 + 3, (r0.y0 + r0.y1) / 2 + 9);
     ok('a rectangle with no look of its own is drawn as before: its colour at 10% inside', Math.abs(legacy[0] - 96) <= 6 && Math.abs(legacy[1] - 165) <= 6 && Math.abs(legacy[2] - 250) <= 6 && Math.abs(legacy[3] - 26) <= 1, legacy);
 
-    // 2. line colour: the chart settings' 30 colours, an opacity, a custom one
+    // 2. line colour: the chart settings' 80 colours, an opacity, a custom one
     b.querySelector('[data-db="line"]').click(); await W(30);
-    ok('Line colour opens a popover: 30 colours, the current one ringed, Opacity, + Custom colour', DB.popK() === 'line' && pop().querySelectorAll('[data-pc]').length === 30 && pop().querySelector('[data-pc="#60a5fa"].on') && pop().querySelector('[data-pop]') && /Custom colour/.test(pop().textContent));
+    ok('Line colour opens a popover: 80 colours, the current one ringed, Opacity, + Custom colour', DB.popK() === 'line' && pop().querySelectorAll('[data-pc]').length === 80 && pop().querySelector('[data-pc="#60a5fa"].on') && pop().querySelector('[data-pop]') && /Custom colour/.test(pop().textContent));
     pop().querySelector('[data-pc="#f472b6"]').click(); await W(30);
     ok('a colour goes on the line, the popover stays open for its opacity', d0.color === '#f472b6' && DB.popK() === 'line' && pop().querySelector('[data-pc="#f472b6"].on'));
     var op = pop().querySelector('[data-pop]'); op.value = '50'; op.dispatchEvent(new Event('input', { bubbles: true })); op.dispatchEvent(new Event('change', { bubbles: true })); await W(30);
@@ -62,7 +62,7 @@
     DB.closePop();
     // 5. its words inside it
     bar().querySelector('[data-db="text"]').click(); await W(30);
-    ok('Text: a colour, sizes, where the words go (above as before, or inside: top, middle, bottom), left / centre / right, the words', pop().querySelectorAll('[data-pc]').length === 30 && pop().querySelectorAll('[data-ts]').length >= 5 && pop().querySelectorAll('[data-tv]').length === 5 && pop().querySelectorAll('[data-ta]').length === 3 && pop().querySelector('[data-tw]') && pop().querySelector('[data-tv="above"].on'));
+    ok('Text: a colour, sizes, where the words go (above as before, or inside: top, middle, bottom), left / centre / right, the words', pop().querySelectorAll('[data-pc]').length === 80 && pop().querySelectorAll('[data-ts]').length >= 5 && pop().querySelectorAll('[data-tv]').length === 5 && pop().querySelectorAll('[data-ta]').length === 3 && pop().querySelector('[data-tw]') && pop().querySelector('[data-tv="above"].on'));
     var tw = pop().querySelector('[data-tw]'); tw.value = 'RANGE'; tw.dispatchEvent(new Event('input', { bubbles: true })); tw.dispatchEvent(new Event('change', { bubbles: true }));
     pop().querySelector('[data-tv="middle"]').click(); await W(20); pop().querySelector('[data-ts="20"]').click(); await W(20); pop().querySelector('[data-pc="#ffffff"]').click(); await W(30);
     var ink = 0; for (var xx = Math.round((r0.x0 + r0.x1) / 2 - 30); xx < (r0.x0 + r0.x1) / 2 + 30; xx += 2) for (var yy = Math.round((r0.y0 + r0.y1) / 2 - 7); yy < (r0.y0 + r0.y1) / 2 + 7; yy += 2) { var c = px(xx, yy); if (c[0] > 230 && c[1] > 230 && c[2] > 230 && c[3] > 200) ink++; }
@@ -185,7 +185,7 @@
     ok('a chart in its own window: the toolbar opens in that window, styled like here', wb && wb.style.display === 'flex' && wcs.position === 'absolute' && wcs.borderRadius === '9px' && wb.querySelector('[data-db="tpl"]') && !(document.querySelector('.stdb-bar') && document.querySelector('.stdb-bar').style.display === 'flex'), wb && [wb.style.display, wcs.position, wcs.borderRadius]);
     wb.querySelector('[data-db="line"]').click(); await W(30);
     var wp = win.document.querySelector('.stdb-pop');
-    ok('and its popovers there too', wp && wp.style.display === 'flex' && wp.querySelectorAll('[data-pc]').length === 30);
+    ok('and its popovers there too', wp && wp.style.display === 'flex' && wp.querySelectorAll('[data-pc]').length === 80);
     P._dbar().closePop(); P._unpop(1); await W(400); DW.at = P._panes()[0];
 
     // 12. Spanish

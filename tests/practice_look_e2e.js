@@ -26,7 +26,7 @@
 
     // background
     q('[data-lksw="bg"]').click(); await W(30);
-    ok('a colour swatch opens the picker under its row: 30 colours, any colour, opacity 100%', q('.stpr-lkp[data-lkfor="bg"]') && menu.querySelectorAll('[data-lkcol]').length === 30 && q('[data-lkcus]') && q('[data-lkop]').value === '100');
+    ok('a colour swatch opens the picker under its row: 80 colours, any colour, opacity 100%', q('.stpr-lkp[data-lkfor="bg"]') && menu.querySelectorAll('[data-lkcol]').length === 80 && q('[data-lkcus]') && q('[data-lkop]').value === '100');
     q('[data-lkcol="#ffffff"]').click(); await W(40);
     ok('white picked: both charts turn white, saved, the picker stays open on it', C.look.bg === '#ffffff' && co(0).layout.background.color === '#ffffff' && co(1).layout.background.color === '#ffffff' && q('[data-lkcol="#ffffff"]').classList.contains('on'), [C.look, co(1).layout.background]);
     var op = q('[data-lkop]'); op.value = '60'; fire(op, 'input'); await W(30);

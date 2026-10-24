@@ -35,7 +35,7 @@
     for (var xx = bx.x0 + 2; xx < bx.x0 + 60 && !hitInk; xx += 1) for (var yy = bx.y0 + 3; yy < bx.y1 - 2 && !hitInk; yy += 1) { var c = px(xx, yy); if (c[3] > 150 && c[0] > 200 && c[1] > 200 && c[2] > 200) hitInk = true; }
     ok('drawn in white from that point, top left', hitInk && Math.abs(bx.x0 - X) < 3 && Math.abs(bx.y0 - Y) < 3, bx);
     var DB = P._dbar(), bar = document.querySelector('.stdb-bar'); DB.open('text'); await W(20); var box = DB.pop();
-    ok('its toolbar: the text colour (the 30 colours) with its words to edit, the size (M)', bar && bar.querySelector('[data-db="text"]') && bar.querySelector('[data-db="tsize"]').textContent === 'M' && box.querySelectorAll('[data-pc]').length === 30 && box.querySelector('[data-tw]').value === 'Wait for London' && box.querySelector('[data-tw]').placeholder === 'Text', box && box.textContent);
+    ok('its toolbar: the text colour (the 80 colours) with its words to edit, the size (M)', bar && bar.querySelector('[data-db="text"]') && bar.querySelector('[data-db="tsize"]').textContent === 'M' && box.querySelectorAll('[data-pc]').length === 80 && box.querySelector('[data-tw]').value === 'Wait for London' && box.querySelector('[data-tw]').placeholder === 'Text', box && box.textContent);
     DB.open('tsize'); await W(20);
     ok('its size: S M L XL', /S\s*·\s*11px/.test(DB.pop().textContent) && /XL\s*·\s*24px/.test(DB.pop().textContent) && DB.pop().querySelectorAll('[data-tz]').length === 4, DB.pop().textContent);
     DB.open('more'); await W(20);

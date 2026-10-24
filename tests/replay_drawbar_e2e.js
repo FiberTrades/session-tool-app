@@ -44,7 +44,7 @@
     ok('a new rectangle takes the default look (and is born on this timeframe, as before)', d1 && d1.fill === 'rgba(244,114,182,0.2)' && d1.mid === true && d1.tfs && d1.tfs.length === 1, d1);
     // the line colour's palette, and a trend line's style and extension
     bar().querySelector('[data-db="line"]').click(); await W(20);
-    ok('line colour: the 30 colours, an opacity, + Custom colour', pop().querySelectorAll('[data-pc]').length === 30 && pop().querySelector('[data-pop]') && pop().querySelector('[data-pcus]'));
+    ok('line colour: the 80 colours, an opacity, + Custom colour', pop().querySelectorAll('[data-pc]').length === 80 && pop().querySelector('[data-pop]') && pop().querySelector('[data-pcus]'));
     DB.closePop();
 
     // Hide all / Lock all
