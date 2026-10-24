@@ -109,6 +109,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
     if (!Number.isFinite(t) || !Number.isFinite(o) || !Number.isFinite(h) || !Number.isFinite(l) || !Number.isFinite(c)) continue;
     rows.push({ symbol, tf, t, o, h, l, c, v: b.length > 5 ? Math.round(Number(b[5])) : NaN });
   }
+  // One row per minute: two bars of a batch landing on the same minute (a repeated bar, or two that snap together) made
+  // the whole upsert fail - "ON CONFLICT DO UPDATE command cannot affect row a second time", every batch of the demo's
+  // BTCUSD chart on 24 Oct 2026. The later bar wins.
+  const byT = new Map<number, Record<string, number | string>>();
+  for (const x of rows) byT.set(Number(x.t), x);
+  if (byT.size !== rows.length) rows = [...byT.values()];
   // The tick volume (the Minimalist's volume profile): kept when every bar of the batch has it. A batch from an older EA
   // has none and leaves the stored volume alone (every row of one POST must name the same columns).
   const allV = rows.length > 0 && rows.every((x) => Number.isFinite(Number(x.v)) && Number(x.v) >= 0);
