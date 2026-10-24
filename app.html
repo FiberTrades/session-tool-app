@@ -4301,6 +4301,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* a row of three small charts (Statistics > Timing, 10 Oct 2026): shorter, and drawn at that height by zBars */
   .zr-short .zch { height: 170px; min-height: 170px; }
   .zr-short .zch svg { height: 170px; }
+  /* Drawdown recovery (24 Oct 2026) */
+  .dd-tbl { margin-top: 14px; }
+  .dd-tbl .history-list { margin-top: 0; min-width: 720px; }
+  .dd-tbl .history-row { grid-template-columns: 1.1fr 1.1fr 1.1fr 1fr 0.8fr 0.8fr 0.7fr 0.7fr; }
+  .dd-tbl .history-cell.wait { color: var(--text-dim); }
+  .dd-empty { margin: 14px 0 0; font-family: 'AppNum', 'DM Mono', monospace; font-size: 11px; letter-spacing: 0.04em; color: var(--text-mid); }
   .zb-hit { fill: transparent; cursor: pointer; }
   .zb-hit.on { fill: rgba(255, 255, 255, 0.05); }
   .zb-tip { position: absolute; z-index: 5; pointer-events: none; display: flex; flex-direction: column; gap: 3px; padding: 8px 11px; background: var(--bg-elev2); border: 1px solid var(--border-2); border-radius: 8px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); font-family: 'AppNum', 'DM Mono', monospace; white-space: nowrap; }
@@ -7089,6 +7095,25 @@ try {
         <div class="zc-h"><span class="zc-t" data-i18n="eq.eyebrow">Equity Curve</span><button type="button" class="slx-hbtn zc-hbtn" id="eq-tall-btn" aria-pressed="false"></button><span class="info-tip"><span class="info-tip-icon">?</span><span class="info-tip-content" data-i18n="stz.eq_tip">Your account balance after every trade, zoomed to the period picked above.</span></span></div>
         <p class="zc-sub"><span id="equity-chart-subtitle" data-i18n="eq.title">Account balance over time</span><span id="equity-chart-subtitle-pct" class="chart-card-subtitle-pct"></span></p>
         <div id="equity-chart-wrap"><svg id="equity-chart"></svg></div>
+      </div>
+    </div>
+
+    <!-- Drawdown recovery (24 Oct 2026, Nestor: "i like this plan do it!"): how far the balance sat below its last high, trade
+         by trade, and the deepest dips with how long each took to win back. Same balance as the equity curve above (net of
+         costs, every copy counted); it follows the period the same way (the level stays true to the whole history).
+         Drawn by ddData / ddDraw. -->
+    <div class="zr zr-1" data-stx="overview">
+      <div class="zc zc-dd" id="dd-section">
+        <div class="zc-h"><span class="zc-t" id="dd-title">Drawdown recovery</span><span class="info-tip"><span class="info-tip-icon">?</span><span class="info-tip-content" id="dd-tip"></span></span></div>
+        <p class="zc-sub" id="dd-sub"></p>
+        <div class="zch" id="dd-chart"></div>
+      </div>
+    </div>
+    <div class="zr zr-1" data-stx="overview">
+      <div class="zc ztb" id="dd-worst-section">
+        <div class="zc-h"><span class="zc-t" id="dd-worst-title">Worst drawdowns</span><span class="info-tip"><span class="info-tip-icon">?</span><span class="info-tip-content" id="dd-worst-tip"></span></span></div>
+        <p class="zc-sub" id="dd-worst-sub"></p>
+        <div class="dd-tbl" id="dd-worst"></div>
       </div>
     </div>
 
@@ -29413,6 +29438,7 @@ try {
 
     drawEquityChart(allTime, { splitColor: true, rangeFromMs: equityRangeFromMs() });   // zoomed to the period, level from the whole history
     try { zCards(all, wins, losses, bes); } catch (e) { try { console.warn('stat cards skipped:', e); } catch (e2) {} }
+    try { ddData(allTime); } catch (e) { try { console.warn('drawdown cards skipped:', e); } catch (e2) {} }
     try { zLayout(); } catch (e) {}
   }
 
@@ -29601,7 +29627,128 @@ try {
   }
   // __stZc, NOT __stZ: window.__stZ() is the page-zoom helper every pop-up positions itself with (line 38). Reusing the name
   // (3 Oct 2026) broke the reaction picker and the message menu all over Community until it was renamed.
-  window.__stZc = { redraw: function () { try { zLayout(); zDraw(); } catch (e) {} }, viz: { ring: zRing, spark: zSpark, bars: zMiniBars, pair: zPair, gauge: zGauge } };
+
+  /* ===== Drawdown recovery (24 Oct 2026, Nestor: "i like this plan do it!") =====
+     The balance after every trade (the equity curve's: setup baseline + net P&L x copies, chronological), its running high, and
+     each stretch below that high - from the trade that first dropped under it to the trade that got back to it (an equal balance
+     counts as back). The chart is how far below the high, in %, trade by trade; the table the five deepest stretches. Both follow
+     the Statistics period like the equity curve: worked out on the whole history (so a dip that began before the period still
+     measures from its real high), then shown from the period's first trade. */
+  let _ddLast = null;
+  function ddLoc() { try { return (data.settings && data.settings.lang === 'es') ? 'es-ES' : 'en-GB'; } catch (e) { return 'en-GB'; } }
+  function ddDay(d) {
+    const x = d ? new Date(d) : null; if (!x || isNaN(x.getTime())) return '—';
+    const o = { weekday: 'short', day: 'numeric', month: 'short' }; if (x.getFullYear() !== new Date().getFullYear()) o.year = 'numeric';
+    try { return x.toLocaleDateString(ddLoc(), o); } catch (e) { return x.toDateString(); }
+  }
+  function ddData(allTime) {
+    const tr = (allTime || []).slice().sort(_tradeChronoCompare);
+    const base = (typeof getScopedBaseline === 'function') ? getScopedBaseline() : 0;
+    const pts = [{ v: base, r: 0, d: null }];
+    let pl = 0, rr = 0;
+    tr.forEach(t => { pl += tradeNetPL(t) * tradeCopies(t); rr += tradeRforMath(t) * tradeCopies(t); pts.push({ v: base + pl, r: rr, d: t && t.date ? t.date : null }); });
+    const EPS = 0.005, eps = [], hiAt = [];
+    let pk = 0, cur = null;
+    hiAt[0] = 0;
+    for (let i = 1; i < pts.length; i++) {
+      if (pts[i].v >= pts[pk].v - EPS) { if (cur) { cur.end = i; eps.push(cur); cur = null; } pk = i; }
+      else { if (!cur) cur = { pk: pk, lo: i, end: null }; if (pts[i].v < pts[cur.lo].v) cur.lo = i; }
+      hiAt[i] = pk;
+    }
+    if (cur) eps.push(cur);
+    const ms = d => { const x = d ? new Date(d).getTime() : NaN; return isNaN(x) ? null : x; };
+    const last = pts.length - 1;
+    const rows = eps.map(e => {
+      const hv = pts[e.pk].v, lv = pts[e.lo].v, depth = hv - lv;
+      const st = ms(pts[e.pk + 1].d), en = e.end != null ? ms(pts[e.end].d) : null;
+      const days = st != null ? Math.max(0, Math.round(((en != null ? en : Date.now()) - st) / 86400000)) : null;
+      return { start: pts[e.pk + 1].d, low: pts[e.lo].d, end: e.end != null ? pts[e.end].d : null, endMs: en, depth: depth,
+               pct: hv > 0 ? depth / hv * 100 : null, r: pts[e.pk].r - pts[e.lo].r, trades: (e.end != null ? e.end : last) - e.pk, days: days };
+    });
+    // the period: like the equity curve, the first trade on or after the period's start
+    const from = (typeof equityRangeFromMs === 'function') ? equityRangeFromMs() : 0;
+    let s0 = 1;
+    if (from > 0) { while (s0 <= last && (ms(pts[s0].d) || 0) < from) s0++; }
+    const series = [];
+    for (let i = (from > 0 ? Math.max(0, s0 - 1) : 0); i <= last; i++) {
+      const hv = pts[hiAt[i]].v, dd = pts[i].v - hv;
+      series.push({ i: i, d: pts[i].d, dd: Math.min(0, dd), pct: hv > 0 ? Math.min(0, dd / hv * 100) : 0 });
+    }
+    const inPeriod = rows.filter(x => !(from > 0) || x.end == null || (x.endMs != null && x.endMs >= from));
+    const nowDd = last > 0 ? Math.min(0, pts[last].v - pts[hiAt[last]].v) : 0;
+    const nowEp = (eps.length && eps[eps.length - 1].end == null) ? rows[rows.length - 1] : null;
+    _ddLast = { n: last, series: series, worst: inPeriod.slice().sort((a, b) => b.depth - a.depth).slice(0, 5), all: inPeriod.length,
+                nowDd: nowDd, nowPct: last > 0 && pts[hiAt[last]].v > 0 ? nowDd / pts[hiAt[last]].v * 100 : 0, nowEp: nowEp };
+    ddDraw();
+  }
+  // the underwater chart: 0 at the top, the deepest dip at the bottom, one point per trade
+  function ddSvg(Wd, H, series) {
+    const L = 52, Rr = 12, T = 12, B = 26, n = series.length;
+    const lo = Math.min.apply(null, series.map(p => p.pct).concat([0]));
+    const span = (0 - lo) || 1, y = v => T + (0 - v) / span * (H - T - B);
+    const x = i => L + (n > 1 ? i / (n - 1) : 0.5) * (Wd - L - Rr);
+    const lab = (s, xx, yy, a) => '<text x="' + xx + '" y="' + yy + '" text-anchor="' + (a || 'end') + '" font-size="11" fill="#8d899a" font-family="DM Mono, monospace">' + s + '</text>';
+    const fp = v => (v < 0 ? '−' : '') + Math.abs(v).toFixed(Math.abs(v) >= 10 ? 0 : 1) + '%';
+    let g = '<defs><linearGradient id="dd-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="' + Z_R + '" stop-opacity="0.05"/><stop offset="100%" stop-color="' + Z_R + '" stop-opacity="0.32"/></linearGradient></defs>';
+    g += '<line x1="' + L + '" x2="' + (Wd - Rr) + '" y1="' + y(0) + '" y2="' + y(0) + '" stroke="rgba(255,255,255,.14)"/>' + lab('0%', L - 8, y(0) + 4);
+    if (lo < 0) {
+      [lo / 2, lo].forEach(v => { g += '<line x1="' + L + '" x2="' + (Wd - Rr) + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '" stroke="rgba(255,255,255,.05)"/>' + lab(fp(v), L - 8, y(v) + 4); });
+    }
+    let line = '';
+    series.forEach((p, i) => { line += (i ? ' L ' : 'M ') + x(i).toFixed(1) + ' ' + y(p.pct).toFixed(1); });
+    if (n > 1) g += '<path d="' + line + ' L ' + x(n - 1).toFixed(1) + ' ' + y(0).toFixed(1) + ' L ' + x(0).toFixed(1) + ' ' + y(0).toFixed(1) + ' Z" fill="url(#dd-fill)"/>';
+    g += '<path d="' + (n > 1 ? line : 'M ' + L + ' ' + y(0) + ' L ' + (Wd - Rr) + ' ' + y(0)) + '" fill="none" stroke="' + Z_R + '" stroke-width="1.8" stroke-linejoin="round"/>';
+    const lastP = series[n - 1];
+    if (lastP) g += '<circle cx="' + x(n - 1).toFixed(1) + '" cy="' + y(lastP.pct).toFixed(1) + '" r="3" fill="' + (lastP.pct < 0 ? Z_R : Z_G) + '"/>';
+    g += lab(zT('Trade', 'Operación') + ' ' + (lastP ? lastP.i : 0), Wd - Rr, H - 8);
+    const bw = (Wd - L - Rr) / Math.max(1, n);
+    let hits = '';
+    series.forEach((p, i) => { hits += '<rect class="zb-hit" data-i="' + i + '" x="' + (x(i) - bw / 2).toFixed(1) + '" y="' + (T - 6) + '" width="' + Math.max(1, bw).toFixed(1) + '" height="' + (H - T - B + 12) + '"/>'; });
+    return '<svg viewBox="0 0 ' + Wd + ' ' + H + '" preserveAspectRatio="none" role="img">' + g + hits + '</svg>';
+  }
+  function ddDraw() {
+    const esc = x => String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const set = (id, v) => { const el = document.getElementById(id); if (el && el.textContent !== v) el.textContent = v; };
+    const money = v => (typeof fmtMoney === 'function' ? fmtMoney(Math.abs(v), { noSign: true }) : String(Math.round(Math.abs(v) * 100) / 100));
+    const nTr = c => c + ' ' + (c === 1 ? zT('trade', 'operación') : zT('trades', 'operaciones'));
+    set('dd-title', zT('Drawdown recovery', 'Recuperación de caídas'));
+    set('dd-tip', zT('How far your balance sat below its last high after each trade, net of costs. 0% means you were at a high.', 'Cuánto estuvo tu balance por debajo de su último máximo tras cada operación, neto de costes. 0% significa que estabas en un máximo.'));
+    set('dd-worst-title', zT('Worst drawdowns', 'Peores caídas'));
+    set('dd-worst-tip', zT('Your deepest stretches below a high: when each began, its lowest point, the day you were back at the high, how deep it went and how long it took.', 'Tus tramos más profundos por debajo de un máximo: cuándo empezó cada uno, su punto más bajo, el día que volviste al máximo, cuánto bajó y cuánto tardó.'));
+    const D = _ddLast, host = document.getElementById('dd-chart');
+    if (!D || !host) return;
+    const sub = !D.n ? '' : (D.nowDd < -0.005
+      ? zT('Now {M} ({P}) below your high · {N} since it began', 'Ahora {M} ({P}) por debajo de tu máximo · {N} desde que empezó').replace('{M}', '−' + money(D.nowDd)).replace('{P}', '−' + Math.abs(D.nowPct).toFixed(1) + '%').replace('{N}', nTr(D.nowEp ? D.nowEp.trades : 0))
+      : zT('At your high: nothing to win back right now', 'En tu máximo: nada que recuperar ahora mismo'));
+    set('dd-sub', sub);
+    const w = Math.round(host.clientWidth);
+    if (w >= 40) {   // its tab is hidden: drawn when it comes into view
+      if (!D.n || D.series.length < 2) { host.onpointermove = host.onpointerdown = host.onpointerleave = null; host.innerHTML = '<div class="zc-empty">' + esc(zT('No trades in this period yet', 'Aún no hay operaciones en este periodo')) + '</div>'; }
+      else {
+        host.innerHTML = ddSvg(w, Math.round(host.clientHeight) || 240, D.series);
+        zTip(host, D.series.map(p => ({ title: p.i ? ddDay(p.d) + ' · ' + zT('trade', 'operación') + ' ' + p.i : zT('Start', 'Inicio'), v: p.dd < -0.005 ? -1 : 1,
+          value: p.dd < -0.005 ? '−' + money(p.dd) + ' (−' + Math.abs(p.pct).toFixed(1) + '%)' : zT('At a high', 'En un máximo'), sub: p.dd < -0.005 ? zT('below your last high', 'por debajo de tu último máximo') : '' })));
+      }
+    }
+    const tb = document.getElementById('dd-worst');
+    if (!tb) return;
+    set('dd-worst-sub', D.all ? zT('Your {K} deepest, and how long each took to win back', 'Tus {K} más profundas, y cuánto tardaste en recuperar cada una').replace('{K}', String(D.worst.length)) : '');
+    let h;
+    if (!D.n) h = '<p class="dd-empty">' + esc(zT('No trades in this period yet', 'Aún no hay operaciones en este periodo')) + '</p>';
+    else if (!D.worst.length) h = '<p class="dd-empty">' + esc(zT('No drawdowns in this period: every trade kept you at a high.', 'Sin caídas en este periodo: cada operación te mantuvo en un máximo.')) + '</p>';
+    else {
+      const c = (v, cls) => '<div class="history-cell' + (cls ? ' ' + cls : '') + '">' + v + '</div>';
+      h = '<div class="history-list"><div class="history-row headers">' + [zT('Started', 'Empezó'), zT('Lowest', 'Más bajo'), zT('Recovered', 'Recuperada'), zT('Depth', 'Caída'), '%', 'R', zT('Trades', 'Operaciones'), zT('Days', 'Días')].map(x => c(esc(x), 'label')).join('') + '</div>';
+      D.worst.forEach(x => {
+        h += '<div class="history-row">' + c(esc(ddDay(x.start))) + c(esc(ddDay(x.low))) + (x.end ? c(esc(ddDay(x.end)), 'pl-good') : c(esc(zT('Not yet', 'Aún no')), 'wait'))
+          + c('−' + esc(money(x.depth)), 'pl-bad') + c(x.pct != null ? '−' + x.pct.toFixed(1) + '%' : '—', 'pl-bad')
+          + c((x.r > 0 ? '−' : '+') + Math.abs(x.r).toFixed(2) + 'R', x.r > 0 ? 'pl-bad' : '') + c(String(x.trades)) + c(x.days != null ? String(x.days) : '—') + '</div>';
+      });
+      h += '</div>';
+    }
+    if (tb.getAttribute('data-h') !== h) { tb.innerHTML = h; tb.setAttribute('data-h', h); }
+  }
+  window.__stZc = { redraw: function () { try { zLayout(); zDraw(); } catch (e) {} try { ddDraw(); } catch (e) {} }, viz: { ring: zRing, spark: zSpark, bars: zMiniBars, pair: zPair, gauge: zGauge } };
 
   // Lifetime "showed up vs traded" — the same idea as the monthly consistency block,
   // but spanning from your first activity (earliest bias or trade) to today. The denominator
