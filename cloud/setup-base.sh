@@ -7,8 +7,10 @@ export DEBIAN_FRONTEND=noninteractive
 echo "== packages"
 apt-get update -q
 apt-get -y -q -o Dpkg::Options::=--force-confold upgrade
+# python3-cryptography + openssl: the agent's key pair; openbox: each terminal's window manager (agent/run-in-x.sh - without
+# one MT5's menus draw black, 23 Oct 2026); xdotool, x11-apps, imagemagick: stx (drive or screenshot a terminal)
 apt-get -y -q install ufw fail2ban unattended-upgrades xvfb xauth cabextract wget curl jq ca-certificates gnupg \
-  python3 python3-venv python3-pip python3-nacl htop
+  python3 python3-venv python3-pip python3-nacl python3-cryptography htop openbox xdotool x11-apps imagemagick openssl
 
 echo "== ssh: keys only"
 cat > /etc/ssh/sshd_config.d/10-st-keys-only.conf <<'EOF'

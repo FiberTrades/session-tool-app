@@ -14,14 +14,14 @@
     try { STCloud.getData()._tourDoneV1 = true; } catch (e) {}
     document.querySelectorAll('[class^="st-tour"]').forEach(function (e) { e.remove(); });
     // a stand-in database: what the Accounts tab reads and writes
-    var rows = [], inserted = [], deleted = [];
+    var rows = [], inserted = [], deleted = [], failHost = null;
     var realFrom = window.__stSB.from.bind(window.__stSB);
     var chain = function (val) { var p = Promise.resolve(val); ['select', 'eq', 'order', 'limit', 'in'].forEach(function (m) { p[m] = function () { return p; }; }); return p; };
     window.__stSB.from = function (t) {
       if (t === 'cloud_hosts') return chain({ data: [{ id: 'uk1', region: 'test', public_key: PUB }], error: null });
       if (t === 'cloud_mt5') return {
         select: function () { return chain({ data: rows.slice(), error: null }); },
-        insert: function (p) { inserted.push(p); return { select: function () { return Promise.resolve({ data: [{ id: 'new1' }], error: null }); } }; },
+        insert: function (p) { inserted.push(p); return { select: function () { return Promise.resolve(p.host_id === failHost ? { data: null, error: { message: 'cloud_full' } } : { data: [{ id: 'new1' }], error: null }); } }; },
         delete: function () { return { eq: function (k, v) { deleted.push(v); rows = rows.filter(function (r) { return r.id !== v; }); return Promise.resolve({ error: null }); } }; }
       };
       return realFrom(t);
@@ -52,6 +52,29 @@
     ok('it goes sealed: 384 bytes of RSA-OAEP (3072-bit key), base64', typeof p.enc_password === 'string' && atob(p.enc_password).length === 384, p.enc_password && p.enc_password.length);
     var acc = (D.accounts || []).filter(function (a) { return D.mt5LoginMap['1520001234'] === a.id; })[0];
     ok('...an account is made for it, linked to the login, the form closed and emptied', !!acc && document.getElementById('sacc-add-wrap').hidden && !f('pw').value, acc && acc.name);
+    // more than one server (24 Oct 2026): the one with the most room (st_cloud_pick_host), asked when the account is added;
+    // one that filled meanwhile (cloud_full) -> asked again once; none with room -> "the cloud is full", nothing sent
+    var realRpc = window.__stSB.rpc, pickQ = [], picks = 0;
+    window.__stSB.rpc = function (fn) { if (fn !== 'st_cloud_pick_host') return realRpc.apply(window.__stSB, arguments); picks++; return Promise.resolve({ data: pickQ.length ? pickQ.shift() : [], error: null }); };
+    var addOne = async function (lg) {
+      document.getElementById('sacc-add-open').click(); await W(300);
+      ac = document.getElementById('sacc-addcloud');
+      f('login').value = lg; f('server').value = 'FTMO-Demo'; f('pw').value = DUMMY;
+      var n0 = inserted.length; ac.querySelector('[data-sacc-ago]').click();
+      for (i = 0; i < 40 && inserted.length === n0 && !errT(); i++) await W(100);
+      await W(500); return inserted.slice(n0);
+    };
+    pickQ = [[{ id: 'uk2', region: 'test', public_key: PUB }]];
+    var ins = await addOne('1520002222');
+    ok('two servers: the account goes to the one st_cloud_pick_host names (uk2), sealed with its key', ins.length === 1 && ins[0].host_id === 'uk2' && atob(ins[0].enc_password).length === 384 && picks === 1, ins.map(function (x) { return x.host_id; }));
+    pickQ = [[{ id: 'uk2', region: 'test', public_key: PUB }], [{ id: 'uk3', region: 'test', public_key: PUB }]]; failHost = 'uk2'; picks = 0;
+    ins = await addOne('1520003333');
+    ok('the server filled meanwhile (cloud_full): it asks again and the account goes to the next one (uk3)', ins.length === 2 && ins[0].host_id === 'uk2' && ins[1].host_id === 'uk3' && picks === 2 && !errT(), [ins.map(function (x) { return x.host_id; }), picks, errT()]);
+    failHost = null; pickQ = [[]]; picks = 0;
+    ins = await addOne('1520004444');
+    ok('every server full: "The cloud is full right now", nothing sent', ins.length === 0 && /The cloud is full right now/.test(errT()), [ins.length, errT()]);
+    window.__stSB.rpc = realRpc;
+    try { document.getElementById('sacc-add-wrap').hidden = true; } catch (e) {}
     // statuses, in the accounts' lines
     var mk = function (nm, lg) { var a = window.__stCreateAccount(nm, 10000); D.mt5LoginMap[lg] = a.id; return a; };
     var b2 = mk('Cloud B', '1520009999'), b3 = mk('Cloud C', '1520005555');

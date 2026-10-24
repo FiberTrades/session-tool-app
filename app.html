@@ -55713,7 +55713,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
             <div class="sacc-foot">
               <span class="sacc-foot-l">${tt('settings.starting_label')} <span class="settings-account-meta-value settings-account-start-edit" data-id="${acc.id}" data-cur="${acc.startingBalance}" title="${tt('settings.edit_starting_title')}">${fmt(acc.startingBalance, { noSign: true })}</span>
                 ${openedHtml ? ' · ' + openedHtml.replace(/<\/?div[^>]*>/g, '') : ''}
-                · <button type="button" class="settings-account-match" data-id="${acc.id}">${window._stT("Doesn't match your broker?", '¿No coincide con tu bróker?')}</button></span>
+                ${Object.values(data.mt5LoginMap || {}).indexOf(acc.id) !== -1 ? '' : `· <button type="button" class="settings-account-match" data-id="${acc.id}">${window._stT("Doesn't match your broker?", '¿No coincide con tu bróker?')}</button>`}</span>
               ${actions[1] || ''}
             </div>
           </div>` : ''}
@@ -78125,11 +78125,22 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     lg = String(lg || '').trim(); sv = String(sv || '').trim();
     var err = !/^\d{3,12}$/.test(lg) ? T('The login is the account number: digits only.', 'El login es el número de la cuenta: solo dígitos.')
       : !sv ? T('Type the server, as the firm wrote it (e.g. FTMO-Demo).', 'Escribe el servidor tal como lo da la firma (p. ej. FTMO-Demo).')
-      : !pw ? T('Type the account’s password.', 'Escribe la contraseña de la cuenta.')
-      : !CL.host ? T('The server can’t be reached right now. Try again in a minute.', 'Ahora no se llega al servidor. Prueba otra vez en un minuto.') : '';
+      : !pw ? T('Type the account’s password.', 'Escribe la contraseña de la cuenta.') : '';
     if (err) return Promise.resolve({ ok: false, err: err });
-    return clSeal(CL.host.public_key, pw).then(function (enc) {
-      return window.__stSB.from('cloud_mt5').insert({ host_id: CL.host.id, login: +lg, server: sv, enc_password: enc, app_trading: !!app }).select('id');
+    var tried = {};
+    function put(h) {   // the password is sealed with THAT server's key, so the server is chosen first
+      tried[h.id] = 1;
+      return clSeal(h.public_key, pw).then(function (enc) {
+        return window.__stSB.from('cloud_mt5').insert({ host_id: h.id, login: +lg, server: sv, enc_password: enc, app_trading: !!app }).select('id');
+      }).then(function (r) {
+        if (!(r && r.error && /cloud_full/.test(String(r.error.message || r.error)))) return r;
+        return clPick().then(function (h2) { return h2 && !tried[h2.id] ? put(h2) : r; });
+      });
+    }
+    return clPick().then(function (h) {
+      if (h === false) return { error: { message: 'cloud_full' } };
+      if (!h && !CL.host) return { error: { message: T('The server can’t be reached right now. Try again in a minute.', 'Ahora no se llega al servidor. Prueba otra vez en un minuto.') } };
+      return put(h || CL.host);
     }).then(function (r) {
       var em = String((r && r.error && (r.error.message || r.error)) || '');
       if (r && r.error) return { ok: false, why: /cloud_trial_limit/.test(em) ? 'trial' : '', err: /duplicate|unique/i.test(em) ? T('That account is already in the cloud.', 'Esa cuenta ya está en la nube.')
@@ -78143,8 +78154,20 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     var sb = window.__stSB; if (!sb || !cloudOn()) return; CL.at = Date.now();
     sb.from('cloud_mt5').select('id,login,server,status,status_msg,status_at,created_at,app_trading,symbols').order('created_at')
       .then(function (r) { if (r && !r.error) { CL.rows = r.data || []; render(); try { if (window.__stAccFill) window.__stAccFill(true); } catch (e) {} } }, function () {});
-    if (!CL.host) sb.from('cloud_hosts').select('id,region,public_key').eq('active', true).order('id').limit(1)
-      .then(function (r) { if (r && !r.error && r.data && r.data[0]) CL.host = r.data[0]; }, function () {});
+    if (!CL.host) clPick();
+  }
+  // The server a new account goes to: the active one with the most room (st_cloud_pick_host, 24 Oct 2026 - more than one
+  // server). Resolves the host, false when every server is full, or null when it can't be asked (CL.host stays as it was).
+  function clPick() {
+    var sb = window.__stSB; if (!sb) return Promise.resolve(null);
+    function first() { return sb.from('cloud_hosts').select('id,region,public_key').eq('active', true).order('id').limit(1)
+      .then(function (r) { var h = r && !r.error && r.data && r.data[0]; if (h) CL.host = h; return h || null; }, function () { return null; }); }
+    if (typeof sb.rpc !== 'function') return first();
+    return Promise.resolve(sb.rpc('st_cloud_pick_host')).then(function (r) {
+      if (!r || r.error || !Array.isArray(r.data)) return first();
+      if (!r.data[0]) return false;
+      CL.host = r.data[0]; return CL.host;
+    }, first);
   }
   function clB64(buf) { var a = new Uint8Array(buf), s = ''; for (var i = 0; i < a.length; i++) s += String.fromCharCode(a[i]); return btoa(s); }
   function clSeal(pub, text) {
@@ -78693,6 +78716,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
       CF.sure = null; window.__stMt5c.cloudRm(id).then(function () { window.__stAccFill(true); }); return; }
     b = tg.closest('[data-sacc-ago]');
     if (b && !CF.busy) { var af = function (k) { var i = document.querySelector('[data-sacc-af="' + k + '"]'); return i ? (i.type === 'checkbox' ? i.checked : String(i.value || '').trim()) : ''; }, er = document.querySelector('[data-sacc-aerr]');
+      if (er) er.hidden = true;   // each press starts clean: an earlier attempt's error stayed on screen after a success (24 Oct 2026)
       var lg1 = af('login'), sv1 = af('server');
       if ((D().mt5LoginMap || {})[lg1] && accById(D().mt5LoginMap[lg1])) { if (er) { er.hidden = false; er.textContent = T('That MT5 account is already one of your accounts: open it and press Move to the cloud.', 'Esa cuenta MT5 ya es una de tus cuentas: ábrela y pulsa Pasar a la nube.'); } return; }
       if (!acked() && !af('ack')) { if (er) { er.hidden = false; er.textContent = ACK_ERR(); } return; }

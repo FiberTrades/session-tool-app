@@ -13,6 +13,7 @@
 //
 //  { mode:"cloud" } (23 Oct 2026): cloud MT5's alarm - a server gone quiet, an EA stopped, one running again
 //  (cloudWatch below; st_minute_tick calls it only when st_cloud_watch_due() says there is something to tell).
+//  Since 24 Oct 2026 also the admin's: the servers 80% full, then full (fleetWatch).
 //
 //  Guarded by the x-cron-key header (NUDGE_CRON_KEY, also in the vault for the pg_cron job).
 //  Deploy with "Verify JWT" OFF.
@@ -94,7 +95,7 @@ async function cloudWatch() {
     } else if (r.status === "error" && r.alert_state !== "error") {
       next = "error";
       title = es ? `MT5 ${r.login} en la nube: un problema` : `Cloud MT5 ${r.login}: a problem`;
-      text = r.status_msg || (es ? "Mira Ajustes > MT5 > MT5 en la nube." : "See Settings > MT5 > MT5 in the cloud.");
+      text = r.status_msg || (es ? "Mira Ajustes > Cuentas." : "See Settings > Accounts.");
     } else if (r.alert_state && r.status === "running" && now - at < 2 * 60000) {
       next = null;
       title = es ? `MT5 ${r.login} en la nube funciona otra vez` : `Cloud MT5 ${r.login} is running again`;
@@ -105,7 +106,34 @@ async function cloudWatch() {
     await admin.from("cloud_mt5").update({ alert_state: next, alert_at: new Date().toISOString() }).eq("id", r.id);
     out.push(`${r.login} ${next || "ok"}=${res}`);
   }
-  return { cloud: out };
+  return { cloud: out, fleet: await fleetWatch() };
+}
+
+/* The servers filling up (24 Oct 2026, Nestor: "a phone alert when a server is about 80% full"). Counted over every active
+   server, since a new account goes to whichever has room (st_cloud_pick_host): the admin hears once at 80% ("time to add
+   a server") and once when full (members then see "the cloud is full"). The level told drops back quietly once the
+   fleet is 10 points under it - a new server, removed accounts - so the next rise is told again. */
+const ADMIN_EMAIL = "be.o2@hotmail.com";   // as st_is_admin()
+async function fleetWatch() {
+  const { data } = await admin.rpc("st_cloud_fleet");
+  const f = data && data[0];
+  if (!f) return "no fleet";
+  if (f.level < f.told && f.used * 100 < f.cap * (f.told - 10)) {
+    await admin.from("cloud_alerts").update({ level: f.level, at: new Date().toISOString() }).eq("id", "fleet");
+    return `reset ${f.told}->${f.level} (${f.used}/${f.cap})`;
+  }
+  if (f.level <= f.told) return `quiet ${f.used}/${f.cap}`;
+  const { data: me } = await admin.from("profiles").select("id").ilike("email", ADMIN_EMAIL).limit(1);
+  const uid = me && me[0] && me[0].id;
+  const left = Math.max(0, f.cap - f.used);
+  const title = f.level >= 100 ? `Cloud MT5 is full: ${f.used} of ${f.cap} places`
+    : `Cloud MT5: ${f.used} of ${f.cap} places taken`;
+  const text = f.level >= 100
+    ? "New members can't add a cloud account until a server is added. Buy one (Contabo Cloud VPS 6), add the st_cloud SSH key and send Claude its IP: cloud/new-host.sh sets it up."
+    : `${left} place${left === 1 ? "" : "s"} left. Time to add a server: buy one (Contabo Cloud VPS 6), add the st_cloud SSH key and send Claude its IP.`;
+  const res = uid ? await sendPush(admin, uid, "cloud", title, text, "st-cloud-fleet") : "no admin";
+  await admin.from("cloud_alerts").update({ level: f.level, at: new Date().toISOString() }).eq("id", "fleet");
+  return `told ${f.level} (${f.used}/${f.cap}) ${res}`;
 }
 
 function json(obj: unknown, status: number) {

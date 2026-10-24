@@ -11,6 +11,10 @@
 //                                        and the EA settings that account last reported (its starting inputs).
 //    POST {host, id, status, msg}        what happened to one: starting | running | error. Sent every minute too,
 //                                        so status_at doubles as the server's heartbeat (nudge-cron's cloud watch).
+//    POST {op:"hello", host, region,     the agent at its start (24 Oct 2026): a server not in cloud_hosts yet is added,
+//          public_key, capacity}         active, with the places its memory holds - a new server needs no database step
+//                                        (cloud/new-host.sh). A known one is never changed; a different key is refused,
+//                                        as the passwords stored for it are sealed with the old one.
 //
 //  No sign-in from the app: deploy with "Verify JWT" OFF; the secret is the check.
 // ============================================================
@@ -84,8 +88,20 @@ Deno.serve(async (req) => {
   }
 
   if (req.method === "POST") {
-    let b: { host?: string; id?: string; status?: string; msg?: string };
+    let b: { op?: string; host?: string; id?: string; status?: string; msg?: string; region?: string; public_key?: string; capacity?: number };
     try { b = await req.json(); } catch { return json({ error: "bad json" }, 400); }
+    if (b.op === "hello") {
+      const host = String(b.host || ""), pub = String(b.public_key || ""), cap = Math.floor(Number(b.capacity));
+      if (!/^[a-z0-9-]{1,32}$/.test(host) || !/^[A-Za-z0-9+/=]{300,1200}$/.test(pub) || !(cap >= 0 && cap <= 200)) return json({ error: "bad hello" }, 400);
+      const { data: cur, error: e1 } = await admin.from("cloud_hosts").select("public_key,capacity,active").eq("id", host).maybeSingle();
+      if (e1) return json({ error: e1.message }, 500);
+      if (cur) return cur.public_key === pub ? json({ ok: true, known: true, capacity: cur.capacity, active: cur.active })
+        : json({ error: "key mismatch: this host id is registered with another key" }, 409);
+      const { error: e2 } = await admin.from("cloud_hosts")
+        .insert({ id: host, region: String(b.region || host).slice(0, 80), public_key: pub, capacity: cap, active: true });
+      if (e2) return json({ error: e2.message }, 500);
+      return json({ ok: true, registered: true, capacity: cap });
+    }
     if (!b.id || !b.host || !STATUSES.has(b.status || "")) return json({ error: "bad request" }, 400);
     const { error } = await admin.from("cloud_mt5")
       .update({ status: b.status, status_msg: (b.msg || "").slice(0, 300) || null, status_at: new Date().toISOString() })

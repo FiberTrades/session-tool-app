@@ -106,3 +106,53 @@ create trigger cloud_mt5_room before insert on public.cloud_mt5 for each row exe
 -- uk1 was made with capacity 35 (the first default); 15 is what its 12 GB holds.
 alter table public.cloud_hosts alter column capacity set default 15;
 update public.cloud_hosts set capacity = 15 where id = 'uk1';
+
+-- More than one server (24 Oct 2026, Nestor: "do them"): a new cloud account goes to the active server with the most room,
+-- and the admin's phone hears when the whole fleet is 80% full, and again when it's full. New servers register themselves
+-- through cloud-agent's "hello" (cloud/new-host.sh).
+create or replace function public.st_cloud_pick_host() returns table(id text, region text, public_key text)
+language sql stable security definer set search_path to 'public' as $$
+  select h.id, h.region, h.public_key
+    from public.cloud_hosts h
+    left join (select host_id, count(*)::int n from public.cloud_mt5 group by host_id) c on c.host_id = h.id
+   where h.active and coalesce(c.n, 0) < h.capacity
+   order by h.capacity - coalesce(c.n, 0) desc, h.id
+   limit 1;
+$$;
+revoke all on function public.st_cloud_pick_host() from public, anon;
+grant execute on function public.st_cloud_pick_host() to authenticated;
+
+create table if not exists public.cloud_alerts (
+  id    text primary key,
+  level int  not null default 0,          -- what the admin has been told about the fleet's fill: 0, 80 or 100
+  at    timestamptz
+);
+alter table public.cloud_alerts enable row level security;
+revoke all on public.cloud_alerts from anon, authenticated;
+insert into public.cloud_alerts (id) values ('fleet') on conflict do nothing;
+
+create or replace function public.st_cloud_fleet() returns table(used int, cap int, level int, told int)
+language sql stable security definer set search_path to 'public' as $$
+  with f as (
+    select (select count(*)::int from public.cloud_mt5 m join public.cloud_hosts h on h.id = m.host_id where h.active) used,
+           (select coalesce(sum(capacity), 0)::int from public.cloud_hosts where active) cap)
+  select f.used, f.cap,
+         case when f.used >= f.cap then 100 when f.used * 100 >= f.cap * 80 then 80 else 0 end,
+         coalesce((select a.level from public.cloud_alerts a where a.id = 'fleet'), 0)
+    from f;
+$$;
+revoke all on function public.st_cloud_fleet() from public, anon, authenticated;
+
+create or replace function public.st_cloud_watch_due() returns boolean
+language sql stable security definer set search_path to 'public' as $$
+  select exists (
+    select 1 from public.cloud_mt5
+     where (status in ('running', 'starting') and coalesce(status_at, created_at) < now() - interval '4 minutes' and coalesce(alert_state, '') <> 'down')
+        or (status = 'error' and coalesce(alert_state, '') <> 'error')
+        or (alert_state is not null and status = 'running' and status_at > now() - interval '2 minutes')
+  ) or exists (
+    select 1 from public.st_cloud_fleet() f
+     where f.level > f.told or (f.level < f.told and f.used * 100 < f.cap * (f.told - 10))
+  );
+$$;
+revoke all on function public.st_cloud_watch_due() from anon, authenticated;

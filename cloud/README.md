@@ -1,8 +1,8 @@
 # MT5 in the cloud
 
 Session Terminal's own server runs members' MT5 terminals with the EA, day and night, so trading from the app, live
-charts, alerts, nudges and the copier keep working with the member's computer off. Started 23 Oct 2026, in testing:
-only the admin can add an account.
+charts, alerts, nudges and the copier keep working with the member's computer off. Started 23 Oct 2026; open to every
+signed-in member since 24 Oct 2026 (a trial member 1 account, a paid member 5).
 
 ## The host
 
@@ -69,3 +69,19 @@ each account at the next start.
 DNS: GoDaddy A record `live` -> 81.0.249.218 (was a CNAME to Railway). The firewall allows 80/443 for Caddy only.
 `/etc/hosts` maps `live.sessionterminal.com` to 127.0.0.1, so the cloud MT5s reach the relay on the same machine whatever
 an outside resolver still caches. Health: `https://live.sessionterminal.com/health` (rooms, conns, msgs, up_s).
+
+## More servers (24 Oct 2026)
+
+- **Room:** each server has `cloud_hosts.capacity` places (~650 MB per MT5 + EA, 1.5 GB kept for the system: 15 on a 12 GB
+  server). A new account goes to the active server with the most free places (`st_cloud_pick_host`, asked by the app at
+  the moment the account is added; a server that filled meanwhile makes it ask once more).
+- **The alarm:** when all active servers together are 80% full, the admin's phone hears it once ("time to add a server"),
+  and again when they are full (members then see "the cloud is full"). nudge-cron's `fleetWatch`, through
+  `st_cloud_watch_due()` and `cloud_alerts`; the level told resets quietly 10 points lower.
+- **A new server:** buy it (Contabo Cloud VPS 6, Ubuntu 24.04, UK) with the st_cloud SSH key for root, then from the repo:
+  `bash cloud/new-host.sh <ip> <host-id> "<region>"` (e.g. `uk2`). It sets the server up, copies uk1's MT5 template and
+  settings server to server, makes the server's own key pair and starts the agent, which registers the server itself
+  (cloud-agent `hello`). About 15-20 minutes. The relay stays on uk1 (`live.sessionterminal.com`); the new server's MT5s
+  reach it over the internet.
+- **The agent cleans up after itself:** stopping an MT5 ends its whole process group (screen, window manager and all), a
+  removed account's Wine is ended with `wineserver -k`, and any screen left without its terminal for 5 minutes is closed.

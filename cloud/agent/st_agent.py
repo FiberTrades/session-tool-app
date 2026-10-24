@@ -523,8 +523,24 @@ def tick():
     sweep()
 
 
+def hello():
+    """Registers this server in cloud_hosts at its first start (24 Oct 2026, cloud/new-host.sh): its id, region, public key
+    and the places its memory holds - each MT5 + EA takes ~650 MB all-in, 1.5 GB is kept for the system. A known server is
+    left as it is; a different key for its id is refused (the stored passwords are sealed with the old one)."""
+    try:
+        pub = base64.b64encode(PRIV.public_key().public_bytes(serialization.Encoding.DER,
+                                                              serialization.PublicFormat.SubjectPublicKeyInfo)).decode()
+        mb = int(re.search(r"MemTotal:\s+(\d+)", open("/proc/meminfo").read()).group(1)) // 1024
+        r = api("POST", {"op": "hello", "host": HOST, "region": CFG.get("region") or HOST, "public_key": pub,
+                         "capacity": max(1, (mb - 1500) // 680)})
+        log("hello:", json.dumps(r))
+    except Exception as e:
+        log("hello failed:", e)
+
+
 def main():
     log("st-agent up, host", HOST)
+    hello()
     while True:
         try:
             tick()
