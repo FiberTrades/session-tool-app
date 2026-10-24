@@ -23414,6 +23414,10 @@ try {
   }
   // ---- playbooks
   function pbList() { return (data && Array.isArray(data.playbooks)) ? data.playbooks : []; }
+  // The setup a trade counts under (24 Oct 2026, setup + why at the order): the one picked in Charts' Trade Manager before the order
+  // went (setupAtEntry; '' = No setup / other), else the one tagged. Playbooks and Setup Performance read this, so a setup changed
+  // after the result is known does not move the stats.
+  window.__stSetupOf = function (t) { return (t && t.setupAtEntry != null) ? (String(t.setupAtEntry) || null) : ((t && t.setup) || null); };
   function pbByName(n) { n = String(n || '').trim().toLowerCase(); if (!n) return null; return pbList().find(p => String(p.name).trim().toLowerCase() === n) || null; }
   function pbById(id) { return pbList().find(p => p.id === id) || null; }
   function pbNewId(pfx) { return (pfx || 'pb_') + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
@@ -23460,6 +23464,9 @@ try {
         out.push({ label: 'Setup', text: txt, real: true });   // a setup in your playbook (not an old tag)
       } else out.push({ label: 'Setup', text: String(tr.setup) });
     }
+    if (tr && tr.setupAtEntry != null && String(tr.setupAtEntry) !== String(tr.setup || ''))
+      out.push({ label: _pbL('At entry', 'Al entrar'), text: (String(tr.setupAtEntry) || _pbL('No setup', 'Sin setup')) + ' · ' + _pbL('changed after the close', 'cambiado después del cierre') });
+    if (tr && tr.entryWhy) out.push({ label: _pbL('Why', 'Por qué'), text: String(tr.entryWhy) });
     const g0 = [], se = A('sess'), stt = A('stime'), nw = A('news') || [];
     if (se) g0.push(T('sess', se)); if (stt) g0.push(stt);
     if (nw.length) { const nr = pbRowById('news'); g0.push(_pbL('News: ', 'Noticias: ') + nw.map(k => { const o = nr && nr.opts.find(o => o.k === k); return o ? _pbLbl(o) : k; }).join(', ')); }
@@ -24046,7 +24053,7 @@ try {
   });
   // ---- Manage playbooks
   let _pbEditRec = null;   // id of the playbook whose recipe is open for editing
-  function pbTradeCount(name) { const n = String(name).toLowerCase(); return _pbAllTrades().filter(t => _reviewSlotsArr().indexOf(t) < 0 && t.setup && String(t.setup).toLowerCase() === n).length; }
+  function pbTradeCount(name) { const n = String(name).toLowerCase(); return _pbAllTrades().filter(t => { const s0 = window.__stSetupOf(t); return _reviewSlotsArr().indexOf(t) < 0 && s0 && String(s0).toLowerCase() === n; }).length; }
   function pbOpenManage() {
     const bg = document.getElementById('pb-modal-bg'); if (!bg) return;
     pbRenderManage(); bg.classList.add('show');
@@ -24067,7 +24074,7 @@ try {
     let all = [];
     try { all = (typeof getAllLifetimeTrades === 'function') ? _sepView(getAllLifetimeTrades()) : []; } catch (e) { all = []; }
     if (!all.length) try { (data.currentSeries || []).forEach(t => all.push(t)); _seriesHist().forEach(s2 => (s2.trades || []).forEach(t => all.push(t))); } catch (e) {}
-    return all.filter(t => t && t.setup && String(t.setup).toLowerCase() === n).sort((a, b) => new Date(b.date) - new Date(a.date));
+    return all.filter(t => { const s0 = window.__stSetupOf(t); return s0 && String(s0).toLowerCase() === n; }).sort((a, b) => new Date(b.date) - new Date(a.date));
   }
   let _pbFind = '';   // the "Find a setup" text in Your Playbook
   function pbManageHtml() {
@@ -26815,7 +26822,7 @@ try {
         bePotentialR:    (typeof t.bePotentialR    === 'number' && !isNaN(t.bePotentialR))    ? t.bePotentialR    : null,
         bePotentialPips: (typeof t.bePotentialPips === 'number' && !isNaN(t.bePotentialPips)) ? t.bePotentialPips : null,
         type: t.type || null,
-        setup: t.setup || null,   // the ONE setup this trade was — drives Setup Performance
+        setup: (window.__stSetupOf ? window.__stSetupOf(t) : t.setup) || null,   // the ONE setup this trade was — drives Setup Performance (the pick at entry first)
         side: t.side || null,
         entryTime: t.entryTime || '',
         exitTime: t.exitTime || '',
@@ -50473,7 +50480,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       if (best.s.netR > 0.5 && best.k !== worst.k) addF(best.s.netR * 0.55, enGood(best), esGood(best), _setKey(best.s));
     };
 
-    dim(rowsFor(function (t) { return (t.setup && String(t.setup).trim()) || null; }),
+    dim(rowsFor(function (t) { var s0 = window.__stSetupOf ? window.__stSetupOf(t) : t.setup; return (s0 && String(s0).trim()) || null; }),
       function (r) { return 'Your ' + r.k + ' setup is ' + sgnR(r.s.netR) + ' across ' + r.s.count + ' trades — that one row is where the account leaks.'; },
       function (r) { return 'Tu setup ' + r.k + ' va ' + sgnR(r.s.netR) + ' en ' + r.s.count + ' operaciones — ahí es donde se escapa la cuenta.'; },
       function (r) { return 'Your ' + r.k + ' setup carries the account: ' + sgnR(r.s.netR) + ' over ' + r.s.count + ' trades at ' + r.s.wr + '%.'; },
@@ -90486,6 +90493,22 @@ window.__stAZ = (function () {
   .pl-in { width: 100%; min-width: 0; height: 100%; margin: 0; padding: 0; border: 0; background: transparent; color: var(--pl-txt); font: 12.5px var(--pl-font); text-align: right; outline: none; font-variant-numeric: tabular-nums; }
   .pl-box.two { justify-content: center; gap: 3px; padding: 0 6px; } .pl-box.two .pl-in { width: 38px; flex: none; text-align: center; } .pl-box.two i { font-style: normal; color: var(--pl-dim); }
   .pl-u { flex: none; height: 20px; padding: 0 0 0 3px; border: 0; background: transparent; color: var(--pl-dim); font: 12px var(--pl-font); cursor: pointer; }
+  .pl-pick { padding: 6px 12px 4px; border-top: 1px solid var(--pl-line); }
+  .pl-pl { display: block; margin: 6px 0 5px; color: var(--pl-dim); font-size: 11.5px; } .pl-pl small { margin-left: 4px; color: var(--pl-dim2); font-size: 11px; }
+  .pl-sel, .pl-why { display: block; width: 100%; box-sizing: border-box; height: 30px; margin: 0; padding: 0 10px; border: 1px solid var(--pl-line2); border-radius: 4px; background-color: var(--pl-pane); color: var(--pl-txt); font: 12.5px var(--pl-font); outline: none; }
+  .pl-sel { appearance: none; -webkit-appearance: none; padding-right: 28px; cursor: pointer; text-overflow: ellipsis;
+    background-image: linear-gradient(45deg, transparent 50%, var(--pl-dim) 50%), linear-gradient(135deg, var(--pl-dim) 50%, transparent 50%); background-position: calc(100% - 15px) 13px, calc(100% - 10px) 13px; background-size: 5px 5px; background-repeat: no-repeat; }
+  .pl-sel:focus, .pl-why:focus { border-color: var(--pl-blue); }
+  .pl-sel:focus-visible, .pl-why:focus-visible { outline: none; box-shadow: 0 0 0 2px rgba(41,98,255,.25); }
+  .pl-why::placeholder { color: var(--pl-dim2); }
+  .st-dd.pl-dd { background: #1e222d; border-color: #363a45; border-radius: 6px; padding: 4px; font: 13px -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif; box-shadow: 0 10px 28px rgba(0,0,0,.5); }
+  .st-dd.pl-dd .st-dd-o { padding: 8px 12px; border-radius: 4px; color: #d1d4dc; white-space: nowrap; }
+  .st-dd.pl-dd .st-dd-o.act { background: #2a2e39; color: #ffffff; } .st-dd.pl-dd .st-dd-o.sel { background: rgba(41,98,255,.16); color: #ffffff; }
+  .st-dd.pl-dd .st-dd-g { padding: 8px 12px 4px; color: #787b86; font-size: 11px; letter-spacing: 0; text-transform: none; }
+  .st-dd.pl-dd .st-dd-o:last-child { margin-top: 4px; border-top: 1px solid #2a2e39; border-radius: 0 0 4px 4px; color: #787b86; }
+  .st-dd.pl-dd.pl-ddlt { background: #ffffff; border-color: #d1d4dc; box-shadow: 0 10px 28px rgba(19,23,34,.15); }
+  .st-dd.pl-dd.pl-ddlt .st-dd-o { color: #131722; } .st-dd.pl-dd.pl-ddlt .st-dd-o.act { background: #f0f3fa; color: #131722; } .st-dd.pl-dd.pl-ddlt .st-dd-o.sel { background: rgba(41,98,255,.1); color: #131722; }
+  .st-dd.pl-dd.pl-ddlt .st-dd-o:last-child { border-top-color: #e0e3eb; color: #6a6d78; }
   .pl-more { display: flex; align-items: center; gap: 6px; margin: 4px 12px 8px; padding: 0; border: 0; background: transparent; color: var(--pl-dim); font: 12px var(--pl-font); cursor: pointer; }
   .pl-more svg { width: 10px; height: 10px; transition: transform .2s; } .pl-more[aria-expanded="true"] svg { transform: rotate(180deg); }
   @media (hover: hover) { .pl-more:hover { color: var(--pl-txt); } }
@@ -94473,11 +94496,11 @@ window.__stAZ = (function () {
     else if (x && x.al === true) { if (EM.shut && /Algo Trading/.test(EM.shut)) EM.shut = null; if (EM.k === 'algo' || /Algo Trading (is off|está apagado)/.test(EM.t)) eaMsgOff(); }   // on again: its warning and any refusal for it go
     else eaMsgOff('algo'); }   // not known (an EA before 9.06): an answer MT5 gave stays until closed
   function lvFire(v){ if (lvHoldable()) return lvHoldStart(v); var why = lvTradeWhy(); if (why) { var e0 = lvOwnEA(); eaMsg(why, { k: 'pre', head: T('Order not sent', 'Orden no enviada') + (e0 ? ' · ' + e0.raw : ''), red: true }); return false; } var e = lvOwnEA(), dg = lvDg();
-    var o = LV.ord = { st: 'sent', dir: v.dir, lots: lotsFor(v.rd), sym: e.raw, at: Date.now(), kind: v.kind || null };
+    var o = LV.ord = { st: 'sent', dir: v.dir, lots: lotsFor(v.rd), sym: e.raw, at: Date.now(), kind: v.kind || null, setup: String(CFG.lvSetup || ''), why: PL.why || '' };   // setup + why (plTagFill)
     S.exec = false; S.pv = null; render();
     window.__stTM.acct({ login: e.lg, sym: e.raw, a: 'open', cp: v.sl.toFixed(dg), ci: v.kind ? (v.kind === 'limit' ? 'l' : 's') + v.entry.toFixed(dg) : 'm' }).then(function(r){
       if (LV.ord !== o) return; o.done = Date.now();
-      if (r.ok) { o.st = 'ok'; o.px = r.px; o.vol = r.vol; o.dir = r.dir || o.dir; lvChime(); if (EM.k === 'ord' || EM.k === 'pre' || EM.k === 'em') eaMsgOff(); }
+      if (r.ok) { o.st = 'ok'; o.px = r.px; o.vol = r.vol; o.dir = r.dir || o.dir; lvChime(); if (EM.k === 'ord' || EM.k === 'pre' || EM.k === 'em') eaMsgOff(); try { plTagFill(o, r, e); } catch (er) {} }
       else { o.st = 'no'; o.why = window.__stTM.whyTxt ? window.__stTM.whyTxt(r.why) : String(r.why); eaMsg(o.why, { k: 'ord', head: T('Order not placed', 'Orden no colocada') + ' · ' + o.sym + ' · ' + e.lg, red: true }); }   // in sight, not only on the panel's last line
       paintMM(); });
     return true; }
@@ -96046,19 +96069,50 @@ window.__stAZ = (function () {
       + row(T('Break-even', 'Break-even'), '<span class="pl-box">' + (beOn && beR > 0 ? esc(T('at ', 'a ') + numTxt(beR, 1) + ' R') : esc(T('Off', 'Apagado'))) + '</span>')
       + row(T('Partial close', 'Cierre parcial'), '<span class="pl-box">' + esc(pcs || T('None', 'Ninguno')) + '</span>')
       + row(T('Trades today', 'Operaciones hoy'), '<b class="' + (lim ? 'w' : '') + '">' + (mx > 0 ? nT + ' ' + esc(T('of', 'de')) + ' ' + mx : nT) + '</b>', 'last')
-      + '</div><button type="button" class="pl-more" data-mm="plmore" aria-expanded="' + (PL.more ? 'true' : 'false') + '">' + esc(T('More settings', 'Más ajustes')) + PL_I.chev + '</button>'
+      + '</div>' + plPickHtml()
+      + '<button type="button" class="pl-more" data-mm="plmore" aria-expanded="' + (PL.more ? 'true' : 'false') + '">' + esc(T('More settings', 'Más ajustes')) + PL_I.chev + '</button>'
       + (PL.more ? '<div class="pl-moreb">' + x.more + '</div>' : '');
     var foot = '<button type="button" class="pl-x' + (S.exec ? ' on' : '') + '" data-mm="exec"' + (x.off ? ' disabled' : '') + '>' + esc(S.exec ? T('Cancel', 'Cancelar') : T('Execute', 'Ejecutar')) + '</button>'
       + '<div class="pl-hint">' + (S.exec ? esc(T('Click the chart where your stop goes.', 'Haz clic en el gráfico donde va tu stop.')) : esc(T('or press ', 'o pulsa ')) + '<kbd>' + esc(m.key) + '</kbd>' + esc(T(', then click where your stop goes', ' y haz clic donde va tu stop'))) + '</div>'
       + (x.msg ? '<div class="stpr-mm-fn' + x.fcl + '">' + x.note + '</div>' : '');
     var html = head + '<div class="pl-mb">' + body + '</div><div class="pl-mf">' + foot + '</div>', ae = SD.activeElement;
-    if (ae && ae.tagName === 'INPUT' && el.contains(ae)) { var f = el.querySelector('.pl-mf'); if (f && f.innerHTML !== foot) f.innerHTML = foot; }
+    if (!el._plp) { el._plp = true; el.addEventListener('change', plPickChange); el.addEventListener('input', plPickChange); }
+
+    if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'SELECT') && el.contains(ae)) { var f = el.querySelector('.pl-mf'); if (f && f.innerHTML !== foot) f.innerHTML = foot; }   // never rebuilt under a field in use (the Setup list open too)
     else if (el._h !== html) { var sb = el.querySelector('.pl-mb'), sc = sb ? sb.scrollTop : 0; el.innerHTML = html; el._h = html; var nb = el.querySelector('.pl-mb'); if (nb) nb.scrollTop = sc; }
     // the prices on their own, every tick, so a click on the panel is never lost to a rebuild
     var px0 = S.px, dg = lvDg(), fx = (dg === 5 || dg === 3), q = function(v){ return v > 0 ? Number(v).toFixed(dg) : '—'; };
     plTxt(el.querySelector('.pl-qs'), q(px0 && px0.b)); plTxt(el.querySelector('.pl-qb'), q(px0 && px0.a));
     plTxt(el.querySelector('.pl-spr'), (px0 && px0.sp != null) ? T('spread ', 'margen ') + (fx ? (Math.round(px0.sp / Math.pow(10, 1 - dg) * 10) / 10).toFixed(1) : (Math.round(px0.sp / Math.pow(10, -dg) * 10) / 10).toFixed(1) + ' pts') : ' ');
     el.classList.toggle('armed', !!S.exec); plRightFit(); }
+  // ---- Setup + Why, picked before the order goes (Nestor approved the mockup, 24 Oct 2026): the list is his playbooks and No setup / other,
+  //      the last pick kept (CFG.lvSetup); Why is this trade's alone. At the fill both go with the trade (plTagFill), before any result. ----
+  function plPickHtml(){ var names = [], cur = String(CFG.lvSetup || ''); try { (Array.isArray(data.playbooks) ? data.playbooks : []).forEach(function(b){ var n = b && String(b.name || '').trim(); if (n && names.indexOf(n) < 0) names.push(n); }); } catch (e) {}
+    if (cur && names.indexOf(cur) < 0) names.push(cur);
+    var opt = function(v, l){ return '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' + esc(l) + '</option>'; };
+    return '<div class="pl-pick"><label class="pl-pl" for="pl-setup">' + esc(T('Setup', 'Setup')) + '</label>'
+      + '<select class="pl-sel" id="pl-setup" data-plsetup="1">' + (names.length ? '<optgroup label="' + esc(T('Your playbooks', 'Tus playbooks')) + '">' + names.map(function(n){ return opt(n, n); }).join('') + '</optgroup>' : '') + opt('', T('No setup / other', 'Sin setup / otro')) + '</select>'
+      + '<label class="pl-pl" for="pl-why">' + esc(T('Why this trade', 'Por qué esta operación')) + ' <small>' + esc(T('optional', 'opcional')) + '</small></label>'
+      + '<input class="pl-why" id="pl-why" data-plwhy="1" maxlength="140" autocomplete="off" placeholder="' + esc(T('e.g. took the Asia high, slowed at the 50%', 'p. ej. tomó el máximo de Asia, frenó en el 50%')) + '" value="' + esc(PL.why || '') + '"></div>'; }
+  function plPickChange(e){ var t = e.target; if (!t || !t.getAttribute) return;
+    if (t.hasAttribute('data-plsetup') && e.type === 'change') { CFG.lvSetup = t.value; save(); paintMM(); return; }
+    if (t.hasAttribute('data-plwhy')) PL.why = String(t.value || '').slice(0, 140); }
+  // the fill: this ticket's setup and why, kept in the journal until the trade is in it (plApplyTags), then on the trade itself
+  function plTagFill(o, r, e){ var tk = r && r.tk ? String(r.tk) : ''; if (!tk || typeof data === 'undefined' || !data) return;
+    try { var T0 = data.entryTags = (data.entryTags && typeof data.entryTags === 'object') ? data.entryTags : {}, old = Date.now() - 120 * 864e5;
+      Object.keys(T0).forEach(function(k){ if (!(T0[k] && T0[k].at > old)) delete T0[k]; });
+      T0[tk] = { s: o.setup || '', w: o.why || '', at: Date.now(), lg: e ? String(e.lg) : '', sym: o.sym || '' };
+      PL.why = ''; plApplyTags(true); if (typeof saveData === 'function') saveData(); } catch (er) {}
+    try { var w0 = SD.getElementById('pl-why'); if (w0 && SD.activeElement !== w0) w0.value = ''; } catch (er) {} }
+  // the journal's trades that carry a ticket picked from: the pick at entry and the why, once (a setup tagged later stays the trade's own)
+  function plApplyTags(noSave){ var T0 = (typeof data !== 'undefined' && data && data.entryTags) || null; if (!T0 || !Object.keys(T0).length) return 0; var n = 0, list = [];
+    try { (data.currentSeries || []).forEach(function(t){ list.push(t); }); (data.history || []).forEach(function(s){ (s.trades || []).forEach(function(t){ list.push(t); }); }); } catch (e) {}
+    try { (window.__stAllReviewTrades ? window.__stAllReviewTrades() : []).forEach(function(t){ list.push(t); }); } catch (e) {}
+    list.forEach(function(t){ if (!t) return; var tk = t.mt5Ticket != null ? String(t.mt5Ticket) : (t.position != null ? String(t.position) : ''), g = tk && T0[tk];
+      if (!g || t.setupAtEntry != null) return; t.setupAtEntry = g.s || ''; if (g.w) t.entryWhy = g.w; if (!t.setup && g.s) t.setup = g.s; n++; });
+    if (n && !noSave && typeof saveData === 'function') { try { saveData(); } catch (e) {} } return n; }
+  setInterval(function(){ try { plApplyTags(); } catch (e) {} }, 20000);
+  window.__stEntryTags = { apply: function(){ return plApplyTags(); } };
   // ---- Positions / Orders / History / Account under the charts ----
   function plIdea(tk){ try { var L0 = (window.__stLive && window.__stLive.openIdeas) ? window.__stLive.openIdeas() : [];
       for (var i = 0; i < L0.length; i++) { var rs = L0[i].rows || [L0[i].main || L0[i]]; for (var j = 0; j < rs.length; j++) if (rs[j] && String(rs[j].ticket) === String(tk)) return rs[j]; } } catch (e) {} return null; }
@@ -96309,6 +96363,7 @@ window.__stAZ = (function () {
   function open(s) {
     close(false); sel = s;
     menu = document.createElement('div'); menu.className = 'st-dd'; menu.setAttribute('role', 'listbox'); menu.style.visibility = 'hidden';
+    try { if (s.closest('.stpr-win.plat')) menu.classList.add('pl-dd'); if (s.closest('.stpr-win.plat.pl-lt')) menu.classList.add('pl-ddlt'); } catch (e) {}   // the Charts platform's
     var add = function (o) {
       if (o.hidden) return;
       var el = document.createElement('div'), dis = o.disabled || (o.parentNode && o.parentNode.disabled);

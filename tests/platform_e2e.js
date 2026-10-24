@@ -73,6 +73,15 @@
     check('More settings: the execution key, BE offset, trailing stops, partial closes, daily limit', /Execution key/.test($('.pl-moreb').textContent) && /BE offset/.test($('.pl-moreb').textContent) && /Trailing stops/.test($('.pl-moreb').textContent) && /Daily limit/.test($('.pl-moreb').textContent), $('.pl-moreb') && $('.pl-moreb').textContent.slice(0, 120));
     $('[data-mm="plmore"]').click(); await W(150);
 
+    // ---- Setup + Why before the order (24 Oct 2026): his playbooks and No setup / other, the last pick kept ----
+    data.playbooks = ['High/Low + Mitigation + Aggression', 'Range Mitigation', '50% Mitigation'].map(function (n, i) { return { id: 'pbt' + i, name: n }; }); P._cfg().lvSetup = ''; await W(1200);
+    var sel = $('[data-plsetup]'), opts = sel ? Array.prototype.map.call(sel.options, function (o) { return o.textContent; }) : [];
+    check('Setup: your playbooks, then No setup / other', opts.join('|') === 'High/Low + Mitigation + Aggression|Range Mitigation|50% Mitigation|No setup / other' && $('.pl-sel optgroup').label === 'Your playbooks', opts);
+    sel.value = 'High/Low + Mitigation + Aggression'; sel.dispatchEvent(new Event('change', { bubbles: true })); await W(300);
+    check('...a pick is kept for the next order', P._cfg().lvSetup === 'High/Low + Mitigation + Aggression' && $('[data-plsetup]').value === 'High/Low + Mitigation + Aggression', P._cfg().lvSetup);
+    var wy = $('[data-plwhy]'); wy.value = 'Took the Asia high, slowed at the 50%'; wy.dispatchEvent(new Event('input', { bubbles: true }));
+    check('Why this trade: optional, one line', /optional/.test($('.pl-pick').textContent) && wy.maxLength === 140);
+
     // ---- Execute, then a click where the stop goes: the order through the EA, a position under the charts ----
     var px = $('.pl-x'); check('Execute: square, pink, the key under it', px && px.textContent === 'Execute' && parseFloat(getComputedStyle(px).borderRadius) <= 4 && /or press/.test($('.pl-hint').textContent), px && px.textContent);
     px.click(); await W(300);
@@ -83,6 +92,16 @@
     var tk = $('.pl-t [data-tma="close"]'), tkn = tk && tk.getAttribute('data-tmk');
     check('a click where the stop goes: the order goes to MT5 and fills; Positions 1 under the charts', !!tk && /Positions 1/.test($('.pl-tabs').textContent) && /BUY/.test($('.pl-t').textContent), $('.pl-tabs') && $('.pl-tabs').textContent);
     check('...its line in the Trade Manager: Filled', /Filled/.test($('#stpr-mm').textContent), $('.pl-mf') && $('.pl-mf').textContent);
+    var tg = data.entryTags && data.entryTags[tkn];
+    check('at the fill the pick goes with the ticket: setup and why, before any result', tg && tg.s === 'High/Low + Mitigation + Aggression' && tg.w === 'Took the Asia high, slowed at the 50%', data.entryTags);
+    check('...the Why box is empty for the next trade, the setup kept', $('[data-plwhy]').value === '' && $('[data-plsetup]').value === 'High/Low + Mitigation + Aggression');
+    var jt = { id: 'plat-jt', date: '2026-10-14', pair: 'EURUSD', direction: 'Long', result: 'Win', accountId: 'acc-plat', mt5Ticket: tkn, rMultiple: 2 };
+    data.currentSeries.push(jt); window.__stEntryTags.apply();
+    check('the trade in the journal takes them: setup, the pick at entry and why', jt.setup === 'High/Low + Mitigation + Aggression' && jt.setupAtEntry === 'High/Low + Mitigation + Aggression' && jt.entryWhy === 'Took the Asia high, slowed at the 50%', [jt.setup, jt.setupAtEntry, jt.entryWhy]);
+    jt.setup = 'Range Mitigation';
+    var pl = window.__stPbLines ? window.__stPbLines(jt) : [], plt = pl.map(function (x) { return x.label + ': ' + x.text; }).join(' / ');
+    check('a setup changed after the close: the stats keep the pick at entry, the trade says so', window.__stSetupOf(jt) === 'High/Low + Mitigation + Aggression' && /At entry: High\/Low \+ Mitigation \+ Aggression · changed after the close/.test(plt) && /Why: Took the Asia high/.test(plt), plt);
+    data.currentSeries = data.currentSeries.filter(function (x) { return x !== jt; });
     check('the summary along the tabs: Open P&L, Today, Margin, Free margin', /Open P&L/.test($('.pl-sum').textContent) && /Free margin/.test($('.pl-sum').textContent), $('.pl-sum').textContent);
     check('the top bar: the account, its balance and equity', /FTMO 70K/.test($('.pl-acct').textContent) && /Equity/.test($('.pl-acct').textContent), $('.pl-acct').textContent);
 
