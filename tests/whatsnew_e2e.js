@@ -12,6 +12,14 @@
     ok('every day has the same number of lines in English and Spanish', E.every(function (e) { return e.en && e.es && e.en.length && e.en.length === e.es.length; }), '');
     var words = JSON.stringify(j).toLowerCase();
     ok('no ICT, SMC or liquidity wording', !/\bict\b|\bsmc\b|liquidity/.test(words), '');
+    // Simple on purpose (Nestor, 24 Oct 2026: "i dont want competitors to get any ideas from whats new"): a few short
+    // benefit lines an update, no numbers, prices, timings or how anything works.
+    var all = []; E.forEach(function (e) { all = all.concat(e.en, e.es); });
+    ok('at most three lines an update', E.every(function (e) { return e.en.length <= 3; }), E.map(function (e) { return e.en.length; }).join());
+    var long = all.filter(function (l) { return l.trim().split(/\s+/).length > 10; });
+    ok('every line ten words or fewer', !long.length, long);
+    var leak = all.filter(function (l) { return /\d|£|\$|€|\bcloud\b|\bnube\b|server|servidor|\bEA\b|MT5|MetaTrader|TradingView|Stripe|Wine/i.test(l); });
+    ok('no numbers, prices, technology or supplier names', !leak.length, leak);
     for (var i = 0; i < 40 && !(window.__stWhatsNew && window.__stWhatsNew.list()); i++) await W(200);
     ok('the app loaded the list', !!(window.__stWhatsNew && window.__stWhatsNew.list() && window.__stWhatsNew.list().length === E.length), window.__stWhatsNew && window.__stWhatsNew.list() && window.__stWhatsNew.list().length);
     // signed out: no dot
