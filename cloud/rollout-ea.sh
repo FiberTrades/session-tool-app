@@ -31,7 +31,7 @@ if [ "$PAUSED" != "1" ] && [ "${NOW:-0}" != "1" ]; then echo "The market is open
 if [ "$OP" = "one" ]; then
   srv "mkdir -p /opt/st/ea/canary && cp \"/opt/st/ea/builds/$BUILD\" /opt/st/ea/canary/$LOGINS.ex5 && echo trial copy for $LOGINS: $BUILD"
 elif [ "$OP" = "all" ]; then
-  srv "cp /opt/st/ea/MinimalistManager.ex5 /opt/st/ea/MinimalistManager.ex5.prev && cp \"/opt/st/ea/builds/$BUILD\" /opt/st/ea/MinimalistManager.ex5 && rm -f /opt/st/ea/canary/*.ex5 && echo all accounts: $BUILD (previous kept as MinimalistManager.ex5.prev)"
+  srv "cp /opt/st/ea/MinimalistManager.ex5 /opt/st/ea/MinimalistManager.ex5.prev && cp \"/opt/st/ea/builds/$BUILD\" /opt/st/ea/MinimalistManager.ex5 && rm -f /opt/st/ea/canary/*.ex5 && echo 'all accounts: $BUILD, the previous one kept as MinimalistManager.ex5.prev'"
   LOGINS=$(srv 'ls -d /home/st/members/*/drive_c/ST/* 2>/dev/null | sed "s#.*/ST/##" | sort -u | tr "\n" " "')
 else
   echo "usage: one <login> [build] | all [build] | status"; exit 1
