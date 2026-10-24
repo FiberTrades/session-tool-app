@@ -1269,6 +1269,7 @@ void RulesEval(bool force)
    else dayUtc=(long)UserDayStartServer()-off;                                                               // this EA's own day
    datetime dayStart=(datetime)(dayUtc+off);                                                                 // server time, for the history
    g_ruNextDay=g_ruHasDz ? RuZoneDayStart(dayUtc+86400+7200) : dayUtc+86400;                                 // the next one (a 23 or 25 hour day when the clocks change)
+   if(g_ruDzSrv){ long sm=(long)dayStart+86400; g_ruNextDay=sm-SrvOffAt((datetime)sm); }                      // the server's next midnight, with its own clock change
    // the session now and the next one, from the opens in London time
    long segStart=0, segNext=0; g_ruSeg=-1; g_ruSegN=-1;
    if(g_ruHasSes)
