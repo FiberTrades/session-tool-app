@@ -2232,6 +2232,42 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Pinning removed — the floater just parks in the page and scrolls with it. */
   .bloomberg-floater-pin { display: none !important; }
   .bloomberg-floater[hidden] { display: none; }
+  /* The top on a computer (Nestor, 24 Oct 2026: "yes to build the Session Bias top (TV on, plus your TV-off idea)"). Above 900px the
+     symbol / session / date / time row moves into the header (JS), the title is smaller and the gaps tighter. From 1100px the header is
+     a grid: TV ON = the info in one row under the title and Bloomberg TV in its own slot top-right, beside them (it no longer floats over
+     the page or the tabs); TV OFF = the slot closes and the info spreads across the room right of the title, four equal centred cells.
+     A mentor's view hides the TV, so it gets the TV-off top. 900px and under (phones, tablets) keep their top exactly as it was. */
+  @media (min-width: 901px) {
+    .container { padding-top: 24px; }
+    .header { margin-bottom: 0; }
+    .header > .brand-row { margin-bottom: 26px; }
+    .header > h1 { font-size: 76px; line-height: 1; margin: 0; }
+    .header > .meta { display: flex; flex-wrap: wrap; gap: 14px 44px; margin: 30px 0 0; padding: 0; }
+    .header > .meta .meta-cell { align-items: flex-start; text-align: left; gap: 7px; }
+    .header > .meta .meta-value { font-size: 15px; }
+    .tabs { margin-top: 26px; }
+    .st-asst { margin: 20px 0 24px; }
+  }
+  @media (min-width: 1100px) {
+    .header { display: grid; grid-template-columns: minmax(0, max-content) minmax(440px, 1fr); column-gap: clamp(32px, 3.4vw, 56px); align-items: start; }
+    .header > .brand-row { grid-column: 1 / -1; grid-row: 1; }
+    .header > h1 { grid-column: 1; grid-row: 2; }
+    .header > .meta { grid-column: 2; grid-row: 2; align-self: center; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; margin: 6px 0 0; }
+    .header > .meta .meta-cell { align-items: center; text-align: center; gap: 9px; }
+    .header > .meta .meta-value { font-size: 16px; }
+    body:not(.mentor-viewing) .header.tv-on { grid-template-columns: minmax(0, 1fr) auto; column-gap: 40px; }
+    body:not(.mentor-viewing) .header.tv-on > .brand-row { grid-column: 1; }
+    body:not(.mentor-viewing) .header.tv-on > .meta { grid-column: 1; grid-row: 3; align-self: start; display: flex; flex-wrap: wrap; gap: 14px clamp(24px, 2.9vw, 44px); margin: 30px 0 0; }
+    body:not(.mentor-viewing) .header.tv-on > .meta .meta-cell { align-items: flex-start; text-align: left; gap: 7px; }
+    body:not(.mentor-viewing) .header.tv-on > .meta .meta-value { font-size: 15px; }
+  }
+  /* TV in its slot (1100px and wider): part of the header, scrolls with the page, under the sticky tabs */
+  .bloomberg-floater--slot { position: static !important; grid-column: 2; grid-row: 1 / 4; width: 400px !important; height: auto !important; min-width: 0 !important; min-height: 0 !important; max-width: none !important; max-height: none !important; top: auto !important; left: auto !important; right: auto !important; z-index: auto; margin: 0; }
+  .bloomberg-floater--slot .bloomberg-floater-body { flex: none; width: 100%; aspect-ratio: 16 / 9; }
+  .bloomberg-floater--slot .bloomberg-floater-resize, .bloomberg-floater--under .bloomberg-floater-resize { display: none; }
+  .bloomberg-floater--slot .bloomberg-floater-header, .bloomberg-floater--under .bloomberg-floater-header { cursor: default; touch-action: auto; }
+  /* Narrower than 1100px (not a phone): docked in-flow under the header, above the tabs, like the phone's docked TV */
+  .bloomberg-floater--docked.bloomberg-floater--under { margin: 26px 0 0 !important; max-width: 440px; }
   /* In-app confirm dialog - Session Terminal's own voice, not the browser's */
   .st-ask-bg { position: fixed; inset: 0; z-index: 100000; background: rgba(0,0,0,0.72);
                display: flex; align-items: center; justify-content: center; padding: 20px;
@@ -47375,28 +47411,58 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
     const bbFloaterShield   = document.getElementById('bloomberg-floater-iframe-shield');
     const bbFloaterPopout   = document.getElementById('bloomberg-floater-popout');
     const bbCloseBtn        = document.getElementById('bloomberg-floater-close');
-    // Portrait: dock the Bloomberg TV panel in-flow right after the header so it sits in
-    // place with all other content below it; restore the floating panel on larger screens.
+    // The top on a computer (24 Oct 2026): above 900px the symbol / session / date / time row lives in the header, under or beside the
+    // title by CSS; at 900px and under it goes back to its own row under the tabs, where phones and tablets keep the old top.
+    (function () {
+      var meta = document.querySelector('.container > .meta'), hd = document.querySelector('.container > .header');
+      if (!meta || !hd) return;
+      var home = meta.parentNode, next = meta.nextSibling, h1 = hd.querySelector('h1');
+      var place = function () {
+        var desk = window.innerWidth > 900;
+        if (desk && meta.parentNode !== hd) hd.insertBefore(meta, h1 ? h1.nextSibling : null);
+        else if (!desk && meta.parentNode === hd) home.insertBefore(meta, next && next.parentNode === home ? next : null);
+      };
+      place();
+      var w0 = window.innerWidth;
+      window.addEventListener('resize', function () { if (window.innerWidth === w0) return; w0 = window.innerWidth; place(); });
+    })();
+    // Where the TV lives. It no longer floats over the page anywhere (24 Oct 2026):
+    //   phone (560px or less either way) - docked in-flow under the logo row, as before
+    //   slot  (1100px and wider)          - its own slot top-right of the header, beside the title (the header's CSS grid)
+    //   under (everything between)        - docked in-flow under the header, above the tabs
+    // The header carries tv-on while the TV shows in its slot, which switches the header to its TV-on layout.
     if (bbFloater) {
       const bbDockContainer = document.querySelector('.container');
       const bbDockAnchor = bbDockContainer ? bbDockContainer.querySelector('.brand-row') : null;
+      const bbHeader = bbDockContainer ? bbDockContainer.querySelector('.header') : null;
       const bbOrigParent = bbFloater.parentNode;
       const bbOrigNext = bbFloater.nextSibling;
-      let bbDocked = false;
+      let bbMode = '';
+      const bbSlotSync = () => {
+        if (bbHeader) bbHeader.classList.toggle('tv-on', !bbFloater.hidden && bbFloater.classList.contains('bloomberg-floater--slot'));
+      };
+      try { new MutationObserver(bbSlotSync).observe(bbFloater, { attributes: true, attributeFilter: ['hidden'] }); } catch (e) {}
       const bbDockApply = () => {
         try {
-          // Phone (either orientation) → dock the TV in-flow (pinned look the user prefers).
-          const portrait = Math.min(window.innerWidth, window.innerHeight) <= 560;
-          if (portrait && bbDockAnchor && bbDockAnchor.parentNode && !bbDocked) {
+          const phone = Math.min(window.innerWidth, window.innerHeight) <= 560;
+          const mode = phone ? 'phone' : (window.innerWidth >= 1100 && bbHeader ? 'slot' : 'under');
+          if (mode === bbMode) return;
+          bbFloater.classList.remove('bloomberg-floater--docked', 'bloomberg-floater--slot', 'bloomberg-floater--under');
+          if (mode === 'phone' && bbDockAnchor && bbDockAnchor.parentNode) {
             bbDockAnchor.parentNode.insertBefore(bbFloater, bbDockAnchor.nextSibling);
             bbFloater.classList.add('bloomberg-floater--docked');
-            bbDocked = true;
-          } else if (!portrait && bbDocked) {
+          } else if (mode === 'slot') {
+            bbHeader.appendChild(bbFloater);
+            bbFloater.classList.add('bloomberg-floater--slot');
+          } else if (mode === 'under' && bbHeader && bbHeader.parentNode) {
+            bbHeader.parentNode.insertBefore(bbFloater, bbHeader.nextSibling);
+            bbFloater.classList.add('bloomberg-floater--docked', 'bloomberg-floater--under');
+          } else {
             if (bbOrigNext && bbOrigNext.parentNode === bbOrigParent) bbOrigParent.insertBefore(bbFloater, bbOrigNext);
             else bbOrigParent.appendChild(bbFloater);
-            bbFloater.classList.remove('bloomberg-floater--docked');
-            bbDocked = false;
           }
+          bbMode = mode;
+          bbSlotSync();
         } catch (e) {}
       };
       bbDockApply();
@@ -47908,6 +47974,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       let offsetX = 0, offsetY = 0;
       bbFloaterHeader.addEventListener('pointerdown', (e) => {
         // Don't drag if the click landed on a button
+        if (bbFloater.classList.contains('bloomberg-floater--slot') || bbFloater.classList.contains('bloomberg-floater--under')) return;   // in the page now, nothing to drag (24 Oct 2026)
         if (e.target.closest('button')) return;
         dragging = true;
         const rect = bbFloater.getBoundingClientRect();
@@ -47973,6 +48040,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       let startW = 0, startH = 0, startX = 0, startY = 0;
       const MIN_W = 320, MIN_H = 220;
       bbResizeHandle.addEventListener('pointerdown', (e) => {
+        if (bbFloater.classList.contains('bloomberg-floater--slot') || bbFloater.classList.contains('bloomberg-floater--under')) return;
         resizing = true;
         const rect = bbFloater.getBoundingClientRect();
         startW = rect.width;
@@ -48014,6 +48082,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
     // the floater header stays clickable on-screen).
     function constrainBloombergFloater() {
       if (!bbFloater || bbFloater.hidden) return;
+      if (bbFloater.classList.contains('bloomberg-floater--slot') || bbFloater.classList.contains('bloomberg-floater--under')) return;   // sized by the page's CSS
       const rect = bbFloater.getBoundingClientRect();
       // SIZE: clamp to the viewport in EVERY state. A floater sized for desktop
       // (e.g. 406px) reopened on a phone would otherwise overflow and cramp the
