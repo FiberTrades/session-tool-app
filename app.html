@@ -3017,6 +3017,28 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   #combo-diag .history-cell.measure { color: var(--text-dim); }
   /* Tally left, action right: the count is what you glance at, the button is what you reach for. */
   .exc-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+  /* Every measured trade, above the table (24 Oct 2026): one column per trade, how far it went against you (or for you), coloured
+     by how it ended. The same _maeR / _mfeR the table averages, so the two always agree. */
+  .exc-heat { margin: 0 0 18px; }
+  .exc-heat-h { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .exc-heat-t { font-family: 'AppNum', 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-dim); }
+  .exc-heat-c { position: relative; height: 200px; margin-top: 12px; }
+  .exc-heat-c svg { width: 100%; height: 200px; display: block; }
+  .mae-seg { display: inline-flex; flex: none; border: 1px solid var(--border-2); border-radius: 8px; overflow: hidden; }
+  .mae-seg button { width: 112px; padding: 6px 0; background: transparent; border: 0; color: var(--text-dim); font-family: 'AppNum', 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; cursor: pointer; }
+  .mae-seg button + button { border-left: 1px solid var(--border-2); }
+  .mae-seg button.on { background: var(--bg-elev2); color: var(--text); }
+  .mae-seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .mae-key { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.08em; color: var(--text-dim); }
+  .mae-key i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
+  .mae-read { margin: 10px 0 0; font-size: 13px; line-height: 1.5; color: var(--text); }
+  .mae-read:empty { display: none; }
+  .mae-read .g { color: var(--good); } .mae-read .r { color: var(--bad); }
+  @media (max-width: 600px) {
+    .exc-heat-h { flex-wrap: wrap; row-gap: 10px; }
+    .exc-heat-h .mae-seg { width: 100%; }
+    .exc-heat-h .mae-seg button { width: 50%; }
+  }
   .exc-tally { font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; color: var(--text-dim); }
   .exc-actions { display: inline-flex; align-items: center; margin-left: auto; }
   /* Plain-words legend so every figure on the card is self-explaining (no hover needed). */
@@ -29842,7 +29864,91 @@ try {
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') load(); });
     try { window.__stWeekly = { load: load, paint: paint }; } catch (e) {}
   })();
-  window.__stZc = { redraw: function () { try { zLayout(); zDraw(); } catch (e) {} try { ddDraw(); } catch (e) {} }, viz: { ring: zRing, spark: zSpark, bars: zMiniBars, pair: zPair, gauge: zGauge } };
+
+  /* ===== Every measured trade, in the excursions box (24 Oct 2026, Nestor wanted the heat chart there, not as a card of its own) =====
+     renderComboDiag hands over the trades it measured (_maeR / _mfeR from 1-minute candles, in R of the logged stop) and draws the
+     box; this draws one column per trade above the table: Against you - how deep it went against you (down to the stop line at -1R);
+     In your favour - how far it went for you. Coloured by how the trade ended. One line under it in plain words, the good news first. */
+  let _excHeat = null;
+  let _excHeatView = (function () { try { return localStorage.getItem('st_mae_view') === 'fav' ? 'fav' : 'adv'; } catch (e) { return 'adv'; } })();
+  function excHeatHtml() {
+    return '<div class="exc-heat" id="exc-heat"><div class="exc-heat-h"><span class="exc-heat-t" id="exc-heat-t"></span>'
+      + '<span class="mae-seg" id="mae-seg" role="group"><button type="button" data-mae="adv"></button><button type="button" data-mae="fav"></button></span></div>'
+      + '<div class="exc-heat-c" id="exc-heat-chart"></div><div class="mae-key" id="mae-key"></div><p class="mae-read" id="mae-read"></p></div>';
+  }
+  function excHeatSvg(Wd, H, list, fav) {
+    const L = 46, Rr = 8, T = 12, B = 12, n = list.length;
+    const val = t => fav ? t._mfeR : t._maeR;
+    const cap = fav ? Math.max(1, Math.min(6, Math.max.apply(null, list.map(val)))) : Math.max(1.1, Math.min(1.6, Math.max.apply(null, list.map(val))));
+    const y = fav ? (v => T + (1 - v / cap) * (H - T - B)) : (v => T + (v / cap) * (H - T - B));   // 0 at the bottom (favour) or the top (against)
+    const lab = (s, yy) => '<text x="' + (L - 8) + '" y="' + (yy + 4).toFixed(1) + '" text-anchor="end" font-size="11" fill="#8d899a" font-family="DM Mono, monospace">' + s + '</text>';
+    let g = '<line x1="' + L + '" x2="' + (Wd - Rr) + '" y1="' + y(0).toFixed(1) + '" y2="' + y(0).toFixed(1) + '" stroke="rgba(255,255,255,.14)"/>' + lab('0', y(0));
+    if (!fav) {   // the stop
+      g += '<line x1="' + L + '" x2="' + (Wd - Rr) + '" y1="' + y(1).toFixed(1) + '" y2="' + y(1).toFixed(1) + '" stroke="' + Z_R + '" stroke-opacity=".55" stroke-dasharray="4 4"/>' + lab('−1R', y(1));
+      g += '<line x1="' + L + '" x2="' + (Wd - Rr) + '" y1="' + y(0.5).toFixed(1) + '" y2="' + y(0.5).toFixed(1) + '" stroke="rgba(255,255,255,.05)"/>' + lab('−0.5R', y(0.5));
+    } else {
+      const step = cap > 3 ? 2 : 1;
+      for (let v = step; v <= cap + 1e-9; v += step) g += '<line x1="' + L + '" x2="' + (Wd - Rr) + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '" stroke="rgba(255,255,255,.05)"/>' + lab('+' + v + 'R', y(v));
+    }
+    const bw = (Wd - L - Rr) / Math.max(1, n);
+    let hits = '';
+    list.forEach((t, i) => {
+      const v = Math.min(cap, Math.max(0, val(t))), x0 = L + i * bw + bw * 0.15, w = Math.max(1, bw * 0.7);
+      const col = t.result === 'Win' ? Z_G : t.result === 'Lose' ? Z_R : Z_B;   // the table's own colours: green, blue, red
+      const y0 = Math.min(y(0), y(v)), h = Math.max(1, Math.abs(y(v) - y(0)));
+      g += '<rect x="' + x0.toFixed(1) + '" y="' + y0.toFixed(1) + '" width="' + w.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="' + (w > 4 ? 2 : 0) + '" fill="' + col + '"/>';
+      hits += '<rect class="zb-hit" data-i="' + i + '" x="' + (L + i * bw).toFixed(1) + '" y="' + (T - 6) + '" width="' + Math.max(1, bw).toFixed(1) + '" height="' + (H - T - B + 12) + '"/>';
+    });
+    return '<svg viewBox="0 0 ' + Wd + ' ' + H + '" preserveAspectRatio="none" role="img">' + g + hits + '</svg>';
+  }
+  function excHeatDraw() {
+    const X = _excHeat, host = document.getElementById('exc-heat-chart');
+    if (!X || !host) return;
+    const esc = x => String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const set = (id, v) => { const el = document.getElementById(id); if (el && el.textContent !== v) el.textContent = v; };
+    const fav = _excHeatView === 'fav';
+    set('exc-heat-t', fav ? zT('Every measured trade · how far it went for you', 'Cada operación medida · cuánto fue a tu favor') : zT('Every measured trade · how far it went against you', 'Cada operación medida · cuánto fue en tu contra'));
+    const seg = document.getElementById('mae-seg');
+    if (seg) {
+      seg.querySelectorAll('button').forEach(b => { const k = b.getAttribute('data-mae'); b.textContent = k === 'adv' ? zT('Against you', 'En contra') : zT('In your favour', 'A favor'); b.classList.toggle('on', k === _excHeatView); b.setAttribute('aria-pressed', k === _excHeatView ? 'true' : 'false'); });
+      if (!seg.__wired) { seg.__wired = true; seg.addEventListener('click', e => { const b = e.target.closest('button[data-mae]'); if (!b) return; _excHeatView = b.getAttribute('data-mae') === 'fav' ? 'fav' : 'adv'; try { localStorage.setItem('st_mae_view', _excHeatView); } catch (er) {} excHeatDraw(); }); }
+    }
+    const list = X.done.filter(t => typeof (fav ? t._mfeR : t._maeR) === 'number' && isFinite(fav ? t._mfeR : t._maeR))
+      .sort((a, b) => (Date.parse(a.date) || 0) - (Date.parse(b.date) || 0));
+    const key = document.getElementById('mae-key');
+    if (key) key.innerHTML = list.length ? '<span><i style="background:' + Z_G + '"></i>' + esc(zT('Winners', 'Ganadoras')) + '</span><span><i style="background:' + Z_B + '"></i>' + esc(zT('Break-evens', 'Break-even')) + '</span><span><i style="background:' + Z_R + '"></i>' + esc(zT('Losers', 'Perdedoras')) + '</span>' : '';
+    const w = Math.round(host.clientWidth);
+    if (w >= 40) {   // its tab is hidden: drawn when it comes into view
+      if (!list.length) { host.onpointermove = host.onpointerdown = host.onpointerleave = null; host.innerHTML = '<div class="zc-empty">' + esc(zT('Nothing measured in this period yet', 'Aún no hay nada medido en este periodo')) + '</div>'; }
+      else {
+        host.innerHTML = excHeatSvg(w, Math.round(host.clientHeight) || 200, list, fav);
+        let loc = 'en-GB'; try { if (data.settings && data.settings.lang === 'es') loc = 'es-ES'; } catch (e) {}
+        const day = d => { const x = new Date(d); return isNaN(x.getTime()) ? '' : x.toLocaleDateString(loc, { weekday: 'short', day: 'numeric', month: 'short' }); };
+        const res = t => t.result === 'Win' ? zT('Won', 'Ganada') : t.result === 'Lose' ? zT('Lost', 'Perdida') : 'BE';
+        zTip(host, list.map(t => ({ title: day(t.date) + (t.symbol ? ' · ' + t.symbol : ''), v: fav ? 1 : -1,
+          value: fav ? '+' + t._mfeR.toFixed(2) + 'R ' + zT('in your favour', 'a favor') : '−' + t._maeR.toFixed(2) + 'R ' + zT('against you', 'en contra'),
+          sub: res(t) + (typeof t._maePips === 'number' && !fav ? ' · ' + t._maePips.toFixed(1) + _pU() : '') + (typeof t._mfePips === 'number' && fav ? ' · ' + t._mfePips.toFixed(1) + _pU() : '') })));
+      }
+    }
+    // one line in plain words, the good news first; the losers' figure is the table's own average
+    const wins = list.filter(t => t.result === 'Win'), loss = list.filter(t => t.result === 'Lose');
+    const up1 = v => Math.ceil(v * 10 - 1e-9) / 10;
+    let read = '';
+    if (!fav && wins.length) {
+      const hs = wins.map(t => t._maeR).sort((a, b) => a - b), X1 = v => '<span class="r">−' + up1(v).toFixed(1) + 'R</span>';
+      if (hs.length >= 10) read = zT('9 of 10 winners never went past {X} against you.', '9 de cada 10 ganadoras nunca fueron más de {X} en tu contra.').replace('{X}', X1(hs[Math.ceil(hs.length * 0.9) - 1]));
+      else if (hs.length === 1) read = zT('Your winner went {X} against you at worst.', 'Tu ganadora fue como mucho {X} en tu contra.').replace('{X}', X1(hs[0]));
+      else read = zT('None of your {N} winners went past {X} against you.', 'Ninguna de tus {N} ganadoras fue más de {X} en tu contra.').replace('{N}', String(hs.length)).replace('{X}', X1(hs[hs.length - 1]));
+    } else if (fav && (wins.length || loss.length)) {
+      const avg = a => a.reduce((s2, t) => s2 + t._mfeR, 0) / a.length, parts = [];
+      if (wins.length) parts.push(zT('Your winners reached {X} on average at their best.', 'Tus ganadoras llegaron de media a {X} en su mejor punto.').replace('{X}', '<span class="g">+' + avg(wins).toFixed(2) + 'R</span>'));
+      if (loss.length) parts.push(zT('Your losers were {X} in your favour on average before they turned.', 'Tus perdedoras estuvieron de media {X} a tu favor antes de girarse.').replace('{X}', '<span class="g">+' + avg(loss).toFixed(2) + 'R</span>'));
+      read = parts.join(' ');
+    }
+    const rd = document.getElementById('mae-read');
+    if (rd && rd.innerHTML !== read) rd.innerHTML = read;
+  }
+  window.__stZc = { redraw: function () { try { zLayout(); zDraw(); } catch (e) {} try { ddDraw(); } catch (e) {} try { excHeatDraw(); } catch (e) {} }, viz: { ring: zRing, spark: zSpark, bars: zMiniBars, pair: zPair, gauge: zGauge } };
 
   // Lifetime "showed up vs traded" — the same idea as the monthly consistency block,
   // but spanning from your first activity (earliest bias or trade) to today. The denominator
@@ -31028,7 +31134,8 @@ try {
       if (mfeL != null) rows.push(row('lose', 'bad', t('exc.row_losers'), t('exc.m_best'), '+' + mfeL.toFixed(2) + 'R', mfeLp,
         mfeL >= 0.5 ? t('exc.r_manage') : t('exc.r_entries'), t('exc.w_losers')));
       const head = `<div class="history-row headers">${cell(t('exc.col_outcome'), 'label')}${cell(t('exc.col_measure'), 'measure')}${cell('R')}${cell(t('exc.col_pips'))}${cell(t('exc.col_reading'), 'reading')}</div>`;
-      box.innerHTML = `<div class="history-list">${head}${rows.join('')}</div>`
+      _excHeat = { done: done.slice(), synced: synced.length };
+      box.innerHTML = excHeatHtml() + `<div class="history-list">${head}${rows.join('')}</div>`
         // The tally reads LEFT and the action sits RIGHT — the count is what you glance at, the
         // button is what you reach for, and putting the button first made the count look like a
         // label attached to it. "20 of 61" would read as unfinished work without the breakdown
@@ -31036,6 +31143,7 @@ try {
         // none and never will.
         + `<div class="exc-foot"><span class="exc-tally">${tally}</span>`
         + `<span class="exc-actions">${btnHtml}${progHtml}</span></div>`;
+      try { excHeatDraw(); } catch (e) {}
       wireDiagRun();
     })();
 
