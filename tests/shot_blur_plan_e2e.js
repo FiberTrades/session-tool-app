@@ -108,14 +108,16 @@
     qa('.stpc-setups button')[1].click(); await W(30);
     ok('picking another setup', qa('.stpc-setups button')[1].classList.contains('on') && !qa('.stpc-setups button')[0].classList.contains('on'));
     q('[data-pc="go"]').click(); await W(20);
+    // every step the line shows, as it is set (a busy machine can hold the page past one, so it is recorded rather than caught)
+    var steps = [], stepEl = q('.stpc-step'); if (stepEl) { steps.push(stepEl.textContent); new MutationObserver(function () { steps.push(stepEl.textContent); }).observe(stepEl, { childList: true, characterData: true, subtree: true }); }
     ok('while it reads: "Reading your chart…", the button held', /Reading your chart/.test(q('[data-pc="go"]').textContent) && q('[data-pc="go"]').disabled);
     ok('...a progress bar and the step it is on, and a placeholder row for each of the setup\'s rules',
       !!q('.stpc-prog .stpc-bar i') && /Reading the chart/.test(q('.stpc-step').textContent) && qa('.stpc-sk').length === 2 && /Price location/.test(qa('.stpc-sk')[0].textContent) && q('.stpc-prog').getAttribute('role') === 'status',
       [q('.stpc-step') && q('.stpc-step').textContent, qa('.stpc-sk').length]);
     await W(120);
-    ok('...the bar on its way', parseFloat(getComputedStyle(q('.stpc-bar i')).width) > 0, q('.stpc-bar i').style.width);
-    for (k = 0; k < 40 && !/Checking your 2 rules/.test((q('.stpc-step') || {}).textContent || ''); k++) await W(100);
-    ok('...the step line moves on: Checking your 2 rules', /Checking your 2 rules/.test((q('.stpc-step') || {}).textContent || ''), (q('.stpc-step') || {}).textContent);
+    ok('...the bar on its way', /scaleX\(0\.9\)/.test(q('.stpc-bar i').style.transform), q('.stpc-bar i').style.transform);
+    for (k = 0; k < 80 && !qa('.stpc-row:not(.stpc-sk)').length; k++) await W(100);
+    ok('...the step line moved on: Reading the chart, Checking your 2 rules, Writing it up', steps.length === 3 && /Reading the chart/.test(steps[0]) && /Checking your 2 rules/.test(steps[1]) && /Writing it up/.test(steps[2]), steps);
     for (k = 0; k < 80 && !qa('.stpc-row:not(.stpc-sk)').length; k++) await W(100);
     var rows = qa('.stpc-row:not(.stpc-sk)');
     ok('the answer in: the bar and the placeholders gone', !q('.stpc-prog') && !qa('.stpc-sk').length);
