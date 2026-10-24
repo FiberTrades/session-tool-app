@@ -15,11 +15,15 @@
 //      context: { dataPack, profile, lang } }
 //  and gets back:
 //    { reply: string }
+//  "Check my plan" (24 Oct 2026) sends { mode: "plancheck", image, plan, bias, lessons, chart, context: { lang } } and gets
+//  back { plan: { items, summary }, model } - see ../_shared/plancheck.ts.
 //
 //  DEPLOY (see the chat for step-by-step):
 //   1. Supabase Dashboard → Edge Functions → create "st-assistant" → paste this file → Deploy.
 //   2. Edge Functions → Secrets → add ANTHROPIC_API_KEY = sk-ant-...
 // ─────────────────────────────────────────────────────────────────────────────
+
+import { planInput, runPlanCheck } from "../_shared/plancheck.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
 // Two tiers. The STRONG model answers real user questions (the client spends a per-user daily budget,
@@ -185,6 +189,8 @@ Your job: give honest, specific, encouraging coaching and answer questions about
   - **Scroll to the most recent bar (Back Testing and Live Charts):** when a chart has been dragged back so its latest candle is off the right edge, moving the mouse near the chart's bottom right corner (left of the price scale) shows a » button - always shown on a touch screen; pressing it glides back to the latest candle at the same zoom. Alt+Shift+Right Arrow does the same, as in TradingView.
   - **A position clicked shows on the price scale (Back Testing, Live Charts, Trade Replay):** select a Long / Short position (a drawn one or a trade's box) and the price scale shows its span from stop to target shaded in blue, with its stop price in a label in its stop colour, its entry in a dark label and its target in its target colour - as TradingView does. They follow the position while it is dragged and go when it is unselected.
   - **A copied chart link (snapshot)** shows the timeframe large in pink on a dark label in the corner, with the OHLC beside it.
+  - **Blur before sharing (24 Oct 2026; the camera button's Chart snapshot menu, Charts tab and Trade Replay):** besides Copy image and Copy link the menu now has **Download image** (a PNG, session-terminal-<date>.png), **Blur, then share…** and a **Hide trade sizes and money** switch. Blur, then share opens the picture full screen: drag over anything to hide it (it turns into square blocks that can't be read back), Undo / Clear, then Copy image, Copy link or Download. The switch (remembered on that device) blurs the trade tags - each open trade's entry, stop and target labels at the chart's right edge, where the size and money show - in every copy, link and download. Only the chart is ever in a snapshot, never the balance or the account panel.
+  - **Check my plan (24 Oct 2026; the snapshot menu's last item):** the chart as it stands is checked against one of the member's own setups (their Trade Setup rows from Session Review). They pick the setup, press Check this chart, and each rule comes back as **Fits**, **Doesn't fit** or **Can't tell**, with one short line on why and, where one fits, a link to the Academy lesson that teaches it (it opens the lesson). Today's Session Bias goes along as context. It only reads the picture - it never places, changes or advises on a trade, and it does not predict price. It is part of the AI assistant (Journal Pro and Mentorship; not on the trial), up to 30 checks a day, and it reads charts with Claude Haiku 5.5. A setup with no Trade Setup rows can't be checked; no setups yet: save one in Session Review -> Trade Setup first. The more of the setup that is drawn on the chart (the range, the 50%, the session box), the more it can say; what the picture can't show is marked Can't tell.
   - **Chart settings follow the member between devices** setting by setting (everything in Chart settings and the chart switches), the newest change of each winning; the layout, full screen and the chart in hand stay per device (a phone keeps its own layout).
   - **Phone full screen:** the charts fill the screen with no empty band under them.
   - **Chart windows:** a chart window that was minimised when the main Live Charts window reloaded comes back in its own window instead of inside the main one.
@@ -303,6 +309,20 @@ async function memberFromReq(req: Request): Promise<Member | null> {
 function canChatM(m: Member): boolean { return m.email === ADMIN_EMAIL || !!ALLOW_ID[m.id] || CHAT_PLANS.has(String(m.plan)); }
 function canGreetM(m: Member): boolean { return canChatM(m) || m.paid || m.trial; }
 
+// "Check my plan" today, from the same ai_usage rows (mode plancheck).
+const MODEL_PLAN = "claude-haiku-5-5";
+const PLAN_PER_DAY = 30;
+async function planChecksToday(userId: string): Promise<number> {
+  try {
+    const since = new Date(); since.setUTCHours(0, 0, 0, 0);
+    const r = await fetch(`${SB_URL}/rest/v1/ai_usage?user_id=eq.${encodeURIComponent(userId)}&mode=eq.plancheck&created_at=gte.${since.toISOString()}&select=id`, {
+      headers: { apikey: SB_SERVICE, authorization: `Bearer ${SB_SERVICE}`, prefer: "count=exact", range: "0-0" },
+    });
+    const total = Number(String(r.headers.get("content-range") || "").split("/")[1]);
+    return isFinite(total) ? total : 0;
+  } catch { return 0; }
+}
+
 // Today's strong-model calls for this member, from the same ai_usage rows the AI meter reads.
 async function smartCallsToday(userId: string): Promise<number> {
   try {
@@ -341,7 +361,7 @@ async function recordUsage(userId: string | null, model: string, usage: any, mod
       body: JSON.stringify({
         user_id: userId,
         model,
-        mode: (mode === "greet" || mode === "coach" || mode === "chat") ? mode : "chat",   // greet = AI greetings; lets the meter break them out
+        mode: (mode === "greet" || mode === "coach" || mode === "chat" || mode === "plancheck") ? mode : "chat",   // greet = AI greetings; lets the meter break them out
         input_tokens: usage.input_tokens ?? 0,
         output_tokens: usage.output_tokens ?? 0,
         cache_creation_tokens: usage.cache_creation_input_tokens ?? 0,
@@ -376,6 +396,21 @@ Deno.serve(async (req: Request): Promise<Response> => {
     let smart = body?.smart === true && rawMode === "chat";
     if (smart && (await smartCallsToday(member.id)) >= SMART_CALLS_PER_DAY) smart = false;
     const model = smart ? MODEL_SMART : MODEL_LIGHT;
+
+    // "Check my plan" (24 Oct 2026): a chart picture against one of the member's setups (../_shared/plancheck.ts). The same plan
+    // gate as a question. Haiku 5.5 at high effort: on two test charts it read the stop distance, the session box times, the
+    // price location and a dip under the previous day low right (medium misread one; Sonnet 5 misread the stop) - about 0.2p a
+    // check, 14-21 s. Sonnet 5.5 at low effort read them as well in ~4 s for ~0.6p, if speed ever matters more. PLAN_PER_DAY a day.
+    if (rawMode === "plancheck") {
+      const pin = planInput(body, lang);
+      if (!pin) return json({ error: lang === "es" ? "Falta la imagen del gráfico o las reglas del setup." : "The chart picture or the setup's rules are missing." }, 400);
+      if ((await planChecksToday(member.id)) >= PLAN_PER_DAY) return json({ error: lang === "es" ? `Ya has revisado ${PLAN_PER_DAY} gráficos hoy. Mañana tienes más.` : `That's ${PLAN_PER_DAY} chart checks today. More tomorrow.` }, 429);
+      const pm = MODEL_PLAN;
+      const out = await runPlanCheck(ANTHROPIC_API_KEY, pm, pin, "high");
+      await recordUsage(member.id, pm, out.usage, "plancheck");
+      if (!out.result) return json({ error: out.error === "unreadable" ? (lang === "es" ? "No se pudo leer la respuesta. Inténtalo de nuevo." : "The answer could not be read. Try again.") : out.error }, 502);
+      return json({ plan: out.result, model: pm });
+    }
 
     // Build the chat turns we send to Claude.
     let claudeMessages: any[];
