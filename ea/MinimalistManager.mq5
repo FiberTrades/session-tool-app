@@ -3844,6 +3844,7 @@ uint   g_lwHb=0;                 // last heartbeat sent
 uint   g_lwFailAt=0, g_lwWait=0; // after a failure: wait g_lwWait ms from g_lwFailAt
 int    g_lwFails=0;
 bool   g_lwOff=false;            // the terminal does not allow the address: off until the EA restarts
+uint   g_eaStartMs=0;            // v9.14: when this EA started (GetTickCount) - Replay history waits for the live line, at most 20 s
 uint   g_lwWatchAt=0;            // last "watch" heard
 uint   g_lwFastAt=0, g_lwMidAt=0; // v9.00: last "watch" asking for 2 a second / every 2 s (none: every 5 s)
 uint   g_lwSymAt=0;              // v9.00: last "watch" naming this chart's symbol (Live Charts shows it)
@@ -6143,6 +6144,10 @@ bool HB_Top(int k)
 void HB_Step(int maxPosts=2)
   {
    if(StringLen(g_syncTokenEff)==0) return;
+   // v9.14: the live line first. A year of history going up holds this EA's timer for 20 s or more, and the line's handshake runs on
+   // that timer - a chart opened by Live Charts' "chart" command was 26 s from its first live price on the demo (24 Oct 2026). Up to
+   // 20 s after the start, the history waits until the line has joined (or is off).
+   if(!LwJoined() && !g_lwOff && GetTickCount()-g_eaStartMs<20000) return;
    if(g_bdst<0){ BrokerDstDetect(); if(g_bdst<0) return; }   // old bars go out with the right times, or not at all
    if(g_ceWorked) return;                                    // a closed trade's candles went this bar
    if(PositionsTotal()>0 || OrdersTotal()>0) return;         // never hold the EA up while it manages a trade
@@ -7722,6 +7727,7 @@ void AsideTick(bool start)
 //==================================================================
 int OnInit()
   {
+   g_eaStartMs=GetTickCount();
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
    Print("=== MinimalistManager v9.06 loaded (BE halfway between the entry and the TP, the trailing / partial steps parked clear of the TP on every unit; MT5's messages and Algo Trading on or off, to Session Terminal; alerts on drawings from Session Terminal: a trend line or ray followed tick by tick, a rectangle or channel rings when price enters or leaves it; Live Charts: this chart's prices streamed to Session Terminal while its Live Charts tab shows them - 2 a second in your session, every 2 s with a trade open, every 5 s otherwise - and today's 1-minute candles when it asks; tick volume with every candle sent, and the older candles a volume profile in Practice Replay asks for; price alerts from Session Terminal, sent to your phone; 1-minute candles for the live chart; a live line to Session Terminal: the live chart updates every second, 3 hours a day; the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
