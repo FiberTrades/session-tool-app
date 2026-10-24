@@ -16,6 +16,7 @@
     var a2 = { id: 'acc_t_10k', name: 'FTMO 10K - Challenge', status: 'active', kind: 'challenge', startingBalance: 10000, createdAt: new Date().toISOString(), riskRules: { maxTrades: 3 } };
     var a3 = { id: 'acc_t_personal', name: 'IC Markets', status: 'active', kind: 'personal', startingBalance: 5000, createdAt: new Date().toISOString(), riskRules: {} };
     D.accounts = [a1, a2, a3]; D.activeAccountId = a1.id;
+    window.currentUser = { id: '00000000-0000-0000-0000-0000000000a5', email: 'member@example.com' };   // signed in: Connect MT5 is the cloud form
     D.mt5LoginMap = { '541419576': a1.id, '1514994373': a2.id };
     var now = new Date().toISOString();
     window.__stEA.apply({ login: '541419576', symbol: 'EURUSD', ea_version: '9.12', updated_at: now, settings: { risk_money: 500, max_trades_day: 1, currency: 'GBP', company: 'FTMO Global Markets Ltd', server: 'FTMO-Server4', start_bal: 70000 } });
@@ -53,11 +54,14 @@
     ok('opening another account moves the form there with its own rules (Max trades 3)', item(a2.id).classList.contains('open') && !item(a1.id).classList.contains('open') && item(a2.id).contains(document.getElementById('settings-risk-max-trades')) && document.getElementById('settings-risk-max-trades').value === '3', document.getElementById('settings-risk-max-trades').value);
     item(a3.id).querySelector('.sacc-head').click(); await W(400);
     var b3 = item(a3.id).querySelector('.sacc-body');
-    ok('a personal account: no stage, no payouts, every rule its own; no MT5 says so with Connect MT5', !b3.querySelector('[data-sacc-stage]') && !b3.querySelector('[data-slot="payouts"]').textContent.trim() && /^Rules/i.test(b3.querySelector('[data-slot="rules"] .sacc-sub').textContent.trim()) && b3.querySelector('[data-sacc-conn]'));
-    b3.querySelector('[data-sacc-conn]').click(); await W(400);
-    ok('Connect MT5 opens MT5 connections', document.getElementById('sacc-conn').open);
-    document.getElementById('sacc-add-open').click(); await W(200);
-    ok('+ Add account shows the Add form', !document.getElementById('sacc-add-wrap').hidden && !!document.getElementById('settings-account-add-name').offsetParent);
+    ok('a personal account: no stage, no payouts, every rule its own; no MT5 says so with Connect MT5', !b3.querySelector('[data-sacc-stage]') && !b3.querySelector('[data-slot="payouts"]').textContent.trim() && /^Rules/i.test(b3.querySelector('[data-slot="rules"] .sacc-sub').textContent.trim()) && b3.querySelector('[data-sacc-cloudfor]'));
+    // 24 Oct 2026 (Nestor: "remove it" - no PC guide): Connect MT5 opens the cloud form for THIS account, nothing else
+    b3.querySelector('[data-sacc-cloudfor]').click(); await W(400);
+    var aw = document.getElementById('sacc-add-wrap'), ah = aw.querySelector('#sacc-addcloud .set-h');
+    ok('Connect MT5 opens the cloud form for this account only: "Connect <name>", no add-by-hand fields', !aw.hidden && aw.classList.contains('sacc-forone') && ah && ah.textContent.indexOf(a3.name) >= 0 && !document.getElementById('settings-account-add-name').offsetParent, ah && ah.textContent);
+    document.getElementById('sacc-add-open').click(); await W(200);   // Close
+    document.getElementById('sacc-add-open').click(); await W(200);   // + Add account: the plain form again
+    ok('+ Add account shows the Add form (the cloud one first, then by hand)', !aw.hidden && !aw.classList.contains('sacc-forone') && !!document.getElementById('settings-account-add-name').offsetParent && /Add an account: run it in the cloud/.test(aw.textContent), aw.className);
     document.getElementById('sacc-add-open').click(); await W(150);
     // a link to the old Risk rules tab lands on the account's rules
     window.__stAccOpenId = null; window.renderSettingsAccountsList();

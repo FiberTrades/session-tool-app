@@ -40,11 +40,12 @@
   data.mt5LoginMap = { '541419576': a1.id, '999000': 'acc_deleted_long_ago' }; renderSettingsAccountsList(); await W(200);
   r3 = await openRow('FTMO 70K - Demo');
   var m3 = r3 && r3.querySelector('[data-slot="mt5"]');
-  ok('opened, an account with no MT5 account says so, with Connect MT5', m3 && /No MT5 account linked/.test(m3.textContent) && m3.querySelector('[data-sacc-conn]'), m3 && m3.textContent);
+  ok('opened, an account with no MT5 account says so (signed in, its Connect MT5 is the cloud form)', m3 && /No MT5 account linked/.test(m3.textContent) && !m3.querySelector('[data-sacc-conn]'), m3 && m3.textContent);
   data.mt5LoginMap['1514906945'] = a3.id;
-  m3.querySelector('[data-sacc-conn]').click(); await W(500);
+  window.__stPcGuide = true; window.__stAccFill(); await W(150);   // 24 Oct 2026: no PC guide for anyone - forced on to test its code
+  window.__stAccConn(true); await W(500);
   var sec = document.getElementById('mt5c-body'), cn = document.getElementById('sacc-conn');
-  ok('Connect MT5 opens MT5 connections in Accounts', cn && cn.open && cn.contains(sec));
+  ok('(the old PC guide, forced on for this test) MT5 connections opens in Accounts', cn && !cn.hidden && cn.open && cn.contains(sec));
   window.__stMt5c.render(); await W(100);
   var eaLine = function (lg) { return sec.querySelector('[data-mt5c-login="' + lg + '"]'); }, pick = function (lg) { var e = eaLine(lg); return e && e.querySelector('select[data-mt5c-acc]'); };
   ok('Settings → MT5 lists the EA\'s MT5 accounts with where their trades go: 541419576 → the Challenge, 777888 not linked', pick('541419576') && pick('541419576').value === a1.id && pick('777888') && pick('777888').value === '', [pick('541419576') && pick('541419576').value, pick('777888') && pick('777888').value]);

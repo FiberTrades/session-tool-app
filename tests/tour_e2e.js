@@ -28,7 +28,7 @@
       if (/^Community$/.test(titleOf())) extra.community = tip().textContent;
       if (/^Discipline Leaderboard$/.test(titleOf())) extra.board = { txt: tip().textContent, cal: document.getElementById('page-tradeview') && document.getElementById('page-tradeview').classList.contains('active') };
       if (/Your account and settings/.test(titleOf())) extra.acc = tip().textContent;
-      if (/^Connect MT5$/.test(titleOf())) { var nv = document.querySelector('.settings-nav-item[data-section="accounts"]'), cn = document.getElementById('sacc-conn'); extra.mt5 = { c: c, txt: tip().textContent, tab: nv && nv.classList.contains('active') && !!(cn && cn.open), next: nextB() && nextB().textContent }; }
+      if (/^Connect MT5$/.test(titleOf())) { var nv = document.querySelector('.settings-nav-item[data-section="accounts"]'), cn = document.getElementById('sacc-conn'); extra.mt5 = { c: c, txt: tip().textContent, tab: nv && nv.classList.contains('active') && !!document.getElementById('sacc-add-open'), next: nextB() && nextB().textContent }; }
       if (/^You.re all set$/.test(titleOf())) extra.bye = { txt: tip().textContent, next: nextB() && nextB().textContent, settings: document.getElementById('settings-modal-bg').classList.contains('show') };
       if (/^17 \/ 17$/.test(c)) break;
       nextB().click(); await W(700);
@@ -41,7 +41,7 @@
     ok('...Community - channels, DMs, live calls, #session-chat; no leaderboard or lessons', extra.community && /channels, DMs and live calls/.test(extra.community) && /session-chat/.test(extra.community) && !/Leaderboard|lessons/.test(extra.community), extra.community && extra.community.slice(0, 200));
     ok('...the Discipline Leaderboard on the Calendar tab, where it is', extra.board && /Under the calendar/.test(extra.board.txt) && /not by P&L/.test(extra.board.txt) && extra.board.cal, extra.board);
     ok('the account step no longer sends MT5 set-up to Accounts', extra.acc && !/connect MT5/i.test(extra.acc) && !/MT5 auto-sync/.test(extra.acc), extra.acc && extra.acc.slice(0, 200));
-    ok('Connect MT5: Settings opens on Accounts with MT5 connections open (23 Oct 2026)', extra.mt5 && extra.mt5.tab && /Next/i.test(extra.mt5.next) && /run MT5 for you in the cloud/.test(extra.mt5.txt) && /walks you through the EA/.test(extra.mt5.txt), extra.mt5);
+    ok('Connect MT5: Settings opens on Accounts at + Add account, the cloud only (24 Oct 2026: no PC guide)', extra.mt5 && extra.mt5.tab && /Next/i.test(extra.mt5.next) && /run MT5 for you in the cloud/.test(extra.mt5.txt) && !/walks you through the EA|own PC/.test(extra.mt5.txt), extra.mt5);
     ok('the last card wishes them luck - discipline and patience - and says where to ask: the admin in the Community DMs or help@sessionterminal.com; its button says Done', extra.bye && /Good luck/.test(extra.bye.txt) && /discipline and patience/.test(extra.bye.txt) && /DMs/.test(extra.bye.txt) && /help@sessionterminal\.com/.test(extra.bye.txt) && /Done/i.test(extra.bye.next) && !extra.bye.settings, extra.bye);
     nextB().click(); await W(600);
     ok('Done closes the tour', !document.querySelector('.st-tour-next'));
