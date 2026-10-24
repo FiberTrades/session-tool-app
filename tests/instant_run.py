@@ -7,8 +7,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 T0 = calendar.timegm((2026, 10, 14, 8, 30, 0))
 s = socket.socket(); s.bind(('127.0.0.1', 0)); RPORT = s.getsockname()[1]; s.close()
 relay = subprocess.Popen([sys.executable, os.path.join(HERE, '..', 'relay', 'server.py')], env=dict(os.environ, PORT=str(RPORT)))
-time.sleep(1)
-out = os.path.join(tempfile.gettempdir(), 'st_fake_ea_instant.json')
+for _ in range(150):   # the relay up before the EA dials it (a busy machine starts it slowly)
+    try: socket.create_connection(('127.0.0.1', RPORT), timeout=1).close(); break
+    except OSError: time.sleep(0.1)
+out = os.path.join(tempfile.gettempdir(), 'st_fake_ea_instant_%d.json' % os.getpid())
 ea = subprocess.Popen([sys.executable, os.path.join(HERE, 'fake_ea_livecharts.py'), 'st-test-instant-e2e', '400', out, 'EURUSD', str(T0), '1.16420', '5', '90001234'],
                       env=dict(os.environ, ST_RELAY='127.0.0.1:%d' % RPORT, ST_FAKE_V=os.environ.get('ST_FAKE_V', '9.15'), ST_FAKE_CHART_MS=os.environ.get('ST_FAKE_CHART_MS', '1600')))
 time.sleep(2)

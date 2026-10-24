@@ -30,7 +30,7 @@ import threading
 import time
 import urllib.request
 
-faulthandler.dump_traceback_later(240, exit=True)   # a hang says where it is instead of running forever
+faulthandler.dump_traceback_later(int(os.environ.get('E2E_TIMEOUT') or 240), exit=True)   # a hang says where it is instead of running forever
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EDGE_PATHS = [r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe',
