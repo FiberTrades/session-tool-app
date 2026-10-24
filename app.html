@@ -79384,12 +79384,13 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
   }
   function segAt(ms) {
     var op = sesOpens(), off = lonOff(ms), lon = Math.floor(ms / 1000) + off * 60, mid = lon - (((lon % 86400) + 86400) % 86400), best = -1, bj = -1, nb = -1, nj = -1;
+    var utc = function (tl) { var o = tzOff('Europe/London', (tl - off * 60) * 1000); return (tl - o * 60) * 1000; };   // London's offset at that open, not now's
     for (var d = -1; d <= 1; d++) for (var j = 0; j < 3; j++) {
-      var t = mid + d * 86400 + op[j] * 60;
-      if (t <= lon && t > best) { best = t; bj = j; }
-      if (t > lon && (nb < 0 || t < nb)) { nb = t; nj = j; }
+      var t = mid + d * 86400 + op[j] * 60, tu = utc(t);
+      if (tu <= ms && (best < 0 || tu > best)) { best = tu; bj = j; }
+      if (tu > ms && (nb < 0 || tu < nb)) { nb = tu; nj = j; }
     }
-    return { seg: bj, start: (best - off * 60) * 1000, next: (nb - off * 60) * 1000, nextSeg: nj, opens: op, off: off };
+    return { seg: bj, start: best, next: nb, nextSeg: nj, opens: op, off: off };
   }
   function hhmm(m) { return p2(Math.floor(m / 60)) + ':' + p2(m % 60); }
   // the account's day, for the daily loss (24 Oct 2026): FTMO resets at midnight in Prague (23:00 London most of the year); another
@@ -79403,8 +79404,13 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
   function nextReset(acc, lg) {
     var z = dayZone(acc), now = Date.now();
     if (z === 'srv') { var s = lg ? eaFresh(lg) : null; return (s && s.nd * 1000 > now) ? s.nd * 1000 : nextMidnight(); }
-    var off = tzOff(z, now), loc = Math.floor(now / 1000) + off * 60;
-    return (loc - (((loc % 86400) + 86400) % 86400) + 86400 - off * 60) * 1000;
+    return zMidnightAfter(z, now);
+  }
+  // the first midnight in zone z after ms - with the zone's offset AT that midnight (the night the clocks change, 25 Oct 2026, it was an hour out)
+  function zMidnightAfter(z, ms) {
+    var off = tzOff(z, ms), loc = Math.floor(ms / 1000) + off * 60, mid = loc - (((loc % 86400) + 86400) % 86400) + 86400, t = (mid - off * 60) * 1000, off2 = tzOff(z, t);
+    if (off2 !== off) { t = (mid - off2 * 60) * 1000; if (tzOff(z, t) !== off2) t = (mid - off * 60) * 1000; }
+    return t;
   }
   function SN(j) { return j === 0 ? 'Asia' : (j === 1 ? T('London', 'Londres') : (j === 2 ? T('New York', 'Nueva York') : T('the next session', 'la próxima sesión'))); }
 
@@ -79458,7 +79464,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     if (b && b.until > now) { parts.push('bk=' + Math.floor(b.until / 1000)); parts.push('bs=' + Math.floor((b.at || now) / 1000)); }
     if (!parts.length) return '';
     var sg = segAt(now), z = dayZone(acc);
-    parts.push('lo=' + sg.off); parts.push('so=' + sg.opens.map(hhmm).join('/')); parts.push('dz=' + (z === 'srv' ? 'srv' : tzOff(z, now))); parts.push('ce=' + (x.ce ? 1 : 0));
+    parts.push('lo=' + sg.off); parts.push('so=' + sg.opens.map(hhmm).join('/')); parts.push('dz=' + (z === 'srv' ? 'srv' : (z === 'Europe/Prague' ? 'prg' : 'lon'))); parts.push('ce=' + (x.ce ? 1 : 0));   // dz: the EA works out the zone's midnight itself, with the EU clock change
     return parts.join(';');
   }
   function oneR(acc) { try { return (window.__stEA && window.__stEA.riskFor) ? (+window.__stEA.riskFor(acc.id) || 0) : 0; } catch (e) { return 0; } }
@@ -79713,7 +79719,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
   setTimeout(want, 4000);
 
   window.__stRules = { check: check, state: state, breakFor: breakFor, codeText: codeText, words: words, node: node, html: html,
-                       _eaSet: eaSet, _wantLine: wantLine, _dayZone: dayZone, _nextReset: nextReset, _push: push, _rulesStr: rulesStr, _segAt: segAt, _eas: function () { return EAS; }, _eff: eff };
+                       _eaSet: eaSet, _wantLine: wantLine, _dayZone: dayZone, _nextReset: nextReset, _zMidnightAfter: zMidnightAfter, _push: push, _rulesStr: rulesStr, _segAt: segAt, _eas: function () { return EAS; }, _eff: eff };
 })();
 </script>
 <script>

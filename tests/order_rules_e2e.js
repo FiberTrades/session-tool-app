@@ -28,13 +28,18 @@
 
     // ---- what the EA gets
     var s1 = R._rulesStr(a1);
-    ok('the EA gets the daily loss (the max daily drawdown, 800), London\'s offset, the opens, the day\'s zone, close-elsewhere on', /^dl=800;lo=-?\d+;so=00:00\/08:00\/13:00;dz=\d+;ce=1$/.test(s1), s1);
+    ok('the EA gets the daily loss (the max daily drawdown, 800), London\'s offset, the opens, the day\'s zone, close-elsewhere on', /^dl=800;lo=-?\d+;so=00:00\/08:00\/13:00;dz=prg;ce=1$/.test(s1), s1);
     // the account's day: FTMO's resets at midnight in Prague, another prop firm's at its server's midnight, a personal account's in London
     var pf = { id: 'p', kind: 'challenge', name: 'The5ers 100K' }, pe = { id: 'q', kind: 'personal', name: 'IC Markets' };
     ok('the day resets: FTMO in Prague, another firm at its server\'s midnight, personal in London', R._dayZone(a1) === 'Europe/Prague' && R._dayZone(pf) === 'srv' && R._dayZone(pe) === 'Europe/London', [R._dayZone(a1), R._dayZone(pf), R._dayZone(pe)]);
     var nr = R._nextReset(a1), pr = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Prague', hourCycle: 'h23', hour: '2-digit', minute: '2-digit' }).format(new Date(nr));
     ok('...FTMO\'s next reset is midnight in Prague, within a day', pr === '00:00' && nr > Date.now() && nr - Date.now() <= 86400000, [pr, new Date(nr).toISOString()]);
-    ok('...and the EA is told Prague\'s offset (dz=60 in winter, 120 in summer)', /;dz=(60|120);/.test(s1), s1);
+    ok('...and the EA is told the zone (dz=prg) and works out its midnight itself, with the EU clock change', /;dz=prg;/.test(s1), s1);
+    // the night the clocks change (25 Oct 2026, 01:00 UTC): from 24 Oct 23:30 UTC, Prague's next midnight is in winter time
+    var pm = R._zMidnightAfter('Europe/Prague', Date.UTC(2026, 9, 24, 23, 30));
+    ok('the clock change: from 24 Oct 23:30 UTC, Prague\'s next midnight is 25 Oct 23:00 UTC (not 22:00)', pm === Date.UTC(2026, 9, 25, 23, 0), new Date(pm).toISOString());
+    var sgc = R._segAt(Date.UTC(2026, 9, 24, 23, 30));
+    ok('...and at 00:30 London that night Asia is open, London opens 08:00 London = 08:00 UTC (winter time by then)', sgc.seg === 0 && sgc.nextSeg === 1 && sgc.next === Date.UTC(2026, 9, 25, 8, 0), [sgc.seg, sgc.nextSeg, new Date(sgc.next).toISOString()]);
     ok('an account with no rules sends nothing', R._rulesStr(a2) === '', R._rulesStr(a2));
     a2.riskRules = { firmDailyMode: 'pct', firmDailyPct: 5 };
     ok('the firm\'s daily limit counts when there is no own one (5% of 10K = 500)', /^dl=500;/.test(R._rulesStr(a2)), R._rulesStr(a2));
@@ -141,8 +146,13 @@
     blk = item(a1.id).querySelector('.ru-block');
     ok('a break: the first press asks again, nothing started', !a1.ruleBreak && /Start 4 h/.test(blk.querySelector('[data-ru-break="4h"]').textContent));
     blk.querySelector('[data-ru-break="4h"]').click(); await W(300);
+    // the test's stand-in sign-in can swap the journal object under it: look the account up again, and press once more if the
+    // swap took the press (the two-press guard then sees the same button twice)
+    var fresh = function () { return (window.__stRules.state(a1.id) || {}).brk; };
+    for (var tries = 0; tries < 3 && !fresh(); tries++) { var bb = item(a1.id).querySelector('[data-ru-break="4h"]'); if (bb) bb.click(); await W(400); }
     blk = item(a1.id).querySelector('.ru-block');
-    ok('...the second starts it: Locked, "On a break", the buttons gone', a1.ruleBreak && Math.abs(a1.ruleBreak.until - (Date.now() + 4 * 3600000)) < 10000 && /Locked/.test(blk.textContent) && /On a break/.test(blk.textContent) && !blk.querySelector('[data-ru-break]'));
+    a1 = (window.data && window.data.accounts || []).filter(function (x) { return x && x.id === a1.id; })[0] || a1;   // the journal object now (a sync may have replaced it)
+    ok('...the second starts it: Locked, "On a break", the buttons gone', a1.ruleBreak && Math.abs(a1.ruleBreak.until - (Date.now() + 4 * 3600000)) < 10000 && /Locked/.test(blk.textContent) && /On a break/.test(blk.textContent) && !blk.querySelector('[data-ru-break]'), [a1.ruleBreak && new Date(a1.ruleBreak.until).toISOString(), blk.textContent.slice(0, 60), R.state(a1.id) && R.state(a1.id).locked, document.activeElement && document.activeElement.tagName, blk === item(a1.id).querySelector('.ru-block'), item(a1.id).querySelectorAll('.ru-block').length]);
     // the phone: nothing wider than the screen (checked at 375 by the phone run of this file)
     var wide = [].slice.call(blk.querySelectorAll('.set-row')).filter(function (r) { return r.scrollWidth > r.clientWidth + 2; }).length;
     ok('no row wider than its box', wide === 0, wide);

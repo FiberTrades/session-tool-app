@@ -1146,6 +1146,17 @@ bool   g_ruHasSes=false;
 // Prague; a personal account: midnight in London; the app sends it again when the clocks change), "srv" - the broker server's
 // midnight (another prop firm), none - this EA's own day (as its daily trade limit)
 int    g_ruDz=0; bool g_ruHasDz=false, g_ruDzSrv=false;
+string g_ruDzName="";   // "lon" / "prg": London's or Prague's midnight, worked out here with the EU clock change (the app's minutes were an hour out the night the clocks changed, 25 Oct 2026)
+// London's and Prague's offsets from UTC at a moment (the EU rule: summer time from the last Sunday of March to the last of October, 01:00 UTC)
+int RuLonOff(long utc){ return IsEuDST((datetime)utc) ? 60 : 0; }
+int RuZoneOff(long utc){ if(g_ruDzName=="lon") return RuLonOff(utc); if(g_ruDzName=="prg") return IsEuDST((datetime)utc) ? 120 : 60; return g_ruDz; }
+// a zone's midnight that starts the day holding utc, and the next one - each with the zone's offset at that midnight
+long RuZoneDayStart(long utc)
+  {
+   long o=RuZoneOff(utc), loc=utc+o*60, mid=loc-(loc%86400), t=mid-o*60, o2=RuZoneOff(t);
+   if(o2!=o){ long t2=mid-o2*60; if(RuZoneOff(t2)==o2 && t2<=utc) t=t2; }
+   return t;
+  }
 // worked out once a second (RulesEval): the lock in force (0 none, 1 the day, 2 the session, 3 a break), until and since (UTC)
 int    g_ruLk=0, g_ruLkWas=0; long g_ruLkUntil=0, g_ruLkStart=0;
 long   g_ruLkStartK[4]={0,0,0,0}, g_ruLkUntilK[4]={0,0,0,0};
@@ -1174,7 +1185,7 @@ string RuSesName(int j){ return (j==0) ? "Asia" : ((j==1) ? "London" : ((j==2) ?
 void RulesParse(string raw)
   {
    g_ruRaw=raw; g_ruDayLoss=0; g_ruSesLoss=0; g_ruSesLossR=0; g_ruOpenRisk=0; g_ruOpenRiskR=0; g_ruSesTrades=0; g_ruGapMin=0;
-   g_ruSyms=""; g_ruCloseElse=true; g_ruBreakUntil=0; g_ruBreakSet=0; g_ruLonOff=0; g_ruHasSes=false; g_ruDz=0; g_ruHasDz=false; g_ruDzSrv=false;
+   g_ruSyms=""; g_ruCloseElse=true; g_ruBreakUntil=0; g_ruBreakSet=0; g_ruLonOff=0; g_ruHasSes=false; g_ruDz=0; g_ruHasDz=false; g_ruDzSrv=false; g_ruDzName="";
    g_ruOpen[0]=0; g_ruOpen[1]=480; g_ruOpen[2]=780;
    string kv[]; int n=StringSplit(raw,';',kv);
    for(int i=0;i<n;i++)
@@ -1198,7 +1209,7 @@ void RulesParse(string raw)
       else if(k=="bk") g_ruBreakUntil=(long)StringToInteger(v);
       else if(k=="bs") g_ruBreakSet=(long)StringToInteger(v);
       else if(k=="lo") g_ruLonOff=(int)StringToInteger(v);
-      else if(k=="dz"){ if(v=="srv") g_ruDzSrv=true; else { g_ruDz=(int)StringToInteger(v); g_ruHasDz=true; } }
+      else if(k=="dz"){ if(v=="srv") g_ruDzSrv=true; else if(v=="lon" || v=="prg"){ g_ruDzName=v; g_ruHasDz=true; } else { g_ruDz=(int)StringToInteger(v); g_ruHasDz=true; } }
       else if(k=="so")
         {
          string a[]; int m=StringSplit(v,'/',a);
@@ -1254,23 +1265,23 @@ void RulesEval(bool force)
    if(StringLen(g_ruRaw)==0){ g_ruDpl=0; g_ruSpl=0; g_ruSn=0; g_ruOrk=0; g_ruLastEntry=0; g_ruSeg=-1; g_ruSegN=-1; g_ruSegNext=0; return; }
    long off=BrokerOff(), nowUtc=(long)TimeGMT(), dayUtc;
    if(g_ruDzSrv){ long srv=nowUtc+off; dayUtc=srv-(srv%86400)-off; }                                         // the server's midnight
-   else if(g_ruHasDz){ long z=nowUtc+(long)g_ruDz*60; dayUtc=z-(z%86400)-(long)g_ruDz*60; }                  // midnight where the account's day resets
+   else if(g_ruHasDz) dayUtc=RuZoneDayStart(nowUtc);                                                      // midnight where the account's day resets
    else dayUtc=(long)UserDayStartServer()-off;                                                               // this EA's own day
    datetime dayStart=(datetime)(dayUtc+off);                                                                 // server time, for the history
-   g_ruNextDay=dayUtc+86400;
+   g_ruNextDay=g_ruHasDz ? RuZoneDayStart(dayUtc+86400+7200) : dayUtc+86400;                                 // the next one (a 23 or 25 hour day when the clocks change)
    // the session now and the next one, from the opens in London time
    long segStart=0, segNext=0; g_ruSeg=-1; g_ruSegN=-1;
    if(g_ruHasSes)
      {
-      long lon=nowUtc+(long)g_ruLonOff*60, mid=lon-(lon%86400), best=-1, nb=-1;
+      long lo=RuLonOff(nowUtc), lon=nowUtc+lo*60, mid=lon-(lon%86400), best=-1, nb=-1;
       for(int d=-1;d<=1;d++) for(int j=0;j<3;j++)
         {
-         long t=mid+(long)d*86400+(long)g_ruOpen[j]*60;
-         if(t<=lon && t>best){ best=t; g_ruSeg=j; }
-         if(t>lon && (nb<0 || t<nb)){ nb=t; g_ruSegN=j; }
+         long tl=mid+(long)d*86400+(long)g_ruOpen[j]*60, t=tl-(long)RuLonOff(tl-lo*60)*60;   // that open in UTC, with London's offset then
+         if(t<=nowUtc && (best<0 || t>best)){ best=t; g_ruSeg=j; }
+         if(t>nowUtc && (nb<0 || t<nb)){ nb=t; g_ruSegN=j; }
         }
-      if(best>=0) segStart=best-(long)g_ruLonOff*60;
-      if(nb>=0) segNext=nb-(long)g_ruLonOff*60;
+      if(best>=0) segStart=best;
+      if(nb>=0) segNext=nb;
      }
    g_ruSegNext=segNext;
    // today's and this session's closed results and entries, and the last entry
