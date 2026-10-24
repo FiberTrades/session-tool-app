@@ -46,6 +46,8 @@
     var pr = document.getElementById('page-review'); pr.classList.add('session-live-collapsed');
     try { window.__stLiveBox.render(); } catch (e) {}
     await W(400);
+    // on a weekend the app's own session tick takes 'session live' off the page again (failed 1 run in 3 on Saturday 24 Oct 2026, before any change): keep it on and wait for the box, up to 4 s
+    for (var k = 0; k < 40; k++) { var nh0 = document.getElementById('st-livenews'); if (nh0 && !nh0.hidden && nh0.querySelector('.slx-news.med')) break; pr.classList.add('session-live-collapsed'); try { window.__stLiveBox.render(); } catch (e) {} await W(100); }
     var nh = document.getElementById('st-livenews'), mb = nh.querySelector('.slx-news.med'), kids = Array.from(nh.children).map(function (n) { return n.className; });
     ok('Session Live shows the yellow box', !nh.hidden && !!mb && /ISM Services PMI \(USD\) · \d\d:\d\d/.test(mb.querySelector('.slx-v').textContent) && /medium news/i.test(mb.querySelector('.slx-l').textContent), [nh.hidden, nh.innerText]);
     ok('in the calendar yellow', !!mb && getComputedStyle(mb.querySelector('.slx-v')).color === 'rgb(255, 210, 77)' && getComputedStyle(mb.querySelector('.slx-l')).color === 'rgb(255, 210, 77)', mb && getComputedStyle(mb.querySelector('.slx-v')).color);

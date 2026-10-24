@@ -1052,6 +1052,16 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   #settings-modal-bg .sacc-r .mt5c-chip + .mt5c-chip { margin-left: 6px; }
   #settings-modal-bg .sacc-val { font: 500 13px 'AppNum', 'DM Mono', monospace; color: var(--text); text-align: right; }
   #settings-modal-bg .sacc-val small { display: block; margin-top: 2px; font-size: 11px; color: var(--text-dim); }
+  /* Order rules (24 Oct 2026): open or locked beside the heading, the lock in words, "From tomorrow" under a row loosened today, the
+     units beside a box, the break's buttons (they wrap on a phone) */
+  #settings-modal-bg .ru-st { padding: 3px 8px; border-radius: 999px; border: 1px solid var(--border-2); letter-spacing: .12em; }
+  #settings-modal-bg .ru-st.open { color: var(--good); border-color: rgba(95,203,141,0.45); }
+  #settings-modal-bg .ru-st.lock { color: #f7a24f; border-color: rgba(247,162,79,0.5); }
+  #settings-modal-bg .ru-lockline { color: var(--text); }
+  #settings-modal-bg .ru-next { display: block; margin-top: 5px; font: 500 11px 'AppNum', 'DM Mono', monospace; color: var(--text-mid); }
+  #settings-modal-bg .ru-brk { flex-wrap: wrap; justify-content: flex-end; }
+  #settings-modal-bg .ru-block .settings-risk-input-row .ru-syms { max-width: 200px; text-transform: uppercase; }
+  #settings-modal-bg .ru-block .tk-switch { justify-content: flex-end; }
   #settings-modal-bg .sacc-bar { display: block; height: 6px; border-radius: 3px; background: #24222b; overflow: hidden; margin-top: 8px; max-width: 320px; }
   #settings-modal-bg .sacc-bar i { display: block; height: 100%; background: #4ECD8B; }
   #settings-modal-bg .sacc-ea { margin: 6px 0 2px !important; }
@@ -20462,6 +20472,7 @@ try {
       } catch (e) { return null; }
     }
     return { observe: observe, markOld: markOld, ack: ack, chime: chime, eaChanged: eaChanged, dayHtml: dayHtml, aiPack: aiPack,
+             netToday: function (acc) { try { return todayNet(acc, dayState()).net; } catch (e) { return 0; } },   // the order rules' daily loss (24 Oct 2026)
              budget: budget, redNewsFor: function (curs) { return redNews(curs); }, mediumNewsFor: function (curs) { return redNews(curs, 'medium'); }, myCurs: myCurs, cursOf: cursOf,
              periodHtml: periodHtml, periodStats: periodStats, newsTick: newsTick, dayList: dayList, results: resultsIn, _isSepLogin: isSepLogin,
              kindLabel: function (g) { return t('nudge.' + g); } };
@@ -78741,7 +78752,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
         .on('broadcast', { event: 'bars' }, function (m) { stat.bars++; try { if (window.__stLC) window.__stLC.bars(m && m.payload); } catch (e) {} })
         .on('broadcast', { event: 'acct' }, function (m) { try { if (window.__stLC && window.__stLC.acct) window.__stLC.acct(m && m.payload); } catch (e) {} })      // the account for the Trade tab (9.02)
         .on('broadcast', { event: 'dhist' }, function (m) { try { if (window.__stLC && window.__stLC.dhist) window.__stLC.dhist(m && m.payload); } catch (e) {} })   // the History tab's closed positions (9.02)
-        .on('broadcast', { event: 'set' }, function (m) { try { if (window.__stLC && window.__stLC.set) window.__stLC.set(m && m.payload); } catch (e) {} })          // an EA's panel settings (9.02)
+        .on('broadcast', { event: 'set' }, function (m) { try { if (window.__stLC && window.__stLC.set) window.__stLC.set(m && m.payload); } catch (e) {} try { if (window.__stRules) window.__stRules._eaSet(m && m.payload); } catch (e) {} })          // an EA's panel settings (9.02)
         .on('broadcast', { event: 'q' }, function (m) { try { if (window.__stLC && window.__stLC.q) window.__stLC.q(m && m.payload); } catch (e) {} })              // the watchlist's prices (EA 9.02)
         .on('broadcast', { event: 'symlist' }, function (m) { try { if (window.__stLC && window.__stLC.symlist) window.__stLC.symlist(m && m.payload); } catch (e) {} })   // the broker's symbols, searched
         .on('broadcast', { event: 'ack' }, function (m) { try { if (window.__stTM) window.__stTM.ack(m && m.payload); } catch (e) {} })   // an EA's answer to a command
@@ -78757,9 +78768,10 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
         });
     }, function () { joining = false; });
   }
+  function rulesWait(){ try { return !!(window.__stRules && window.__stRules._wantLine && window.__stRules._wantLine()); } catch (e) { return false; } }   // the order rules on their way to an EA (24 Oct 2026)
   function tickle(){
     try {
-      var tok = token(), lc = lcOn(), want = !!(tok && !mentor() && (hasOpen() || lc || mt5cOn()));
+      var tok = token(), lc = lcOn(), want = !!(tok && !mentor() && (hasOpen() || lc || mt5cOn() || rulesWait()));
       if (want) idleAt = 0;
       else if (ch || rc) { if (!idleAt) idleAt = Date.now(); if (Date.now() - idleAt > 120000) { leave(); return; } }
       if (want && !ch && !rc) { join(tok); return; }
@@ -79311,6 +79323,400 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
 })();
 </script>
 <script>
+/* ---- Order rules (24 Oct 2026, Nestor: "the daily loss hit you cant lift it but im not sure about the rest ... block myself for the
+   next 4 hourse and it unlocks for the NY session again ... something like that that stops users over trading in one particular
+   session"). Each account's rules sit in Settings -> Accounts -> its rules ("Order rules"). They reach its EA (9.15: a signed "rules"
+   command) and the EA refuses an order that breaks one; this window refuses it first, in the same words.
+   - Locks stop every new entry until they end, and nothing lifts them early: the daily loss (until the next day), a session's loss
+     or trades (until the next session opens - Asia, London, New York at the Session Indicator's times), a break you take.
+   - Off unless set, refusing only that one order: the time between entries, the money at risk across open trades, allowed symbols.
+   - Stricter counts at once; looser only from the next day (the row says "From tomorrow"). A break can't be undone or cut short.
+   - Closing and managing an open trade is never blocked. While locked, the EA closes a trade opened elsewhere (MT5's phone app) when
+     "Close trades opened elsewhere while locked" is on - on unless switched off (Nestor: yes, 24 Oct 2026).
+   window.__stRules: check({ acct | login, symbol, riskMoney, riskR }) -> { ok } or { ok: false, kind: 'lock' | 'order', rule, why,
+   until, code }; state(acct); breakFor(acct, '1h' | '2h' | '4h' | 'session' | 'tomorrow'); the st-rules-change event on window. ---- */
+(function () {
+  'use strict';
+  var T = function (en, es) { try { return window._stT ? window._stT(en, es) : en; } catch (e) { return en; } };
+  function isEs() { try { return document.documentElement.lang === 'es'; } catch (e) { return false; } }
+  function D() { return (typeof data !== 'undefined' && data) ? data : {}; }
+  function esc(v) { return String(v == null ? '' : v).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function money(v) { try { return fmtMoney(v, { noSign: true }); } catch (e) { return String(Math.round(v)); } }
+  function cur() { var c = String(money(0)).replace(/[\d.,\s -]/g, ''); return c || '£'; }
+  function p2(v) { return ('0' + v).slice(-2); }
+  function hm(ms) { var d = new Date(ms); return p2(d.getHours()) + ':' + p2(d.getMinutes()); }
+  function localDay(ms) { var d = ms ? new Date(ms) : new Date(); return d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()); }
+  function nextMidnight() { var d = new Date(); d.setHours(24, 0, 0, 0); return d.getTime(); }
+  function mentor() { try { return !!new URLSearchParams(location.search).get('mv'); } catch (e) { return false; } }
+  function num(v) { var n = parseFloat(v); return (isFinite(n) && n > 0) ? Math.round(n * 100) / 100 : 0; }
+  function int(v) { var n = parseInt(v, 10); return (isFinite(n) && n > 0) ? n : 0; }
+  function key(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+  function symList(v) { var out = []; (Array.isArray(v) ? v : String(v || '').split(/[\s,;\/]+/)).forEach(function (x) { var k = key(x); if (k && out.indexOf(k) < 0) out.push(k); }); return out; }
+  function accById(id) { return (D().accounts || []).filter(function (a) { return a && a.id === id; })[0] || null; }
+  function loginsOf(acc) { var m = D().mt5LoginMap || {}; return acc ? Object.keys(m).filter(function (k) { return m[k] === acc.id; }).sort() : []; }
+  function resolve(o) {
+    o = o || {}; var acc = null, lg = (o.login != null && o.login !== '') ? String(o.login) : '';
+    if (o.acct) acc = (typeof o.acct === 'object') ? o.acct : accById(String(o.acct));
+    if (!acc && lg) acc = accById((D().mt5LoginMap || {})[lg]);
+    if (!lg && acc) lg = loginsOf(acc)[0] || '';
+    return { acc: acc, lg: lg };
+  }
+  function asArg(a) { return (a && typeof a === 'object' && (a.acct || a.login)) ? a : { acct: a }; }
+
+  // ---- London time and the sessions: Asia (Tokyo), London and New York open at the Session Indicator's times, kept in London time
+  function lonOff(ms) { return tzOff('Europe/London', ms); }
+  function tzOff(tz, ms) {
+    try {
+      var o = {}; new Intl.DateTimeFormat('en-GB', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+        .formatToParts(new Date(ms)).forEach(function (x) { o[x.type] = x.value; });
+      return Math.round((Date.UTC(+o.year, +o.month - 1, +o.day, (+o.hour) % 24, +o.minute) - Math.floor(ms / 60000) * 60000) / 60000);
+    } catch (e) { return 0; }
+  }
+  var SES_DEF = [0, 480, 780];
+  function sesOpens() {
+    var out = SES_DEF.slice();
+    try {
+      var c = (window.__stPractice && window.__stPractice._cfg) ? window.__stPractice._cfg() : null, ms = c && c.miniS, s = ms && ms.ses, tz = ms && ms.tz;
+      var mm = function (v, d) { var m = /^(\d{1,2}):(\d{2})$/.exec(String(v || '').trim()); return (m && +m[1] < 24 && +m[2] < 60) ? (+m[1]) * 60 + (+m[2]) : d; };
+      if (s && (tz == null || tz === '' || tz === 'Europe/London' || +tz === 1)) out = [mm(s[2] && s[2].a, out[0]), mm(s[0] && s[0].a, out[1]), mm(s[1] && s[1].a, out[2])];
+    } catch (e) {}
+    return out;
+  }
+  function segAt(ms) {
+    var op = sesOpens(), off = lonOff(ms), lon = Math.floor(ms / 1000) + off * 60, mid = lon - (((lon % 86400) + 86400) % 86400), best = -1, bj = -1, nb = -1, nj = -1;
+    for (var d = -1; d <= 1; d++) for (var j = 0; j < 3; j++) {
+      var t = mid + d * 86400 + op[j] * 60;
+      if (t <= lon && t > best) { best = t; bj = j; }
+      if (t > lon && (nb < 0 || t < nb)) { nb = t; nj = j; }
+    }
+    return { seg: bj, start: (best - off * 60) * 1000, next: (nb - off * 60) * 1000, nextSeg: nj, opens: op, off: off };
+  }
+  function hhmm(m) { return p2(Math.floor(m / 60)) + ':' + p2(m % 60); }
+  // the account's day, for the daily loss (24 Oct 2026): FTMO resets at midnight in Prague (23:00 London most of the year); another
+  // prop firm at its MT5 server's midnight ("srv": the EA knows it); a personal account at 00:00 London
+  function eaRowsOf(acc) { try { var ls = loginsOf(acc); return (window.__stEA && window.__stEA.summary) ? window.__stEA.summary().filter(function (r) { return ls.indexOf(String(r.login)) >= 0; }) : []; } catch (e) { return []; } }
+  function dayZone(acc) {
+    if (!acc || acc.kind !== 'challenge' || acc.separate) return 'Europe/London';
+    var src = String(acc.name || ''); eaRowsOf(acc).forEach(function (r) { var st = r.settings || {}; src += ' ' + (st.company || '') + ' ' + (st.server || ''); });
+    return /ftmo/i.test(src) ? 'Europe/Prague' : 'srv';
+  }
+  function nextReset(acc, lg) {
+    var z = dayZone(acc), now = Date.now();
+    if (z === 'srv') { var s = lg ? eaFresh(lg) : null; return (s && s.nd * 1000 > now) ? s.nd * 1000 : nextMidnight(); }
+    var off = tzOff(z, now), loc = Math.floor(now / 1000) + off * 60;
+    return (loc - (((loc % 86400) + 86400) % 86400) + 86400 - off * 60) * 1000;
+  }
+  function SN(j) { return j === 0 ? 'Asia' : (j === 1 ? T('London', 'Londres') : (j === 2 ? T('New York', 'Nueva York') : T('the next session', 'la próxima sesión'))); }
+
+  // ---- the rules: what the member set (desired), what is in force today (strictest of this morning's and the set), from tomorrow
+  function moneyOf(rr, mk, pk, ak, sb) {
+    var mode = (rr[mk] === 'amount' || rr[mk] === 'pct') ? rr[mk] : ((rr[ak] > 0 && !(rr[pk] > 0)) ? 'amount' : 'pct');
+    if (mode === 'amount') return +rr[ak] > 0 ? +rr[ak] : 0;
+    var p = +rr[pk]; if (p > 100) return p;
+    return (p > 0 && sb > 0) ? sb * p / 100 : 0;
+  }
+  function desired(acc) {
+    var rr = (acc && acc.riskRules) || {}, sb = +acc.startingBalance > 0 ? +acc.startingBalance : 0;
+    var own = moneyOf(rr, 'maxLossMode', 'maxLossPct', 'maxLossAmount', sb), firm = moneyOf(rr, 'firmDailyMode', 'firmDailyPct', 'firmDailyAmount', sb);
+    var sR = rr.sessLossMode === 'r', oR = rr.openRiskMode === 'r';
+    return { dl: Math.round(((own > 0 && firm > 0) ? Math.min(own, firm) : (own || firm || 0)) * 100) / 100,
+             sl: sR ? 0 : num(rr.sessLossAmount), slr: sR ? num(rr.sessLossR) : 0, sn: int(rr.sessTrades), gp: int(rr.entryGapMin),
+             or: oR ? 0 : num(rr.openRiskAmount), orr: oR ? num(rr.openRiskR) : 0, sy: symList(rr.allowedSymbols), ce: rr.closeElsewhere !== false };
+  }
+  function norm(x) { x = x || {}; return { dl: +x.dl || 0, sl: +x.sl || 0, slr: +x.slr || 0, sn: +x.sn || 0, gp: +x.gp || 0, or: +x.or || 0, orr: +x.orr || 0, sy: Array.isArray(x.sy) ? x.sy.slice() : [], ce: x.ce !== false }; }
+  function minPos(a, b) { return (a > 0 && b > 0) ? Math.min(a, b) : (a > 0 ? a : (b > 0 ? b : 0)); }
+  function strict(a, b) {
+    var sy = !a.sy.length ? b.sy.slice() : (!b.sy.length ? a.sy.slice() : a.sy.filter(function (k) { return b.sy.indexOf(k) >= 0; }));
+    if (a.sy.length && b.sy.length && !sy.length) sy = a.sy.slice();   // a different list altogether: from tomorrow
+    return { dl: minPos(a.dl, b.dl), sl: minPos(a.sl, b.sl), slr: minPos(a.slr, b.slr), sn: minPos(a.sn, b.sn), gp: Math.max(a.gp, b.gp),
+             or: minPos(a.or, b.or), orr: minPos(a.orr, b.orr), sy: sy, ce: !!(a.ce || b.ce) };
+  }
+  function empty(x) { return !(x.dl || x.sl || x.slr || x.sn || x.gp || x.or || x.orr || x.sy.length); }
+  function same(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+  var DIRTY = false;
+  function eff(acc) {
+    var des = desired(acc), day = localDay(), rd = acc.ruleDay, snap;
+    if (!rd || rd.day !== day || !rd.snap) {
+      snap = des;
+      if (!empty(des) || rd) { acc.ruleDay = { day: day, snap: des }; DIRTY = true; }
+    } else snap = norm(rd.snap);
+    var e = strict(snap, des);
+    if (!same(e, snap)) { acc.ruleDay = { day: day, snap: e }; DIRTY = true; }
+    var pend = {}; Object.keys(des).forEach(function (k) { if (!same(des[k], e[k])) pend[k] = des[k]; });
+    return { eff: e, des: des, pend: pend };
+  }
+  // what the EA gets: "k=v;..." - money caps, R caps (the EA turns them into money with its own risk), the break, London's offset and
+  // the sessions' opens; "" when there is nothing
+  function rulesStr(acc) {
+    var x = eff(acc).eff, b = acc.ruleBreak, now = Date.now(), parts = [];
+    if (x.dl > 0) parts.push('dl=' + x.dl);
+    if (x.sl > 0) parts.push('sl=' + x.sl); else if (x.slr > 0) parts.push('slr=' + x.slr);
+    if (x.sn > 0) parts.push('sn=' + x.sn);
+    if (x.gp > 0) parts.push('gp=' + x.gp);
+    if (x.or > 0) parts.push('or=' + x.or); else if (x.orr > 0) parts.push('orr=' + x.orr);
+    if (x.sy.length) parts.push('sy=' + x.sy.join('/'));
+    if (b && b.until > now) { parts.push('bk=' + Math.floor(b.until / 1000)); parts.push('bs=' + Math.floor((b.at || now) / 1000)); }
+    if (!parts.length) return '';
+    var sg = segAt(now), z = dayZone(acc);
+    parts.push('lo=' + sg.off); parts.push('so=' + sg.opens.map(hhmm).join('/')); parts.push('dz=' + (z === 'srv' ? 'srv' : tzOff(z, now))); parts.push('ce=' + (x.ce ? 1 : 0));
+    return parts.join(';');
+  }
+  function oneR(acc) { try { return (window.__stEA && window.__stEA.riskFor) ? (+window.__stEA.riskFor(acc.id) || 0) : 0; } catch (e) { return 0; } }
+  function netToday(acc) { try { return (window.__stNudge && window.__stNudge.netToday) ? (+window.__stNudge.netToday(acc) || 0) : 0; } catch (e) { return 0; } }
+
+  // ---- what each account's EA last said (9.15's "set": the rules in force there and what they say now)
+  var EAS = {};
+  function eaSet(p) {
+    try {
+      if (!p || p.lg == null || !p.st || p.st.ru == null) return;
+      var a = String(p.st.ru).split('|'), lg = String(p.lg), prev = EAS[lg];
+      var n = { at: Date.now(), sym: p.s, rr: String(p.st.rr || ''), lk: +a[0] || 0, lu: +a[1] || 0, ls: +a[2] || 0, dpl: +a[3] || 0, spl: +a[4] || 0, sn: +a[5] || 0,
+                le: +a[6] || 0, ork: +a[7] || 0, nd: +a[8] || 0, seg: a[9] == null ? -1 : +a[9], segN: a[10] == null ? -1 : +a[10], segNext: +a[11] || 0 };
+      EAS[lg] = n;
+      if (!prev || prev.lk !== n.lk || prev.lu !== n.lu || prev.rr !== n.rr) emit();
+    } catch (e) {}
+  }
+  function eaFresh(lg) { var s = EAS[String(lg)]; return (s && Date.now() - s.at < 180000) ? s : null; }
+  function kindOf(lk) { return lk === 1 ? 'day' : (lk === 2 ? 'ses' : 'brk'); }
+
+  // ---- the words
+  function when(ms) {
+    if (!ms) return '';
+    var d = new Date(ms), n = new Date(), t = hm(ms);
+    var dd = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()) - new Date(n.getFullYear(), n.getMonth(), n.getDate())) / 864e5);
+    if (dd <= 0) return T('at ' + t, 'a las ' + t);
+    if (dd === 1) return T('tomorrow at ' + t, 'mañana a las ' + t);
+    var wd = ''; try { wd = d.toLocaleDateString(isEs() ? 'es-ES' : 'en-GB', { weekday: 'long' }); } catch (e) {}
+    return T('on ' + wd + ' at ' + t, 'el ' + wd + ' a las ' + t);
+  }
+  function words(kind, until, x) {
+    x = x || {};
+    if (kind === 'day') return T('Daily loss reached. Trading opens again ' + when(until) + '.', 'Pérdida diaria alcanzada. Puedes volver a operar ' + when(until) + '.');
+    if (kind === 'ses') return T(SN(x.seg) + ' session limit reached. ' + SN(x.segN) + ' opens ' + when(until) + '.', 'Límite de la sesión de ' + SN(x.seg) + ' alcanzado. ' + SN(x.segN) + ' abre ' + when(until) + '.');
+    if (kind === 'brk') return T('On a break. Trading opens again ' + when(until) + '.', 'En pausa. Puedes volver a operar ' + when(until) + '.');
+    if (kind === 'gap') return T('Next entry from ' + hm(until) + (x.gp ? ' (' + x.gp + ' minutes between entries)' : '') + '.', 'Siguiente entrada desde las ' + hm(until) + (x.gp ? ' (' + x.gp + ' minutos entre entradas)' : '') + '.');
+    if (kind === 'risk') return T('This order would put ' + money(x.at) + ' at risk across your open trades, over your ' + money(x.cap) + ' cap.', 'Esta orden pondría ' + money(x.at) + ' en riesgo entre tus operaciones abiertas, por encima de tu límite de ' + money(x.cap) + '.');
+    if (kind === 'sym') return T((x.sym || 'This symbol') + ' isn’t one of the allowed symbols on this account.', (x.sym || 'Este símbolo') + ' no está entre los símbolos permitidos en esta cuenta.');
+    if (kind === 'stop') return T('Every order needs a stop.', 'Cada orden necesita un stop.');
+    return T('Your order rules don’t allow this order.', 'Tus reglas de órdenes no permiten esta orden.');
+  }
+  // an EA's code ("rule:kind:until:extra") in words
+  function codeText(c) {
+    var m = /^rule:([a-z]+):(\d*):?(.*)$/.exec(String(c || '')); if (!m) return words('');
+    var k = m[1], u = (+m[2] || 0) * 1000, ex = m[3] || '', x = {};
+    if (k === 'ses') { var s = ex.split('/'); x.seg = +s[0]; x.segN = +s[1]; }
+    else if (k === 'gap') x.gp = +ex;
+    else if (k === 'risk') { var r = ex.split('/'); x.at = +r[0]; x.cap = +r[1]; }
+    else if (k === 'sym') x.sym = ex;
+    return words(k, u, x);
+  }
+  function refuse(rule, until, x) {
+    x = x || {};
+    var ex = rule === 'ses' ? (x.seg + '/' + x.segN) : (rule === 'gap' ? String(x.gp || '') : (rule === 'risk' ? (Number(x.at).toFixed(2) + '/' + Number(x.cap).toFixed(2)) : (rule === 'sym' ? (x.sym || '') : '')));
+    return { ok: false, kind: (rule === 'day' || rule === 'ses' || rule === 'brk') ? 'lock' : 'order', rule: rule, why: words(rule, until, x), until: until || null,
+             code: 'rule:' + rule + ':' + (until ? Math.floor(until / 1000) : 0) + ':' + ex };
+  }
+
+  // ---- the check: before any new order. The EA checks again, with the account's own figures (it is the last word).
+  function check(o) {
+    o = o || {};
+    var r = resolve(o), acc = r.acc; if (!acc) return { ok: true };
+    var now = Date.now(), x = eff(acc).eff, st = r.lg ? eaFresh(r.lg) : null, b = acc.ruleBreak;
+    if (b && b.until > now) return refuse('brk', b.until);
+    if (st && st.lk > 0 && st.lu * 1000 > now) return refuse(kindOf(st.lk), st.lu * 1000, { seg: st.seg, segN: st.segN });
+    if (!st && x.dl > 0 && netToday(acc) <= -x.dl) return refuse('day', nextReset(acc, r.lg));
+    if (x.sy.length && o.symbol) { var k = key(o.symbol); if (!x.sy.some(function (s) { return k.indexOf(s) === 0 || s.indexOf(k) === 0; })) return refuse('sym', null, { sym: String(o.symbol) }); }
+    if (x.gp > 0 && st && st.le > 0 && now < (st.le + x.gp * 60) * 1000) return refuse('gap', (st.le + x.gp * 60) * 1000, { gp: x.gp });
+    var one = oneR(acc), cap = minPos(x.or, (x.orr > 0 && one > 0) ? x.orr * one : 0);
+    var risk = +o.riskMoney > 0 ? +o.riskMoney : ((+o.riskR > 0 && one > 0) ? o.riskR * one : one);
+    if (cap > 0 && st && risk > 0 && st.ork + risk > cap + 0.005) return refuse('risk', null, { at: st.ork + risk, cap: cap });
+    return { ok: true };
+  }
+  function state(a) {
+    var r = resolve(asArg(a)), acc = r.acc; if (!acc) return null;
+    var e = eff(acc), now = Date.now(), locks = [], b = acc.ruleBreak, anyEA = false;
+    if (b && b.until > now) locks.push({ kind: 'brk', until: b.until, start: b.at || null, why: words('brk', b.until) });
+    loginsOf(acc).forEach(function (lg) {
+      var s = eaFresh(lg); if (!s) return; anyEA = true;
+      if (!(s.lk > 0 && s.lu * 1000 > now)) return;
+      var k = kindOf(s.lk); if (locks.some(function (l) { return l.kind === k; })) return;
+      locks.push({ kind: k, until: s.lu * 1000, start: s.ls * 1000, login: lg, why: words(k, s.lu * 1000, { seg: s.seg, segN: s.segN }) });
+    });
+    if (!anyEA && e.eff.dl > 0 && !locks.some(function (l) { return l.kind === 'day'; }) && netToday(acc) <= -e.eff.dl) { var nr = nextReset(acc, r.lg); locks.push({ kind: 'day', until: nr, start: null, why: words('day', nr) }); }
+    locks.sort(function (p, q) { return q.until - p.until; });
+    var ds = rulesStr(acc), synced = loginsOf(acc).every(function (lg) { var s = EAS[lg]; return s ? s.rr === ds : ds === ''; });
+    return { locks: locks, locked: locks.length > 0, rules: e.eff, wanted: e.des, pending: e.pend, brk: (b && b.until > now) ? b : null, synced: synced, sent: ds };
+  }
+  function breakFor(a, kind) {
+    if (mentor()) return null;
+    var r = resolve(asArg(a)), acc = r.acc; if (!acc) return null;
+    var now = Date.now(), u = 0;
+    if (kind === '1h' || kind === '2h' || kind === '4h') u = now + parseInt(kind, 10) * 3600000;
+    else if (kind === 'session') u = segAt(now).next;
+    else if (kind === 'tomorrow') u = nextMidnight();
+    if (!(u > now)) return null;
+    var b = acc.ruleBreak;
+    if (b && b.until > now && b.until >= u) return b;   // a break is never cut short
+    acc.ruleBreak = { until: u, at: (b && b.until > now) ? (b.at || now) : now, kind: kind };
+    save(); want(); push(); emit();
+    return acc.ruleBreak;
+  }
+
+  // ---- the rules to the EAs: to one EA (9.15 or newer) of each MT5 login, whenever what it says differs from what is in force
+  var SENT = {}, WANT_UNTIL = 0;
+  function want() { WANT_UNTIL = Date.now() + 180000; }
+  function eaFor(lg) {
+    var L = window.__stLiveLine, m = (L && L.easL) ? L.easL() : {}, best = null;
+    Object.keys(m).forEach(function (k) {
+      var i = k.lastIndexOf('|'), e = m[k]; if (best || k.slice(i + 1) !== String(lg) || !e) return;
+      if (!(parseFloat(e.v) >= 9.15) || Date.now() - (e.at || 0) > 900000) return;
+      best = { sym: k.slice(0, i), v: e.v };
+    });
+    return best;
+  }
+  function push() {
+    if (mentor()) return;
+    var tm = window.__stTM; if (!tm || !tm.acct) return;
+    (D().accounts || []).forEach(function (acc) {
+      if (!acc) return; var ds = null;
+      loginsOf(acc).forEach(function (lg) {
+        var ea = eaFor(lg); if (!ea) return;
+        if (ds === null) ds = rulesStr(acc);
+        var s = EAS[lg]; if (s && s.rr === ds) return;
+        if (!s && ds === '') return;                       // nothing to say, and nothing known there yet
+        var k = lg + '|' + ds; if (SENT[k] && Date.now() - SENT[k] < 20000) return; SENT[k] = Date.now();
+        tm.acct({ a: 'rules', login: lg, sym: ea.sym, cp: ds, minV: 9.15, anyTm: true }).then(function (res) {
+          if (res && res.ok) { var y = EAS[lg] || (EAS[lg] = { at: 0, lk: 0, lu: 0 }); y.rr = ds; emit(); }
+        }, function () {});
+      });
+    });
+  }
+  function wantLine() {
+    if (mentor() || Date.now() > WANT_UNTIL) return false;
+    return (D().accounts || []).some(function (acc) {
+      return acc && loginsOf(acc).some(function (lg) { var s = EAS[lg], ds = rulesStr(acc); return (ds !== '' && (!s || s.rr !== ds)) || (s && s.rr !== ds); });
+    });
+  }
+
+  // ---- saving, telling the rest of the app
+  var saveT = 0;
+  function save() { DIRTY = false; if (mentor()) return; clearTimeout(saveT); saveT = setTimeout(function () { try { saveData(); } catch (e) {} }, 300); }
+  var emitT = 0;
+  function emit() {
+    clearTimeout(emitT);
+    emitT = setTimeout(function () {
+      try { window.dispatchEvent(new CustomEvent('st-rules-change')); } catch (e) {}
+      Object.keys(NODES).forEach(function (id) { var a = accById(id); if (a && NODES[id].isConnected) paint(NODES[id], a); });
+    }, 50);
+  }
+
+  // ---- Settings -> Accounts -> an account's rules: the "Order rules" rows (one node per account, kept, so typing survives a redraw)
+  var NODES = {}, SURE = {};
+  function row(label, hint, right, cls) { return '<div class="set-row' + (cls ? ' ' + cls : '') + '"><div class="set-l"><span class="settings-label">' + label + '</span>' + (hint ? '<p class="settings-hint">' + hint + '</p>' : '') + '</div><div class="set-r sacc-r">' + right + '</div></div>'; }
+  function box(f, v, ph, step, tail) { return '<div class="settings-risk-input-row"><input type="number" class="settings-input settings-input-compact" data-ru="' + f + '" value="' + esc(v > 0 ? v : '') + '" placeholder="' + esc(ph) + '" min="0" step="' + step + '" inputmode="decimal">' + (tail || '') + '</div>'; }
+  function unit(f, mode) { return '<span class="sacc-seg ru-unit" role="group"><button type="button" data-ru-mode="' + f + '" data-v="amount" aria-pressed="' + (mode !== 'r') + '">' + esc(cur()) + '</button><button type="button" data-ru-mode="' + f + '" data-v="r" aria-pressed="' + (mode === 'r') + '">R</button></span>'; }
+  function nextTxt(k, v, x) {
+    if (k === 'sy') return v.length ? v.join(', ') : T('any symbol', 'cualquier símbolo');
+    if (k === 'ce') return v ? T('on', 'activado') : T('off', 'desactivado');
+    if (!(v > 0)) return T('off', 'desactivado');
+    if (k === 'dl' || k === 'sl' || k === 'or') return money(v);
+    if (k === 'slr' || k === 'orr') return v + 'R';
+    if (k === 'gp') return v + ' min';
+    return String(v);
+  }
+  function soon(st, keys) {
+    var bits = keys.filter(function (k) { return k in st.pending; }).map(function (k) { return nextTxt(k, st.pending[k]); });
+    return bits.length ? '<small class="ru-next">' + esc(T('From tomorrow: ', 'Desde mañana: ') + bits.join(' · ')) + '</small>' : '';
+  }
+  function html(acc) {
+    var st = state(acc) || { locks: [], rules: norm({}), pending: {} }, rr = acc.riskRules || {}, x = st.rules, now = Date.now();
+    var head = st.locked ? '<span class="ru-st lock">' + esc(T('Locked', 'Bloqueada')) + '</span>' : '<span class="ru-st open">' + esc(T('Trading open', 'Operativa abierta')) + '</span>';
+    var h = '<div class="sacc-sub"><span>' + T('Order rules', 'Reglas de órdenes') + '</span>' + head + '</div>';
+    if (st.locked) h += '<p class="set-sub ru-lockline">' + esc(st.locks[0].why) + '</p>';
+    h += '<p class="set-sub">' + T('Your Trade Manager refuses an order that breaks one of these, and so does your EA in MT5. Stricter counts at once; looser from your next day.', 'Tu Trade Manager rechaza una orden que incumple alguna de estas, y tu EA en MT5 también. Más estricta cuenta al momento; más suelta, desde tu próximo día.') + '</p>';
+    var dzn = dayZone(acc), dzw = dzn === 'Europe/Prague' ? T('the day resets at midnight in Prague (' + hm(nextReset(acc)) + ' your time), as FTMO’s does', 'el día se reinicia a medianoche en Praga (las ' + hm(nextReset(acc)) + ' en tu hora), como el de FTMO')
+      : (dzn === 'srv' ? T('your firm’s day resets, at its MT5 server’s midnight', 'se reinicia el día de tu firma, a medianoche de su servidor MT5') : T('midnight in London', 'medianoche en Londres'));
+    h += row(T('Daily loss lock', 'Bloqueo por pérdida diaria'), T('When today’s loss reaches your max daily drawdown above, new trades lock until ' + dzw + '. Nothing lifts it.', 'Cuando la pérdida de hoy llega a tu drawdown diario máximo de arriba, las operaciones nuevas se bloquean hasta que ' + dzw + '. Nada lo levanta.'),
+      '<span class="sacc-val">' + (x.dl > 0 ? esc(money(x.dl)) : esc(T('Off', 'Desactivado'))) + (x.dl > 0 ? '' : '<small>' + esc(T('Set Max daily drawdown above', 'Fija el drawdown diario máximo arriba')) + '</small>') + soon(st, ['dl']) + '</span>');
+    var sm = rr.sessLossMode === 'r' ? 'r' : 'amount';
+    h += row(T('Loss per session', 'Pérdida por sesión'), T('Reach it and new trades lock until the next session opens (Asia, London, New York). Nothing lifts it.', 'Al llegar, las operaciones nuevas se bloquean hasta que abre la próxima sesión (Asia, Londres, Nueva York). Nada lo levanta.'),
+      box('sessLoss', sm === 'r' ? rr.sessLossR : rr.sessLossAmount, sm === 'r' ? '2' : '300', sm === 'r' ? '0.5' : '1', unit('sessLossMode', sm)) + soon(st, ['sl', 'slr']));
+    h += row(T('Trades per session', 'Operaciones por sesión'), T('After this many entries in a session, new trades lock until the next session opens.', 'Tras este número de entradas en una sesión, las operaciones nuevas se bloquean hasta que abre la próxima.'),
+      box('sessTrades', rr.sessTrades, '2', '1') + soon(st, ['sn']));
+    h += row(T('Time between entries', 'Tiempo entre entradas'), T('Minutes after an entry before the next one. Refuses only that order. Empty: off.', 'Minutos tras una entrada antes de la siguiente. Rechaza solo esa orden. Vacío: desactivado.'),
+      box('entryGapMin', rr.entryGapMin, '15', '1', '<span class="settings-risk-suffix">min</span>') + soon(st, ['gp']));
+    var om = rr.openRiskMode === 'r' ? 'r' : 'amount';
+    h += row(T('Max open risk', 'Riesgo abierto máximo'), T('The money at risk across your open trades, this order included. Refuses only that order. Empty: off.', 'El dinero en riesgo entre tus operaciones abiertas, esta orden incluida. Rechaza solo esa orden. Vacío: desactivado.'),
+      box('openRisk', om === 'r' ? rr.openRiskR : rr.openRiskAmount, om === 'r' ? '2' : '1000', om === 'r' ? '0.5' : '1', unit('openRiskMode', om)) + soon(st, ['or', 'orr']));
+    h += row(T('Allowed symbols', 'Símbolos permitidos'), T('Orders on any other symbol are refused. Empty: any symbol.', 'Las órdenes en cualquier otro símbolo se rechazan. Vacío: cualquier símbolo.'),
+      '<div class="settings-risk-input-row"><input type="text" class="settings-input settings-input-compact ru-syms" data-ru="allowedSymbols" value="' + esc(symList(rr.allowedSymbols).join(', ')) + '" placeholder="EURUSD, XAUUSD" autocomplete="off" spellcheck="false"></div>' + soon(st, ['sy']));
+    h += row(T('Close trades opened elsewhere while locked', 'Cerrar operaciones abiertas fuera mientras está bloqueada'), T('A trade opened from MT5’s phone app during a lock is closed by your EA at once, and orders still waiting are cancelled when the lock starts.', 'Una operación abierta desde la app de MT5 del móvil durante un bloqueo la cierra tu EA al momento, y las órdenes en espera se cancelan cuando empieza el bloqueo.'),
+      '<label class="tk-switch"><input type="checkbox" data-ru="closeElsewhere"' + (rr.closeElsewhere !== false ? ' checked' : '') + '><span class="tk-switch-track"><span class="tk-switch-knob"></span></span></label>' + soon(st, ['ce']));
+    var b = st.brk, sure = SURE[acc.id] && now - SURE[acc.id].at < 5000 ? SURE[acc.id].k : '';
+    var KB = [['1h', '1 h'], ['2h', '2 h'], ['4h', '4 h'], ['session', T('Next session', 'Próxima sesión')], ['tomorrow', T('Tomorrow', 'Mañana')]];
+    h += row(T('Take a break', 'Tomar un descanso'), b ? esc(T('New trades are locked until it ends. It can’t be undone.', 'Las operaciones nuevas están bloqueadas hasta que acabe. No se puede deshacer.'))
+        : (sure ? esc(T('Press it again to start. It can’t be undone.', 'Púlsalo otra vez para empezar. No se puede deshacer.')) : esc(T('Locks new trades until it ends. It can’t be undone.', 'Bloquea las operaciones nuevas hasta que acabe. No se puede deshacer.'))),
+      b ? '<span class="sacc-val">' + esc(T('On a break', 'En pausa')) + '<small>' + esc(T('Trading opens again ' + when(b.until), 'Puedes volver a operar ' + when(b.until))) + '</small></span>'
+        : '<span class="sacc-seg ru-brk" role="group">' + KB.map(function (o) { return '<button type="button" data-ru-break="' + o[0] + '" aria-pressed="' + (sure === o[0]) + '">' + esc(sure === o[0] ? T('Start ', 'Empezar ') + o[1] : o[1]) + '</button>'; }).join('') + '</span>');
+    if (!st.synced && loginsOf(acc).length) h += '<p class="set-sub ru-sync">' + esc(T('Reaches your EA in MT5 the next time it’s connected (EA 9.15 or newer).', 'Llega a tu EA en MT5 la próxima vez que esté conectado (EA 9.15 o posterior).')) + '</p>';
+    return h;
+  }
+  function paint(el, acc) {
+    var ae = document.activeElement; if (ae && el.contains(ae) && /INPUT|SELECT|TEXTAREA/.test(ae.tagName)) return;   // never under a field being typed in
+    el.innerHTML = html(acc);
+  }
+  function node(acc) {
+    var el = NODES[acc.id];
+    if (!el) { el = NODES[acc.id] = document.createElement('div'); el.className = 'ru-block'; el.setAttribute('data-ru-acc', acc.id); }
+    paint(el, acc); return el;
+  }
+  function changed(acc) { eff(acc); save(); want(); push(); emit(); }
+  document.addEventListener('change', function (e) {
+    var t = e.target, bx = t && t.closest && t.closest('[data-ru-acc]'); if (!bx || mentor()) return;
+    var f = t.getAttribute('data-ru'); if (!f) return;
+    var acc = accById(bx.getAttribute('data-ru-acc')); if (!acc) return;
+    var rr = acc.riskRules || (acc.riskRules = {}), v = t.type === 'checkbox' ? t.checked : String(t.value).trim();
+    var setN = function (k, isInt) { var n = isInt ? int(v) : num(v); if (n > 0) rr[k] = n; else delete rr[k]; };
+    if (f === 'sessLoss') setN(rr.sessLossMode === 'r' ? 'sessLossR' : 'sessLossAmount');
+    else if (f === 'openRisk') setN(rr.openRiskMode === 'r' ? 'openRiskR' : 'openRiskAmount');
+    else if (f === 'sessTrades' || f === 'entryGapMin') setN(f, true);
+    else if (f === 'allowedSymbols') { var l = symList(v); if (l.length) rr.allowedSymbols = l; else delete rr.allowedSymbols; }
+    else if (f === 'closeElsewhere') rr.closeElsewhere = !!v;
+    else return;
+    try { t.blur(); } catch (er) {}
+    changed(acc);
+  });
+  document.addEventListener('click', function (e) {
+    var t = e.target, bx = t && t.closest && t.closest('[data-ru-acc]'); if (!bx || mentor()) return;
+    var acc = accById(bx.getAttribute('data-ru-acc')); if (!acc) return;
+    var b = t.closest('[data-ru-mode]');
+    if (b) { var rr = acc.riskRules || (acc.riskRules = {}); rr[b.getAttribute('data-ru-mode')] = b.getAttribute('data-v') === 'r' ? 'r' : 'amount'; changed(acc); return; }
+    b = t.closest('[data-ru-break]');
+    if (b) {
+      var k = b.getAttribute('data-ru-break'), s = SURE[acc.id];
+      if (!s || s.k !== k || Date.now() - s.at > 5000) { SURE[acc.id] = { k: k, at: Date.now() }; paint(bx, acc); setTimeout(function () { if (SURE[acc.id] && SURE[acc.id].k === k) { delete SURE[acc.id]; paint(bx, acc); } }, 5100); return; }
+      delete SURE[acc.id]; breakFor(acc, k); return;
+    }
+  });
+
+  // ---- every 3 seconds: the rules to the EAs, a lock that ended, the new day
+  var lastDay = localDay(), lastLockKey = '';
+  setInterval(function () {
+    try {
+      if (localDay() !== lastDay) { lastDay = localDay(); want(); emit(); }
+      var lk = (D().accounts || []).map(function (a) { var s = a && state(a); return s && s.locked ? a.id + ':' + s.locks[0].until : ''; }).join(',');
+      if (lk !== lastLockKey) { lastLockKey = lk; emit(); }
+      if (DIRTY) save();
+      push();
+    } catch (e) {}
+  }, 3000);
+  setTimeout(want, 4000);
+
+  window.__stRules = { check: check, state: state, breakFor: breakFor, codeText: codeText, words: words, node: node, html: html,
+                       _eaSet: eaSet, _wantLine: wantLine, _dayZone: dayZone, _nextReset: nextReset, _push: push, _rulesStr: rulesStr, _segAt: segAt, _eas: function () { return EAS; }, _eff: eff };
+})();
+</script>
+<script>
 /* ---- Settings -> Accounts, the opened account (23 Oct 2026, Nestor's v3 mockup: "build the accounts tab"). Each account's
    line (renderSettingsAccountsList) opens to: what MT5 says about it (its broker, server, first deposit - EA 9.12), its type
    and stage, its MT5 accounts (where each runs, trading from the app, the copier, its charts), its firm's rules (filled in
@@ -79487,10 +79893,12 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
         + (edit ? '' : sum) + '<div class="sacc-rows" data-rows="firm"' + (edit ? '' : ' hidden') + '></div>'
         + '<div class="sacc-sub"><span>' + T('Your rules', 'Tus reglas') + '</span></div>' + eaPanelLine(acc)
       : '<div class="sacc-sub"><span>' + T('Rules', 'Reglas') + '</span></div>' + eaPanelLine(acc) + '<div class="sacc-rows" data-rows="firm"></div>')
-      + '<div class="sacc-rows" data-rows="own"></div>';
+      + '<div class="sacc-rows" data-rows="own"></div>' + '<div data-slot="orules"></div>';
     var fb = el.querySelector('[data-rows="firm"]'), ob = el.querySelector('[data-rows="own"]');
     OWN_IDS.forEach(function (id) { var r = rowOf(id); if (r) ob.appendChild(r); });
     FIRM_IDS.forEach(function (id) { var r = rowOf(id); if (r) (prop ? fb : ob).appendChild(r); });
+    // the order rules (24 Oct 2026): the locks and limits the Trade Manager and the EA keep to
+    try { var os = el.querySelector('[data-slot="orules"]'); if (os && window.__stRules) os.appendChild(window.__stRules.node(acc)); } catch (e) {}
   }
   function payoutsFill(it, acc) {
     var el = it.querySelector('[data-slot="payouts"]'); if (!el) return;
@@ -79766,6 +80174,9 @@ window.__stTM = (function () {
   // or 'l' / 's' and the entry), 'cfg' the panel's settings (cp: 'k=v;k=v') - to the EA on that symbol's chart and account
   function acct(o) {
     if (mentor() || gated()) return Promise.resolve({ ok: false, why: 'mv' });
+    // the account's order rules (24 Oct 2026): a lock or a limit refuses a new order here first, in the EA's words
+    if (o.a === 'open' && window.__stRules) { var rc = null; try { rc = window.__stRules.check({ login: o.login, symbol: o.sym, riskMoney: o.riskMoney, riskR: o.riskR }); } catch (e) {}
+      if (rc && !rc.ok) return Promise.resolve({ ok: false, why: rc.code, rule: rc }); }
     if (!token()) return Promise.resolve({ ok: false, why: 'token' });
     var ln = window.__stLiveLine; if (!ln || !ln.joined || !ln.joined()) return Promise.resolve({ ok: false, why: 'line' });
     var ea = eaOf({ symbol: o.sym, login: o.login }); if (!ea) return Promise.resolve({ ok: false, why: 'noea' });
@@ -79804,7 +80215,8 @@ window.__stTM = (function () {
     price: ['That price was not valid.', 'Ese precio no era válido.'],
     atbe: ['The stop is at break-even already.', 'El stop ya está en break-even.'],
     notbe: ['The price has to pass break-even first.', 'El precio tiene que pasar el break-even primero.'] };
-  function whyTxt(w) { var x = WHY[w]; if (x) return T2(x[0], x[1]); if (/algo trading/i.test(String(w || ''))) return T2('Algo Trading is off in MT5, so orders from here are not placed. Turn it on with the Algo Trading button in MT5\'s toolbar (it turns green), then place the trade again.', 'Algo Trading está apagado en MT5, así que las órdenes desde aquí no se colocan. Actívalo con el botón Algo Trading de la barra de MT5 (se pone verde) y vuelve a colocar la operación.');   // the EA's "Trading not allowed - enable Algo Trading."
+  function whyTxt(w) { if (/^rule:/.test(String(w || ''))) { try { return window.__stRules.codeText(w); } catch (e) {} }   // an order rule (EA 9.15)
+    var x = WHY[w]; if (x) return T2(x[0], x[1]); if (/algo trading/i.test(String(w || ''))) return T2('Algo Trading is off in MT5, so orders from here are not placed. Turn it on with the Algo Trading button in MT5\'s toolbar (it turns green), then place the trade again.', 'Algo Trading está apagado en MT5, así que las órdenes desde aquí no se colocan. Actívalo con el botón Algo Trading de la barra de MT5 (se pone verde) y vuelve a colocar la operación.');   // the EA's "Trading not allowed - enable Algo Trading."
     return w ? T2('MT5 refused it: ', 'MT5 lo rechazó: ') + w : ''; }
   var DONE = { tobe: ['Moved to BE', 'Movido a BE'], close: ['Closed', 'Cerrada'], sl: ['SL moved', 'SL movido'], tp: ['TP moved', 'TP movido'], be: ['BE line moved', 'Línea BE movida'], ts: ['Step moved', 'Paso movido'], pc: ['Step moved', 'Paso movido'] };
   // MT5's state and Close trade, for a trade's card and for Live Charts
@@ -94496,6 +94908,9 @@ window.__stAZ = (function () {
     else if (x && x.al === true) { if (EM.shut && /Algo Trading/.test(EM.shut)) EM.shut = null; if (EM.k === 'algo' || /Algo Trading (is off|está apagado)/.test(EM.t)) eaMsgOff(); }   // on again: its warning and any refusal for it go
     else eaMsgOff('algo'); }   // not known (an EA before 9.06): an answer MT5 gave stays until closed
   function lvFire(v){ if (lvHoldable()) return lvHoldStart(v); var why = lvTradeWhy(); if (why) { var e0 = lvOwnEA(); eaMsg(why, { k: 'pre', head: T('Order not sent', 'Orden no enviada') + (e0 ? ' · ' + e0.raw : ''), red: true }); return false; } var e = lvOwnEA(), dg = lvDg();
+    // the account's order rules (24 Oct 2026): a lock or a limit, said on the chart - not an error, so not in red
+    var rc = null; try { rc = window.__stRules ? window.__stRules.check({ login: e.lg, symbol: e.raw }) : null; } catch (er) {}
+    if (rc && !rc.ok) { eaMsg(rc.why, { k: 'pre', head: T('Order not sent', 'Orden no enviada') + ' · ' + e.raw, red: false }); return false; }
     var o = LV.ord = { st: 'sent', dir: v.dir, lots: lotsFor(v.rd), sym: e.raw, at: Date.now(), kind: v.kind || null, setup: String(CFG.lvSetup || ''), why: PL.why || '' };   // setup + why (plTagFill)
     S.exec = false; S.pv = null; render();
     window.__stTM.acct({ login: e.lg, sym: e.raw, a: 'open', cp: v.sl.toFixed(dg), ci: v.kind ? (v.kind === 'limit' ? 'l' : 's') + v.entry.toFixed(dg) : 'm' }).then(function(r){

@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "9.14"
+#property version   "9.15"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -1118,6 +1118,325 @@ bool DayLimitReached()
    return (g_tradesToday>=g_maxTradesDay);
   }
 
+//==================================================================
+//  v9.15 ORDER RULES (Nestor, 24 Oct 2026: "the daily loss hit you cant lift it ... block myself for the next 4 hours and it
+//  unlocks for the NY session again"). Session Terminal sends this account's rules ("rules", signed with the sync token) and this
+//  EA refuses an order that breaks one, saying why ("rule:kind:until:extra" in its answer, plain words on the chart).
+//  - Locks stop every new entry until they end, and nothing here lifts them early - a later win neither: the daily loss
+//    (until the next day), a session's loss or number of trades (until the next session opens - Asia, London, New York, at the
+//    Session Indicator's times in London time), and a break the member took (1 h / 2 h / 4 h / the next session / tomorrow).
+//  - The others refuse only that order: the time between entries, the money at risk across open trades, the allowed symbols.
+//  - Closing and managing an open trade is never blocked.
+//  - While locked, a trade opened anywhere else (MT5's phone app) is closed at once, and the orders still waiting are cancelled
+//    when the lock starts - with "close trades opened elsewhere" on (each account's switch, on unless switched off; Nestor said
+//    yes to that, 24 Oct 2026).
+//  - Making a rule looser reaches this EA only from the next trading day (the app keeps the stricter one until then).
+//  Every chart of the account shares one copy of the rules: a file in this terminal's MQL5\Files, read every 2 seconds.
+//==================================================================
+string g_ruRaw="";            // the rules as the app sent them ("k=v;k=v"); "" = none
+uint   g_ruFileChk=0;
+double g_ruDayLoss=0, g_ruSesLoss=0, g_ruSesLossR=0, g_ruOpenRisk=0, g_ruOpenRiskR=0;
+int    g_ruSesTrades=0, g_ruGapMin=0, g_ruLonOff=0;
+string g_ruSyms="";           // "/EURUSD/XAUUSD/" - "" = any symbol
+bool   g_ruCloseElse=true;
+long   g_ruBreakUntil=0, g_ruBreakSet=0;   // UTC
+int    g_ruOpen[3]={0,480,780};            // Asia, London, New York open: minutes after London midnight
+bool   g_ruHasSes=false;
+// the account's day for the daily loss (24 Oct 2026): "dz" - minutes the reset's time zone is ahead of UTC now (FTMO: midnight in
+// Prague; a personal account: midnight in London; the app sends it again when the clocks change), "srv" - the broker server's
+// midnight (another prop firm), none - this EA's own day (as its daily trade limit)
+int    g_ruDz=0; bool g_ruHasDz=false, g_ruDzSrv=false;
+// worked out once a second (RulesEval): the lock in force (0 none, 1 the day, 2 the session, 3 a break), until and since (UTC)
+int    g_ruLk=0, g_ruLkWas=0; long g_ruLkUntil=0, g_ruLkStart=0;
+long   g_ruLkStartK[4]={0,0,0,0}, g_ruLkUntilK[4]={0,0,0,0};
+double g_ruDpl=0, g_ruSpl=0, g_ruOrk=0; int g_ruSn=0, g_ruSeg=-1, g_ruSegN=-1;
+long   g_ruLastEntry=0, g_ruNextDay=0, g_ruSegNext=0;
+string g_ruCode="";           // why the last order was refused, for the app's answer
+uint   g_ruEvalMs=0;
+ulong  g_ruTriedTk[]; long g_ruTriedAt[];   // trades already asked to close while locked, and when
+
+string RuFile(){ return "st_rules_"+IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN))+".txt"; }
+string RuKey(string f){ return "STRU_"+IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN))+"_"+f; }
+string RuSymKey(string s)
+  {
+   string u=s; StringToUpper(u); string o="";
+   for(int i=0;i<StringLen(u);i++){ ushort c=StringGetCharacter(u,i); if((c>='A' && c<='Z') || (c>='0' && c<='9')) o+=ShortToString(c); }
+   return o;
+  }
+int RuHHMM(string v,int def)
+  {
+   int c=StringFind(v,":"); if(c<=0) return def;
+   int h=(int)StringToInteger(StringSubstr(v,0,c)), m=(int)StringToInteger(StringSubstr(v,c+1));
+   if(h<0 || h>23 || m<0 || m>59) return def;
+   return h*60+m;
+  }
+string RuSesName(int j){ return (j==0) ? "Asia" : ((j==1) ? "London" : ((j==2) ? "New York" : "the next session")); }
+void RulesParse(string raw)
+  {
+   g_ruRaw=raw; g_ruDayLoss=0; g_ruSesLoss=0; g_ruSesLossR=0; g_ruOpenRisk=0; g_ruOpenRiskR=0; g_ruSesTrades=0; g_ruGapMin=0;
+   g_ruSyms=""; g_ruCloseElse=true; g_ruBreakUntil=0; g_ruBreakSet=0; g_ruLonOff=0; g_ruHasSes=false; g_ruDz=0; g_ruHasDz=false; g_ruDzSrv=false;
+   g_ruOpen[0]=0; g_ruOpen[1]=480; g_ruOpen[2]=780;
+   string kv[]; int n=StringSplit(raw,';',kv);
+   for(int i=0;i<n;i++)
+     {
+      int e=StringFind(kv[i],"="); if(e<=0) continue;
+      string k=StringSubstr(kv[i],0,e), v=StringSubstr(kv[i],e+1); double d=StringToDouble(v);
+      if(k=="dl") g_ruDayLoss=MathMax(0.0,d);
+      else if(k=="sl") g_ruSesLoss=MathMax(0.0,d);
+      else if(k=="slr") g_ruSesLossR=MathMax(0.0,d);
+      else if(k=="sn") g_ruSesTrades=(int)MathMax(0.0,d);
+      else if(k=="gp") g_ruGapMin=(int)MathMax(0.0,d);
+      else if(k=="or") g_ruOpenRisk=MathMax(0.0,d);
+      else if(k=="orr") g_ruOpenRiskR=MathMax(0.0,d);
+      else if(k=="sy")
+        {
+         string a[]; int m=StringSplit(v,'/',a); string s="/";
+         for(int j=0;j<m;j++){ string x=RuSymKey(a[j]); if(StringLen(x)>0) s+=x+"/"; }
+         g_ruSyms=(StringLen(s)>1) ? s : "";
+        }
+      else if(k=="ce") g_ruCloseElse=(d!=0);
+      else if(k=="bk") g_ruBreakUntil=(long)StringToInteger(v);
+      else if(k=="bs") g_ruBreakSet=(long)StringToInteger(v);
+      else if(k=="lo") g_ruLonOff=(int)StringToInteger(v);
+      else if(k=="dz"){ if(v=="srv") g_ruDzSrv=true; else { g_ruDz=(int)StringToInteger(v); g_ruHasDz=true; } }
+      else if(k=="so")
+        {
+         string a[]; int m=StringSplit(v,'/',a);
+         if(m==3){ for(int j=0;j<3;j++) g_ruOpen[j]=RuHHMM(a[j],g_ruOpen[j]); g_ruHasSes=true; }
+        }
+     }
+  }
+void RulesSave(string raw)
+  {
+   int h=FileOpen(RuFile(),FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_SHARE_READ);
+   if(h==INVALID_HANDLE){ Print("Session Terminal rules: could not write ",RuFile()," (",GetLastError(),")"); return; }
+   FileWriteString(h,raw); FileClose(h);
+  }
+// the account's rules as another chart of it saved them (every 2 s)
+void RulesLoad(bool force)
+  {
+   uint now=GetTickCount(); if(!force && g_ruFileChk!=0 && now-g_ruFileChk<2000) return; g_ruFileChk=now;
+   string raw="";
+   if(FileIsExist(RuFile()))
+     {
+      int h=FileOpen(RuFile(),FILE_READ|FILE_TXT|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE);
+      if(h==INVALID_HANDLE) return;                 // being written: next time
+      while(!FileIsEnding(h)) raw+=FileReadString(h);
+      FileClose(h);
+      StringTrimLeft(raw); StringTrimRight(raw);
+     }
+   if(raw!=g_ruRaw){ RulesParse(raw); g_ruEvalMs=0; }   // the app hears it with the next "set"
+  }
+// one R in money: this chart's risk setting (none on fixed lots)
+double RuOneR(){ return (g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0 : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0); }
+double RuSesLossMoney(){ if(g_ruSesLoss>0) return g_ruSesLoss; double r=RuOneR(); return (g_ruSesLossR>0 && r>0) ? g_ruSesLossR*r : 0.0; }
+double RuOpenRiskMoney(){ if(g_ruOpenRisk>0) return g_ruOpenRisk; double r=RuOneR(); return (g_ruOpenRiskR>0 && r>0) ? g_ruOpenRiskR*r : 0.0; }
+// the money a position still risks to its stop (none past break-even, none without a stop)
+double RuPosRisk(ulong tk)
+  {
+   if(!PositionSelectByTicket(tk)) return 0.0;
+   string s=PositionGetString(POSITION_SYMBOL);
+   double op=PositionGetDouble(POSITION_PRICE_OPEN), sl=PositionGetDouble(POSITION_SL), vol=PositionGetDouble(POSITION_VOLUME);
+   if(sl<=0) return 0.0;
+   double dist=(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY) ? (op-sl) : (sl-op);
+   if(dist<=0) return 0.0;
+   double tv=SymbolInfoDouble(s,SYMBOL_TRADE_TICK_VALUE_LOSS), ts=SymbolInfoDouble(s,SYMBOL_TRADE_TICK_SIZE);
+   if(tv<=0) tv=SymbolInfoDouble(s,SYMBOL_TRADE_TICK_VALUE);
+   if(tv<=0 || ts<=0) return 0.0;
+   return dist/ts*tv*vol;
+  }
+void RulesEval(bool force)
+  {
+   uint nowMs=GetTickCount();
+   if(!force && g_ruEvalMs!=0 && nowMs-g_ruEvalMs<1000) return;
+   g_ruEvalMs=nowMs;
+   g_ruLk=0; g_ruLkUntil=0; g_ruLkStart=0;
+   if(StringLen(g_ruRaw)==0){ g_ruDpl=0; g_ruSpl=0; g_ruSn=0; g_ruOrk=0; g_ruLastEntry=0; g_ruSeg=-1; g_ruSegN=-1; g_ruSegNext=0; return; }
+   long off=BrokerOff(), nowUtc=(long)TimeGMT(), dayUtc;
+   if(g_ruDzSrv){ long srv=nowUtc+off; dayUtc=srv-(srv%86400)-off; }                                         // the server's midnight
+   else if(g_ruHasDz){ long z=nowUtc+(long)g_ruDz*60; dayUtc=z-(z%86400)-(long)g_ruDz*60; }                  // midnight where the account's day resets
+   else dayUtc=(long)UserDayStartServer()-off;                                                               // this EA's own day
+   datetime dayStart=(datetime)(dayUtc+off);                                                                 // server time, for the history
+   g_ruNextDay=dayUtc+86400;
+   // the session now and the next one, from the opens in London time
+   long segStart=0, segNext=0; g_ruSeg=-1; g_ruSegN=-1;
+   if(g_ruHasSes)
+     {
+      long lon=nowUtc+(long)g_ruLonOff*60, mid=lon-(lon%86400), best=-1, nb=-1;
+      for(int d=-1;d<=1;d++) for(int j=0;j<3;j++)
+        {
+         long t=mid+(long)d*86400+(long)g_ruOpen[j]*60;
+         if(t<=lon && t>best){ best=t; g_ruSeg=j; }
+         if(t>lon && (nb<0 || t<nb)){ nb=t; g_ruSegN=j; }
+        }
+      if(best>=0) segStart=best-(long)g_ruLonOff*60;
+      if(nb>=0) segNext=nb-(long)g_ruLonOff*60;
+     }
+   g_ruSegNext=segNext;
+   // today's and this session's closed results and entries, and the last entry
+   long fromSrv=(long)dayStart;
+   if(segStart>0 && segStart+off<fromSrv) fromSrv=segStart+off;
+   if(nowUtc+off-86400<fromSrv) fromSrv=nowUtc+off-86400;
+   double dpl=0, spl=0; int sn=0; long lastIn=0, lastDeal=0;
+   if(HistorySelect((datetime)fromSrv,(datetime)(nowUtc+off+3600)))
+     {
+      int tot=HistoryDealsTotal();
+      for(int i=0;i<tot;i++)
+        {
+         ulong tk=HistoryDealGetTicket(i); if(tk==0) continue;
+         long dt=HistoryDealGetInteger(tk,DEAL_TYPE); if(dt!=DEAL_TYPE_BUY && dt!=DEAL_TYPE_SELL) continue;
+         long tsrv=(long)HistoryDealGetInteger(tk,DEAL_TIME), tutc=tsrv-SrvOffAt((datetime)tsrv);
+         double net=HistoryDealGetDouble(tk,DEAL_PROFIT)+HistoryDealGetDouble(tk,DEAL_SWAP)+HistoryDealGetDouble(tk,DEAL_COMMISSION)+HistoryDealGetDouble(tk,DEAL_FEE);
+         bool isIn=(HistoryDealGetInteger(tk,DEAL_ENTRY)==DEAL_ENTRY_IN);
+         if(tutc>lastDeal) lastDeal=tutc;
+         if(tsrv>=(long)dayStart) dpl+=net;
+         if(segStart>0 && tutc>=segStart){ spl+=net; if(isIn) sn++; }
+         if(isIn && tutc>lastIn) lastIn=tutc;
+        }
+     }
+   g_ruDpl=dpl; g_ruSpl=spl; g_ruSn=sn; g_ruLastEntry=lastIn;
+   double ork=0; for(int i=PositionsTotal()-1;i>=0;i--){ ulong p=PositionGetTicket(i); if(p>0) ork+=RuPosRisk(p); }
+   g_ruOrk=ork;
+   // the locks: each lasts its time once it starts (a later win does not lift it)
+   long until[4]={0,0,0,0};
+   if(g_ruDayLoss>0 && dpl<=-g_ruDayLoss) until[1]=g_ruNextDay;
+   double slm=RuSesLossMoney();
+   if(segNext>0 && ((slm>0 && spl<=-slm) || (g_ruSesTrades>0 && sn>=g_ruSesTrades))) until[2]=segNext;
+   if(g_ruBreakUntil>nowUtc) until[3]=g_ruBreakUntil;
+   for(int k=1;k<=3;k++)
+     {
+      string kU=RuKey("u"+IntegerToString(k)), kS=RuKey("s"+IntegerToString(k));
+      long gU=GlobalVariableCheck(kU) ? (long)GlobalVariableGet(kU) : 0;
+      if(until[k]<=0 && gU>nowUtc) until[k]=gU;
+      if(until[k]<=0)
+        {
+         g_ruLkUntilK[k]=0; g_ruLkStartK[k]=0;
+         if(gU>0){ GlobalVariableDel(kU); GlobalVariableDel(kS); }
+         continue;
+        }
+      long st=(gU==until[k] && GlobalVariableCheck(kS)) ? (long)GlobalVariableGet(kS) : 0;
+      if(st<=0)
+        {
+         st=(k==3 && g_ruBreakSet>0) ? g_ruBreakSet : nowUtc;
+         if(k!=3 && lastDeal+1>st) st=lastDeal+1;       // the trade that made the lock is never one "opened elsewhere"
+         GlobalVariableSet(kU,(double)until[k]); GlobalVariableSet(kS,(double)st);
+        }
+      g_ruLkUntilK[k]=until[k]; g_ruLkStartK[k]=st;
+      if(until[k]>g_ruLkUntil){ g_ruLk=k; g_ruLkUntil=until[k]; g_ruLkStart=st; }
+     }
+  }
+// an order the account's rules do not allow: true, with the code for the app and the words for the chart. copy: a Follow
+// account's copy of its Lead's trade - only the locks and the symbols apply (the Lead's own rules timed and sized it).
+bool RuleRefuse(string sym,double riskMoney,bool copy,string &code,string &text)
+  {
+   code=""; text="";
+   RulesLoad(false); RulesEval(true);
+   if(StringLen(g_ruRaw)==0) return false;
+   long nowUtc=(long)TimeGMT();
+   if(g_ruLk>0)
+     {
+      string kind=(g_ruLk==1) ? "day" : ((g_ruLk==2) ? "ses" : "brk");
+      code="rule:"+kind+":"+IntegerToString(g_ruLkUntil)+":"+IntegerToString(g_ruSeg)+"/"+IntegerToString(g_ruSegN);
+      if(g_ruLk==1) text="Daily loss reached. Trading opens again at your next day.";
+      else if(g_ruLk==2) text=RuSesName(g_ruSeg)+" session limit reached. Trading opens again when "+RuSesName(g_ruSegN)+" opens.";
+      else text="You are on a break. Trading opens again when it ends.";
+      return true;
+     }
+   if(StringLen(g_ruSyms)>0)
+     {
+      string k=RuSymKey(sym); string a[]; int m=StringSplit(g_ruSyms,'/',a); bool ok=false;
+      for(int j=0;j<m;j++){ if(StringLen(a[j])==0) continue; if(StringFind(k,a[j])==0 || StringFind(a[j],k)==0){ ok=true; break; } }
+      if(!ok){ code="rule:sym:0:"+sym; text=sym+" is not on this account's allowed symbols."; return true; }
+     }
+   if(copy) return false;
+   if(g_ruGapMin>0 && g_ruLastEntry>0 && nowUtc<g_ruLastEntry+(long)g_ruGapMin*60)
+     {
+      long nx=g_ruLastEntry+(long)g_ruGapMin*60;
+      code="rule:gap:"+IntegerToString(nx)+":"+IntegerToString(g_ruGapMin);
+      text="Next entry from "+TimeToString((datetime)(nx+BrokerOff()),TIME_MINUTES)+" server time ("+IntegerToString(g_ruGapMin)+" minutes between entries).";
+      return true;
+     }
+   double cap=RuOpenRiskMoney();
+   if(cap>0 && riskMoney>0 && g_ruOrk+riskMoney>cap+0.005)
+     {
+      code="rule:risk:0:"+DoubleToString(g_ruOrk+riskMoney,2)+"/"+DoubleToString(cap,2);
+      text="This order would put "+DoubleToString(g_ruOrk+riskMoney,2)+" at risk across your open trades, over your "+DoubleToString(cap,2)+" cap.";
+      return true;
+     }
+   return false;
+  }
+// the first chart running this EA in this terminal: it also looks after the symbols that have no chart of their own
+bool RuCloser()
+  {
+   string me=MQLInfoString(MQL_PROGRAM_NAME); long low=-1;
+   for(long c=ChartFirst(); c>=0; c=ChartNext(c)) if(ChartGetString(c,CHART_EXPERT_NAME)==me){ if(low<0 || c<low) low=c; }
+   return (low<0 || low==ChartID());
+  }
+bool RuHasChart(string sym)
+  {
+   string me=MQLInfoString(MQL_PROGRAM_NAME);
+   for(long c=ChartFirst(); c>=0; c=ChartNext(c)) if(ChartSymbol(c)==sym && ChartGetString(c,CHART_EXPERT_NAME)==me) return true;
+   return false;
+  }
+void RuCancelPending()
+  {
+   for(int i=OrdersTotal()-1;i>=0;i--)
+     {
+      ulong tk=OrderGetTicket(i); if(tk==0) continue;
+      if(trade.OrderDelete(tk)) Print("Session Terminal rules: order ",tk," cancelled - trading is locked.");
+     }
+  }
+// while locked: a trade opened since the lock started, anywhere (MT5's phone app), is closed - never one opened before it, nor one
+// older than 30 minutes. Each chart closes its own symbol's; the first chart the symbols with no chart. Asked once every 30 s at most.
+void RuCloseElsewhere()
+  {
+   long nowUtc=(long)TimeGMT(); bool closer=RuCloser();
+   for(int i=PositionsTotal()-1;i>=0;i--)
+     {
+      ulong tk=PositionGetTicket(i); if(tk==0 || !PositionSelectByTicket(tk)) continue;
+      string s=PositionGetString(POSITION_SYMBOL);
+      if(s!=_Symbol && !(closer && !RuHasChart(s))) continue;
+      long tsrv=(long)PositionGetInteger(POSITION_TIME), tutc=tsrv-SrvOffAt((datetime)tsrv);
+      bool hit=false;
+      for(int k=1;k<=3;k++) if(g_ruLkUntilK[k]>nowUtc && g_ruLkStartK[k]>0 && tutc>=g_ruLkStartK[k]) hit=true;
+      if(!hit || nowUtc-tutc>1800) continue;
+      int n=ArraySize(g_ruTriedTk), at=-1;
+      for(int j=0;j<n;j++) if(g_ruTriedTk[j]==tk){ at=j; break; }
+      if(at>=0 && nowUtc-g_ruTriedAt[at]<30) continue;
+      if(at<0){ if(n>=32){ ArrayRemove(g_ruTriedTk,0,1); ArrayRemove(g_ruTriedAt,0,1); n--; } ArrayResize(g_ruTriedTk,n+1); ArrayResize(g_ruTriedAt,n+1); at=n; g_ruTriedTk[at]=tk; }
+      g_ruTriedAt[at]=nowUtc;
+      double vol=PositionGetDouble(POSITION_VOLUME);
+      if(trade.PositionClose(tk))
+        {
+         string m="Closed "+s+" "+DoubleToString(vol,2)+": it was opened while trading is locked.";
+         Print("Session Terminal rules: ",m); Flash(m);
+        }
+      else Print("Session Terminal rules: could not close ",s," #",tk," (",trade.ResultRetcode(),")");
+     }
+  }
+// once a second: the rules another chart saved, the locks, and what a lock does when it starts
+void RulesTick()
+  {
+   RulesLoad(false);
+   RulesEval(false);
+   if(g_ruLk>0 && g_ruLkWas==0)
+     {
+      string m=(g_ruLk==1) ? "Daily loss reached: trading is locked until your next day."
+              : ((g_ruLk==2) ? RuSesName(g_ruSeg)+" session limit reached: trading is locked until "+RuSesName(g_ruSegN)+" opens."
+              : "Break started: trading is locked until it ends.");
+      Flash(m);
+      if(g_ruCloseElse && RuCloser()) RuCancelPending();
+     }
+   g_ruLkWas=g_ruLk;
+   if(g_ruLk>0 && g_ruCloseElse) RuCloseElsewhere();
+  }
+// for the app ("set"): the rules in force here and what they say now
+string RulesStateJson()
+  {
+   return StringFormat(",\"rr\":\"%s\",\"ru\":\"%d|%I64d|%I64d|%s|%s|%d|%I64d|%s|%I64d|%d|%d|%I64d\"",g_ruRaw,g_ruLk,g_ruLkUntil,g_ruLkStart,
+                       DoubleToString(g_ruDpl,2),DoubleToString(g_ruSpl,2),g_ruSn,g_ruLastEntry,DoubleToString(g_ruOrk,2),g_ruNextDay,g_ruSeg,g_ruSegN,g_ruSegNext);
+  }
+
 void PlaceTrade()
   {
    if(g_aside){ Flash(AsideMsg()); return; }   // v9.08: the MT5 VPS copy trades this account
@@ -1129,6 +1448,8 @@ void PlaceTrade()
    if(!ResolveForOrder(dir,entry,slPrice,slPips,err)){ Flash("CANNOT TRADE: "+err); Warn(err); return; }
    double riskMoney; double total=CalcLot(slPips,riskMoney);
    if(total<=0){ Warn("Computed lot is zero - check risk settings."); return; }
+   if(slPips<=0){ g_ruCode="rule:stop:0:"; Flash("CANNOT TRADE: every order needs a stop."); return; }   // v9.15: never an order without one
+   { string rc,rt; if(RuleRefuse(_Symbol,riskMoney,false,rc,rt)){ g_ruCode=rc; Flash("CANNOT TRADE: "+rt); Warn(rt); return; } }   // v9.15: the account's rules
 
    // Single TP closes the whole position (TP set on the order itself).
    double tpPrice=0.0;
@@ -3597,7 +3918,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.14\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\",\"cloud\":%s,\"company\":\"%s\",\"server\":\"%s\",\"start_bal\":%s}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.15\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\",\"cloud\":%s,\"company\":\"%s\",\"server\":\"%s\",\"start_bal\":%s}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY),g_inCloud?"true":"false",
                             JsonSafe(AccountInfoString(ACCOUNT_COMPANY)),JsonSafe(AccountInfoString(ACCOUNT_SERVER)),DoubleToString(CpAccountSize(),2)));   // v9.12: the Accounts tab's "Read from MT5" line
   }
@@ -3991,7 +4312,7 @@ void LwOpen()
 // v9.06: MT5's Algo Trading button (and this EA's own "Allow Algo Trading") - off, no order can be placed, from here or from the app
 bool AlgoOn(){ return TerminalInfoInteger(TERMINAL_TRADE_ALLOWED)!=0 && MQLInfoInteger(MQL_TRADE_ALLOWED)!=0; }
 int  g_lwAl=-1;                       // v9.06: Algo Trading as last told to the app
-string LwHi(){ return StringFormat("{\"v\":\"9.14\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d,\"cl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0,g_inCloud?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
+string LwHi(){ return StringFormat("{\"v\":\"9.15\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d,\"cl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0,g_inCloud?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
 // v9.06 (Nestor, 19 Oct 2026: "whatever messages appear in MT5 i need to also see them in the app"): every message this EA writes on its
 // chart (Flash) goes to Session Terminal too, which shows it on Live Charts. Only while the line is up; nothing is queued.
 void LwMsg(string m)
@@ -4237,7 +4558,7 @@ void LwOpenCmd(string id,string p,string ix)
    double dist=MathAbs(slp-ref)/g_pip;
    if(dist<g_minSL) dist=g_minSL; if(dist>g_maxSL) dist=g_maxSL;      // as the line is held on the chart
    g_slSetPips=dist; g_slSetSide=side; RedrawTargets();
-   g_sendTried=false; g_flashMsg="";
+   g_sendTried=false; g_flashMsg=""; g_ruCode="";
    PlaceTrade();                                                      // the click
    bool ok=false; string why=""; double px=0, vol=0; ulong tk=0;
    if(g_sendTried)
@@ -4247,7 +4568,7 @@ void LwOpenCmd(string id,string p,string ix)
       if(ok){ px=trade.ResultPrice(); if(px<=0) px=(kind==OK_MARKET)?((side<0)?ask:bid):ent; vol=trade.ResultVolume(); tk=trade.ResultOrder(); }
       else why=LwWhy();
      }
-   else { why=g_flashMsg; StringReplace(why,"CANNOT TRADE: ",""); if(why=="") why="not placed"; }
+   else { why=g_flashMsg; StringReplace(why,"CANNOT TRADE: ",""); if(why=="") why="not placed"; if(StringLen(g_ruCode)>0) why=g_ruCode; }   // v9.15: a rule's code, the app words it
    if(g_execMode && (!was || !ok)){ g_execMode=false; HideExecutionLines(); BuildPanel(); }   // as it was (a placed trade turns it off anyway)
    LwAckOpen(id,ok,why,px,vol,tk,-side);
   }
@@ -4302,7 +4623,7 @@ string LwSetBody()
    for(int i=0;i<g_tsCount;i++) ts+=(i>0?"/":"")+DoubleToString(g_tsDest[i],2);
    string ek=ShortToString((ushort)g_execKey);
    return LiveSettingsBody()+StringFormat(",\"order_kind\":\"%s\",\"exec_key\":\"%s\",\"active\":%d,\"pip\":%s,\"ts_unit\":\"%s\",\"ts\":\"%s\",\"digits\":%d",
-          (g_orderKind==OK_LIMIT)?"limit":((g_orderKind==OK_STOP)?"stop":"market"),ek,g_active?1:0,DoubleToString(g_pip,8),(g_tsUnit==BEOFF_BY_RR)?"rr":"pips",ts,_Digits);
+          (g_orderKind==OK_LIMIT)?"limit":((g_orderKind==OK_STOP)?"stop":"market"),ek,g_active?1:0,DoubleToString(g_pip,8),(g_tsUnit==BEOFF_BY_RR)?"rr":"pips",ts,_Digits)+RulesStateJson();   // v9.15
   }
 void LwSetSend(bool force)
   {
@@ -4463,10 +4784,10 @@ void LwAck(string id,bool ok,string a,string tk,string why)
 // Terminal's server, only signed and fresh. The symbols with a chart go to MQL5\Files\stcloud_charts.txt, so the agent knows it
 // needn't restart for them.
 #define CHART_TPL "STCloudEA.tpl"
-void LwChartsFile()
+void LwChartsFile(string drop="",long keep=-1)   // v9.15: drop - the symbol whose charts were just closed (ChartClose takes a moment), keep - the one left
   {
    string all="";
-   for(long c=ChartFirst();c>=0;c=ChartNext(c)){ string cs=ChartSymbol(c); if(StringFind(","+all+",",","+cs+",")<0) all+=(StringLen(all)>0?",":"")+cs; }
+   for(long c=ChartFirst();c>=0;c=ChartNext(c)){ string cs=ChartSymbol(c); if(cs==drop && c!=keep) continue; if(StringFind(","+all+",",","+cs+",")<0) all+=(StringLen(all)>0?",":"")+cs; }
    int f=FileOpen("stcloud_charts.txt",FILE_WRITE|FILE_TXT|FILE_ANSI);
    if(f==INVALID_HANDLE) return;
    FileWriteString(f,all+"\n"+IntegerToString((long)TimeGMT())+"\n");
@@ -4491,6 +4812,22 @@ void LwChartCmd(string id,string sym)
    Print("Session Terminal: opened ",sym," with the EA for Live Charts");
    LwAck(id,true,"chart","",sym);
   }
+// v9.15 (24 Oct 2026, Nestor approved keeping the watchlist's charts open on the cloud MT5): "unchart" closes every chart of a symbol
+// the watchlist dropped - never the chart the command came to (the hub's own), and never while this account has a trade or an
+// order waiting on that symbol (its chart's EA manages it). Signed and fresh like "chart".
+void LwUnchartCmd(string id,string sym)
+  {
+   if(!g_inCloud){ LwAck(id,false,"unchart","","notcloud"); return; }
+   if(StringLen(sym)==0){ LwAck(id,false,"unchart","","nosym"); return; }
+   for(int i=PositionsTotal()-1;i>=0;i--){ ulong t=PositionGetTicket(i); if(t>0 && PositionSelectByTicket(t) && PositionGetString(POSITION_SYMBOL)==sym){ LwAck(id,false,"unchart","","open"); return; } }
+   for(int i=OrdersTotal()-1;i>=0;i--){ ulong t=OrderGetTicket(i); if(t>0 && OrderSelect(t) && OrderGetString(ORDER_SYMBOL)==sym){ LwAck(id,false,"unchart","","order"); return; } }
+   long me=ChartID(), cl[]; int n=0;
+   for(long c=ChartFirst();c>=0;c=ChartNext(c)) if(ChartSymbol(c)==sym && c!=me){ int k=ArraySize(cl); ArrayResize(cl,k+1); cl[k]=c; }
+   for(int i=0;i<ArraySize(cl);i++) if(ChartClose(cl[i])) n++;
+   LwChartsFile(sym,me);
+   Print("Session Terminal: closed ",n," ",sym," chart(s) for Live Charts");
+   LwAck(id,true,"unchart","",sym+":"+IntegerToString(n));
+  }
 void LwCmd(string s)
   {
    string id=LwStr(s,"\"cid\":\""), lg=LwStr(s,"\"clg\":\""), sy=LwStr(s,"\"csy\":\""), tk=LwStr(s,"\"ctk\":\""), a=LwStr(s,"\"ca\":\"");
@@ -4505,6 +4842,22 @@ void LwCmd(string s)
       long age0=(long)TimeGMT()-StringToInteger(ts);
       if(age0>LW_CMD_AGE || age0<-LW_CMD_AGE){ LwAck(id,false,a,tk,"old"); return; }
       LwChartCmd(id,p); return;
+     }
+   if(a=="unchart")   // v9.15: close a symbol's charts the watchlist dropped - not a trade either; signed and fresh
+     {
+      if(StringLen(g_syncTokenEff)==0 || LwHmac(g_syncTokenEff,msg)!=h){ LwAck(id,false,a,tk,"sig"); return; }
+      long age2=(long)TimeGMT()-StringToInteger(ts);
+      if(age2>LW_CMD_AGE || age2<-LW_CMD_AGE){ LwAck(id,false,a,tk,"old"); return; }
+      LwUnchartCmd(id,p); return;
+     }
+   if(a=="rules")   // v9.15: this account's order rules from Session Terminal - saved for every chart of the account
+     {
+      if(StringLen(g_syncTokenEff)==0 || LwHmac(g_syncTokenEff,msg)!=h){ LwAck(id,false,a,tk,"sig"); return; }
+      long age1=(long)TimeGMT()-StringToInteger(ts);
+      if(age1>LW_CMD_AGE || age1<-LW_CMD_AGE){ LwAck(id,false,a,tk,"old"); return; }
+      RulesSave(p); RulesParse(p); RulesEval(true); g_lwSetSig="";
+      Print("Session Terminal: order rules ",(StringLen(p)>0 ? p : "none"));
+      LwAck(id,true,a,tk,""); return;
      }
    if(!AppTradeOn()){ LwAck(id,false,a,tk,"off"); return; }   // v9.02: the panel's App trading button
    if(StringLen(g_syncTokenEff)==0 || LwHmac(g_syncTokenEff,msg)!=h){ LwAck(id,false,a,tk,"sig"); return; }
@@ -7372,6 +7725,7 @@ void CpReconcile(CpItem &items[],ulong &closed[],long fileAge)
       if(fsym==""){ CpSkip(items[i].tk,items[i].sym+" skipped - not on this account"); continue; }
       // This symbol's daily limit (8.94): shown as the status; copied when it can be, while still fresh.
       if(CpDayLimitFor(fsym)){ g_cpStatus=fsym+" daily limit reached"; g_cpStatusWarn=true; continue; }
+      { string rc,rt; if(RuleRefuse(fsym,0,true,rc,rt)){ CpSkip(items[i].tk,fsym+" skipped - "+rt); continue; } }   // v9.15: this account's own rules
       if(items[i].pos)
         {
          if(items[i].age+fileAge>CP_MAX_AGE_SEC){ CpSkip(items[i].tk,fsym+" skipped - opened too long ago"); continue; }
@@ -7728,9 +8082,10 @@ void AsideTick(bool start)
 int OnInit()
   {
    g_eaStartMs=GetTickCount();
+   RulesLoad(true);   // v9.15: the account's order rules, before any order
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v9.06 loaded (BE halfway between the entry and the TP, the trailing / partial steps parked clear of the TP on every unit; MT5's messages and Algo Trading on or off, to Session Terminal; alerts on drawings from Session Terminal: a trend line or ray followed tick by tick, a rectangle or channel rings when price enters or leaves it; Live Charts: this chart's prices streamed to Session Terminal while its Live Charts tab shows them - 2 a second in your session, every 2 s with a trade open, every 5 s otherwise - and today's 1-minute candles when it asks; tick volume with every candle sent, and the older candles a volume profile in Practice Replay asks for; price alerts from Session Terminal, sent to your phone; 1-minute candles for the live chart; a live line to Session Terminal: the live chart updates every second, 3 hours a day; the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
+   Print("=== MinimalistManager v9.15 loaded (order rules from Session Terminal: locks for the day, the session and a break, the time between entries, the money at risk, the allowed symbols; BE halfway between the entry and the TP, the trailing / partial steps parked clear of the TP on every unit; MT5's messages and Algo Trading on or off, to Session Terminal; alerts on drawings from Session Terminal: a trend line or ray followed tick by tick, a rectangle or channel rings when price enters or leaves it; Live Charts: this chart's prices streamed to Session Terminal while its Live Charts tab shows them - 2 a second in your session, every 2 s with a trade open, every 5 s otherwise - and today's 1-minute candles when it asks; tick volume with every candle sent, and the older candles a volume profile in Practice Replay asks for; price alerts from Session Terminal, sent to your phone; 1-minute candles for the live chart; a live line to Session Terminal: the live chart updates every second, 3 hours a day; the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
    Print("=== MinimalistManager v5.7 notes (BE-offset ladder now sweeps EVERY level from +0R to +1R in 0.05R steps, arms itself off the price path so it runs on EVERY trade instead of only ones moved to BE, and reports a stop-never-moved baseline so locking in can be judged against doing nothing. v5.6 kept: the sweep freeze fix and the heartbeat) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)
@@ -8231,6 +8586,7 @@ void OnTimer()
    AccountLabel(false);   // v8.85: rebuilds the panel only when the account's name, size or role changed
    if(g_flashMsg!="" && GetTickCount64()>=g_flashUntil) DrawHint();   // a message's 6 seconds are up
    DailyLimitTick();   // auto-off at the cap, and auto-on again on the new day
+   RulesTick();        // v9.15: the order rules - locks, and a trade opened elsewhere while locked
    bool _connNow=(bool)TerminalInfoInteger(TERMINAL_CONNECTED);
    if(g_syncCatchupPending){ g_syncCatchupPending=false; SyncCatchUp(); g_syncCatchAt=TimeCurrent(); }
    else if(_connNow && !g_wasConnected){ SyncCatchUp(); g_syncCatchAt=TimeCurrent(); }        // v4.5: broker reconnect / wake-from-sleep -> scan immediately

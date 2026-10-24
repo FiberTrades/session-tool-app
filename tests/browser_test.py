@@ -220,6 +220,10 @@ def main():
                 cdp.call('Emulation.setTouchEmulationEnabled', enabled=True, maxTouchPoints=5)
             except Exception:
                 pass
+        tz = os.environ.get('E2E_TZ', '')   # e.g. America/New_York: a test that needs a time of day it is not here (24 Oct 2026)
+        if tz:
+            try: cdp.call('Emulation.setTimezoneOverride', timezoneId=tz)
+            except Exception: pass
         app = os.environ.get('E2E_APP', 'app.html')   # another file name runs the same test against an older copy
         cdp.call('Page.navigate', url='http://127.0.0.1:%d/%s?e2e=%d' % (web_port, app, random.randint(1, 10 ** 9)))
         time.sleep(2)
