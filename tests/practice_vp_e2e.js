@@ -65,7 +65,7 @@
     window.__stEA = window.__stEA || {}; var rowsWas = window.__stEA.rows; window.__stEA.rows = function () { return { a: { ea_version: '9.07' } }; };
     P._miniFresh(); P._render(); await W(200); CanvasRenderingContext2D.prototype.fillText = ft; window.__stEA.rows = rowsWas;
     M = P._mini(0);
-    ok('...the chart says why, not "is MT5 open?" (Nestor, 20 Oct 2026: "the volumen tool ... stays empty if i go back a few month")', M.vp.st === 'nohist' && said.some(function (s) { return /your MT5 doesn’t go back this far · Max bars in chart → Unlimited \(Settings → MT5, step 6\)/.test(s); }) && !said.some(function (s) { return /is MT5 open/.test(s); }), [M.vp.st, said.filter(function (s) { return /Volume profile/.test(s); })]);
+    ok('...the chart says why, not "is MT5 open?" (Nestor, 20 Oct 2026: "the volumen tool ... stays empty if i go back a few month")', M.vp.st === 'nohist' && said.some(function (s) { return /^Volume profile: your MT5 doesn’t go back this far$/.test(s); }) && !said.some(function (s) { return /is MT5 open/.test(s); }), [M.vp.st, said.filter(function (s) { return /Volume profile/.test(s); })]);
     ks.forEach(function (k) { delete V.asked[k].nohist; V.asked[k].fail = false; });
     // the volume arrives (as the EA sends it): it goes onto the candles here and the arrows are drawn
     var st = P._static(), vofb = function (b) { return Math.max(1, Math.round((b.high - b.low) * 1e5)) + (Math.round(b.close * 1e5) % 7); };

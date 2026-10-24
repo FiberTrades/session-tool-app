@@ -59,7 +59,7 @@
     win.document.querySelector('#stpr-tb2 #stpr-snapbtn').click(); await W(40);
     ok('pressed again it closes', !wm.classList.contains('show'));
     win.document.querySelector('#stpr-tb2 #stpr-layersbtn').click(); await W(60);
-    ok('Show on chart opens there too, with the Minimalist switch', wm.classList.contains('show') && /Minimalist/.test(wm.textContent));
+    ok('Show on chart opens there too, with the Minimalist switch', wm.classList.contains('show') && /Session Indicator/.test(wm.textContent));
     win.document.querySelector('#stpr-tb2 #stpr-layersbtn').click(); await W(40);
     ok('its title names the symbol (as MT5 does) and timeframe', /EURUSD · 4h · Replay/.test(win.document.title), win.document.title);
     var bk = p2.el.querySelector('[data-popc]');

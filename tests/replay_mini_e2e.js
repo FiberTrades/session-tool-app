@@ -31,7 +31,7 @@
     // ---- its settings window ----
     set.click(); await W(150);
     var dlg = document.querySelector('#strp-modal-bg .stpr-dlg');
-    ok('Settings opens Practice Replay\'s Minimalist window over the replay (no link-charts row)', dlg && dlg.querySelector('.stpr-dlgh b').textContent === 'Minimalist' && !dlg.querySelector('[data-k="mlink"]') && dlg.querySelector('[data-k="len"]'), dlg && dlg.textContent.slice(0, 80));
+    ok('Settings opens Practice Replay\'s Minimalist window over the replay (no link-charts row)', dlg && dlg.querySelector('.stpr-dlgh b').textContent === 'Session Indicator' && !dlg.querySelector('[data-k="mlink"]') && dlg.querySelector('[data-k="len"]'), dlg && dlg.textContent.slice(0, 80));
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true })); await W(20);
     ok('keys typed with it open stay in it (the replay stays open)', document.getElementById('strp-modal-bg').classList.contains('show') && !!R._s());
     var len = dlg.querySelector('[data-k="len"]'); len.value = '50'; len.dispatchEvent(new Event('input', { bubbles: true })); await W(30);

@@ -23,10 +23,10 @@
     // the window, from Show on chart
     document.getElementById('stpr-layersbtn').click(); await W(40);
     var sb = document.querySelector('#stpr-menu [data-miniset]');
-    ok('Show on chart has a gear beside Minimalist (its settings)', sb && sb.classList.contains('stpr-tglgear') && !!sb.closest('.stpr-tgl') && /Minimalist/.test(sb.closest('.stpr-tgl').textContent));
+    ok('Show on chart has a gear beside Minimalist (its settings)', sb && sb.classList.contains('stpr-tglgear') && !!sb.closest('.stpr-tgl') && /Session Indicator/.test(sb.closest('.stpr-tgl').textContent));
     sb.click(); await W(60);
     var tabs = dlg() && Array.prototype.map.call(dlg().querySelectorAll('[data-dt]'), function (b) { return b.textContent; });
-    ok("it opens TradingView's window: Minimalist, tabs Inputs / Style / Visibility, Defaults, Cancel, Ok", dlg() && /Minimalist/.test(dlg().querySelector('.stpr-dlgh').textContent) && tabs.join(',') === 'Inputs,Style,Visibility' && dlg().querySelector('[data-ddef]') && dlg().querySelector('[data-dc]') && dlg().querySelector('[data-dok]'), tabs);
+    ok("it opens TradingView's window: Minimalist, tabs Inputs / Style / Visibility, Defaults, Cancel, Ok", dlg() && /Session Indicator/.test(dlg().querySelector('.stpr-dlgh').textContent) && tabs.join(',') === 'Inputs,Style,Visibility' && dlg().querySelector('[data-ddef]') && dlg().querySelector('[data-dc]') && dlg().querySelector('[data-dok]'), tabs);
     var txt = dlg().textContent;
     // his panel, input for input (17 Oct 2026: "why dont you just copy all the options that i have")
     var want = ['Premium & Discount Zones', '\u2501\u2501 P/D Zone', 'Detach Start Only', 'P/D Range Start', 'P/D Range End', 'Auto: Follow Structure', 'Structure Length (bars)', 'Extend to Latest High/Low', 'Extend Right (bars)', 'Show Range Markers', 'Premium', 'Equilibrium', 'Discount',
@@ -106,7 +106,7 @@
     ok('with Start only off, its right edge sets where it ends', C.miniS.detach === false && C.miniS.zB > C.miniS.zA && z3.end != null && z3.end < pane().bars.length - 1, [C.miniS.zB, z3.end]);
     // double-click inside it: its settings
     P._render(); await W(80); mz = pane()._mz; mev('dblclick', (mz.x0 + mz.x1) / 2, (mz.y0 + mz.y1) / 2); await W(80);
-    ok('a double-click on the zone opens its settings', dlg() && /Minimalist/.test(dlg().textContent));
+    ok('a double-click on the zone opens its settings', dlg() && /Session Indicator/.test(dlg().textContent));
     dlg().querySelector('[data-ddef]').click(); dlg().querySelector('[data-dreset]').click(); await W(60); dlg().querySelector('[data-dok]').click(); await W(60);
     ok('Defaults > Reset settings: his settings again (Auto on, London only)', C.miniS.auto === true && C.miniS.ses[1].on === false && C.miniS.cTop === 'rgba(233,30,99,0.1)' && M().zone.i0 === i0, C.miniS);
     P.close(); await W(150);
