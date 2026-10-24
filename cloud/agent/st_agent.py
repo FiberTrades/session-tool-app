@@ -247,6 +247,7 @@ def prepare(acc):
         has = False
     if not has and os.path.exists(SEED_COMMON):
         shutil.copyfile(SEED_COMMON, ci)
+    set_maxbars(ci)
     sv = os.path.join(cfg, "servers.dat")
     if os.path.exists(SEED_SERVERS) and (not os.path.exists(sv) or os.path.getsize(sv) < os.path.getsize(SEED_SERVERS)):
         shutil.copyfile(SEED_SERVERS, sv)
@@ -258,6 +259,31 @@ def prepare(acc):
     write_profile(acc, ad)
     as_st([os.path.join(pre, "drive_c", "ST")])
     return ad
+
+
+MAXBARS = 100000000    # MT5's "Unlimited" in Tools > Options > Charts, as MT5 itself writes it (Nestor's own MT5, 24 Oct 2026)
+
+
+def set_maxbars(path):
+    """Max bars in chart: Unlimited, so the EA can read a year of 1-minute candles for Replay (Nestor, 24 Oct 2026: "raise max
+    bars"; MT5's 100,000 is about 3 months of M1). Set before each start: MT5 writes the file back when it closes. Only that
+    one line changes - the same file holds the EA's two web addresses in MT5's own encrypted form."""
+    try:
+        raw = open(path, "rb").read()
+    except FileNotFoundError:
+        return
+    t = raw.decode("utf-16-le", "ignore").lstrip("\ufeff")
+    want = "MaxBars=%d" % MAXBARS
+    if re.search(r"(?m)^" + want + r"\r?$", t):
+        return
+    if re.search(r"(?m)^MaxBars=\d+", t):
+        t = re.sub(r"(?m)^MaxBars=\d+", want, t)
+    elif "[Charts]" in t:
+        t = t.replace("[Charts]", "[Charts]\r\n" + want, 1)
+    else:
+        t = t.rstrip("\r\n") + "\r\n[Charts]\r\n" + want + "\r\n"
+    with open(path, "wb") as f:
+        f.write(b"\xff\xfe" + t.encode("utf-16-le"))
 
 
 def link_common(acc, pre):
