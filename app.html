@@ -78881,7 +78881,7 @@ window.__stTM = (function () {
     if (!token()) return Promise.resolve({ ok: false, why: 'token' });
     var ln = window.__stLiveLine; if (!ln || !ln.joined || !ln.joined()) return Promise.resolve({ ok: false, why: 'line' });
     var ea = eaOf({ symbol: o.sym, login: o.login }); if (!ea) return Promise.resolve({ ok: false, why: 'noea' });
-    if (parseFloat(ea.v) < 9.02) return Promise.resolve({ ok: false, why: 'ver2' }); if (!ea.tm) return Promise.resolve({ ok: false, why: 'off' });
+    if (parseFloat(ea.v) < (o.minV || 9.02)) return Promise.resolve({ ok: false, why: 'ver2' }); if (!ea.tm && !o.anyTm) return Promise.resolve({ ok: false, why: 'off' });   // anyTm: not a trade (9.14's 'chart')
     var c = { cid: newId(), clg: String(o.login), csy: String(o.sym), ctk: '', ca: o.a, cp: String(o.cp || ''), ci: String(o.ci || ''), cts: String(Math.floor(Date.now() / 1000)) };
     return hmac(token(), ['v1', c.cid, c.clg, c.csy, c.ctk, c.ca, c.cp, c.ci, c.cts].join('|')).then(function (h) {
       c.ch = h;
@@ -92647,6 +92647,7 @@ window.__stAZ = (function () {
     ALERT.hits = []; NEWS.key = null; loadNews(); $('stpr-newsbtn').classList.toggle('on', CFG.news !== false); layersDot();
     st.style.display = 'none'; render(true); startLoop();
     LV.tdk = setInterval(tdClock, 1000); lvHist(S);
+    try { var e0 = eaFor(S.sym); if (S.live && e0 && e0.hub) lvCloudSym(e0); } catch (e) {}   // a cloud account's chart for it, asked at once (9.14)
     try { window.__stLiveLine.tickle(); } catch (e) {}
     return true;
   }
@@ -92655,6 +92656,7 @@ window.__stAZ = (function () {
   function tdClock(){ if (!S || !S.today) { clearInterval(LV.tdk); LV.tdk = 0; return; }
     var ea = eaFor(S.sym); if (ea && (!S.ea || S.ea.raw !== ea.raw || S.ea.v !== ea.v)) S.ea = ea;
     if (S.live && S.ea && S.ea.hub) lvCloudSym(S.ea);
+    else if (LV.cloudOpen && S.ea && S.ea.raw === LV.cloudOpen.raw) { LV.cloudOpen = null; try { var fo = uiEl('stpr-flash'); if (fo) fo.classList.remove('show'); } catch (e) {} }
     if (S.ea && !S.gotHist) lvHist(S); lvTfAsk();
     var n = Math.min(nowS(), S.f.close); S.follow = S.now >= n - 90 && n < S.f.close;
     if (!S.follow) { LV.tdPx = null; return; }
@@ -93080,9 +93082,22 @@ window.__stAZ = (function () {
   // takes its orders. The account: the one picked to trade with, else the hub's.
   function lvCloudSym(ea){ var lg = String(CFG.lvLg || (ea && ea.lg) || ''), k = lg + '|' + (ea && ea.raw); if (!lg || !ea || !ea.raw) return '';
     LV.cloudAsk = LV.cloudAsk || {}; if (LV.cloudAsk[k]) return LV.cloudAsk[k];
-    var r = ''; try { r = window.__stCloudWantSym ? window.__stCloudWantSym(lg, ea.raw) : ''; } catch (e) {}
+    var r = ''; try { r = window.__stCloudWantSym ? window.__stCloudWantSym(lg, ea.raw) : ''; } catch (e) {}   // saved: a later start opens it too
     LV.cloudAsk[k] = r || 'none';
-    if (r === 'added') try { flash(T('Opening ' + ea.raw + ' on your cloud MT5: it restarts for a moment (once the market is open), then you can trade it here.', 'Abriendo ' + ea.raw + ' en tu MT5 en la nube: se reinicia un momento (con el mercado abierto) y luego puedes operarlo aquí.')); } catch (e) {}
+    if (r !== 'added' && r !== 'has') return r;
+    var restartMsg = function(){ try { flash(T('Opening ' + ea.raw + ' on your cloud MT5: it restarts for a moment (once the market is open), then you can trade it here.', 'Abriendo ' + ea.raw + ' en tu MT5 en la nube: se reinicia un momento (con el mercado abierto) y luego puedes operarlo aquí.')); } catch (e) {} };
+    // EA 9.14 (Nestor, 24 Oct 2026: "make it seamless ... try to make it faster than 2 to 3 seconds"): one of this account's EAs opens
+    // the chart in its own MT5, with the EA on it - well under a second, no restart, nothing paused. This chart keeps the hub's
+    // prices meanwhile and switches to the symbol's own EA the moment it says hi (tdClock).
+    var by = liveEAs().filter(function(o){ return String(o.lg) === lg && vNum(o.v) >= 9.14 && o.raw !== ea.raw && Date.now() - (o.at || 0) < 120000; })
+      .sort(function(a, b){ return (b.at || 0) - (a.at || 0); })[0];
+    if (!by || !window.__stTM || !window.__stTM.acct) { if (r === 'added') restartMsg(); return r; }
+    LV.cloudOpen = { raw: ea.raw, at: Date.now() };
+    try { flash(T('Opening ' + ea.raw + '…', 'Abriendo ' + ea.raw + '…'), 2500); } catch (e) {}
+    Promise.resolve(window.__stTM.acct({ a: 'chart', sym: by.raw, login: lg, cp: ea.raw, minV: 9.14, anyTm: true })).then(function(x){
+      if (x && x.ok) return;
+      LV.cloudOpen = null; if (r === 'added') restartMsg();   // it couldn't: the server restarts that MT5 for it, as before 9.14
+    }, function(){});
     return r; }
   function lvSetOf(){ var e = lvOwnEA(); return e ? (LV.set || {})[e.raw + '|' + e.lg] || null : null; }
   function cfgPractice(){ var c = JSON.parse(JSON.stringify(CFG)); if (LV.mmStash) LVK.forEach(function(k){ c[k] = JSON.parse(JSON.stringify(LV.mmStash[k])); }); return c; }

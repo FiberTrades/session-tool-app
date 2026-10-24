@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "9.13"
+#property version   "9.14"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -3597,7 +3597,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.13\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\",\"cloud\":%s,\"company\":\"%s\",\"server\":\"%s\",\"start_bal\":%s}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.14\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\",\"cloud\":%s,\"company\":\"%s\",\"server\":\"%s\",\"start_bal\":%s}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY),g_inCloud?"true":"false",
                             JsonSafe(AccountInfoString(ACCOUNT_COMPANY)),JsonSafe(AccountInfoString(ACCOUNT_SERVER)),DoubleToString(CpAccountSize(),2)));   // v9.12: the Accounts tab's "Read from MT5" line
   }
@@ -3990,7 +3990,7 @@ void LwOpen()
 // v9.06: MT5's Algo Trading button (and this EA's own "Allow Algo Trading") - off, no order can be placed, from here or from the app
 bool AlgoOn(){ return TerminalInfoInteger(TERMINAL_TRADE_ALLOWED)!=0 && MQLInfoInteger(MQL_TRADE_ALLOWED)!=0; }
 int  g_lwAl=-1;                       // v9.06: Algo Trading as last told to the app
-string LwHi(){ return StringFormat("{\"v\":\"9.13\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d,\"cl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0,g_inCloud?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
+string LwHi(){ return StringFormat("{\"v\":\"9.14\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d,\"cl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0,g_inCloud?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
 // v9.06 (Nestor, 19 Oct 2026: "whatever messages appear in MT5 i need to also see them in the app"): every message this EA writes on its
 // chart (Flash) goes to Session Terminal too, which shows it on Live Charts. Only while the line is up; nothing is queued.
 void LwMsg(string m)
@@ -4455,6 +4455,41 @@ void LwAck(string id,bool ok,string a,string tk,string why)
    if(LwText(LwBroadcast("ack",p))) LwCount();
    Print("Session Terminal: ",a," on #",tk," - ",(ok?"done":"refused"),(why!=""?" ("+why+")":""));
   }
+// v9.14 (Nestor, 24 Oct 2026: "make it seamless ... try to make it faster than 2 to 3 seconds"): a symbol shown in Live Charts that
+// this cloud MT5 has no chart for. This EA opens it here and puts the EA on it from the template the cloud agent writes
+// (STCloudEA.tpl: the account's sync token, App trading and settings), so that symbol's own EA feeds Live Charts and takes its
+// orders in about a second - before 9.14 the server restarted the whole MT5 (20-40 s, every chart paused). Only on Session
+// Terminal's server, only signed and fresh. The symbols with a chart go to MQL5\Files\stcloud_charts.txt, so the agent knows it
+// needn't restart for them.
+#define CHART_TPL "STCloudEA.tpl"
+void LwChartsFile()
+  {
+   string all="";
+   for(long c=ChartFirst();c>=0;c=ChartNext(c)){ string cs=ChartSymbol(c); if(StringFind(","+all+",",","+cs+",")<0) all+=(StringLen(all)>0?",":"")+cs; }
+   int f=FileOpen("stcloud_charts.txt",FILE_WRITE|FILE_TXT|FILE_ANSI);
+   if(f==INVALID_HANDLE) return;
+   FileWriteString(f,all+"\n"+IntegerToString((long)TimeGMT())+"\n");
+   FileClose(f);
+  }
+void LwChartCmd(string id,string sym)
+  {
+   bool cus=false;
+   if(!g_inCloud){ LwAck(id,false,"chart","","notcloud"); return; }
+   if(StringLen(sym)==0 || !SymbolExist(sym,cus)){ LwAck(id,false,"chart","","nosym"); return; }
+   long have=-1;
+   for(long c=ChartFirst();c>=0;c=ChartNext(c)) if(ChartSymbol(c)==sym){ have=c; if(ChartGetString(c,CHART_EXPERT_NAME)!="") break; }
+   if(have>=0 && ChartGetString(have,CHART_EXPERT_NAME)!=""){ LwChartsFile(); LwAck(id,true,"chart","",sym); return; }   // there already
+   SymbolSelect(sym,true);
+   long cid=(have>=0)?have:ChartOpen(sym,PERIOD_M15);
+   if(cid<=0){ LwAck(id,false,"chart","","open "+IntegerToString(GetLastError())); return; }
+   ResetLastError();
+   bool ok=ChartApplyTemplate(cid,"\\Profiles\\Templates\\"+CHART_TPL);   // MQL5\Profiles\Templates
+   if(!ok){ ResetLastError(); ok=ChartApplyTemplate(cid,CHART_TPL); }          // ...or the terminal's own Profiles\Templates
+   if(!ok){ int e=GetLastError(); if(have<0) ChartClose(cid); LwAck(id,false,"chart","","tpl "+IntegerToString(e)); return; }
+   LwChartsFile();
+   Print("Session Terminal: opened ",sym," with the EA for Live Charts");
+   LwAck(id,true,"chart","",sym);
+  }
 void LwCmd(string s)
   {
    string id=LwStr(s,"\"cid\":\""), lg=LwStr(s,"\"clg\":\""), sy=LwStr(s,"\"csy\":\""), tk=LwStr(s,"\"ctk\":\""), a=LwStr(s,"\"ca\":\"");
@@ -4462,8 +4497,15 @@ void LwCmd(string s)
    if(id=="" || sy!=_Symbol || lg!=IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN))) return;   // another chart's or account's: its EA answers
    for(int i=0;i<ArraySize(g_lwCmdIds);i++) if(g_lwCmdIds[i]==id) return;                        // seen already: done once only
    int n=ArraySize(g_lwCmdIds); if(n>=64){ ArrayRemove(g_lwCmdIds,0,1); n--; } ArrayResize(g_lwCmdIds,n+1); g_lwCmdIds[n]=id;
-   if(!AppTradeOn()){ LwAck(id,false,a,tk,"off"); return; }   // v9.02: the panel's App trading button
    string msg="v1|"+id+"|"+lg+"|"+sy+"|"+tk+"|"+a+"|"+p+"|"+ix+"|"+ts;
+   if(a=="chart")   // v9.14: open a symbol's chart with the EA - not a trade, so App trading needn't be on; signed and fresh all the same
+     {
+      if(StringLen(g_syncTokenEff)==0 || LwHmac(g_syncTokenEff,msg)!=h){ LwAck(id,false,a,tk,"sig"); return; }
+      long age0=(long)TimeGMT()-StringToInteger(ts);
+      if(age0>LW_CMD_AGE || age0<-LW_CMD_AGE){ LwAck(id,false,a,tk,"old"); return; }
+      LwChartCmd(id,p); return;
+     }
+   if(!AppTradeOn()){ LwAck(id,false,a,tk,"off"); return; }   // v9.02: the panel's App trading button
    if(StringLen(g_syncTokenEff)==0 || LwHmac(g_syncTokenEff,msg)!=h){ LwAck(id,false,a,tk,"sig"); return; }
    long age=(long)TimeGMT()-StringToInteger(ts);
    if(age>LW_CMD_AGE || age<-LW_CMD_AGE){ LwAck(id,false,a,tk,"old"); return; }

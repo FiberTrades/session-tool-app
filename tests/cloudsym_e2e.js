@@ -39,6 +39,24 @@
     var fl = document.getElementById('stpr-flash');
     ok('...and says so on the chart', !fl || /Opening AUDUSD on your cloud MT5/.test(fl.textContent), fl && fl.textContent);
     ok('Live Charts, a PC account: nothing asked', P._cloudSym({ raw: 'AUDUSD', lg: '541419576', v: '9.13', hub: 'EURUSD|541419576' }) === 'none' && calls.length === n0 + 1);
+    // EA 9.14 (24 Oct 2026, "make it seamless"): one of that account's EAs opens the chart in its MT5 itself - the signed 'chart' command
+    var acctCalls = [], realAcct = window.__stTM.acct, eL = window.__stLiveLine.easL();
+    window.__stTM.acct = function (o) { acctCalls.push(o); return Promise.resolve({ ok: true }); };
+    eL['EURUSD|' + LG] = { v: '9.14', lg: LG, rl: true, al: true, tm: 0, at: Date.now() };
+    var n1 = calls.length;
+    var r6 = P._cloudSym({ raw: 'CADJPY', lg: LG, v: '9.14', hub: 'EURUSD|' + LG }); await W(200);
+    ok('EA 9.14 on that account: the chart command to its EURUSD EA to open CADJPY (App trading not needed), the list still saved',
+      r6 === 'added' && acctCalls.length === 1 && acctCalls[0].a === 'chart' && acctCalls[0].sym === 'EURUSD' && acctCalls[0].login === LG && acctCalls[0].cp === 'CADJPY' && acctCalls[0].minV === 9.14 && acctCalls[0].anyTm === true && calls.length === n1 + 1,
+      [r6, acctCalls, calls.length - n1]);
+    fl = document.getElementById('stpr-flash');
+    ok('...the chart says "Opening CADJPY…", no restart', !fl || (/Opening CADJPY…/.test(fl.textContent) && !/restarts/.test(fl.textContent)), fl && fl.textContent);
+    window.__stTM.acct = function (o) { acctCalls.push(o); return Promise.resolve({ ok: false, why: 'tpl 5019' }); };
+    P._cloudSym({ raw: 'NZDJPY', lg: LG, v: '9.14', hub: 'EURUSD|' + LG }); await W(250);
+    ok('...the EA could not open it: the restart message, as before 9.14 (the server restarts that MT5)', acctCalls.length === 2 && (!fl || /restarts for a moment/.test(fl.textContent)), fl && fl.textContent);
+    eL['EURUSD|' + LG].v = '9.13'; window.__stTM.acct = function (o) { acctCalls.push(o); return Promise.resolve({ ok: true }); };
+    P._cloudSym({ raw: 'AUDNZD', lg: LG, v: '9.13', hub: 'EURUSD|' + LG }); await W(200);
+    ok('only EAs before 9.14: no chart command, the restart message straight away', acctCalls.length === 2 && (!fl || /Opening AUDNZD on your cloud MT5/.test(fl.textContent)), fl && fl.textContent);
+    delete eL['EURUSD|' + LG]; window.__stTM.acct = realAcct;
     // Settings: no Charts row in the account's MT5 part
     var D = STCloud.getData(), acc = window.__stCreateAccount('FTMO Demo', 10000); D.mt5LoginMap = D.mt5LoginMap || {}; D.mt5LoginMap[LG] = acc.id;
     window.__stAccOpenId = acc.id;

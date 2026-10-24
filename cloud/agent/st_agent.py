@@ -30,6 +30,8 @@ WINE = "/opt/wine-staging/bin/wine"      # staging in Windows 11 mode: stable Wi
 MEMBERS = "/home/st/members"
 EA_SRC = "/opt/st/ea/MinimalistManager.ex5"
 PROFILE = "STCloud"         # the chart set the agent writes before each start (write_profile)
+TEMPLATE_EA = "STCloudEA.tpl"   # EA 9.14 opens a new symbol's chart with this (write_template)
+CHART_GRACE = 15            # seconds a new chart may take to be opened by the EA itself before MT5 is restarted for it
 SEED_COMMON = "/opt/st/seed-common.ini"      # MT5's saved settings, see prepare()
 SEED_SERVERS = "/opt/st/servers-ftmo.dat"     # FTMO's server list
 POLL = 10
@@ -220,6 +222,57 @@ def write_profile(acc, ad):
               CHART % {"id": 133846014025810000 + i + 1, "sym": sym, "inputs": "\n".join(inputs(acc, e))})
 
 
+def write_template(acc, ad):
+    """The template EA 9.14 opens a new chart with, when Live Charts shows a symbol this MT5 has no chart for (24 Oct 2026, Nestor:
+    "make it seamless"): the EA with the account's sync token, App trading and its settings - the same block as each chart of
+    the set. Kept current every tick (only written when it changes): a token or setting changed since the last start."""
+    td = os.path.join(ad, "MQL5", "Profiles", "Templates")
+    sym = (symbols(acc) or [("EURUSD", None)])[0][0]
+    text = CHART % {"id": 133846014025810000, "sym": sym, "inputs": "\n".join(inputs(acc, acc.get("ea")))}
+    path = os.path.join(td, TEMPLATE_EA)
+    want = b"\xff\xfe" + text.replace("\n", "\r\n").encode("utf-16-le")
+    try:
+        if open(path, "rb").read() == want:
+            return False
+    except FileNotFoundError:
+        pass
+    os.makedirs(td, exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(want)
+    as_st([path])
+    return True
+
+
+def charts_open(acc, since):
+    """The symbols this MT5 has a chart for, as EA 9.14 writes them (MQL5\\Files\\stcloud_charts.txt) when it opens one - only
+    if written since this terminal started."""
+    f = os.path.join(adir_of(acc), "MQL5", "Files", "stcloud_charts.txt")
+    try:
+        if os.path.getmtime(f) < since:
+            return set()
+        first = open(f, "rb").read().decode("latin-1", "ignore").splitlines()[0]
+        return {x.strip() for x in first.split(",") if x.strip()}
+    except Exception:
+        return set()
+
+
+def chart_plan(have, want, opened, first_at, now, paused):
+    """What a change to the account's chart list needs (24 Oct 2026): 'same' (nothing new), 'record' (removed only - left
+    for the next start - or every new symbol already opened by the EA itself), 'wait' (a new symbol: the EA gets
+    CHART_GRACE seconds to open it - the app asks both at once), 'restart' (still missing: MT5 opens its chart set at start;
+    not while prices are stopped, as an EA before 9.12 started without a fresh price sent its candles minutes late)."""
+    new = [x for x in want if x not in have]
+    if not new:
+        return "same" if list(want) == list(have) else "record"
+    if all(x in opened for x in new):
+        return "record"
+    if paused:
+        return "wait"
+    if first_at is None or now - first_at < CHART_GRACE:
+        return "wait"
+    return "restart"
+
+
 def prepare(acc):
     """The member's prefix and this account's portable MT5, EA and preset."""
     pre = prefix_of(acc)
@@ -257,6 +310,7 @@ def prepare(acc):
     if os.path.exists(EA_SRC) and (not os.path.exists(dst) or open(dst, "rb").read() != open(EA_SRC, "rb").read()):
         shutil.copyfile(EA_SRC, dst)
     write_profile(acc, ad)
+    write_template(acc, ad)
     as_st([os.path.join(pre, "drive_c", "ST")])
     return ad
 
@@ -529,10 +583,21 @@ def tick():
             launch(a)
         else:
             s.setdefault("started", time.time())  # adopted after an agent restart: the EA gets the same grace as a fresh start
+            try:
+                write_template(a, adir_of(a))   # EA 9.14's template, current (a terminal adopted after an agent restart too)
+            except Exception as e:
+                log("template failed", a["login"], e)
             want = [x[0] for x in symbols(a)]
-            if s.setdefault("syms", want) != want and not fx_paused():
-                # the member changed the charts: MT5 opens its chart set at start, so start it again - while prices run, as
-                # an EA before 9.12 started without a fresh price sent its candles minutes late
+            plan = chart_plan(s.setdefault("syms", want), want, charts_open(a, s.get("started", 0) - 5) if want != s["syms"] else set(),
+                              s.get("syms_new_at"), time.time(), fx_paused())
+            if plan == "wait":
+                s.setdefault("syms_new_at", time.time())
+            else:
+                s.pop("syms_new_at", None)
+            if plan == "record":
+                s["syms"] = want          # the EA opened it itself (9.14), or a chart was taken off the list: no restart
+            elif plan == "restart":
+                # a new chart the EA couldn't open itself (before 9.14): MT5 opens its chart set at start, so start it again
                 report(a, "starting", "Opening your new charts")
                 stop(a)
                 s["syms"] = want
