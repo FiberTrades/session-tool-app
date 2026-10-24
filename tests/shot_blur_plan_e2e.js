@@ -90,9 +90,9 @@
     // ---- Check my plan ----
     var sent = [], answer = { status: 200, body: { plan: { summary: 'Price location fits; look at the stop before acting.', items: [
       { rule: 'Price location', verdict: 'fits', why: 'Price sits in the lower half of the drawn range.', lesson: '3.4' },
-      { rule: 'Stop loss', verdict: 'no', why: 'The stop sits about 5 pips below entry.', lesson: '5.2' }] }, model: 'claude-haiku-5-5' } };
+      { rule: 'Stop loss', verdict: 'no', why: 'The stop sits about 5 pips below entry.', lesson: '5.2' }] }, model: 'x' }, ms: 3200 };
     window.fetch = function (u, o) {
-      if (String(u).indexOf('/functions/v1/st-assistant') >= 0) { sent.push(JSON.parse(o.body)); var rb = new Response(JSON.stringify(answer.body), { status: answer.status, headers: { 'content-type': 'application/json' } }); return new Promise(function (r) { setTimeout(function () { r(rb); }, 400); }); }
+      if (String(u).indexOf('/functions/v1/st-assistant') >= 0) { sent.push(JSON.parse(o.body)); var rb = new Response(JSON.stringify(answer.body), { status: answer.status, headers: { 'content-type': 'application/json' } }); return new Promise(function (r) { setTimeout(function () { r(rb); }, answer.ms || 400); }); }
       return realFetch.apply(this, arguments);
     };
     window.__stPlanCheck._token = function () { return Promise.resolve('test-token'); };
@@ -109,8 +109,16 @@
     ok('picking another setup', qa('.stpc-setups button')[1].classList.contains('on') && !qa('.stpc-setups button')[0].classList.contains('on'));
     q('[data-pc="go"]').click(); await W(20);
     ok('while it reads: "Reading your chart…", the button held', /Reading your chart/.test(q('[data-pc="go"]').textContent) && q('[data-pc="go"]').disabled);
-    for (k = 0; k < 50 && !qa('.stpc-row').length; k++) await W(100);
-    var rows = qa('.stpc-row');
+    ok('...a progress bar and the step it is on, and a placeholder row for each of the setup\'s rules',
+      !!q('.stpc-prog .stpc-bar i') && /Reading the chart/.test(q('.stpc-step').textContent) && qa('.stpc-sk').length === 2 && /Price location/.test(qa('.stpc-sk')[0].textContent) && q('.stpc-prog').getAttribute('role') === 'status',
+      [q('.stpc-step') && q('.stpc-step').textContent, qa('.stpc-sk').length]);
+    await W(120);
+    ok('...the bar on its way', parseFloat(getComputedStyle(q('.stpc-bar i')).width) > 0, q('.stpc-bar i').style.width);
+    for (k = 0; k < 40 && !/Checking your 2 rules/.test((q('.stpc-step') || {}).textContent || ''); k++) await W(100);
+    ok('...the step line moves on: Checking your 2 rules', /Checking your 2 rules/.test((q('.stpc-step') || {}).textContent || ''), (q('.stpc-step') || {}).textContent);
+    for (k = 0; k < 80 && !qa('.stpc-row:not(.stpc-sk)').length; k++) await W(100);
+    var rows = qa('.stpc-row:not(.stpc-sk)');
+    ok('the answer in: the bar and the placeholders gone', !q('.stpc-prog') && !qa('.stpc-sk').length);
     ok('the answer: each rule with Fits / Doesn\'t fit and why', rows.length === 2 && rows[0].querySelector('.stpc-v.fits').textContent === 'Fits' && rows[1].querySelector('.stpc-v.no').textContent === "Doesn't fit" && /5 pips/.test(rows[1].textContent) && /look at the stop/.test(q('.stpc-sum').textContent), rows.map(function (r) { return r.textContent; }));
     ok('with the Academy lesson that teaches it, by its real title', /Lesson 5\.2 · Stop placement/.test(rows[1].querySelector('.stpc-les').textContent), rows[1].querySelector('.stpc-les') && rows[1].querySelector('.stpc-les').textContent);
     var s0 = sent[0] || {};

@@ -96619,6 +96619,13 @@ window.__stAZ = (function () {
     + '.stpc-row b{display:block;font-size:13px;font-weight:600;margin-bottom:2px}.stpc-row p{margin:0;font-size:12.5px;line-height:1.45;color:#c9c6d2}'
     + '.stpc-les{display:inline-block;margin-top:5px;padding:0;border:0;background:none;color:#f472b6;font:inherit;font-size:12px;cursor:pointer;text-align:left}'
     + '.stpc-note{font-size:11.5px;color:#8a8794;line-height:1.45}.stpc-err{font-size:12.5px;color:#f7a24f;line-height:1.45}'
+    + '.stpc-prog{display:flex;flex-direction:column;gap:8px}'
+    + '.stpc-bar{height:3px;border-radius:2px;background:#23212b;overflow:hidden}'
+    + '.stpc-bar i{display:block;height:100%;width:0;border-radius:2px;background:#f472b6;transition:width 5.2s cubic-bezier(.15,.7,.25,1)}'
+    + '.stpc-step{font-family:"AppNum","DM Mono",monospace;font-size:11.5px;letter-spacing:.02em;color:#a19eab}'
+    + '.stpc-sk .stpc-v{background:#23212b;width:84px}.stpc-sk p{height:10px;width:68%;margin-top:7px;border-radius:5px;background:#23212b}'
+    + '@keyframes stpcPulse{0%,100%{opacity:.5}50%{opacity:1}}.stpc-sk .stpc-v,.stpc-sk p{animation:stpcPulse 1.4s ease-in-out infinite}'
+    + '@media (prefers-reduced-motion:reduce){.stpc-bar i{transition:none;width:60%}.stpc-sk .stpc-v,.stpc-sk p{animation:none}}'
     + '@media (max-width:600px){.stpc-ov{align-items:flex-end;padding:0}.stpc{border-radius:14px 14px 0 0;max-height:92vh}.stpc-row{grid-template-columns:96px 1fr}.stpc-hd small{display:none}}';
   function css(doc) { if (doc.getElementById('stpc-css')) return; var st = doc.createElement('style'); st.id = 'stpc-css'; st.textContent = CSS; (doc.head || doc.body).appendChild(st); }
   var CUR = null;
@@ -96654,14 +96661,29 @@ window.__stAZ = (function () {
         h += '<button type="button" class="stpc-go" data-pc="go"' + ((busy || !pic || !rl.length) ? ' disabled' : '') + '>'
           + esc(busy ? T('Reading your chart…', 'Leyendo tu gráfico…') : (res ? T('Check again', 'Revisar de nuevo') : T('Check this chart', 'Revisar este gráfico'))) + '</button>';
       }
+      if (busy) h += '<div class="stpc-prog" role="status" aria-live="polite"><div class="stpc-bar"><i></i></div><div class="stpc-step">' + esc(T('Reading the chart\u2026', 'Leyendo el gráfico\u2026')) + '</div></div>'
+        + rl.map(function (r) { return '<div class="stpc-row stpc-sk" aria-hidden="true"><span class="stpc-v"></span><div><b>' + esc(r.label) + '</b><p></p></div></div>'; }).join('');
       if (err) h += '<div class="stpc-err">' + esc(err) + '</div>';
-      if (res) h += '<div class="stpc-sum">' + esc(res.summary || '') + '</div>' + (res.items || []).map(row).join('');
+      if (res && !busy) h += '<div class="stpc-sum">' + esc(res.summary || '') + '</div>' + (res.items || []).map(row).join('');
       h += '<div class="stpc-note">' + esc(T('It reads the picture only, and never places or changes a trade. Part of your AI assistant.', 'Solo lee la imagen y nunca abre ni cambia una operación. Parte de tu asistente IA.')) + '</div>';
       bd.innerHTML = h;
     }
+    var timers = [];
+    function prog() {
+      var bar = bd.querySelector('.stpc-bar i'), st = bd.querySelector('.stpc-step'), n = rulesOf(pick).length;
+      if (bar) win.requestAnimationFrame(function () { win.requestAnimationFrame(function () { bar.style.width = '90%'; }); });
+      timers.push(setTimeout(function () { if (st) st.textContent = T('Checking your ' + n + ' rules\u2026', 'Revisando tus ' + n + ' reglas\u2026'); }, 1300));
+      timers.push(setTimeout(function () { if (st) st.textContent = T('Writing it up\u2026', 'Redactando\u2026'); }, 3100));
+    }
+    function progDone() {
+      timers.forEach(clearTimeout); timers = [];
+      var bar = bd.querySelector('.stpc-bar i'); if (!bar) return Promise.resolve();
+      bar.style.transition = 'width .2s ease-out'; bar.style.width = '100%';
+      return new Promise(function (r) { setTimeout(r, 220); });
+    }
     async function go() {
       if (busy || !pic || !pick) return;
-      busy = true; err = ''; render();
+      busy = true; err = ''; render(); prog();
       try { localStorage.setItem(LAST, pick.name); } catch (e) {}
       try {
         var tk = await token(); if (!tk) throw new Error(T('Sign in to check a chart.', 'Inicia sesión para revisar un gráfico.'));
@@ -96672,9 +96694,10 @@ window.__stAZ = (function () {
         if (!r.ok || !j || !j.plan) throw new Error((j && j.error) || T('The check did not come back. Try again.', 'La revisión no volvió. Inténtalo de nuevo.'));
         res = j.plan;
       } catch (e) { err = (e && e.message) || String(e); }
+      await progDone();
       busy = false; render();
     }
-    function close() { try { win.removeEventListener('keydown', key, true); } catch (e) {} ov.remove(); if (CUR === close) CUR = null; }
+    function close() { timers.forEach(clearTimeout); timers = []; try { win.removeEventListener('keydown', key, true); } catch (e) {} ov.remove(); if (CUR === close) CUR = null; }
     CUR = close;
     function key(e) { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } }
     win.addEventListener('keydown', key, true);

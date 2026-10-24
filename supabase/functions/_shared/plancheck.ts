@@ -45,6 +45,7 @@ For EVERY rule, look at the picture and decide:
 - "no": the picture clearly shows something different
 - "unknown": the picture cannot show it (a time that is not on the axis, a level nobody drew, anything the chart does not carry)
 Only say "fits" or "no" when you could point at it in the picture. When in doubt, "unknown".
+A rule with several parts (e.g. "below the swing low, 2-4 pips") fits only when EVERY part fits: if any part clearly does not, it is "no". Compare numbers exactly - 5 pips is outside 2-4.
 
 "why": one short plain sentence, at most 18 words, about what the picture shows, e.g. "Price sits in the lower half of the drawn range." Describe the chart, never the trader; never accusing.
 "lesson": the id of ONE listed lesson that teaches that rule, only when one truly does; otherwise null. Never invent an id.
@@ -109,13 +110,16 @@ export function parsePlan(text: string, i: PlanInput): PlanResult | null {
   return { items, summary: clip(j?.summary, 300) };
 }
 
-// Thinking stays on (the model reads the chart before it answers) at low effort; the answer is short, so the cap leaves room for both.
+// Thinking stays on (the model reads the chart before it answers) at the effort asked; the answer is short, so the cap leaves room
+// for both. Sonnet 5.5 carries the API's default refusal fallback (another model answers if a safety check declines the request).
 export async function runPlanCheck(apiKey: string, model: string, i: PlanInput, effort = "low"): Promise<{ result: PlanResult | null; usage: any; error?: string; text?: string }> {
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
-    headers: { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+    headers: Object.assign({ "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+      /^claude-sonnet-5-5/.test(model) ? { "anthropic-beta": "server-side-fallback-2026-07-01" } : {}),
     body: JSON.stringify({
       model,
+      ...(/^claude-sonnet-5-5/.test(model) ? { fallbacks: "default" } : {}),
       max_tokens: 6000,
       output_config: { effort },
       system: planSystem(i.lang),

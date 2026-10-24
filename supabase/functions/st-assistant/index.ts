@@ -311,7 +311,7 @@ function canChatM(m: Member): boolean { return m.email === ADMIN_EMAIL || !!ALLO
 function canGreetM(m: Member): boolean { return canChatM(m) || m.paid || m.trial; }
 
 // "Check my plan" today, from the same ai_usage rows (mode plancheck).
-const MODEL_PLAN = "claude-haiku-5-5";
+const MODEL_PLAN = "claude-sonnet-5-5";
 const PLAN_PER_DAY = 30;
 async function planChecksToday(userId: string): Promise<number> {
   try {
@@ -399,15 +399,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const model = smart ? MODEL_SMART : MODEL_LIGHT;
 
     // "Check my plan" (24 Oct 2026): a chart picture against one of the member's setups (../_shared/plancheck.ts). The same plan
-    // gate as a question. Haiku 5.5 at high effort: on two test charts it read the stop distance, the session box times, the
-    // price location and a dip under the previous day low right (medium misread one; Sonnet 5 misread the stop) - about 0.2p a
-    // check, 14-21 s. Sonnet 5.5 at low effort read them as well in ~4 s for ~0.6p, if speed ever matters more. PLAN_PER_DAY a day.
+    // gate as a question, PLAN_PER_DAY a day. Sonnet 5.5 at low effort (25 Oct 2026): a check made right before an entry has to
+    // be quick - 3.6-4.8 s on two test charts against Haiku 5.5's 14-21 s at high effort, reading the stop distance, the session
+    // box times, the price location and a dip under the previous day low right; about 0.6p a check.
     if (rawMode === "plancheck") {
       const pin = planInput(body, lang);
       if (!pin) return json({ error: lang === "es" ? "Falta la imagen del gráfico o las reglas del setup." : "The chart picture or the setup's rules are missing." }, 400);
       if ((await planChecksToday(member.id)) >= PLAN_PER_DAY) return json({ error: lang === "es" ? `Ya has revisado ${PLAN_PER_DAY} gráficos hoy. Mañana tienes más.` : `That's ${PLAN_PER_DAY} chart checks today. More tomorrow.` }, 429);
       const pm = MODEL_PLAN;
-      const out = await runPlanCheck(ANTHROPIC_API_KEY, pm, pin, "high");
+      const out = await runPlanCheck(ANTHROPIC_API_KEY, pm, pin, "low");
       await recordUsage(member.id, pm, out.usage, "plancheck");
       if (!out.result) return json({ error: out.error === "unreadable" ? (lang === "es" ? "No se pudo leer la respuesta. Inténtalo de nuevo." : "The answer could not be read. Try again.") : out.error }, 502);
       return json({ plan: out.result, model: pm });
