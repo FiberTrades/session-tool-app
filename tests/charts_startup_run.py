@@ -76,11 +76,11 @@ try:
         print('reopened window bounds (from the browser):', b2)
     except Exception as e: print('bounds read failed', e)
     s2 = json.loads(st) if st and st.startswith('{') else {}
-    ok('a fresh start with the switch on: the app opens on Charts', s2.get('tab') == 'livecharts', st)
+    ok('a fresh start with the switch on: the app lands back on Session Bias (24 Oct 2026: "i need to be landing on session bias")', s2.get('tab') == 'bias', st)
     ok('...and chart 3 opens in its window, its chart in it', s2.get('open') and s2.get('inWin'), st)
     ok('...at the same place and size (333,222 1001x640)', s2.get('x') == 333 and s2.get('y') == 222 and s2.get('ow') == 1001 and s2.get('oh') == 640, st)
     # (3) the layout menu's section
-    menu = ev(cdp, r"""(async function(){ var W = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }; document.getElementById('stpr-laybtn').click(); await W(200);
+    menu = ev(cdp, r"""(async function(){ var W = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }; document.querySelector('.tab[data-page="livecharts"]').click(); await W(900); document.getElementById('stpr-laybtn').click(); await W(200);
       var m = document.getElementById('stpr-menu'), cb = m.querySelector('input[data-wsr]'); return JSON.stringify({ text: m.textContent.replace(/\s+/g, ' ').slice(-260), checked: cb && cb.checked }); })()""")
     mo = json.loads(menu)
     ok('the layout menu: Chart windows, the switch on, "Remembered on this computer: chart 3."', mo.get('checked') and 'Chart windows' in mo['text'] and 'Remembered on this computer: chart 3.' in mo['text'], mo)
