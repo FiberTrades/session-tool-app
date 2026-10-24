@@ -145,6 +145,7 @@ PRELUDE = r"""(async () => {
   for (let i = 0; i < 100 && (typeof data === 'undefined' || !document.getElementById('mt5-import-btn')); i++)
     await new Promise(r => setTimeout(r, 100));
   try { if (window.STCloud && STCloud.getData) STCloud.getData()._tourDoneV1 = true; } catch (e) {}
+  if (window.__stPlatOff === undefined) window.__stPlatOff = true;   // the Charts window as it was (24 Oct 2026: the platform has its own test, platform_e2e.js)
   document.querySelectorAll('.stc-gate, #onboarding-modal-bg, .onboarding-modal-bg, #lp-front, [class^="st-tour"]')
     .forEach(e => e.style.setProperty('display', 'none', 'important'));
   return typeof data !== 'undefined';
