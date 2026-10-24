@@ -961,6 +961,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .mt5c-ol b { color: var(--text); font-weight: 600; }
   .mt5c-more a { color: var(--accent); }
   .mt5c-note { margin: 12px 0 0; color: var(--text-dim); }
+  /* The assistant's weekly summary on Session Bias (24 Oct 2026) */
+  .st-week { margin: 0 0 22px; padding: 16px 18px; border: 1px solid var(--border-2); border-radius: 12px; background: var(--bg-elev); }
+  .st-week[hidden] { display: none; }
+  .st-week-t { font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent); }
+  .st-week-b { margin-top: 10px; font-family: 'Fraunces', serif; font-size: 16px; line-height: 1.55; letter-spacing: -0.005em; color: var(--text); white-space: pre-line; }
+  .st-week-f { display: flex; justify-content: flex-end; margin-top: 14px; }
   .mt5c-home { display: flex; align-items: center; gap: 16px; padding: 14px 18px; margin: 0 0 22px; border: 1px solid var(--border-2); border-radius: 12px; background: var(--bg-elev); }
   .mt5c-home[hidden] { display: none; }
   .mt5c-hi { width: 38px; height: 38px; flex: none; border-radius: 10px; background: rgba(244,114,182,.12); color: var(--accent); display: inline-flex; align-items: center; justify-content: center; font: 700 11px 'AppNum','DM Mono',monospace; letter-spacing: .04em; }
@@ -6549,6 +6555,8 @@ try {
     </div>
     <div id="mt5c-home" class="mt5c-home" hidden></div>
     <div class="st-asst"><div class="st-asst-av">AI</div><div class="st-asst-body"><div class="st-asst-head"><span class="st-asst-name">Assistant</span></div><div id="bias-greeting" class="bias-greeting"></div></div></div>
+    <!-- The assistant's weekly summary (24 Oct 2026): written Sunday 18:00 London by weekly-summary, shown here until Got it. -->
+    <div id="st-week" class="st-week" hidden></div>
     <!-- Economic calendar panel — populated by renderEconomicCalendar() on tab open.
          Fetches Forex Factory's "this week" XML via allorigins CORS proxy, caches per-day
          in localStorage. Failure modes show inline ("couldn't load — retry"); the rest
@@ -29748,6 +29756,61 @@ try {
     }
     if (tb.getAttribute('data-h') !== h) { tb.innerHTML = h; tb.setAttribute('data-h', h); }
   }
+
+  /* ===== The assistant's weekly summary (24 Oct 2026, Nestor: "A weekly summary from the assistant") =====
+     weekly-summary (edge function) writes it every Sunday at 18:00 London into weekly_summaries and pushes its first line to the
+     phone. The newest unread one shows on Session Bias as an assistant card until Got it, which marks every unread one read
+     (read_at; the only column a member may change). Never in a mentor view or a detached window. */
+  (function stWeekly() {
+    const T = (en, es) => { try { return window._stT ? window._stT(en, es) : en; } catch (e) { return en; } };
+    const esc = x => String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    let shown = null, busy = false, tries = 0;
+    function ready() {
+      try {
+        const u = window.currentUser, sb = window.__stSB;
+        if (!u || !u.id || !sb || !sb.from || !window.__stJournalPulled) return false;
+        if (document.body.classList.contains('mentor-viewing')) return false;
+        if (typeof window.__stIsDetachedWindow === 'function' && window.__stIsDetachedWindow()) return false;
+        return true;
+      } catch (e) { return false; }
+    }
+    function range(wk) {
+      const a = new Date(String(wk) + 'T12:00:00'); if (isNaN(a.getTime())) return '';
+      const b = new Date(a); b.setDate(b.getDate() + 6);
+      let loc = 'en-GB'; try { if (data.settings && data.settings.lang === 'es') loc = 'es-ES'; } catch (e) {}
+      const f = d => { try { return d.toLocaleDateString(loc, { day: 'numeric', month: 'short' }); } catch (e) { return d.toDateString(); } };
+      if (a.getMonth() === b.getMonth()) return a.getDate() + ' – ' + f(b);   // 19 – 25 Oct
+      return f(a) + ' – ' + f(b);
+    }
+    function paint(row) {
+      const el = document.getElementById('st-week'); if (!el) return;
+      if (!row) { el.hidden = true; el.innerHTML = ''; return; }
+      el.innerHTML = '<div class="st-week-t">' + esc(T('Your week', 'Tu semana')) + (row.week_key ? ' · ' + esc(range(row.week_key)) : '') + '</div>'
+        + '<div class="st-week-b">' + esc(row.body) + '</div>'
+        + '<div class="st-week-f"><button type="button" class="mt5c-btn" data-st-week-ok>' + esc(T('Got it', 'Entendido')) + '</button></div>';
+      el.hidden = false;
+    }
+    async function load() {
+      if (busy || !ready()) return;
+      busy = true;
+      try {
+        const r = await window.__stSB.from('weekly_summaries').select('id, week_key, body, created_at').is('read_at', null).order('created_at', { ascending: false }).limit(1);
+        shown = (r && Array.isArray(r.data) && r.data[0]) || null;
+        paint(shown);
+      } catch (e) {} finally { busy = false; }
+    }
+    document.addEventListener('click', async e => {
+      const b = e.target && e.target.closest ? e.target.closest('[data-st-week-ok]') : null;
+      if (!b || !shown) return;
+      b.disabled = true; b.classList.add('done'); b.textContent = T('Read', 'Leído') + ' ✓';
+      try { await window.__stSB.from('weekly_summaries').update({ read_at: new Date().toISOString() }).eq('user_id', window.currentUser.id).is('read_at', null); } catch (er) {}
+      setTimeout(() => { shown = null; paint(null); }, 1200);
+    });
+    // once the journal has arrived, and again whenever the app comes back to the front (Sunday evening, after the push)
+    const iv = setInterval(() => { if (ready()) { clearInterval(iv); load(); } else if (++tries > 600) clearInterval(iv); }, 1000);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') load(); });
+    try { window.__stWeekly = { load: load, paint: paint }; } catch (e) {}
+  })();
   window.__stZc = { redraw: function () { try { zLayout(); zDraw(); } catch (e) {} try { ddDraw(); } catch (e) {} }, viz: { ring: zRing, spark: zSpark, bars: zMiniBars, pair: zPair, gauge: zGauge } };
 
   // Lifetime "showed up vs traded" — the same idea as the monthly consistency block,
