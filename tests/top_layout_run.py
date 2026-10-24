@@ -19,7 +19,10 @@ GEO = """(function(){
   var cells=[].slice.call(document.querySelectorAll('.meta .meta-cell')).map(function(c){var v=c.querySelector('.meta-value'),l=c.querySelector('.meta-label');return {c:r(c),v:r(v),lab:r(l)};});
   return {h1:r(document.querySelector('.header h1')), tabs:r(document.querySelector('.tabs')), meta:r(meta), metaInHeader: !!(meta&&hd&&hd.contains(meta)),
           tv: f&&!f.hidden&&f.offsetParent ? r(f) : null, tvIn: f&&hd&&hd.contains(f)?'header':(f&&f.parentNode&&f.parentNode.className||''), tvOn: hd.classList.contains('tv-on'),
-          news: r(document.getElementById('bias-news-sec')), cells: cells, sx: document.documentElement.scrollWidth, vw: innerWidth};
+          news: r(document.getElementById('bias-news-sec')), cells: cells, sx: document.documentElement.scrollWidth, vw: innerWidth,
+          tabsI: (function(){var ts=[].slice.call(document.querySelectorAll('.tabs .tab')).filter(function(t){return t.offsetWidth>0;});var a=document.querySelector('.tabs .tab.active');
+            return {ws:ts.map(function(t){return Math.round(t.getBoundingClientRect().width);}), hs:ts.map(function(t){return Math.round(t.getBoundingClientRect().height);}),
+                    fs:ts.length?getComputedStyle(ts[0]).fontSize:'', over:ts.filter(function(t){return t.scrollWidth>t.clientWidth+1;}).length, act:a?getComputedStyle(a).borderTopColor:''};})()};
 })()"""
 OPEN_TV = "(function(){document.querySelectorAll('.stc-gate').forEach(function(g){g.classList.remove('open');});var f=document.getElementById('bloomberg-floater');if(f.hidden)document.getElementById('econ-bloomberg-btn').click();return !f.hidden;})()"
 SIZE_JS = """(async function(){var W=function(ms){return new Promise(function(r){setTimeout(r,ms);});};
@@ -95,6 +98,9 @@ def desk(W, H):
     check(tag + 'TV size: remembered on this device after a reload', g['kept']['tv'] and g['kept']['tv']['w'] == ws[-1], [g['kept']['tv'], ws[-1]])
     check(tag + 'no sideways scroll', on['sx'] <= on['vw'] and off['sx'] <= off['vw'], [on['sx'], off['sx'], on['vw']])
     check(tag + 'title 76px tall line', on['h1'] and 60 <= on['h1']['h'] <= 100, on['h1'])
+    ti = on['tabsI']   # slimmer, more readable tabs (24 Oct 2026): 12.5px labels, every tab the same size, nothing cut off, the active one pink
+    check(tag + 'tabs: 12.5px labels, all the same size, nothing cut off', ti['fs'] == '12.5px' and max(ti['ws']) - min(ti['ws']) <= 1 and max(ti['hs']) - min(ti['hs']) <= 1 and ti['over'] == 0, ti)
+    check(tag + 'tabs: shorter boxes, the active one outlined pink', max(ti['hs']) <= 46 and ti['act'].replace(' ', '') in ('rgb(244,114,182)',), ti)
     if W >= 1100:
         tv = on['tv']
         check(tag + 'TV on: in its slot in the header, header says tv-on', tv and on['tvIn'] == 'header' and on['tvOn'], [on['tvIn'], on['tvOn'], tv])
