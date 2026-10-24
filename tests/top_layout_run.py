@@ -85,9 +85,11 @@ def desk(W, H):
         check(tag + 'TV on: the four cells in one row', len(set(x['c']['t'] for x in on['cells'])) == 1, [x['c'] for x in on['cells']])
         # "spread these right a bit more": first cell on the title's left edge, the last ending about 40px short of the TV, text left-aligned in each
         cs = on['cells']
-        check(tag + 'TV on: the info spread from the title to about 40px short of the TV',
-              tv and abs(cs[0]['c']['l'] - on['h1']['l']) <= 3 and abs((tv['l'] - cs[-1]['c']['r']) - 40) <= 6,
-              [cs[0]['c'], cs[-1]['c'], on['h1'], tv])
+        gaps = [cs[i + 1]['c']['l'] - cs[i]['c']['r'] for i in range(len(cs) - 1)]
+        want = min(72, round(0.046 * W))
+        check(tag + 'TV on: from the title, about 72px between the cells, ending well short of the TV ("compact this a little more")',
+              tv and abs(cs[0]['c']['l'] - on['h1']['l']) <= 3 and all(abs(g - want) <= 2 for g in gaps) and tv['l'] - cs[-1]['c']['r'] >= 60,
+              {'gaps': gaps, 'want': want, 'to_tv': tv and tv['l'] - cs[-1]['c']['r'], 'first': cs[0]['c'], 'h1': on['h1']})
         check(tag + 'TV on: text left-aligned in each cell', all(abs(x['v']['l'] - x['c']['l']) <= 2 and abs(x['lab']['l'] - x['c']['l']) <= 2 for x in cs), [[x['c']['l'], x['v']['l'], x['lab']['l']] for x in cs])
         check(tag + 'TV off: no TV, header without tv-on', off['tv'] is None and not off['tvOn'], [off['tv'], off['tvOn']])
         check(tag + 'TV off: the info beside the title', off['meta']['l'] > off['h1']['r'], [off['h1'], off['meta']])
