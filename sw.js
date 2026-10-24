@@ -105,6 +105,23 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // What's new (24 Oct 2026): the update list read by the app (the dot on its logo) and by the whats-new pages.
+  // Network first, so a new entry shows on the next load; the cached copy only serves offline.
+  if (url.origin === self.location.origin && /\/whats-new\.json$/.test(url.pathname)) {
+    event.respondWith(
+      fetch(request, { cache: 'no-store' })
+        .then((res) => {
+          if (res && res.status === 200) {
+            const copy = res.clone();
+            caches.open(RUNTIME_CACHE).then((c) => c.put(request, copy)).catch(() => {});
+          }
+          return res;
+        })
+        .catch(() => caches.match(request))
+    );
+    return;
+  }
+
   // Supabase (the journal, sign-in, everything account-specific) is never touched: a cached copy of
   // the journal served when the network blips is an OLD journal, and the sync would merge against it.
   // Account data has no business in a shared cache either.
