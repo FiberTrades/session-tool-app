@@ -29,6 +29,7 @@ TEMPLATE = "/home/st/mt5-template"
 WINE = "/opt/wine-staging/bin/wine"      # staging in Windows 11 mode: stable Wine trips MT5's debugger check since 18 Oct 2026
 MEMBERS = "/home/st/members"
 EA_SRC = "/opt/st/ea/MinimalistManager.ex5"
+EA_CANARY = "/opt/st/ea/canary"    # a build tried on one account first: <login>.ex5 here wins over EA_SRC (cloud/rollout-ea.sh)
 PROFILE = "STCloud"         # the chart set the agent writes before each start (write_profile)
 TEMPLATE_EA = "STCloudEA.tpl"   # EA 9.14 opens a new symbol's chart with this (write_template)
 CHART_GRACE = 15            # seconds a new chart may take to be opened by the EA itself before MT5 is restarted for it
@@ -307,8 +308,11 @@ def prepare(acc):
     ex = os.path.join(ad, "MQL5", "Experts", "SessionTerminal")
     os.makedirs(ex, exist_ok=True)
     dst = os.path.join(ex, "MinimalistManager.ex5")
-    if os.path.exists(EA_SRC) and (not os.path.exists(dst) or open(dst, "rb").read() != open(EA_SRC, "rb").read()):
-        shutil.copyfile(EA_SRC, dst)
+    src = os.path.join(EA_CANARY, "%s.ex5" % safe(acc["login"]))
+    if not os.path.exists(src):
+        src = EA_SRC
+    if os.path.exists(src) and (not os.path.exists(dst) or open(dst, "rb").read() != open(src, "rb").read()):
+        shutil.copyfile(src, dst)
     write_profile(acc, ad)
     write_template(acc, ad)
     as_st([os.path.join(pre, "drive_c", "ST")])
