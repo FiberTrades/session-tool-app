@@ -78537,12 +78537,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
       var cr = roleOf(lg), old = !!v && parseFloat(v) < 9.1;
       h += row(T('Trade copier', 'Copiador'), T('A Lead’s trades are copied by its Follow accounts, each at its own risk.', 'Las cuentas Seguidor copian las operaciones del Líder, cada una con su propio riesgo.'),
         '<select class="settings-input mt5c-pick" data-mt5c-role="' + esc(lg) + '"' + (old ? ' disabled' : '') + '>' + [['off', T('Off', 'Apagado')], ['lead', T('Lead', 'Líder')], ['follow', T('Follow', 'Seguidor')]].map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === cr ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>');
-      var syms = (c && c.symbols && c.symbols.length) ? c.symbols : Object.keys((x && x.syms) || {}).sort();
-      var chips = syms.map(function (s) { return '<span class="sacc-sym">' + esc(s) + (c ? '<button type="button" data-sacc-symrm="' + esc(lg) + '|' + esc(s) + '" title="' + esc(T('Close this chart', 'Cerrar este gráfico')) + '">×</button>' : '') + '</span>'; }).join('');
-      h += row(T('Charts', 'Gráficos'), c ? T('One EA chart each on the server. Its risk, stops, TP and break-even are set on the EA panel on that chart in Live Charts (Charts tab), which changes the EA itself. A change here restarts that MT5 for a moment (while the market is open).', 'Un gráfico con el EA por símbolo en el servidor. Su riesgo, stops, TP y break-even se ponen en el panel del EA de ese gráfico en Gráficos en vivo (pestaña Gráficos), que cambia el propio EA. Un cambio aquí reinicia ese MT5 un momento (con el mercado abierto).')
-                                       : T('One EA chart each in MT5 on your PC. Their stops, TP and break-even are set on the EA panel.', 'Un gráfico con el EA por símbolo en MT5 en tu PC. Sus stops, TP y break-even se ponen en el panel del EA.'),
-        '<span class="sacc-syms">' + (chips || '<span class="set-sub">' + T('None yet', 'Ninguno aún') + '</span>') + '</span>'
-        + (c ? '<span class="sacc-symadd"><input class="settings-input" data-sacc-symin="' + esc(lg) + '" placeholder="' + esc(T('Add a symbol, e.g. GBPUSD', 'Añade un símbolo, p. ej. GBPUSD')) + '" autocomplete="off" spellcheck="false"><button type="button" class="settings-btn" data-sacc-symadd="' + esc(lg) + '">+</button></span>' : ''));
+      // its charts on the server: no row here since 24 Oct 2026 - a symbol opened in Live Charts is added by itself (__stCloudWantSym)
     });
     return h;
   }
@@ -78694,6 +78689,16 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     c.symbols = list; window.__stAccFill(true);
     sb.rpc('st_cloud_set_symbols', { p_id: c.id, p_symbols: list }).then(function () { try { window.__stMt5c.clLoad(); } catch (e) {} });
   }
+  // Live Charts: a symbol opened on a cloud account's chart that its MT5 has no EA chart for gets one on the server, once (the agent
+  // restarts that MT5 for a moment, only while prices run). 'added' | 'has' | 'none' (not a cloud account). 20 charts at most:
+  // the oldest one added makes room.
+  window.__stCloudWantSym = function (lg, raw) {
+    var c = cloudOf(lg); raw = String(raw || ''); if (!c || !/^[A-Za-z0-9._#+-]{1,32}$/.test(raw)) return 'none';
+    var x = infoOf(lg), cur = (c.symbols && c.symbols.length) ? c.symbols.slice() : Object.keys((x && x.syms) || {}).sort();
+    if (cur.indexOf(raw) >= 0) return 'has';
+    while (cur.length >= 20) cur.shift();
+    cur.push(raw); setSyms(lg, cur); return 'added';
+  };
   function addSym(lg) {
     var i = document.querySelector('[data-sacc-symin="' + lg + '"]'), v = i ? String(i.value || '').trim() : ''; if (!/^[A-Za-z0-9._#+-]{1,32}$/.test(v)) { if (i) i.focus(); return; }
     var c = cloudOf(lg), x = infoOf(lg), cur = (c && c.symbols && c.symbols.length) ? c.symbols.slice() : Object.keys((x && x.syms) || {}).sort();
@@ -92602,6 +92607,7 @@ window.__stAZ = (function () {
   // a trade open or pending meets each move of it (the minute forming is otherwise played once, at its start)
   function tdClock(){ if (!S || !S.today) { clearInterval(LV.tdk); LV.tdk = 0; return; }
     var ea = eaFor(S.sym); if (ea && (!S.ea || S.ea.raw !== ea.raw || S.ea.v !== ea.v)) S.ea = ea;
+    if (S.live && S.ea && S.ea.hub) lvCloudSym(S.ea);
     if (S.ea && !S.gotHist) lvHist(S); lvTfAsk();
     var n = Math.min(nowS(), S.f.close); S.follow = S.now >= n - 90 && n < S.f.close;
     if (!S.follow) { LV.tdPx = null; return; }
@@ -93022,6 +93028,15 @@ window.__stAZ = (function () {
   //      the EA places it as its own key and click do. The panel's last line says sent, then filled (with our own chime) or why not.
   var LVK = ['mm', 'tgtR', 'tgtOn', 'tgtUnit', 'tgtPx', 'stopPx'];
   function lvOwnEA(){ var e = S && S.live && S.ea; return (e && !e.hub) ? e : null; }
+  // A symbol on the chart that this account's cloud MT5 has no EA chart for (the hub streams it): the server opens one by itself, once
+  // (Nestor, 24 Oct 2026: "i can just do it all on the chart" - the Charts row in Settings is gone). Its own EA then feeds this chart and
+  // takes its orders. The account: the one picked to trade with, else the hub's.
+  function lvCloudSym(ea){ var lg = String(CFG.lvLg || (ea && ea.lg) || ''), k = lg + '|' + (ea && ea.raw); if (!lg || !ea || !ea.raw) return '';
+    LV.cloudAsk = LV.cloudAsk || {}; if (LV.cloudAsk[k]) return LV.cloudAsk[k];
+    var r = ''; try { r = window.__stCloudWantSym ? window.__stCloudWantSym(lg, ea.raw) : ''; } catch (e) {}
+    LV.cloudAsk[k] = r || 'none';
+    if (r === 'added') try { flash(T('Opening ' + ea.raw + ' on your cloud MT5: it restarts for a moment (once the market is open), then you can trade it here.', 'Abriendo ' + ea.raw + ' en tu MT5 en la nube: se reinicia un momento (con el mercado abierto) y luego puedes operarlo aquí.')); } catch (e) {}
+    return r; }
   function lvSetOf(){ var e = lvOwnEA(); return e ? (LV.set || {})[e.raw + '|' + e.lg] || null : null; }
   function cfgPractice(){ var c = JSON.parse(JSON.stringify(CFG)); if (LV.mmStash) LVK.forEach(function(k){ c[k] = JSON.parse(JSON.stringify(LV.mmStash[k])); }); return c; }
   function lvPip(){ var st = lvSetOf(), x = S ? units(S.sym) : null; return (st && +st.pip > 0) ? +st.pip : ((x && (x.pips || x.pts)) || 0.0001); }
@@ -94406,7 +94421,7 @@ window.__stAZ = (function () {
       setTimeout(go1, 300);
     }
   } catch (e) {}
-  window.__stPractice = { open: open, close: close, _lv: function(){ return LV; }, _goLive: goLive, _lvClock: function(ms){ LV.toff = ms || 0; }, _liveDay: liveDay, stats: stats, log: logAll, pull: pull, _satReady: satReady, _stageReady: stageReady, _stageHas: function(w){ return LV.sat === w; }, _stage: function(){ return { on: stageOn(), sd: SD !== document }; }, _stageDetach: stageDetach, _win: function(){ return window; }, _lcBye: lcBye, _satHandOver: lcHandOver, _satExpect: function(){ return LV.expect; }, _satHas: function(w, i){ var o = POP[i]; return !!(o && o.w === w); }, _dayLocked: function(){ return lvDayLocked(); }, _lvEmsg: function(p){ lvEmsg(p); }, _pullCfg: pullCfg, _pushCfg: pushCfg, _save: function(){ save(); }, _lcAway: function(w){ if (LV.solo || LCW || !w || LV.popW === w) return; lcAwaySet(w); }, _wsr: { get: wsrGet, set: wsrSet, open: wsrOpenAll, start: wsrStart, st: function(){ return WSR; }, setup: wsrSetup, steps: wsrSteps, popCheck: wsrPopCheck },
+  window.__stPractice = { open: open, close: close, _lv: function(){ return LV; }, _cloudSym: lvCloudSym, _goLive: goLive, _lvClock: function(ms){ LV.toff = ms || 0; }, _liveDay: liveDay, stats: stats, log: logAll, pull: pull, _satReady: satReady, _stageReady: stageReady, _stageHas: function(w){ return LV.sat === w; }, _stage: function(){ return { on: stageOn(), sd: SD !== document }; }, _stageDetach: stageDetach, _win: function(){ return window; }, _lcBye: lcBye, _satHandOver: lcHandOver, _satExpect: function(){ return LV.expect; }, _satHas: function(w, i){ var o = POP[i]; return !!(o && o.w === w); }, _dayLocked: function(){ return lvDayLocked(); }, _lvEmsg: function(p){ lvEmsg(p); }, _pullCfg: pullCfg, _pushCfg: pushCfg, _save: function(){ save(); }, _lcAway: function(w){ if (LV.solo || LCW || !w || LV.popW === w) return; lcAwaySet(w); }, _wsr: { get: wsrGet, set: wsrSet, open: wsrOpenAll, start: wsrStart, st: function(){ return WSR; }, setup: wsrSetup, steps: wsrSteps, popCheck: wsrPopCheck },
     _pop: popChart, _unpop: unpop, _lcPop: lcPopOut, _lcSolo: lcSolo, _zoom: function(i, r){ var p = panes[i]; if (!p) return; p.handAt = Date.now(); setRange(p, r); }, _axl: function(i, k){ var p = panes[i]; return p && p.series && p.series.__stAx ? p.series.__stAx.get(k || 'cd') : null; }, _lvv: function(){ return panes.map(function(p){ try { return p.series.options().lastValueVisible; } catch (e) { return null; } }); }, _pops: function(){ return POP; }, _liveWin: liveWin, _reLive: reLive,
     _setPaneSym: setPaneSym, _ps: PS, _feeds: feeds, _loadSyms: function(){ return loadSymbols(); }, _today: goToday, _dwListOf: dwListOf, _dwRaw: function(){ return DW.raw; },
     _alertsMenu: alertsMenu, _logSync: logSync, _treeMenu: treeMenu, _lockSel: lockSel, _emojis: EMOJIS, _satBar: satBar, _mEl: mEl, _eaNewest: eaNewest, _vpCalc: vpCalc, _vol: function(){ return VOL; }, _volNoHist: volNoHist, _static: function(){ return staticCache; }, _volMerge: volMerge,
