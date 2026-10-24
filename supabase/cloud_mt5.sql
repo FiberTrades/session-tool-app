@@ -156,3 +156,22 @@ language sql stable security definer set search_path to 'public' as $$
   );
 $$;
 revoke all on function public.st_cloud_watch_due() from anon, authenticated;
+
+-- Extra cloud places (24 Oct 2026, Nestor: "if users (not free trial users) want to have more than 5 accounts synced, we can offer
+-- it by making them pay extra on top of their subscription"): the "Extra cloud account" item on the member's own Stripe subscription
+-- (£3/month, £30/year), its quantity in profiles.cloud_extra - written by stripe-webhook and cloud-extra (service role; profiles has
+-- no update policy). A paid member's limit is 5 + that.
+alter table public.profiles add column if not exists cloud_extra int not null default 0;
+create or replace function public.st_cloud_mt5_room() returns trigger language plpgsql security definer set search_path to 'public' as $$
+declare cap int; n int; mine int; lim int;
+begin
+  select capacity into cap from public.cloud_hosts where id = new.host_id;
+  select count(*) into n from public.cloud_mt5 where host_id = new.host_id;
+  if cap is not null and n >= cap then raise exception 'cloud_full'; end if;
+  if public.st_is_admin() then return new; end if;
+  lim := case when public.st_my_plan() = 'trial' then 1
+              else 5 + greatest(0, coalesce((select cloud_extra from public.profiles where id = new.user_id), 0)) end;
+  select count(*) into mine from public.cloud_mt5 where user_id = new.user_id;
+  if mine >= lim then raise exception '%', case when lim = 1 then 'cloud_trial_limit' else 'cloud_user_limit' end; end if;
+  return new;
+end $$;

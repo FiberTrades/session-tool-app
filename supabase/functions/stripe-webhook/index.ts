@@ -16,6 +16,8 @@
 //   STRIPE_PRICE_BUNDLE_Y      price_...    |  (premium / bundle / mentorship)
 //   STRIPE_PRICE_MENTOR_M      price_...   /
 //   STRIPE_PORTAL_URL          optional, your Customer Portal login link
+//   STRIPE_PRICE_CLOUD_EXTRA_M price_...   \  the "Extra cloud account" item (24 Oct 2026): its quantity is
+//   STRIPE_PRICE_CLOUD_EXTRA_Y price_...   /   profiles.cloud_extra, never the plan
 //
 // This function is the ONLY thing that may set is_paid. The client can never be
 // trusted with it, so every write here uses the service role and the user is
@@ -57,6 +59,17 @@ addPrice("STRIPE_PRICE_MENTOR_M", "mentorship");
 
 const PORTAL_URL = Deno.env.get("STRIPE_PORTAL_URL") ?? "";
 
+// Extra cloud places (24 Oct 2026): an item of its own on the same subscription, beside the plan's. The plan is the item
+// whose price is a plan (else the first that isn't an extra) - items[0] was assumed before, and an extra could come first.
+const EXTRA_PRICES = new Set([Deno.env.get("STRIPE_PRICE_CLOUD_EXTRA_M"), Deno.env.get("STRIPE_PRICE_CLOUD_EXTRA_Y")].filter(Boolean) as string[]);
+function planItemOf(sub: Stripe.Subscription) {
+  const its = sub.items?.data ?? [];
+  return its.find((i) => !!PLAN_BY_PRICE[i.price?.id ?? ""]) ?? its.find((i) => !EXTRA_PRICES.has(i.price?.id ?? "")) ?? its[0];
+}
+function extraOf(sub: Stripe.Subscription): number {
+  return (sub.items?.data ?? []).filter((i) => EXTRA_PRICES.has(i.price?.id ?? "")).reduce((n, i) => n + (i.quantity ?? 0), 0);
+}
+
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -94,7 +107,7 @@ function planNameFromPrice(priceId: string | null | undefined): string | null {
 function periodEndOf(sub: Stripe.Subscription): number | null {
   const top = (sub as unknown as { current_period_end?: number }).current_period_end;
   if (typeof top === "number") return top;
-  const item = sub.items?.data?.[0] as unknown as { current_period_end?: number } | undefined;
+  const item = planItemOf(sub) as unknown as { current_period_end?: number } | undefined;
   if (item && typeof item.current_period_end === "number") return item.current_period_end;
   return null;
 }
@@ -125,7 +138,7 @@ async function applySubscription(sub: Stripe.Subscription, userIdHint?: string |
     return { ok: false, reason: "no profile for customer " + customerId };
   }
 
-  const priceId = sub.items?.data?.[0]?.price?.id ?? null;
+  const priceId = planItemOf(sub)?.price?.id ?? null;
   const isPaid = PAID_STATUSES.has(sub.status);
 
   // cancel_at_period_end does NOT remove access - it just stops the renewal.
@@ -140,6 +153,8 @@ async function applySubscription(sub: Stripe.Subscription, userIdHint?: string |
     // someone cancels - which left the app showing their plan with no sign it was ending. This
     // is the only field that says so.
     cancel_at_period_end: !!sub.cancel_at_period_end,
+    // extra cloud places: none once the subscription no longer counts as paid
+    cloud_extra: isPaid ? extraOf(sub) : 0,
   };
 
   // Only written when we actually have one. Sending null on every event is how a date that was
@@ -155,7 +170,7 @@ async function applySubscription(sub: Stripe.Subscription, userIdHint?: string |
   // The price itself, for Settings > Business: monthly revenue needs to know a yearly plan from a
   // monthly one. List price before any coupon. Left alone when the event carries no price, and kept
   // after a cancel so the history can say what was lost.
-  const price = sub.items?.data?.[0]?.price;
+  const price = planItemOf(sub)?.price;
   if (price && typeof price.unit_amount === "number") {
     patch.plan_amount = price.unit_amount;
     patch.plan_interval = price.recurring?.interval ?? null;

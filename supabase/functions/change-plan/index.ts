@@ -45,6 +45,12 @@ const ALLOWED_PRICES = [
   Deno.env.get("STRIPE_PRICE_MENTOR_M"),
 ].filter(Boolean) as string[];
 
+// Extra cloud places (24 Oct 2026) ride on the same subscription as an item of their own: the plan is the item that isn't one,
+// and they follow the plan's interval (£3 a month / £30 a year - Stripe keeps one interval per subscription).
+const EXTRA_M = Deno.env.get("STRIPE_PRICE_CLOUD_EXTRA_M") ?? "";
+const EXTRA_Y = Deno.env.get("STRIPE_PRICE_CLOUD_EXTRA_Y") ?? "";
+const EXTRA = new Set([EXTRA_M, EXTRA_Y].filter(Boolean));
+
 const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -97,16 +103,22 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: "no_active_subscription" }, 200);
     }
 
-    const itemId = sub.items?.data?.[0]?.id;
-    if (!itemId) return json({ ok: false, error: "no_active_subscription" }, 200);
+    const its = sub.items?.data ?? [];
+    const planItem = its.find((i) => !EXTRA.has(i.price?.id ?? ""));
+    if (!planItem) return json({ ok: false, error: "no_active_subscription" }, 200);
 
     // Already on it - report success rather than billing a pointless proration.
-    if (sub.items.data[0].price?.id === priceId) {
+    if (planItem.price?.id === priceId) {
       return json({ ok: true, unchanged: true }, 200);
     }
 
+    // the extra cloud places move to the new plan's interval with it
+    const yearly = (await stripe.prices.retrieve(priceId)).recurring?.interval === "year";
+    const want = yearly ? EXTRA_Y : EXTRA_M;
+    const extras = its.filter((i) => EXTRA.has(i.price?.id ?? "") && want && i.price?.id !== want).map((i) => ({ id: i.id, price: want }));
+
     await stripe.subscriptions.update(subId, {
-      items: [{ id: itemId, price: priceId }],
+      items: [{ id: planItem.id, price: priceId }, ...extras],
       proration_behavior: "create_prorations",
       payment_behavior: "error_if_incomplete",
     });

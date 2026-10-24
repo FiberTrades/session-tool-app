@@ -910,6 +910,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   #settings-modal-bg .sacc-addcl .sacc-clform { padding-top: 0; }
   #settings-modal-bg #sacc-add-wrap.sacc-forone > :not(#sacc-addcloud) { display: none; }
   #settings-modal-bg .sacc-clform label.sacc-ack { align-items: flex-start; color: var(--text-dim); line-height: 1.5; }
+  #settings-modal-bg .sacc-clform .sacc-xp { margin-top: 8px; }
   #settings-modal-bg .sacc-clform label.sacc-ack input { margin-top: 3px; flex: none; }
   .mt5c-end { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }   /* Trades go into + Remove, on the row's right */
   #settings-modal-bg .mt5c-acc .mt5c-pick { width: auto; min-width: 190px; height: 32px; padding: 0 10px; font: 12px Inter, system-ui, sans-serif; }
@@ -78111,7 +78112,16 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
      MT5 runs on Session Terminal's own server with the EA, day and night (cloud/ in the repo). The password is sealed here with the
      server's public key (cloud_hosts, RSA-OAEP SHA-256) before it is sent, so only that server can open it; removing the account
      deletes it there. Only the admin sees this while it is tested (cloud_mt5's insert policy checks st_is_admin too). */
-  var CL = { rows: null, host: null, open: false, busy: false, err: '', at: 0, sure: null };
+  var CL = { rows: null, host: null, open: false, busy: false, err: '', at: 0, sure: null, extra: 0, yearly: false, paid: false };
+  // Extra cloud places (24 Oct 2026): 5 come with a paid plan; each one more is £3 a month (£30 a year on a yearly plan), an item on
+  // the member's own Stripe subscription (cloud-extra). profiles.cloud_extra counts them; st_cloud_mt5_room allows 5 + that.
+  var CL_INCLUDED = 5;
+  function clExtra(op) {
+    var sb = window.__stSB; if (!sb || !sb.functions) return Promise.resolve({ ok: false, error: 'offline' });
+    return sb.functions.invoke('cloud-extra', { body: { op: op } }).then(function (res) {
+      var d = (res && res.data) || { ok: false, error: 'offline' }; if (d.ok && typeof d.extra === 'number') CL.extra = d.extra; return d;
+    }, function (e) { return { ok: false, error: 'offline', message: String((e && e.message) || e) }; });
+  }
   function clTwice(lg) { try { return !!(window.__stLiveLine && window.__stLiveLine.twice && window.__stLiveLine.twice(lg)); } catch (e) { return false; } }
   function clAdm() { try { return !!(window.currentUser && String(window.currentUser.email || '').toLowerCase() === 'be.o2@hotmail.com'); } catch (e) { return false; } }
   // THE switch for MT5 in the cloud: who sees it in Settings -> Accounts. Every signed-in member since 24 Oct 2026 (Nestor: "i need users to
@@ -78141,9 +78151,9 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
       return put(h || CL.host);
     }).then(function (r) {
       var em = String((r && r.error && (r.error.message || r.error)) || '');
-      if (r && r.error) return { ok: false, why: /cloud_trial_limit/.test(em) ? 'trial' : '', err: /duplicate|unique/i.test(em) ? T('That account is already in the cloud.', 'Esa cuenta ya está en la nube.')
+      if (r && r.error) return { ok: false, why: /cloud_trial_limit/.test(em) ? 'trial' : /cloud_user_limit/.test(em) ? 'limit' : '', err: /duplicate|unique/i.test(em) ? T('That account is already in the cloud.', 'Esa cuenta ya está en la nube.')
         : /cloud_trial_limit/.test(em) ? T('The free trial runs one account in the cloud. Go Premium to run up to five.', 'La prueba gratis lleva una cuenta en la nube. Hazte Premium para llevar hasta cinco.')
-        : /cloud_user_limit/.test(em) ? T('Up to five accounts each in the cloud. Remove one to add another.', 'Hasta cinco cuentas por persona en la nube. Quita una para añadir otra.')
+        : /cloud_user_limit/.test(em) ? T('All ' + (CL_INCLUDED + (CL.extra || 0)) + ' of your cloud places are in use.', 'Las ' + (CL_INCLUDED + (CL.extra || 0)) + ' plazas de tu nube están en uso.')
         : /cloud_full/.test(em) ? T('The cloud is full right now: we’re adding room. Try again later today.', 'La nube está llena ahora mismo: estamos ampliándola. Prueba otra vez más tarde hoy.') : em };
       clLoad(); return { ok: true, id: r && r.data && r.data[0] && r.data[0].id };
     }, function (e) { return { ok: false, err: String((e && e.message) || e) }; });
@@ -78153,6 +78163,9 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     sb.from('cloud_mt5').select('id,login,server,status,status_msg,status_at,created_at,app_trading,symbols').order('created_at')
       .then(function (r) { if (r && !r.error) { CL.rows = r.data || []; render(); try { if (window.__stAccFill) window.__stAccFill(true); } catch (e) {} } }, function () {});
     if (!CL.host) clPick();
+    var u = window.currentUser; if (u && u.id) sb.from('profiles').select('cloud_extra,plan_interval,is_paid').eq('id', u.id).maybeSingle()
+      .then(function (r) { var d = r && !r.error && r.data; if (!d) return; CL.extra = +d.cloud_extra || 0; CL.yearly = d.plan_interval === 'year'; CL.paid = !!d.is_paid;
+        try { if (window.__stAccFill) window.__stAccFill(true); } catch (e) {} }, function () {});
   }
   // The server a new account goes to: the active one with the most room (st_cloud_pick_host, 24 Oct 2026 - more than one
   // server). Resolves the host, false when every server is full, or null when it can't be asked (CL.host stays as it was).
@@ -78405,7 +78418,8 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
   setInterval(tick, 1500);
   window.__stMt5c = { visible: visible, open: openTab, render: function () { render(true); }, accts: accts,
                       cloud: function () { return CL.rows || []; }, clLoad: function () { if (Date.now() - CL.at > 3000) clLoad(); }, twice: clTwice, adm: clAdm,
-                      cloudOn: cloudOn, cloudAdd: clInsert, cloudRm: function (id) { var sb = window.__stSB; if (!sb) return Promise.resolve(); return sb.from('cloud_mt5').delete().eq('id', id).then(function () { CL.at = 0; clLoad(); }, function () { CL.at = 0; clLoad(); }); },
+                      cloudOn: cloudOn, cloudAdd: clInsert, extra: clExtra, _extra: function (n) { CL.extra = n; },
+                      places: function () { return { used: (CL.rows || []).length, included: CL_INCLUDED, extra: CL.extra || 0, yearly: !!CL.yearly, paid: !!CL.paid }; }, cloudRm: function (id) { var sb = window.__stSB; if (!sb) return Promise.resolve(); return sb.from('cloud_mt5').delete().eq('id', id).then(function () { CL.at = 0; clLoad(); }, function () { CL.at = 0; clLoad(); }); },
                       _wait: function (ms) { S.waitAt = Date.now() - ms; render(true); }, _opened: function (ms) { S.openAt = Date.now() - ms; render(true); } };
 })();
 </script>
@@ -78615,10 +78629,33 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
       + (acked() ? '' : '<label class="cl-chk sacc-ack"><input type="checkbox" data-sacc-af="ack">' + T('I’ve checked my prop firm allows running MT5 on a VPS. I stay in control: changing my MT5 password cuts this server’s access.', 'He comprobado que mi prop firm permite ejecutar MT5 en un VPS. Sigo al mando: cambiar mi contraseña de MT5 corta el acceso de este servidor.') + '</label>')
       + '<p class="set-sub">' + T('Your password is locked in this page with the server’s own key before it’s sent: only the server can open it, not the app and not us.', 'Tu contraseña se cierra en esta página con la llave del propio servidor antes de enviarse: solo el servidor puede abrirla, ni la app ni nosotros.') + '</p>'
       + '<p class="set-sub sacc-dn" data-sacc-aerr hidden></p>'
+      + '<p class="set-sub" data-sacc-places hidden></p>'
       + '<div class="cl-btns"><button type="button" class="settings-btn sacc-add-btn" data-sacc-ago>' + T('Add and start in the cloud', 'Añadir y arrancar en la nube') + '</button></div></div></div>'
       + (fa ? '' : '<div class="set-h">' + T('Or add one by hand', 'O añádela a mano') + ' <small class="sacc-h-sub">' + T('for trades you log yourself', 'para operaciones que registras tú') + '</small></div>');
   }
+  // Cloud places for a paid member: how many are used, and an extra one removable while it is free (pressed twice)
+  var XP = { sure: false, busy: false };
+  function placePrice() { var p = window.__stMt5c.places(); return p.yearly ? T('£30 a year', '30 £ al año') : T('£3 a month', '3 £ al mes'); }
+  function placesFill() {
+    var el = document.querySelector('[data-sacc-places]'); if (!el) return;
+    var p = null; try { p = window.__stMt5c.places(); } catch (e) {}
+    if (!p || !p.paid || trialPlan() || window.__stMt5c.adm()) { el.hidden = true; return; }
+    var all = p.included + p.extra;
+    el.hidden = false;
+    el.innerHTML = esc(T('Cloud places: ' + p.used + ' of ' + all + ' in use', 'Plazas en la nube: ' + p.used + ' de ' + all + ' en uso'))
+      + (p.extra ? esc(T(' (' + p.included + ' with your plan, ' + p.extra + ' extra at ' + placePrice() + ' each)', ' (' + p.included + ' con tu plan, ' + p.extra + ' extra a ' + placePrice() + ' cada una)')) : '')
+      + (p.extra && p.used < all ? ' <button type="button" class="settings-btn sacc-xp" data-sacc-extra="remove">' + (XP.busy ? T('Removing…', 'Quitando…') : XP.sure ? T('Press again to remove it', 'Pulsa otra vez para quitarla') : T('Remove an extra place', 'Quitar una plaza extra')) + '</button>' : '');
+  }
+  function extraWhy(d) {
+    return d.error === 'no_active_subscription' ? T('Extra places go on a card subscription. Your plan was set up for you: message the admin to add one.', 'Las plazas extra van en una suscripción con tarjeta. Tu plan te lo activamos nosotros: escribe al admin para añadir una.')
+      : d.error === 'not_paid' ? T('Extra places come with a paid plan.', 'Las plazas extra van con un plan de pago.')
+      : d.error === 'stripe' ? T('Nothing was charged: ', 'No se ha cobrado nada: ') + (d.message || '')
+      : d.error === 'in_use' ? T('That place is in use: remove a cloud account first.', 'Esa plaza está en uso: quita antes una cuenta de la nube.')
+      : d.error === 'too_many' ? T('That’s the most extra places for now: message the admin.', 'Es el máximo de plazas extra por ahora: escribe al admin.')
+      : T('Billing can’t be reached just now. Try again in a minute.', 'Ahora no se llega a la facturación. Prueba otra vez en un minuto.');
+  }
   function heads() {
+    try { placesFill(); } catch (e) {}
     var n = (D().accounts || []).filter(function (a) { return a && a.status === 'active'; }).length;
     var s = document.getElementById('sacc-h-sub'); if (s) s.textContent = n > 1 ? T('click one to see or change its settings', 'pulsa una para ver o cambiar sus ajustes') : '';
     var a = document.getElementById('sacc-add-txt'); if (a) a.textContent = T('Another account? Name it and give its starting balance, then connect its MT5: in the cloud or on your PC.', '¿Otra cuenta? Ponle nombre y su saldo inicial, y conecta su MT5: en la nube o en tu PC.');
@@ -78714,6 +78751,16 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
       applyProgram(a2); window.__stAccFirmEdit = false; try { saveData(); } catch (er) {} redraw(); try { if (typeof refreshAllSurfaces === 'function') refreshAllSurfaces(); } catch (er) {} return; }
     if (tg.closest('[data-sacc-firmedit]')) { window.__stAccFirmEdit = !window.__stAccFirmEdit; redraw(); return; }
     if (tg.closest('[data-sacc-conn]')) { window.__stAccConn(true); return; }
+    b = tg.closest('[data-sacc-extra]');
+    if (b) {
+      var xop = b.getAttribute('data-sacc-extra'), xer = document.querySelector('[data-sacc-aerr]');
+      if (XP.busy) return;
+      if (xop === 'remove' && !XP.sure) { XP.sure = true; placesFill(); setTimeout(function () { if (XP.sure) { XP.sure = false; placesFill(); } }, 5000); return; }
+      XP.busy = true; XP.sure = false; b.disabled = true; b.textContent = xop === 'add' ? T('Adding a place…', 'Añadiendo una plaza…') : T('Removing…', 'Quitando…');
+      window.__stMt5c.extra(xop).then(function (d) { XP.busy = false; placesFill();
+        if (!d.ok) { if (xer) { xer.hidden = false; xer.textContent = extraWhy(d); } return; }
+        if (xop === 'add') { if (xer) { xer.hidden = true; xer.textContent = ''; } var go = document.querySelector('[data-sacc-ago]'); if (go) go.click(); }   // the place is there: add the account now
+      }); return; }
     b = tg.closest('[data-sacc-cloudfor]');
     if (b) { CF.forAcc = b.getAttribute('data-sacc-cloudfor'); var wf = document.getElementById('sacc-add-wrap'), old = wf && wf.querySelector('#sacc-addcloud'); if (old) old.remove();
       window.__stAccAddCloud(); return; }
@@ -78731,7 +78778,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
       CF.sure = null; window.__stMt5c.cloudRm(id).then(function () { window.__stAccFill(true); }); return; }
     b = tg.closest('[data-sacc-ago]');
     if (b && !CF.busy) { var af = function (k) { var i = document.querySelector('[data-sacc-af="' + k + '"]'); return i ? (i.type === 'checkbox' ? i.checked : String(i.value || '').trim()) : ''; }, er = document.querySelector('[data-sacc-aerr]');
-      if (er) er.hidden = true;   // each press starts clean: an earlier attempt's error stayed on screen after a success (24 Oct 2026)
+      if (er) { er.hidden = true; er.textContent = ''; }   // each press starts clean: an earlier attempt's error (and its offer button) stayed after a success (24 Oct 2026)
       var lg1 = af('login'), sv1 = af('server');
       if ((D().mt5LoginMap || {})[lg1] && accById(D().mt5LoginMap[lg1])) { if (er) { er.hidden = false; er.textContent = T('That MT5 account is already one of your accounts: open it and press Move to the cloud.', 'Esa cuenta MT5 ya es una de tus cuentas: ábrela y pulsa Pasar a la nube.'); } return; }
       if (!acked() && !af('ack')) { if (er) { er.hidden = false; er.textContent = ACK_ERR(); } return; }
@@ -78743,7 +78790,10 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
       if (!acked()) { D().cloudAck = Date.now(); try { saveData(); } catch (e) {} }
       CF.busy = true; b.textContent = T('Starting…', 'Arrancando…');
       window.__stMt5c.cloudAdd(lg1, sv1, af('pw'), af('app')).then(function (r) { CF.busy = false; b.textContent = T('Add and start in the cloud', 'Añadir y arrancar en la nube');
-        if (!r.ok) { if (er) { er.hidden = false; er.textContent = r.err; } if (r.why === 'trial') premium(); return; }
+        if (!r.ok) { if (er) { er.hidden = false; er.textContent = r.err; }
+          if (r.why === 'trial') premium();
+          if (r.why === 'limit' && er && !trialPlan()) er.insertAdjacentHTML('beforeend', ' <button type="button" class="settings-btn sacc-xp" data-sacc-extra="add">' + esc(T('Add a place · ', 'Añadir una plaza · ') + placePrice()) + '</button>');
+          return; }
         var fresh = !reuse, acc = reuse || window.__stCreateAccount('MT5 ' + lg1, 0);   // its name and starting balance come from MT5 (autoFill)
         if (acc) { var none = true; try { none = !getAllLifetimeTrades().some(function (x) { return x.accountId === acc.id; }); } catch (e) {}
           if (fresh || none) { acc._nameAuto = true; acc._sbAuto = true; } if (/ftmo/i.test(sv1)) acc.kind = 'challenge';

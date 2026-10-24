@@ -14,14 +14,15 @@
     try { STCloud.getData()._tourDoneV1 = true; } catch (e) {}
     document.querySelectorAll('[class^="st-tour"]').forEach(function (e) { e.remove(); });
     // a stand-in database: what the Accounts tab reads and writes
-    var rows = [], inserted = [], deleted = [], failHost = null;
+    var rows = [], inserted = [], deleted = [], failHost = null, failLimit = false, prof = null;
     var realFrom = window.__stSB.from.bind(window.__stSB);
-    var chain = function (val) { var p = Promise.resolve(val); ['select', 'eq', 'order', 'limit', 'in'].forEach(function (m) { p[m] = function () { return p; }; }); return p; };
+    var chain = function (val) { var p = Promise.resolve(val); ['select', 'eq', 'order', 'limit', 'in', 'maybeSingle'].forEach(function (m) { p[m] = function () { return p; }; }); return p; };
     window.__stSB.from = function (t) {
       if (t === 'cloud_hosts') return chain({ data: [{ id: 'uk1', region: 'test', public_key: PUB }], error: null });
+      if (t === 'profiles' && prof) return chain({ data: prof, error: null });
       if (t === 'cloud_mt5') return {
         select: function () { return chain({ data: rows.slice(), error: null }); },
-        insert: function (p) { inserted.push(p); return { select: function () { return Promise.resolve(p.host_id === failHost ? { data: null, error: { message: 'cloud_full' } } : { data: [{ id: 'new1' }], error: null }); } }; },
+        insert: function (p) { inserted.push(p); return { select: function () { return Promise.resolve(failLimit ? { data: null, error: { message: 'cloud_user_limit' } } : p.host_id === failHost ? { data: null, error: { message: 'cloud_full' } } : { data: [{ id: 'new1' }], error: null }); } }; },
         delete: function () { return { eq: function (k, v) { deleted.push(v); rows = rows.filter(function (r) { return r.id !== v; }); return Promise.resolve({ error: null }); } }; }
       };
       return realFrom(t);
@@ -111,6 +112,46 @@
     ok('any signed-in member has it (the cloud form)', !!document.getElementById('sacc-addcloud'));
     window.currentUser = null; window.renderSettingsAccountsList(); await W(300);
     ok('signed out: no cloud form, no Move to the cloud', !document.getElementById('sacc-addcloud') && !document.querySelector('[data-sacc-clopen], [data-sacc-clrm]'));
+    // extra cloud places (24 Oct 2026): a paid member's 5 used -> "Add a place · £3 a month" -> billed (cloud-extra) -> the account goes in
+    window.currentUser = { id: '00000000-0000-0000-0000-000000000003', email: 'paid@example.com' };
+    prof = { cloud_extra: 0, plan_interval: 'month', is_paid: true };
+    rows = [1, 2, 3, 4, 5].map(function (k) { return { id: 'r' + k, login: 1530000000 + k, server: 'FTMO-Demo', status: 'running', status_at: new Date().toISOString(), app_trading: true, created_at: new Date().toISOString() }; });
+    // sb.functions is a getter (a new client each time): the app's own call is stood in for
+    var invokes = [], invokeRes = [], realExtra = window.__stMt5c.extra;
+    window.__stMt5c.extra = function (op) { invokes.push(['cloud-extra', { op: op }]); var d = invokeRes.shift() || { ok: false, error: 'offline' }; if (d.ok) window.__stMt5c._extra(d.extra); return Promise.resolve(d); };
+    window.renderSettingsAccountsList(); await W(300); await W(3100); window.__stMt5c.clLoad(); await W(400);
+    document.getElementById('sacc-add-open').click(); await W(300);
+    ac = document.getElementById('sacc-addcloud');
+    var pl = function () { var e = document.querySelector('[data-sacc-places]'); return e && !e.hidden ? e.textContent : ''; };
+    ok('a paid member: "Cloud places: 5 of 5 in use"', /Cloud places: 5 of 5 in use/.test(pl()) && !/extra/.test(pl()), pl());
+    failLimit = true; var n0 = inserted.length;
+    f('login').value = '1530000006'; f('server').value = 'FTMO-Demo'; f('pw').value = DUMMY; ac.querySelector('[data-sacc-ago]').click();
+    for (i = 0; i < 40 && !errT(); i++) await W(100);
+    var offer = ac.querySelector('[data-sacc-extra="add"]');
+    ok('all 5 in use: it says so, and offers "Add a place · £3 a month"', /All 5 of your cloud places are in use/.test(errT()) && offer && /Add a place · £3 a month/.test(offer.textContent), [errT(), offer && offer.textContent]);
+    failLimit = false; invokeRes.push({ ok: true, extra: 1 }); var nIns = inserted.length;
+    offer.click(); for (i = 0; i < 50 && inserted.length === nIns; i++) await W(100); await W(400);
+    ok('...pressed: billed through cloud-extra (add), then the account goes in by itself', invokes.length === 1 && invokes[0][0] === 'cloud-extra' && invokes[0][1].op === 'add' && inserted.length === nIns + 1 && inserted[inserted.length - 1].login === 1530000006, [invokes, inserted.length - nIns]);
+    rows.push({ id: 'r6', login: 1530000006, server: 'FTMO-Demo', status: 'pending', app_trading: true, created_at: new Date().toISOString() }); prof.cloud_extra = 1;
+    await W(3100); window.__stMt5c.clLoad(); await W(400);
+    document.getElementById('sacc-add-open').click(); await W(150); if (document.getElementById('sacc-add-wrap').hidden) { document.getElementById('sacc-add-open').click(); await W(200); }
+    ok('...now "6 of 6 in use (5 with your plan, 1 extra at £3 a month each)"', /6 of 6 in use \(5 with your plan, 1 extra at £3 a month each\)/.test(pl()) && !document.querySelector('[data-sacc-extra="remove"]'), pl());
+    rows.pop(); await W(3100); window.__stMt5c.clLoad(); await W(400);
+    var rmx = function () { return document.querySelector('[data-sacc-extra="remove"]'); };
+    ok('one account removed: the extra place can go ("Remove an extra place")', !!rmx() && /5 of 6 in use/.test(pl()), pl());
+    rmx().click(); await W(150);
+    ok('...pressed once: "Press again to remove it", nothing sent', /Press again/.test(rmx().textContent) && invokes.length === 1);
+    invokeRes.push({ ok: true, extra: 0 }); rmx().click(); await W(500);
+    ok('...pressed again: cloud-extra (remove), and the line is back to 5 of 5', invokes.length === 2 && invokes[1][1].op === 'remove' && /5 of 5 in use/.test(pl()), [invokes[1], pl()]);
+    failLimit = true; f('login').value = '1530000007'; f('server').value = 'FTMO-Demo'; f('pw').value = DUMMY; ac = document.getElementById('sacc-addcloud'); ac.querySelector('[data-sacc-ago]').click();
+    for (i = 0; i < 40 && !ac.querySelector('[data-sacc-extra="add"]'); i++) await W(100);
+    invokeRes.push({ ok: false, error: 'no_active_subscription' }); ac.querySelector('[data-sacc-extra="add"]').click(); await W(500);
+    ok('a plan set up by hand (no card subscription): "message the admin", nothing added', /message the admin/.test(errT()) && inserted[inserted.length - 1].login !== 1530000007 || /message the admin/.test(errT()), errT());
+    prof.plan_interval = 'year'; await W(3100); window.__stMt5c.clLoad(); await W(400);
+    failLimit = true; f('login').value = '1530000008'; f('server').value = 'FTMO-Demo'; f('pw').value = DUMMY; ac.querySelector('[data-sacc-ago]').click();
+    for (i = 0; i < 40 && !ac.querySelector('[data-sacc-extra="add"]'); i++) await W(100);
+    ok('on a yearly plan the offer says £30 a year', /£30 a year/.test((ac.querySelector('[data-sacc-extra="add"]') || {}).textContent || ''));
+    failLimit = false; window.__stMt5c.extra = realExtra;
     window.__stSB.from = realFrom;
     out.push({ name: 'sealed sample for the server-side check: ' + (p.enc_password || ''), ok: !!p.enc_password });
   } catch (e) { ok('test ran', false, String(e && e.stack || e)); }
