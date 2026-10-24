@@ -395,7 +395,8 @@ def stop(acc_or_id, wipe_dir=None):
             except Exception:
                 pass
     s["proc"] = None
-    if s.get("login"):                         # also one adopted from an earlier run of the agent
+    if s.get("login"):                         # also one adopted from an earlier run of the agent: its whole group
+        end_groups(mt5_groups(s["login"]))
         subprocess.run(["pkill", "-u", "st", "-f", "drive_c/ST/%s/terminal64.exe" % safe(s["login"])], check=False)
         subprocess.run(["pkill", "-u", "st", "-f", "C:.ST.%s.terminal64.exe" % safe(s["login"])], check=False)
     if s.get("ini"):
@@ -404,8 +405,76 @@ def stop(acc_or_id, wipe_dir=None):
         except FileNotFoundError:
             pass
     if wipe_dir:
+        wine_down(wipe_dir)
         subprocess.run(["pkill", "-f", wipe_dir], check=False)
         shutil.rmtree(wipe_dir, ignore_errors=True)
+
+
+def mt5_groups(login):
+    """The process groups an account's MT5 runs in. launch() starts each in a group of its own (xvfb-run, the screen, its
+    window manager, MT5), so ending the group ends all of it. Ending MT5 by name alone also hit xvfb-run, whose command
+    line names terminal64.exe, before it could close its screen: 7 empty screens were left on uk1 by 24 Oct 2026."""
+    out = set()
+    for pat in ("drive_c/ST/%s/terminal64.exe", "C:.ST.%s.terminal64.exe"):
+        r = subprocess.run(["pgrep", "-u", "st", "-f", pat % safe(login)], capture_output=True, text=True)
+        for pid in r.stdout.split():
+            try:
+                g = os.getpgid(int(pid))
+            except Exception:
+                continue
+            if g > 1 and g != os.getpgrp():
+                out.add(g)
+    return out
+
+
+def end_groups(groups, wait=20):
+    for g in groups:
+        try:
+            os.killpg(g, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    t = time.time() + wait
+    while groups and time.time() < t:
+        groups = {g for g in groups if group_alive(g)}
+        time.sleep(0.5)
+    for g in groups:
+        try:
+            os.killpg(g, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+
+def group_alive(g):
+    """Any process of the group still running. A zombie (ended, not yet reaped by its parent) doesn't count: killpg(g, 0)
+    still succeeds for one."""
+    r = subprocess.run(["ps", "-e", "-o", "pgid=,stat="], capture_output=True, text=True)
+    return any(f[0] == str(g) and not f[1].startswith("Z") for f in (ln.split() for ln in r.stdout.splitlines()) if len(f) == 2)
+
+
+def wine_down(prefix):
+    """A removed account's Wine (its wineserver, services, plugplay...): about 120 MB that outlived the folder before."""
+    if os.path.isdir(os.path.join(prefix, "drive_c")):
+        subprocess.run(["runuser", "-u", "st", "--", "env", "WINEPREFIX=" + prefix, os.path.join(os.path.dirname(WINE), "wineserver"),
+                        "-k"], check=False, timeout=30)
+
+
+def sweep():
+    """Insurance for the leak mt5_groups() fixes: a screen whose launcher is gone (its Xvfb is the init's child) and with
+    nothing but the screen and its window manager left in the group, for 5 minutes, is closed."""
+    r = subprocess.run(["ps", "-u", "st", "-o", "pid=,ppid=,pgid=,etimes=,comm="], capture_output=True, text=True)
+    groups = {}
+    for ln in r.stdout.splitlines():
+        f = ln.split(None, 4)
+        if len(f) == 5 and f[2].isdigit():
+            groups.setdefault(int(f[2]), []).append((int(f[1]), int(f[3]), f[4].strip()))
+    for g, ps in groups.items():
+        if g > 1 and g != os.getpgrp() and {x[2] for x in ps} <= {"Xvfb", "openbox"} and \
+                any(x[2] == "Xvfb" and x[0] == 1 and x[1] > 300 for x in ps):
+            try:
+                os.killpg(g, signal.SIGTERM)
+                log("closed a leftover screen, group", g)
+            except ProcessLookupError:
+                pass
 
 
 def tick():
@@ -447,9 +516,11 @@ def tick():
     keep = {prefix_of(a) for a in accounts} | {common_of(a) for a in accounts} | {x.get("dir") for x in state.values()}
     for d in glob.glob(os.path.join(MEMBERS, "*")):
         if d not in keep:
+            wine_down(d)
             subprocess.run(["pkill", "-f", d], check=False)
             shutil.rmtree(d, ignore_errors=True)
             log("folder removed", d)
+    sweep()
 
 
 def main():

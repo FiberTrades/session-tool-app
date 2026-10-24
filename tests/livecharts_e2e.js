@@ -360,7 +360,7 @@
       var typed = P._cfg().mm.riskAmt;
       for (k = 0; k < 30 && !(asked && document.querySelector('#stpr-mm [data-mmi="rval"]').value === '300.00'); k++) await W(150);
       var fl = document.getElementById('stpr-flash');
-      check('a change the EA refuses (App trading off): the panel goes back to the EA\'s 300.00, and says why - with the VPS way to switch it on', typed === 777 && asked === 1 && P._cfg().mm.riskAmt === 300 && document.querySelector('#stpr-mm [data-mmi="rval"]').value === '300.00' && fl && /App trading is OFF/.test(fl.textContent) && /VPS/.test(fl.textContent),
+      check('a change the EA refuses (App trading off): the panel goes back to the EA\'s 300.00, and says why - no MetaQuotes VPS talk', typed === 777 && asked === 1 && P._cfg().mm.riskAmt === 300 && document.querySelector('#stpr-mm [data-mmi="rval"]').value === '300.00' && fl && /App trading is OFF/.test(fl.textContent) && !/VPS/.test(fl.textContent),
         [typed, asked, P._cfg().mm.riskAmt, document.querySelector('#stpr-mm [data-mmi="rval"]').value, fl && fl.textContent]);
       await W(900);
       check('...and nothing is sent again', asked === 1, asked);
@@ -472,7 +472,7 @@
     document.querySelector('#stpr-mm [data-mm="acct"]').click(); await W(1900);   // opening it asks every EA to say hi (and send its settings)
     LC.set({ s: eaF.raw, lg: eaF.lg, st: Object.assign({}, LC._lvset()[kF] || stF, { copy_role: 'lead', copy_followers: 0 }) }); await W(150);
     var amF = document.getElementById('stpr-menu'); amF.innerHTML = LC._accHtml(false); await W(50);
-    check('with 90001234 the Lead: a Follow button beside MT5 · 90007777 only (not the Lead, not the account on screen) - greyed with an EA before 9.10', amF.querySelectorAll('[data-lvfollow]').length === 1 && !!amF.querySelector('[data-lvfollow="90007777"][disabled]') && /9\.10/.test(amF.querySelector('[data-lvfollow]').title) && /Settings → MT5/.test(amF.textContent), amF.innerHTML.slice(0, 400));
+    check('with 90001234 the Lead: a Follow button beside MT5 · 90007777 only (not the Lead, not the account on screen) - greyed with an EA before 9.10', amF.querySelectorAll('[data-lvfollow]').length === 1 && !!amF.querySelector('[data-lvfollow="90007777"][disabled]') && /9\.10/.test(amF.querySelector('[data-lvfollow]').title) && /Settings → Accounts/.test(amF.textContent), amF.innerHTML.slice(0, 400));
     var rpcF = window.__stSB.rpc, sndF = LN._send, callsF = [], pokesF = [], cuF = window.currentUser;
     window.currentUser = cuF || { id: '00000000-0000-0000-0000-0000000c0de7' };
     window.__stSB.rpc = function (fn, a) { callsF.push([fn, a]); return Promise.resolve({ data: 1792723362, error: null }); };
