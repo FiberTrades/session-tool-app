@@ -4176,6 +4176,7 @@ uint   g_lwHb=0;                 // last heartbeat sent
 uint   g_lwFailAt=0, g_lwWait=0; // after a failure: wait g_lwWait ms from g_lwFailAt
 int    g_lwFails=0;
 bool   g_lwOff=false;            // the terminal does not allow the address: off until the EA restarts
+bool   g_ceInitDue=false;         // v9.15: Trade Replay's start-up exports still to run (after the live line)
 uint   g_eaStartMs=0;            // v9.14: when this EA started (GetTickCount) - Replay history waits for the live line, at most 20 s
 uint   g_lwWatchAt=0;            // last "watch" heard
 uint   g_lwFastAt=0, g_lwMidAt=0; // v9.00: last "watch" asking for 2 a second / every 2 s (none: every 5 s)
@@ -8214,8 +8215,10 @@ int OnInit()
    // the next time the EA starts, using history that was there all along.
    BrokerDstDetect();  // v8.7: which daylight-saving dates the server clock follows (before anything is converted)
    PM_Sweep();
-   CE_CatchupOnce();   // Trade Replay: one-time backfill of recent already-synced trades
-   CE_Sweep();         // Trade Replay: resume/queue candle exports
+   // Trade Replay's candle exports (the catch-up and the queue) run from the timer once the live line has joined (or after 20 s) -
+   // v9.15, 25 Oct 2026: here they held a new chart's start for up to their 8-second budget whenever a trade's candles were queued,
+   // so a chart Live Charts opened said hello 4-9 s late (1.6 s with an empty queue)
+   g_ceInitDue=true;
    HB_Load(); HB_AddSymbol(_Symbol); HB_ScanSymbols();   // v8.7: deep replay history for what you trade
 
    g_inCloud=(StringFind(TerminalInfoString(TERMINAL_PATH),"C:\\ST\\")==0);   // v9.11 (23 Oct 2026): says so in its "hi" and settings, so the app can warn when the same account also runs on a PC
@@ -8598,6 +8601,7 @@ void OnTimer()
    if(g_flashMsg!="" && GetTickCount64()>=g_flashUntil) DrawHint();   // a message's 6 seconds are up
    DailyLimitTick();   // auto-off at the cap, and auto-on again on the new day
    RulesTick();        // v9.15: the order rules - locks, and a trade opened elsewhere while locked
+   if(g_ceInitDue && (LwJoined() || g_lwOff || GetTickCount()-g_eaStartMs>=20000)){ g_ceInitDue=false; CE_CatchupOnce(); CE_Sweep(); }   // v9.15: Trade Replay's exports after the live line
    bool _connNow=(bool)TerminalInfoInteger(TERMINAL_CONNECTED);
    if(g_syncCatchupPending){ g_syncCatchupPending=false; SyncCatchUp(); g_syncCatchAt=TimeCurrent(); }
    else if(_connNow && !g_wasConnected){ SyncCatchUp(); g_syncCatchAt=TimeCurrent(); }        // v4.5: broker reconnect / wake-from-sleep -> scan immediately
@@ -8823,7 +8827,7 @@ void OnTick()
      {
       s_pmBar=curBar;
       g_lastStage="pm_sweep";  PM_Sweep();
-      g_lastStage="ce_sweep";  CE_Sweep();
+      g_lastStage="ce_sweep";  if(!g_ceInitDue) CE_Sweep();   // v9.15: not before the live line (the timer runs the first one)
       g_lastStage="hb_step";   HB_Step(HB_POSTS_BAR);   // v8.7: deep replay history, when nothing is open
      }
    g_lastStage="sweeps_done";
