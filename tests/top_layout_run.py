@@ -22,6 +22,15 @@ GEO = """(function(){
           news: r(document.getElementById('bias-news-sec')), cells: cells, sx: document.documentElement.scrollWidth, vw: innerWidth};
 })()"""
 OPEN_TV = "(function(){document.querySelectorAll('.stc-gate').forEach(function(g){g.classList.remove('open');});var f=document.getElementById('bloomberg-floater');if(f.hidden)document.getElementById('econ-bloomberg-btn').click();return !f.hidden;})()"
+SIZE_JS = """(async function(){var W=function(ms){return new Promise(function(r){setTimeout(r,ms);});};
+  var sm=document.getElementById('bloomberg-floater-smaller'), bg=document.getElementById('bloomberg-floater-bigger'), f=document.getElementById('bloomberg-floater');
+  var geo=function(){var b=f.getBoundingClientRect(),t=document.querySelector('.tabs').getBoundingClientRect(),h=document.querySelector('.header h1').getBoundingClientRect();
+    var cs=[].slice.call(document.querySelectorAll('.header .meta .meta-cell')).map(function(c){return Math.round(c.getBoundingClientRect().top);});
+    return {w:Math.round(b.width),bottom:Math.round(b.bottom),tabsTop:Math.round(t.top),h1h:Math.round(h.height),rows:cs.filter(function(v,i,a){return a.indexOf(v)===i;}).length,smD:sm.disabled,bgD:bg.disabled,vis:getComputedStyle(sm).display!=='none'&&getComputedStyle(bg).display!=='none'};};
+  var out={down:null,up:[]};
+  for(var i=0;i<6&&!sm.disabled;i++){sm.click();await W(150);} out.down=geo();
+  for(var j=0;j<6&&!bg.disabled;j++){bg.click();await W(150);out.up.push(geo());}
+  return out;})()"""
 CLOSE_TV = "(function(){var f=document.getElementById('bloomberg-floater');if(!f.hidden)document.getElementById('bloomberg-floater-close').click();return f.hidden;})()"
 
 out = []
@@ -70,10 +79,20 @@ def desk(W, H):
         c.eval(OPEN_TV); time.sleep(3); res['on'] = c.eval(GEO); snap(c, '%d_on' % W)
         c.eval(CLOSE_TV); time.sleep(1); res['off'] = c.eval(GEO); snap(c, '%d_off' % W)
         c.eval(OPEN_TV); time.sleep(2); res['on2'] = c.eval(GEO)
+        res['size'] = c.eval(SIZE_JS)   # − to the smallest, then + to the biggest this screen allows
+        c.call('Page.reload'); time.sleep(2); c.eval(bt.PRELUDE); time.sleep(3); c.eval(bt.PRELUDE); c.eval(OPEN_TV); time.sleep(2)
+        res['kept'] = c.eval(GEO); snap(c, '%d_big' % W)
         return res
     g = session(W, H, False, 'app.html', run)
     on, off = g['on'], g['off']
     tag = '%d: ' % W
+    sz = g['size']   # − / + size buttons (24 Oct 2026: "zoom in/out +- buttons on the tv")
+    ws = [sz['down']['w']] + [u['w'] for u in sz['up']]
+    check(tag + 'TV size: − down to 320px, then + in steps of 80px, the ends disabled', sz['down']['vis'] and sz['down']['w'] == 320 and sz['down']['smD']
+          and all(b - a == 80 for a, b in zip(ws, ws[1:])) and (not sz['up'] or sz['up'][-1]['bgD']) and len(ws) >= (2 if W >= 1100 else 4), ws)
+    check(tag + 'TV size: at every size the TV stays above the tabs' + (', the title on one line, the info in one row' if W >= 1100 else ''),
+          all(u['bottom'] <= u['tabsTop'] and (W < 1100 or (u['h1h'] <= 100 and u['rows'] == 1)) for u in [sz['down']] + sz['up']), [sz['down']] + sz['up'])
+    check(tag + 'TV size: remembered on this device after a reload', g['kept']['tv'] and g['kept']['tv']['w'] == ws[-1], [g['kept']['tv'], ws[-1]])
     check(tag + 'no sideways scroll', on['sx'] <= on['vw'] and off['sx'] <= off['vw'], [on['sx'], off['sx'], on['vw']])
     check(tag + 'title 76px tall line', on['h1'] and 60 <= on['h1']['h'] <= 100, on['h1'])
     if W >= 1100:
@@ -117,6 +136,7 @@ def phone(W, H):
     def run(c):
         res = {'off': c.eval(GEO)}
         c.eval(OPEN_TV); time.sleep(3); res['on'] = c.eval(GEO); snap(c, 'ph%d_on' % W)
+        res['btns'] = c.eval("(function(){var b=document.getElementById('bloomberg-floater-bigger');return !!(b&&b.offsetWidth>0);})()")
         return res
     new = session(W, H, True, 'app.html', run)
     old = session(W, H, True, '_top_old.html', run)
@@ -127,6 +147,7 @@ def phone(W, H):
         if abs(old[st]['news']['t'] - new[st]['news']['t']) > 6: diff['news'] = [old[st]['news'], new[st]['news']]
         check('%d phone, TV %s: top exactly as before' % (W, st), not diff, diff)
     check('%d phone: the TV docked where it was' % W, old['on']['tv'] == new['on']['tv'] and new['on']['tv'] is not None, [old['on']['tv'], new['on']['tv']])
+    check('%d phone: no size buttons on the full-width docked TV' % W, not new['btns'], new['btns'])
 
 
 try:
