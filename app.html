@@ -79569,10 +79569,11 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
   // Live Charts: a symbol opened on a cloud account's chart that its MT5 has no EA chart for gets one on the server, once (the agent
   // restarts that MT5 for a moment, only while prices run). 'added' | 'has' | 'none' (not a cloud account). 20 charts at most:
   // the oldest one added makes room.
-  window.__stCloudWantSym = function (lg, raw) {
+  window.__stCloudWantSym = function (lg, raw, peek) {   // peek: only says 'has' / 'add' / 'none', saves nothing (Live Charts asks first, 24 Oct 2026)
     var c = cloudOf(lg); raw = String(raw || ''); if (!c || !/^[A-Za-z0-9._#+-]{1,32}$/.test(raw)) return 'none';
     var x = infoOf(lg), cur = (c.symbols && c.symbols.length) ? c.symbols.slice() : Object.keys((x && x.syms) || {}).sort();
     if (cur.indexOf(raw) >= 0) return 'has';
+    if (peek) return 'add';
     while (cur.length >= 20) cur.shift();
     cur.push(raw); setSyms(lg, cur); return 'added';
   };
@@ -90933,8 +90934,10 @@ window.__stAZ = (function () {
   async function loadSides(){ var S0 = S; if (!S0) return; S0.side = S0.side || {}; var want = {};
     for (var i = 1; i < CFG.layout; i++) { var r = symAt(i); if (r !== S0.sym.raw) want[r] = 1; }
     Object.keys(S0.side).forEach(function(k){ if (!want[k]) delete S0.side[k]; });
-    for (var raw in want) { if (S0.side[raw]) continue; var sym = symOk(raw); if (!sym) continue;
-      var X = S0.live ? await liveFeed(sym, S0.f) : await dayFeed(sym, S0.day); if (S !== S0) return;
+    var rs = Object.keys(want).filter(function(raw){ return !S0.side[raw] && symOk(raw); }),
+        js = rs.map(function(raw){ var sym = symOk(raw); return S0.live ? liveFeed(sym, S0.f) : dayFeed(sym, S0.day); });   // the other charts' symbols asked at once (24 Oct 2026)
+    js.forEach(function(x){ x.catch(function(){}); });
+    for (var j = 0; j < rs.length; j++) { var raw = rs[j], X = await js[j]; if (S !== S0) return;
       Object.defineProperty(X, 'now', { get: function(){ return S ? S.now : 0; } });   // the Minimalist reads its feed's moment
       S0.side[raw] = X; dwPull(dk(raw)); }
     if (S === S0) await loadCmp(S0); }   // and the compared symbols (batch C)
@@ -90965,12 +90968,19 @@ window.__stAZ = (function () {
   // A chart's history before the day: the stored candles it is built from (rows), how far back they go (from) and whether
   // that is everything there is (full). Cached per symbol, day and timeframe.
   function aggStatic(rows, tf){ var src = SRC[tf]; return (tf === src && tf <= 60) ? rows.map(function(b){ return { time: b.time, open: b.open, high: b.high, low: b.low, close: b.close, vol: b.vol == null ? null : b.vol, _k: b.time }; }) : aggregate(rows, tf); }
+  // The store's candles before the day, fetched once per symbol, day and timeframe and kept as a promise: a fetch started early - a
+  // symbol about to open in Live Charts, a watchlist row pointed at - is the one the chart then waits for (24 Oct 2026, instant open)
+  var staticRows = {};
+  function staticFetch(sym, day, open, tf){ var key = sym.raw + '|' + day + '|' + tf; if (staticRows[key]) return staticRows[key];
+    var src = SRC[tf], cov = sym.tf[src]; if (!cov) return Promise.resolve(null);
+    return (staticRows[key] = (async function(){ var from = Math.max(open - LOOK[tf], cov[0]), rows = await fetchCandles(sym.raw, src, from, open - 1);
+      // A window that is all weekend (1m on a Monday's day: Saturday) holds nothing: reach back to the last candles before it
+      for (var wk = 0; !rows.length && from > cov[0] && wk < 4; wk++) { var f2 = Math.max(cov[0], from - MORE[tf]); rows = await fetchCandles(sym.raw, src, f2, from - 1); from = f2; }
+      return { rows: rows, from: from }; })()); }
   async function paneStatic(tf, X){
     X = X || S; var day = S.day, open = S.f.open, key = X.sym.raw + '|' + day + '|' + tf; if (staticCache[key]) return staticCache[key];
-    var src = SRC[tf], cov = X.sym.tf[src], from = cov ? Math.max(open - LOOK[tf], cov[0]) : open;
-    var rows = cov ? await fetchCandles(X.sym.raw, src, from, open - 1) : ((lvData() && X.tfh && X.tfh[src]) ? X.tfh[src] : []);   // Live Charts: none stored - its EA's (9.01)
-    // A window that is all weekend (1m on a Monday's day: Saturday) holds nothing: reach back to the last candles before it
-    for (var wk = 0; cov && !rows.length && from > cov[0] && wk < 4; wk++) { var f2 = Math.max(cov[0], from - MORE[tf]); rows = await fetchCandles(X.sym.raw, src, f2, from - 1); from = f2; }
+    var src = SRC[tf], cov = X.sym.tf[src], from = open, rows = (lvData() && X.tfh && X.tfh[src]) ? X.tfh[src] : [];   // Live Charts: none stored - its EA's (9.01)
+    if (cov) { var got = await staticFetch(X.sym, day, open, tf); rows = got.rows; from = got.from; }
     // Live Charts: listed as stored but nothing came (deleted since the symbol list was cached, 6 hours) - its EA's instead
     var gone = !!(cov && !rows.length && lvData() && src > 1); if (gone) { (X.nost = X.nost || {})[src] = 1; if (X.tfh && X.tfh[src]) rows = X.tfh[src]; }
     rows = rows.filter(function(b){ return b.time + src * 60 <= open; });
@@ -91501,7 +91511,9 @@ window.__stAZ = (function () {
     try { o.chart.remove(); } catch (e) {} DW.oh = null; relangAt = null;
     makePane(i, CFG.layout, g, o.el.ownerDocument === SD ? o.el : null); try { if (o.el.parentNode) o.el.parentNode.removeChild(o.el); } catch (e) {}
     placeMM(); paintAct(); layApply(mainN()); return panes[i]; }
-  async function loadPanes(){ var P0 = panes; for (var i = 0; i < P0.length; i++) { var p = P0[i], e = await paneStatic(p.tf, PS(p)); if (!S || panes !== P0) return; p.hist = e; p.static = e.agg; } await cmpStatics(P0); }
+  async function loadPanes(){ var P0 = panes, es = P0.map(function(p){ return paneStatic(p.tf, PS(p)); });   // every chart's history asked at once (24 Oct 2026: one after another)
+    es.forEach(function(x){ x.catch(function(){}); });
+    for (var i = 0; i < P0.length; i++) { var p = P0[i], e = await es[i]; if (!S || panes !== P0) return; p.hist = e; p.static = e.agg; } await cmpStatics(P0); }
   // A chart's candles at this moment: before the day from the store, the day so far from the replay (its last candle only
   // as far as now), the rest of the day as empty slots on the intraday charts.
   function paneBars(p){
@@ -94321,23 +94333,25 @@ window.__stAZ = (function () {
   // takes its orders. The account: the one picked to trade with, else the hub's.
   function lvCloudSym(ea){ var lg = String(CFG.lvLg || (ea && ea.lg) || ''), k = lg + '|' + (ea && ea.raw); if (!lg || !ea || !ea.raw) return '';
     LV.cloudAsk = LV.cloudAsk || {}; if (LV.cloudAsk[k]) return LV.cloudAsk[k];
-    var r = ''; try { r = window.__stCloudWantSym ? window.__stCloudWantSym(lg, ea.raw) : ''; } catch (e) {}   // saved: a later start opens it too
-    LV.cloudAsk[k] = r || 'none';
-    if (r !== 'added' && r !== 'has') return r;
+    var r = ''; try { r = window.__stCloudWantSym ? window.__stCloudWantSym(lg, ea.raw, true) : ''; } catch (e) {}   // 'add' | 'has' | 'none' (not a cloud account): nothing saved yet
+    if (r !== 'add' && r !== 'has') { LV.cloudAsk[k] = r || 'none'; return LV.cloudAsk[k]; }
+    var keep = function(){ var x = ''; try { x = window.__stCloudWantSym(lg, ea.raw); } catch (e) {} return x; };   // saved: a later start opens it too
     var restartMsg = function(){ try { flash(T('Opening ' + ea.raw + ' on your cloud MT5: it restarts for a moment (once the market is open), then you can trade it here.', 'Abriendo ' + ea.raw + ' en tu MT5 en la nube: se reinicia un momento (con el mercado abierto) y luego puedes operarlo aquí.')); } catch (e) {} };
     // EA 9.14 (Nestor, 24 Oct 2026: "make it seamless ... try to make it faster than 2 to 3 seconds"): one of this account's EAs opens
     // the chart in its own MT5, with the EA on it - well under a second, no restart, nothing paused. This chart keeps the hub's
-    // prices meanwhile and switches to the symbol's own EA the moment it says hi (tdClock).
-    var by = liveEAs().filter(function(o){ return String(o.lg) === lg && vNum(o.v) >= 9.14 && o.raw !== ea.raw && Date.now() - (o.at || 0) < 120000; })
+    // prices meanwhile and switches to the symbol's own EA the moment it says hi (lvClock; tdClock on Replay's today) - nothing on
+    // screen about it. The list is saved once the chart is open (24 Oct 2026): saved first, a command that failed left the server
+    // restarting that MT5 15 s later to open it, market open or not. An EA heard in the last 10 minutes (each answers "who" every 5).
+    var by = liveEAs().filter(function(o){ return String(o.lg) === lg && vNum(o.v) >= 9.14 && o.raw !== ea.raw && Date.now() - (o.at || 0) < 600000; })
       .sort(function(a, b){ return (b.at || 0) - (a.at || 0); })[0];
-    if (!by || !window.__stTM || !window.__stTM.acct) { if (r === 'added') restartMsg(); return r; }
-    LV.cloudOpen = { raw: ea.raw, at: Date.now() };
-    try { flash(T('Opening ' + ea.raw + '…', 'Abriendo ' + ea.raw + '…'), 2500); } catch (e) {}
+    if (!by || !window.__stTM || !window.__stTM.acct) { var r0 = keep(); LV.cloudAsk[k] = r0 || 'none'; if (r0 === 'added') restartMsg(); return LV.cloudAsk[k]; }   // no EA that can: as before 9.14
+    LV.cloudAsk[k] = r === 'has' ? 'has' : 'added';
+    LV.cloudOpen = { raw: ea.raw, at: Date.now() }; lvSwapArm();
     Promise.resolve(window.__stTM.acct({ a: 'chart', sym: by.raw, login: lg, cp: ea.raw, minV: 9.14, anyTm: true })).then(function(x){
-      if (x && x.ok) return;
-      LV.cloudOpen = null; if (r === 'added') restartMsg();   // it couldn't: the server restarts that MT5 for it, as before 9.14
+      if (x && x.ok) { keep(); return; }
+      LV.cloudOpen = null; if (keep() === 'added') restartMsg();   // it couldn't: the server restarts that MT5 for it, as before 9.14
     }, function(){});
-    return r; }
+    return LV.cloudAsk[k]; }
   function lvSetOf(){ var e = lvOwnEA(); return e ? (LV.set || {})[e.raw + '|' + e.lg] || null : null; }
   function cfgPractice(){ var c = JSON.parse(JSON.stringify(CFG)); if (LV.mmStash) LVK.forEach(function(k){ c[k] = JSON.parse(JSON.stringify(LV.mmStash[k])); }); return c; }
   function lvPip(){ var st = lvSetOf(), x = S ? units(S.sym) : null; return (st && +st.pip > 0) ? +st.pip : ((x && (x.pips || x.pts)) || 0.0001); }
@@ -94375,7 +94389,7 @@ window.__stAZ = (function () {
   function lvCfgBack(){ LV.cfgAt = 0; LV.setLater = true; var ae = SD.activeElement, me = mmEl(); if (ae && ae.tagName === 'INPUT' && me && me.contains(ae)) return;
     LV.setLater = false; LV.setSig = ''; if (lvMMApply()) { if (S && S.pv) S.pv.rd = clampSL(S.pv.rd || stopPx()); render(); } }
   function lvTradeWhy(){ if (!S || !S.live) return ''; var e = lvOwnEA();
-    if (!e) return T('To trade ' + S.sym.name + ' from here, open the EA on a ' + S.sym.name + ' chart in MT5.', 'Para operar ' + S.sym.name + ' desde aquí, abre el EA en un gráfico de ' + S.sym.name + ' en MT5.');
+    if (!e) return lvHoldable() ? '' : T('To trade ' + S.sym.name + ' from here, open the EA on a ' + S.sym.name + ' chart in MT5.', 'Para operar ' + S.sym.name + ' desde aquí, abre el EA en un gráfico de ' + S.sym.name + ' en MT5.');
     if (vNum(e.v) < 9.02) return T('Placing orders from here needs EA 9.02 or newer in MT5.', 'Abrir órdenes desde aquí necesita el EA 9.02 o posterior en MT5.');
     var x = null; try { x = window.__stLiveLine.easL()[e.raw + '|' + e.lg]; } catch (er) {}
     if (x && x.al === false) return T('Algo Trading is off in MT5, so orders from here are not placed. Turn it on with the Algo Trading button in MT5\'s toolbar (it turns green), then place the trade again.', 'Algo Trading está apagado en MT5, así que las órdenes desde aquí no se colocan. Actívalo con el botón Algo Trading de la barra de MT5 (se pone verde) y vuelve a colocar la operación.');   // EA 9.06: MT5's Algo Trading button is off
@@ -94421,7 +94435,7 @@ window.__stAZ = (function () {
       eaMsg(T('Algo Trading is off in MT5, so orders from here are not placed. Turn it on with the Algo Trading button in MT5\'s toolbar (it turns green), then place the trade again.', 'Algo Trading está apagado en MT5, así que las órdenes desde aquí no se colocan. Actívalo con el botón Algo Trading de la barra de MT5 (se pone verde) y vuelve a colocar la operación.'), { k: 'algo', head: eaHead(e.raw, e.lg), red: true }); }
     else if (x && x.al === true) { if (EM.shut && /Algo Trading/.test(EM.shut)) EM.shut = null; if (EM.k === 'algo' || /Algo Trading (is off|está apagado)/.test(EM.t)) eaMsgOff(); }   // on again: its warning and any refusal for it go
     else eaMsgOff('algo'); }   // not known (an EA before 9.06): an answer MT5 gave stays until closed
-  function lvFire(v){ var why = lvTradeWhy(); if (why) { var e0 = lvOwnEA(); eaMsg(why, { k: 'pre', head: T('Order not sent', 'Orden no enviada') + (e0 ? ' · ' + e0.raw : ''), red: true }); return false; } var e = lvOwnEA(), dg = lvDg();
+  function lvFire(v){ if (lvHoldable()) return lvHoldStart(v); var why = lvTradeWhy(); if (why) { var e0 = lvOwnEA(); eaMsg(why, { k: 'pre', head: T('Order not sent', 'Orden no enviada') + (e0 ? ' · ' + e0.raw : ''), red: true }); return false; } var e = lvOwnEA(), dg = lvDg();
     var o = LV.ord = { st: 'sent', dir: v.dir, lots: lotsFor(v.rd), sym: e.raw, at: Date.now(), kind: v.kind || null };
     S.exec = false; S.pv = null; render();
     window.__stTM.acct({ login: e.lg, sym: e.raw, a: 'open', cp: v.sl.toFixed(dg), ci: v.kind ? (v.kind === 'limit' ? 'l' : 's') + v.entry.toFixed(dg) : 'm' }).then(function(r){
@@ -94433,6 +94447,7 @@ window.__stAZ = (function () {
   function lvOrdTxt(){ var o = LV.ord; if (!o || !S || o.sym !== (S.ea && S.ea.raw) || Date.now() - o.at > 120000) return null;
     var side = o.dir > 0 ? T('BUY', 'COMPRA') : T('SELL', 'VENTA'), hms = function(t){ var d = new Date(t); return p2(d.getHours()) + ':' + p2(d.getMinutes()) + ':' + p2(d.getSeconds()); };
     if (o.st === 'sent') return { c: '', t: side + (o.lots > 0 ? ' ' + o.lots.toFixed(2) : '') + ' ' + o.sym + ' · ' + T('sent ', 'enviada ') + hms(o.at) };
+    if (o.st === 'hold') return { c: '', t: side + (o.lots > 0 ? ' ' + o.lots.toFixed(2) : '') + ' ' + o.sym + ' · ' + T('sending…', 'enviando…') };   // its chart opening on the cloud MT5
     if (o.st === 'ok') return { c: ' on', t: (o.kind ? T('Placed ', 'Colocada ') : T('Filled ', 'Ejecutada ')) + Number(o.px).toFixed(lvDg()) + ' · ' + side + ' ' + Number(o.vol).toFixed(2) + ' ' + o.sym + ' · ' + hms(o.done) };
     return { c: ' w', t: o.why || T('MT5 did not place it.', 'MT5 no la abrió.') }; }
   // a fill's sound: our own short chime, three bright notes going up (E6, A6, E7). No sound or voice setting (Nestor, 18 Oct
@@ -94657,7 +94672,7 @@ window.__stAZ = (function () {
     var a = WL.sug.filter(function(r){ return !have[canon(r)]; }).slice(0, 12), live = S && S.live && hubEA();
     b.innerHTML = a.length ? a.map(function(r){ var d = (WL.sugD || {})[r]; return '<div data-wlpick="' + esc(r) + '"><span>' + esc(r) + '</span><small>' + esc((d ? d + ' · ' : '') + (live ? T('in your MT5', 'en tu MT5') : T('stored history', 'historial guardado'))) + '</small></div>'; }).join('')
       : '<div class="stpr-wlsm">' + esc(T('No symbol matches.', 'Ningún símbolo coincide.')) + '</div>'; }
-  function wlSet(list){ CFG.wl = list.slice(0, 40); save(); LV.wlAt = 0; lvWlSend(true); wlBtLoad(); wlRows(); }
+  function wlSet(list){ CFG.wl = list.slice(0, 40); save(); LV.wlAt = 0; lvWlSend(true); wlBtLoad(); wlRows(); setTimeout(keepTick, 50); }
   function wlAdd(raw){ var l = wlList(); if (!raw || l.some(function(r){ return canon(r) === canon(raw); })) return; l.push(raw); wlSet(l);
     var m = mEl(), i = m && m.querySelector('#stpr-wlq'); if (i) { i.value = ''; i.focus(); } WL.sugQ = ''; WL.sug = null; wlSug(); }
   function wlDel(raw){ wlSet(wlList().filter(function(r){ return canon(r) !== canon(raw); })); }
@@ -94803,16 +94818,101 @@ window.__stAZ = (function () {
   function lvClkArm(){ var w = SW; try { (LV.clkW || window).clearInterval(LV.clk); } catch (e) {} try { if (w.closed) w = window; } catch (e) { w = window; } LV.clkW = w; LV.clk = w.setInterval(lvClock, 1000); }
   function clearLiveT(){ try { (LV.clkW || window).clearInterval(LV.clk); } catch (e) {} LV.clkW = null; LV.clk = 0; clearTimeout(LV.rq); LV.rq = 0; }
   // a symbol on a live chart: the day's 1-minute candles from the store (its EA tops them up), its digits; then its EA's prices
+  /* ---- Instant chart open (Nestor, 24 Oct 2026: "can you make this faster?", asked twice). A symbol opened live is on screen at
+     once: its day's minutes and every chart's history asked together (and early - a watchlist row pointed at or touched), the
+     watchlist's last price on the first frame, the watch naming it before the charts are built. On a cloud account the hub's
+     prices show while its own chart opens in the background (EA 9.14's "chart"); that EA takes over the moment it says hi, and an
+     order placed in between is held and sent then. Watchlist symbols are kept open on the cloud MT5 (keepTick, below). ---- */
+  var LVB = {};   // the day's stored minutes for a symbol, a fetch kept 45 s: started early (lvPrefetch), used by liveFeed
+  function lvBaseFetch(sym, f){ var k = sym.raw + '|' + f.open, o = LVB[k];
+    if (!o || Date.now() - o.at > 45000) o = LVB[k] = { at: Date.now(), p: fetchCandles(sym.raw, 1, f.open, Math.min(nowS(), f.close) - 1) };
+    return o.p.then(function(b){ return b.slice(); }); }   // what came since arrives from the EA (lvHist asks the day again, lvPx a gap)
+  function lvPrefetch(raw, si){ try { if (!(S && S.live) && !LV.inl && !LV.max) return; var sym = symLive(raw) || symLive(canon(raw)); if (!sym) return;
+      var side = si > 0 && S, day = side ? S.day : liveDay(sym), f = side ? S.f : dayFrame(day), n = Math.max(1, CFG.layout || 1);
+      if (sym.tf[1]) lvBaseFetch(sym, f);
+      for (var i = 0; i < n; i++) { if (si != null && i !== si) continue; var tf = CFG.tfs[i] || 5; if (SRC[tf]) staticFetch(sym, day, f.open, tf).catch(function(){}); } } catch (e) {} }
+  // the symbols on screen a cloud account's hub streams (no chart of their own in its MT5): their own charts asked for now
+  function lvCloudAll(){ try { allFeeds().forEach(function(F){ if (F && F.ea && F.ea.hub) lvCloudSym(F.ea); }); } catch (e) {} }
+  // while a chart opens there: looked for every 150 ms, so its own EA takes over within a moment of its hi, not at the next second
+  function lvSwapArm(){ LV.swapTo = Date.now() + 8000; if (LV.swapT) return; LV.swapT = setInterval(function(){
+      if (!lvData() || Date.now() > LV.swapTo) { clearInterval(LV.swapT); LV.swapT = 0; return; } var hit = false;
+      allFeeds().forEach(function(F){ if (!F.ea || !F.ea.hub) return; var ea = eaFor(F.sym); if (ea && !ea.hub && vNum(ea.v) >= 9.00 && F.baseTf === 1) { F.ea = ea; F.histAt = 0; lvHist(F); hit = true; } });
+      if (hit) { try { window.__stLiveLine.tickle(); } catch (e) {} lvSoon(); } }, 150); }
+  function lvCloudLg(lg){ try { return !!lg && ((window.__stMt5c && window.__stMt5c.cloud) ? window.__stMt5c.cloud() : []).some(function(r){ return String(r.login) === String(lg); }); } catch (e) { return false; } }
+  // an order placed while the chart shows the hub's prices on a cloud account whose EA can open the chart: held, never refused
+  function lvHoldable(){ if (!S || !S.live || lvOwnEA() || !S.ea || !S.ea.hub) return false; var lg = String(CFG.lvLg || S.ea.lg || '');
+    return lvCloudLg(lg) && liveEAs().some(function(o){ return String(o.lg) === lg && vNum(o.v) >= 9.14; }); }
+  function lvHoldStart(v){ LV.hold = { v: v, at: Date.now(), raw: S.ea.raw };
+    LV.ord = { st: 'hold', dir: v.dir, lots: lotsFor(v.rd), sym: S.ea.raw, at: Date.now(), kind: v.kind || null };
+    S.exec = false; S.pv = null; render(); lvCloudAll(); if (!LV.holdT) LV.holdT = setInterval(lvHoldTick, 200); return true; }
+  function lvHoldNo(h, why){ LV.hold = null; LV.ord = { st: 'no', why: why, dir: h.v.dir, sym: h.raw, at: h.at, done: Date.now() };
+    eaMsg(why, { k: 'ord', head: T('Order not placed', 'Orden no colocada') + ' · ' + h.raw, red: true }); try { paintMM(); } catch (e) {} }
+  function lvHoldTick(){ var h = LV.hold; if (!h) { clearInterval(LV.holdT); LV.holdT = 0; return; }
+    if (!S || !S.live || !S.ea || S.ea.raw !== h.raw) { LV.hold = null; if (LV.ord && LV.ord.st === 'hold') LV.ord = null; return; }   // another symbol, or Replay: dropped, nothing sent
+    if (!lvOwnEA()) { var ea = eaFor(S.sym); if (ea && !ea.hub && ea.raw === h.raw) { S.ea = ea; S.histAt = 0; lvHist(S); } }   // its own EA said hi: take it now, not at the next second
+    if (lvOwnEA()) { var why = lvTradeWhy(); if (!why) { LV.hold = null; lvFire(h.v); return; }
+      if (lvSetOf() && Date.now() - h.at > 1500) { lvHoldNo(h, why); return; } }   // its EA can't take it (OFF, Algo Trading off...): why, as for any order
+    if (Date.now() - h.at > 20000) lvHoldNo(h, T('MT5 did not open ' + h.raw + ' in time, so the order was not sent. Place it again.', 'MT5 no abrió ' + h.raw + ' a tiempo, así que la orden no se envió. Colócala de nuevo.')); }
+  /* ---- Watchlist symbols kept open on the cloud MT5 (24 Oct 2026, Nestor: "do it if you feel its the right decision"). Each cloud
+     account whose EA is 9.14 or newer gets a chart of its own, with the EA, for each of the first 8 symbols in the watchlist - one
+     of them then opens with its own prices and takes orders from the first moment. A chart opened for this whose symbol leaves the
+     list (or its first 8) is closed again: "unchart", EA 9.15 (MT5 keeps one with a trade or an order on it: "open" / "order", tried
+     again later). One command a second at most, none repeated; never the hub's chart, a chart on screen or the account's own chart
+     list. About 15-25 MB of the server's memory a chart (measured on the demo). Not from a detached window (that one's app does it). */
+  var KEEP = { q: [], at: 0, asked: {} };
+  function keepAsk(lg, a, by, s){ var k = lg + '|' + a + '|' + canon(s), o = KEEP.asked[k], now = Date.now();
+    if (o && (o.st === 'q' || o.st === 'sent')) return;
+    if (o && o.st === 'ok' && a === 'chart' && now - o.at < 600000) return;          // opened: asked again only if it has gone (an MT5 restart), 10 min on
+    if (o && o.st === 'perm') return;                                                // the broker has no such symbol / not a cloud MT5: never again
+    if (o && o.st === 'busy' && now - o.at < 300000) return;                         // a trade or an order on it: kept, tried again in 5 min
+    if (o && o.st === 'fail' && now - o.at < 600000) return;                         // no answer: again in 10 min
+    KEEP.asked[k] = { st: 'q', at: now }; KEEP.q.push({ k: k, lg: lg, a: a, by: by, s: s }); }
+  function keepSend(){ var now = Date.now(); if (!KEEP.q.length || now - KEEP.at < 1000) return; var c = KEEP.q.shift(); KEEP.at = now;
+    KEEP.asked[c.k] = { st: 'sent', at: now };
+    Promise.resolve(window.__stTM.acct({ a: c.a, sym: c.by, login: c.lg, cp: c.s, minV: c.a === 'chart' ? 9.14 : 9.15, anyTm: true })).then(function(x){
+      x = x || {}; var why = String(x.why || ''), mine = CFG.keepOpen = (CFG.keepOpen && typeof CFG.keepOpen === 'object') ? CFG.keepOpen : {}, l = mine[c.lg] = Array.isArray(mine[c.lg]) ? mine[c.lg] : [];
+      var has = function(){ return l.some(function(v){ return canon(v) === canon(c.s); }); }, drop = function(){ mine[c.lg] = l.filter(function(v){ return canon(v) !== canon(c.s); }); save(); };
+      if (c.a === 'chart') {
+        if (x.ok) { KEEP.asked[c.k] = { st: 'ok', at: Date.now() }; if (!has()) { l.push(c.s); save(); } }
+        else KEEP.asked[c.k] = { st: (why === 'nosym' || why === 'notcloud') ? 'perm' : 'fail', at: Date.now() };
+      } else {
+        if (x.ok) { KEEP.asked[c.k] = { st: 'ok', at: Date.now() }; drop(); delete KEEP.asked[c.lg + '|chart|' + canon(c.s)];
+          try { var eL = window.__stLiveLine.easL(); Object.keys(eL).forEach(function(k2){ var i2 = k2.lastIndexOf('|'); if (k2.slice(i2 + 1) === String(c.lg) && canon(k2.slice(0, i2)) === canon(c.s) && k2.slice(0, i2) !== c.by) delete eL[k2]; }); } catch (e) {} }   // its chart has gone: not counted as open
+        else if (why === 'open' || why === 'order') KEEP.asked[c.k] = { st: 'busy', at: Date.now() };
+        else if (why === 'nosym' || why === 'notcloud') { KEEP.asked[c.k] = { st: 'perm', at: Date.now() }; drop(); }
+        else KEEP.asked[c.k] = { st: 'fail', at: Date.now() };
+      } }, function(){ KEEP.asked[c.k] = { st: 'fail', at: Date.now() }; }); }
+  function keepTick(){ try {
+      if (window.__stKeepOff) return;   // the tests' switch
+      if (!window.currentUser || !Array.isArray(CFG.wl) || !window.__stTM || !window.__stTM.acct) return;
+      if (typeof window.__stIsDetachedWindow === 'function' && window.__stIsDetachedWindow()) return;
+      var L = window.__stLiveLine; if (!L || !L.joined || !L.joined() || !L.easL) return;
+      var eL = L.easL(), now = Date.now(), want = wlList().slice(0, 8), mine = (CFG.keepOpen && typeof CFG.keepOpen === 'object') ? CFG.keepOpen : {}, onScr = {};
+      if (S && S.live) allFeeds().forEach(function(F){ if (F.ea) onScr[canon(F.ea.raw)] = 1; });
+      ((window.__stMt5c && window.__stMt5c.cloud) ? window.__stMt5c.cloud() : []).forEach(function(r){ if (!r || (r.status && r.status !== 'running')) return; var lg = String(r.login), eas = [];
+        Object.keys(eL).forEach(function(k){ var i = k.lastIndexOf('|'); if (k.slice(i + 1) === lg) eas.push({ raw: k.slice(0, i), v: vNum(eL[k].v), at: eL[k].at || 0 }); });
+        var newest = function(v){ return eas.filter(function(e){ return e.v >= v && now - e.at < 600000; }).sort(function(a, b){ return b.at - a.at; })[0]; }, by = newest(9.14), by15 = newest(9.15);
+        if (!by) return;
+        var have = {}, own = {}, hub = ''; eas.forEach(function(e){ if (now - e.at < 600000) have[canon(e.raw)] = 1; }); (r.symbols || []).forEach(function(x){ own[canon(x)] = 1; });
+        try { var h = hubEA(); if (h && String(h.lg) === lg) hub = canon(h.raw); } catch (e) {}
+        want.forEach(function(x){ if (!have[canon(x)]) keepAsk(lg, 'chart', by.raw, x); });
+        if (by15) (Array.isArray(mine[lg]) ? mine[lg] : []).forEach(function(x){ var c = canon(x);
+          if (want.some(function(w){ return canon(w) === c; }) || own[c] || onScr[c] || c === hub || c === canon(by15.raw)) return;
+          keepAsk(lg, 'unchart', by15.raw, x); }); });
+      keepSend(); } catch (e) {} }
+  setInterval(keepTick, 1000);
   async function liveFeed(sym, f){
     var end = Math.min(nowS(), f.close), ea = eaFor(sym), base = [], baseTf = 1, sd = LV.seed; LV.seed = null;
     if (sd && sd.raw === sym.raw && Date.now() - sd.at < 60000 && Array.isArray(sd.base) && sd.base.length && sd.base[0].time >= f.open - 60 && sd.base[0].time < f.close) {   // handed over by Live Charts' window as it closed (lcBye)
       var tail = sd.base[sd.base.length - 1].time, more = (end - tail > 120 && sym.tf[sd.baseTf]) ? await fetchCandles(sym.raw, sd.baseTf, tail + 60, end - 1) : [];
       return { sym: sym, base: sd.base.concat(more), baseTf: sd.baseTf, digits: (ea && ea.dg) || sd.digits || digitsOf(sd.base), ea: ea, px: null, dg: null, at: 0, pre: [], parts: {}, gotHist: false, histAt: 0 }; }
-    if (sym.tf[1]) base = await fetchCandles(sym.raw, 1, f.open, end - 1);
+    if (sym.tf[1]) base = await lvBaseFetch(sym, f);
     // no EA streaming this symbol: the store's 5-minute candles when its 1-minute ones are thin (the EA tops it up hourly)
     if (!(ea && vNum(ea.v) >= 9.00) && base.length < (end - f.open) / 60 * 0.5 && sym.tf[5]) { var b5 = await fetchCandles(sym.raw, 5, f.open, end - 1); if (b5.length * 5 > base.length) { base = b5; baseTf = 5; } }
     var dg = (ea && ea.dg) || digitsOf(base); if (!dg) dg = digitsOf(await fetchCandles(sym.raw, 5, end - 5 * 86400, end)) || 5;
-    return { sym: sym, base: base, baseTf: baseTf, digits: dg, ea: ea, px: null, dg: null, at: 0, pre: [], parts: {}, gotHist: false, histAt: 0 }; }
+    // the watchlist's last price for it (the hub sends the list's prices on every tick): on screen from the first frame (24 Oct 2026)
+    var q = ea && WL.q[ea.raw], qok = !!(q && q.b > 0 && Date.now() - (q.at || 0) < 10000);
+    return { sym: sym, base: base, baseTf: baseTf, digits: dg, ea: ea, px: qok ? { b: q.b, a: q.a, sp: q.a >= q.b ? q.a - q.b : null, t: nowS() } : null, dg: null, at: qok ? q.at : 0, pre: [], parts: {}, gotHist: false, histAt: 0 }; }
   // the feed a message from an EA is for (it names its chart's symbol as MT5 does)
   function feedFor(s){ if (!S || !s) return null; return allFeeds().filter(function(F){ return F.ea && F.ea.raw === s; })[0] || null; }
   async function goLive(raw){
@@ -94826,12 +94926,16 @@ window.__stAZ = (function () {
     await loadSymbols(); var sym = symLive(raw) || symLive(canon(raw)) || symLive(CFG.sym) || (SYMS && SYMS[0]);
     if (!sym) { st.textContent = T('No candles stored yet.', 'Aún no hay velas guardadas.'); return false; }
     try { await ensureLWC(); } catch (e) { st.textContent = T('The chart could not load (it needs internet).', 'No se pudo cargar el gráfico (necesita internet).'); return false; }
+    lvPrefetch(sym.raw);   // every chart's history asked now, alongside the day's minutes (24 Oct 2026)
+    try { var e0 = eaFor(sym); if (e0 && e0.hub) lvCloudSym(e0); } catch (e) {}   // a cloud account's own chart for it asked now, not after the candles
     var day = liveDay(sym), f = dayFrame(day), end = Math.min(nowS(), f.close), F0 = await liveFeed(sym, f);
     if (F0.ea && F0.ea.raw && F0.ea.raw !== sym.name) F0.sym = Object.assign({}, sym, { name: F0.ea.raw });   // what this member's MT5 calls it
     if (!LV.inl && !LV.max) return false;   // the tab was left meanwhile
     lvMMOff(); clearInterval(LV.tdk); LV.tdk = 0;   // the panel's EA values, if any, set aside first; Back Testing's today stops
     S = Object.assign(F0, { day: day, f: f, now: end, pos: null, trades: [], done: null, pv: null, exec: false, playing: false, lastExitTs: 0, live: true, side: {} });
     lvMMApply();
+    try { window.__stLiveLine.tickle(); } catch (e) {}   // its prices asked for at once: the watch names it before the charts are built
+    lvCloudAll();
     CFG.sym = sym.raw; save(); LV.sig = '';
     var S0 = S; await loadSides(); if (S !== S0) return false;
     await satWait(S0); if (S !== S0) return false;   // the charts out in windows of their own: built there, never here first
@@ -94857,10 +94961,10 @@ window.__stAZ = (function () {
     S.now = Math.max(S.now, Math.min(n, S.f.close));
     var again = false;
     allFeeds().forEach(function(F){ var ea = eaFor(F.sym);
-      if (ea && (!F.ea || F.ea.raw !== ea.raw || F.ea.v !== ea.v)) { F.ea = ea; if (vNum(ea.v) >= 9.00) { if (F.baseTf !== 1) again = true; else { F.histAt = 0; lvHist(F); } } }
+      if (ea && (!F.ea || F.ea.raw !== ea.raw || F.ea.v !== ea.v || !F.ea.hub !== !ea.hub || String(F.ea.lg || '') !== String(ea.lg || ''))) { F.ea = ea; if (vNum(ea.v) >= 9.00) { if (F.baseTf !== 1) again = true; else { F.histAt = 0; lvHist(F); } } }
       else if (!ea) F.ea = null;
       if (F.ea && vNum(F.ea.v) >= 9.00 && !F.gotHist) lvHist(F); });
-    lvTfAsk(); lvWlSend(false); tbPaint();
+    lvTfAsk(); lvWlSend(false); tbPaint(); lvCloudAll();
     if (!LV.mmStash || LV.setLater) { var ae = SD.activeElement, me = mmEl(); if (!(ae && ae.tagName === 'INPUT' && me && me.contains(ae)) && Date.now() - (LV.cfgAt || 0) >= 1500) { LV.setLater = false; LV.setSig = ''; if (lvMMApply()) render(); } }
     if (again) { goLive(S.sym.raw); return; }   // an EA came on a chart showing 5-minute candles: its minutes from here
     var sig = lvSig(); if (sig !== LV.sig) { LV.sig = sig; if (LT.k && !LT.wait && LT.at) LT.k = null; panes.forEach(function(p){ try { paintLines(p); } catch (e) {} }); dirty(); }   // MT5's new figures: the line moved there
@@ -95494,6 +95598,12 @@ window.__stAZ = (function () {
   var wired = false;
   function wire(){
     wired = true;
+    // a watchlist row pointed at (a moment's rest), touched or tabbed to: its candles fetched before the click (instant open, 24 Oct 2026)
+    var pfRow = function(e){ var r = e.target && e.target.closest && e.target.closest('.stpr-wlr[data-sym]'); if (!r || !(S && S.live) || r.classList.contains('on')) return null; return r; },
+        pfGo = function(r){ var k = r.getAttribute('data-sym') + '|' + (r.getAttribute('data-si') || ''); if (LV.pfK === k && Date.now() - (LV.pfAt || 0) < 20000) return; LV.pfK = k; LV.pfAt = Date.now();
+          var si = r.getAttribute('data-si'); lvPrefetch(r.getAttribute('data-sym'), si != null ? +si : null); };
+    document.addEventListener('pointerover', function(e){ var r = pfRow(e); clearTimeout(LV.pfT); if (r) LV.pfT = setTimeout(function(){ pfGo(r); }, 120); }, true);
+    ['touchstart', 'focusin'].forEach(function(ev){ document.addEventListener(ev, function(e){ var r = pfRow(e); if (r) pfGo(r); }, { capture: true, passive: true }); });
     $('stpr-close').addEventListener('click', close);
     window.addEventListener('pagehide', function(){ lcViewFlush(); if (isOpen()) resumeSave(); });   // a tab or window closed or reloaded with it open; its chart windows close themselves if it closed, and take their charts back if it reloaded (21 Oct 2026)
     document.addEventListener('visibilitychange', reLive); document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'hidden') lcViewFlush(); });
@@ -96013,7 +96123,7 @@ window.__stAZ = (function () {
     if (t.closest('[data-plno]')) { PL.ask = null; dirty(); return; }
     if ((b = t.closest('[data-plyes]'))) { var tk = b.getAttribute('data-plyes'), r = plIdea(tk), TM = window.__stTM; PL.ask = null; dirty(); if (!r || !TM) return;
       TM.send(r, 'close').then(function(o){ if (o && o.ok) flash(T('Closed in MT5', 'Cerrada en MT5')); else eaMsg(TM.whyTxt(o && o.why), { k: 'cmd', head: T('MT5 did not close it', 'MT5 no la cerró'), red: true }); dirty(); }); } }
-  window.__stPractice = { open: open, close: close, _lv: function(){ return LV; }, _plat: function(){ return { on: PL.on, st: plSt(), tb2: plTb2Html($('stpr-tb2')), ask: PL.ask }; }, _platSync: platSync, _cloudSym: lvCloudSym, _goLive: goLive, _lvClock: function(ms){ LV.toff = ms || 0; }, _liveDay: liveDay, stats: stats, log: logAll, pull: pull, _satReady: satReady, _stageReady: stageReady, _stageHas: function(w){ return LV.sat === w; }, _stage: function(){ return { on: stageOn(), sd: SD !== document }; }, _stageDetach: stageDetach, _win: function(){ return window; }, _lcBye: lcBye, _satHandOver: lcHandOver, _satExpect: function(){ return LV.expect; }, _satHas: function(w, i){ var o = POP[i]; return !!(o && o.w === w); }, _dayLocked: function(){ return lvDayLocked(); }, _lvEmsg: function(p){ lvEmsg(p); }, _pullCfg: pullCfg, _pushCfg: pushCfg, _save: function(){ save(); }, _lcAway: function(w){ if (LV.solo || LCW || !w || LV.popW === w) return; lcAwaySet(w); }, _wsr: { get: wsrGet, set: wsrSet, open: wsrOpenAll, start: wsrStart, st: function(){ return WSR; }, setup: wsrSetup, steps: wsrSteps, popCheck: wsrPopCheck },
+  window.__stPractice = { open: open, close: close, _lv: function(){ return LV; }, _plat: function(){ return { on: PL.on, st: plSt(), tb2: plTb2Html($('stpr-tb2')), ask: PL.ask }; }, _platSync: platSync, _cloudSym: lvCloudSym, _lvFire: lvFire, _hold: function(){ return LV.hold || null; }, _keep: function(){ return KEEP; }, _keepTick: function(){ keepTick(); }, _goLive: goLive, _lvClock: function(ms){ LV.toff = ms || 0; }, _liveDay: liveDay, stats: stats, log: logAll, pull: pull, _satReady: satReady, _stageReady: stageReady, _stageHas: function(w){ return LV.sat === w; }, _stage: function(){ return { on: stageOn(), sd: SD !== document }; }, _stageDetach: stageDetach, _win: function(){ return window; }, _lcBye: lcBye, _satHandOver: lcHandOver, _satExpect: function(){ return LV.expect; }, _satHas: function(w, i){ var o = POP[i]; return !!(o && o.w === w); }, _dayLocked: function(){ return lvDayLocked(); }, _lvEmsg: function(p){ lvEmsg(p); }, _pullCfg: pullCfg, _pushCfg: pushCfg, _save: function(){ save(); }, _lcAway: function(w){ if (LV.solo || LCW || !w || LV.popW === w) return; lcAwaySet(w); }, _wsr: { get: wsrGet, set: wsrSet, open: wsrOpenAll, start: wsrStart, st: function(){ return WSR; }, setup: wsrSetup, steps: wsrSteps, popCheck: wsrPopCheck },
     _pop: popChart, _unpop: unpop, _lcPop: lcPopOut, _lcSolo: lcSolo, _zoom: function(i, r){ var p = panes[i]; if (!p) return; p.handAt = Date.now(); setRange(p, r); }, _axl: function(i, k){ var p = panes[i]; return p && p.series && p.series.__stAx ? p.series.__stAx.get(k || 'cd') : null; }, _lvv: function(){ return panes.map(function(p){ try { return p.series.options().lastValueVisible; } catch (e) { return null; } }); }, _pops: function(){ return POP; }, _liveWin: liveWin, _reLive: reLive,
     _setPaneSym: setPaneSym, _ps: PS, _feeds: feeds, _loadSyms: function(){ return loadSymbols(); }, _today: goToday, _dwListOf: dwListOf, _dwRaw: function(){ return DW.raw; },
     _alertsMenu: alertsMenu, _logSync: logSync, _treeMenu: treeMenu, _lockSel: lockSel, _emojis: EMOJIS, _satBar: satBar, _mEl: mEl, _eaNewest: eaNewest, _vpCalc: vpCalc, _vol: function(){ return VOL; }, _volNoHist: volNoHist, _static: function(){ return staticCache; }, _volMerge: volMerge,

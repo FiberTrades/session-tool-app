@@ -38,6 +38,15 @@ def bar_sym(sy, m, step):                             # a candle of another symb
     return [int(m), pts[0], max(pts), min(pts), pts[-1], 50]
 def bstr_d(b, dg): return ('%d,%.' + str(dg) + 'f,%.' + str(dg) + 'f,%.' + str(dg) + 'f,%.' + str(dg) + 'f,%d') % tuple(b)
 hub = {'wl': [], 'wl_at': 0, 'q_at': 0, 'hs': [], 'hs_at': 0, 'px_at': {}}
+# EA 9.14 / 9.15 (24 Oct 2026): charts this MT5 opens on a signed "chart" (closed on "unchart"), each with the EA on it - run here, on the
+# hub's prices for that symbol. ST_FAKE_CHART_MS: how long MT5 takes from the command to that chart's EA saying hi (the demo: 0.7-1.6 s)
+CH = {}; CH_PEND = []; CH_PX = {}; WSYM = {'syms': [], 'lg': None}
+CHART_MS = float(os.environ.get('ST_FAKE_CHART_MS', '1600')) / 1000.0
+log.update({'charts': [], 'uncharts': [], 'chart_cmds': [], 'ch_px': 0, 'ch_hist': [], 'ch_first_px': {}})
+def ch_dg(sy): return DG if sy == SYM else UNI[sy][1]
+def hi_ch(sy):
+    text(bcast('hi', {'v': VER, 'sym': sy, 'dg': ch_dg(sy), 'lg': LG, 'tm': TM, 'rl': 1 if RELAY else 0}))
+    if VER >= '9.02': text(bcast('set', {'s': sy, 'lg': LG, 'st': dict(ST, pip=10 ** -(ch_dg(sy) - 1), digits=ch_dg(sy))}))
 # EA 9.02: its panel's settings ("set"), deliberately unlike practice's defaults so the test can tell whose the panel shows
 PIP = 10 ** -(DG - 1)
 ST = {'risk_mode': 'amount', 'risk_percent': 1.0, 'risk_amount': 250.0, 'fixed_lot': 0.1, 'sl_min': 4.0, 'sl_max': 20.0, 'unit': 'pips', 'tp_on': True, 'tp_mode': 'rr', 'tp_value': 3.0,
@@ -98,24 +107,40 @@ def hi(): text(bcast('hi', {'v': VER, 'sym': SYM, 'dg': DG, 'lg': LG, 'tm': TM, 
 # trade management (EA 9.00 LwCmd): only its own account and symbol, signed with the sync token, fresh, seen once
 cmd_ids = []
 def on_cmd(p):
-    if p.get('csy') != SYM or p.get('clg') != str(LG): return
+    if (p.get('csy') != SYM and p.get('csy') not in CH) or p.get('clg') != str(LG): return
     cid = p.get('cid', ''); log['cmds'].append({k: p.get(k) for k in ('ca', 'ctk', 'cp', 'ci')})
     if cid in cmd_ids: return
     cmd_ids.append(cid)
     a, tk = p.get('ca', ''), p.get('ctk', '')
     def ack(ok, why='', sl=0.0, tp=0.0):
         text(bcast('ack', {'cid': cid, 'ok': 1 if ok else 0, 'ca': a, 'ctk': tk, 'm': why, 'sl': sl, 'tp': tp, 'open': 1}))
+    if a in ('chart', 'unchart') and VER >= '9.14':   # not a trade: App trading needn't be on; signed all the same
+        msg = '|'.join(['v1', cid, p.get('clg', ''), p.get('csy', ''), tk, a, p.get('cp', ''), p.get('ci', ''), p.get('cts', '')])
+        if hmac.new(tok.encode(), msg.encode(), hashlib.sha256).hexdigest() != p.get('ch'): log['bad_sig'] += 1; return ack(False, 'sig')
+        cp = p.get('cp', '')
+        if a == 'chart':
+            log['chart_cmds'].append([round(time.time() - w0, 2), cp])
+            if cp == SYM or cp in CH or any(x[1] == cp for x in CH_PEND): return ack(True, cp)   # there already
+            if cp not in UNI: return ack(False, 'nosym')
+            CH_PEND.append((time.time() + CHART_MS, cp)); return ack(True, cp)
+        if VER < '9.15': return ack(False, 'unknown')
+        log['uncharts'].append([round(time.time() - w0, 2), cp])
+        if cp == SYM: return ack(True, cp + ':0')            # the hub's own chart is never closed
+        if cp not in CH: return ack(False, 'nosym')
+        if any(x[1] == cp for x in POS): return ack(False, 'open')
+        del CH[cp]; return ack(True, cp + ':1')
     if not TM: return ack(False, 'off')
     msg = '|'.join(['v1', cid, p.get('clg', ''), p.get('csy', ''), tk, a, p.get('cp', ''), p.get('ci', ''), p.get('cts', '')])
     want = hmac.new(tok.encode(), msg.encode(), hashlib.sha256).hexdigest()
     if want != p.get('ch'): log['bad_sig'] += 1; return ack(False, 'sig')
     if abs(int(fnow() - (time.time() - int(p.get('cts', '0'))) - fnow())) > 120 and abs(time.time() - int(p.get('cts', '0'))) > 120: return ack(False, 'old')
     if a == 'open' and VER >= '9.02':   # a new order (EA 9.02's LwOpenCmd): placed at the price now, sized from the risk
-        slp = float(p.get('cp') or 0); px = price_at(fnow()); d = 1 if slp < px else -1; pips = min(max(abs(px - slp) / PIP, ST['sl_min']), ST['sl_max'])
-        vol = round(ST['risk_amount'] / (pips * 10.0), 2); fill = round(px + (7 * 10 ** -DG if d > 0 else 0), DG)
-        log['opens'].append({'sl': p.get('cp'), 'ci': p.get('ci'), 'dir': d, 'vol': vol, 'px': fill})
-        POS.append(['555001', SYM, int(fnow()), 'buy' if d > 0 else 'sell', vol, fill, round(slp, DG), round(fill + 3 * abs(fill - slp) * d, DG)])
-        return text(bcast('ack', {'cid': cid, 'ok': 1, 'ca': 'open', 'ctk': '555001', 'm': '', 'px': fill, 'vol': vol, 'dir': d, 'sym': SYM}))
+        sy = p.get('csy'); dg = ch_dg(sy); pip = 10 ** -(dg - 1)   # its own chart's symbol (one this MT5 opened on "chart" too)
+        slp = float(p.get('cp') or 0); px = price_at(fnow()) if sy == SYM else price_sym(sy, fnow()); d = 1 if slp < px else -1; pips = min(max(abs(px - slp) / pip, ST['sl_min']), ST['sl_max'])
+        vol = round(ST['risk_amount'] / (pips * 10.0), 2); fill = round(px + (7 * 10 ** -dg if d > 0 else 0), dg)
+        log['opens'].append({'sym': sy, 'sl': p.get('cp'), 'ci': p.get('ci'), 'dir': d, 'vol': vol, 'px': fill, 's': round(time.time() - w0, 2)})
+        POS.append(['555001', sy, int(fnow()), 'buy' if d > 0 else 'sell', vol, fill, round(slp, dg), round(fill + 3 * abs(fill - slp) * d, dg)])
+        return text(bcast('ack', {'cid': cid, 'ok': 1, 'ca': 'open', 'ctk': '555001', 'm': '', 'px': fill, 'vol': vol, 'dir': d, 'sym': sy}))
     if a == 'cfg' and VER >= '9.02':    # the panel's settings from Live Charts (LwCfgCmd), then the settings now in force
         log['cfgs'].append(p.get('cp')); kv = dict(x.split('=', 1) for x in str(p.get('cp') or '').split(';') if '=' in x)
         num = lambda k: float(kv[k]) if k in kv else None
@@ -176,6 +201,7 @@ while time.time() - w0 < secs:
                 if SYM in str(p.get('sym') or '').split(','):   # the symbols on screen, comma-separated
                     sym_at = now if (VER < '9.03' or not p.get('lg') or int(p.get('lg')) == LG) else 0   # 9.03: only for the account the app names
                 log['watches'].append([round(now - w0, 2), ms, p.get('sym', '')])
+                WSYM['syms'] = str(p.get('sym') or '').split(','); WSYM['lg'] = p.get('lg')
                 if VER >= '9.02' and p.get('acc') == KEYME: acc['want'] = now
                 if VER >= '9.02' and p.get('hub') == KEYME:
                     hub['hs'] = [x for x in str(p.get('hs') or '').split(',') if x in UNI][:8]; hub['hs_at'] = now
@@ -196,11 +222,19 @@ while time.time() - w0 < secs:
             elif '"event":"who"' in m:
                 log['who'] += 1; hi()
                 if VER >= '9.02': send_set()
+                for sy in list(CH): hi_ch(sy)
             elif '"event":"cmd"' in m: on_cmd(inner(m))
             elif '"event":"hist"' in m:
                 p = inner(m)
                 tf = int(p.get('tf') or 1) if VER >= '9.01' else 1
-                if p.get('sym') == SYM and tf > 1:
+                if p.get('sym') in CH and not p.get('by'):   # a chart this MT5 opened on "chart": its own EA's history
+                    sy = p.get('sym'); dg = ch_dg(sy); step = tf * 60; n = max(1, min(5000 if tf > 1 else 1500, int(p.get('n') or 600))); log['ch_hist'].append([sy, tf, n])
+                    c0 = int(fnow()) - int(fnow()) % step
+                    rows = [bstr_d(bar_sym(sy, c0 - step * k, step), dg) for k in range(n, 0, -1)]
+                    per = 1000 if tf > 1 else 300; parts = [rows[i:i + per] for i in range(0, len(rows), per)]
+                    for i, pr in enumerate(parts):
+                        text(bcast('bars', {'s': sy, 'tf': tf, 'i': i, 'of': len(parts), 'rows': ';'.join(pr), 'lg': LG})); log['bars_msgs'] += 1
+                elif p.get('sym') == SYM and tf > 1:
                     n = max(1, min(5000, int(p.get('n') or 600))); log['hist_tf'].append([tf, n]); step = tf * 60
                     c0 = int(fnow()) - int(fnow()) % step
                     rows = [bstr(bar_tf(c0 - step * k, step)) for k in range(n, 0, -1)]
@@ -239,6 +273,16 @@ while time.time() - w0 < secs:
                 text(bcast('px', p)); log['px'] += 1; last_key = key
                 if last_px: log['gaps_ms'].append(int((now - last_px) * 1000))
                 last_px = now
+    # the charts opened on "chart": their EAs say hi when MT5 has them up, then stream when the app shows them (for this account)
+    while state == 3 and CH_PEND and CH_PEND[0][0] <= now:
+        _, sy = CH_PEND.pop(0); CH[sy] = now; log['charts'].append([round(now - w0, 2), sy]); hi_ch(sy)
+    if state == 3 and watch_at and now - watch_at < 45 and (VER < '9.03' or not WSYM['lg'] or int(WSYM['lg']) == LG):
+        for sy in list(CH):
+            if sy not in WSYM['syms'] or now - CH_PX.get(sy, 0) < (0.1 if RELAY else 0.5): continue
+            t = fnow(); dg = ch_dg(sy); m0 = int(t) - int(t) % 60; b = price_sym(sy, t)
+            text(bcast('px', {'s': sy, 'b': b, 'a': round(b + 7 * 10 ** -dg, dg), 't': int(t), 'dg': dg, 'bar': bstr_d(bar_sym(sy, m0, 60), dg), 'pb': bstr_d(bar_sym(sy, m0 - 60, 60), dg), 'lg': LG}))
+            CH_PX[sy] = now; log['ch_px'] += 1
+            if sy not in log['ch_first_px']: log['ch_first_px'][sy] = round(now - w0, 2)
     if state == 3 and VER >= '9.02' and acc['want'] and now - acc['want'] < 45 and now - acc['at'] >= (0.5 if RELAY else 2.0): acc['at'] = now; send_acct()
     # the hub (9.02): the list's prices once a second, and the price of each symbol on screen with no chart of its own
     if state == 3 and VER >= '9.02' and watch_at and now - watch_at < 45:

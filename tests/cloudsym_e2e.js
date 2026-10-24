@@ -49,7 +49,7 @@
       r6 === 'added' && acctCalls.length === 1 && acctCalls[0].a === 'chart' && acctCalls[0].sym === 'EURUSD' && acctCalls[0].login === LG && acctCalls[0].cp === 'CADJPY' && acctCalls[0].minV === 9.14 && acctCalls[0].anyTm === true && calls.length === n1 + 1,
       [r6, acctCalls, calls.length - n1]);
     fl = document.getElementById('stpr-flash');
-    ok('...the chart says "Opening CADJPY…", no restart', !fl || (/Opening CADJPY…/.test(fl.textContent) && !/restarts/.test(fl.textContent)), fl && fl.textContent);
+    ok('...nothing on the chart about it (24 Oct 2026, instant open: the hub prices show meanwhile), no restart', !fl || !fl.classList.contains('show') || !/CADJPY/.test(fl.textContent), fl && fl.textContent);
     window.__stTM.acct = function (o) { acctCalls.push(o); return Promise.resolve({ ok: false, why: 'tpl 5019' }); };
     P._cloudSym({ raw: 'NZDJPY', lg: LG, v: '9.14', hub: 'EURUSD|' + LG }); await W(250);
     ok('...the EA could not open it: the restart message, as before 9.14 (the server restarts that MT5)', acctCalls.length === 2 && (!fl || /restarts for a moment/.test(fl.textContent)), fl && fl.textContent);
