@@ -17924,6 +17924,19 @@ try {
   window.__stMergeSchool = function (base, other) {
     try {
       if (!base || !other) return;
+      /* Academy notes (24 Oct 2026): per lesson, the newer stamp wins. An emptied note keeps its stamp, so a clear made on
+         one device is not undone by an older copy from another. */
+      var nb = other.school && other.school.notes;
+      if (nb && typeof nb === 'object') {
+        if (!base.school) base.school = {};
+        if (!base.school.notes || typeof base.school.notes !== 'object') base.school.notes = {};
+        var nout = base.school.notes;
+        Object.keys(nb).forEach(function (id) {
+          var mine = nout[id], theirs = nb[id];
+          if (!theirs || typeof theirs !== 'object') return;
+          if (!mine || (+theirs.at || 0) > (+mine.at || 0)) nout[id] = theirs;
+        });
+      }
       var a = (base.school && base.school.done) || null;
       var b = (other.school && other.school.done) || null;
       var aStarted = base.school && base.school.started;
@@ -69586,6 +69599,102 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
     }
 
     var cur=null;
+    /* Academy notes (24 Oct 2026, Nestor: "Notes: yes ... ok do this"). One private box at the foot of every open lesson,
+       kept in data.school.notes[lessonId] = { t, at } so it syncs with the journal the way progress does. An emptied note
+       keeps its stamp: in a merge the newer stamp wins (__stMergeSchool), so clearing a note on one device clears it
+       everywhere instead of the older text coming back. Never shown in a mentor's view. */
+    var notesView=false, noteT=null, notePend=null;
+    function mentorView(){ try{ return document.body.classList.contains('mentor-viewing') || /[?&]mv=/.test(location.search); }catch(e){ return false; } }
+    function notesAll(){ var d=DAT(); return (d.school && d.school.notes) || {}; }
+    function noteOf(id){ var n=notesAll()[id]; return (n && n.t) ? String(n.t) : ''; }
+    function noteIds(){ var out=[]; MODULES.forEach(function(m){ m.ls.forEach(function(l){ if(noteOf(l.id).trim()) out.push(l.id); }); }); return out; }
+    function noteWrite(id, txt){
+      var d=DAT(); if(!d.school) d.school={done:{}}; if(!d.school.notes) d.school.notes={};
+      d.school.notes[id]={ t:String(txt||''), at:Date.now() }; SAVE();
+    }
+    function noteDay(at){ try{ return at ? new Date(at).toLocaleDateString(T('en-GB','es-ES'), { day:'numeric', month:'short' }) : ''; }catch(e){ return ''; } }
+    /* "Saved 13:05" today, "Saved 24 Oct" before: the box says it is done, the way the post buttons do. */
+    function noteSaved(at){
+      if(!at) return '';
+      var d=new Date(at), p=function(n){ return (n<10?'0':'')+n; };
+      var when=(d.toDateString()===new Date().toDateString()) ? (p(d.getHours())+':'+p(d.getMinutes())) : noteDay(at);
+      return T('Saved','Guardado')+' '+when;
+    }
+    /* Typing goes in 0.9 s after the last key, and at once when the box loses focus or the reader moves on. */
+    function flushNote(){
+      if(noteT){ clearTimeout(noteT); noteT=null; }
+      if(!notePend) return;
+      var p=notePend; notePend=null;
+      if(noteOf(p.id)!==p.t) noteWrite(p.id, p.t);
+      var st=document.querySelector('.stsc-notes[data-notes="'+p.id+'"] [data-nst]'), n=notesAll()[p.id], has=!!String(p.t).trim();
+      if(st){ st.textContent=has ? noteSaved(n && n.at) : T('Only you can see these','Solo tú las ves'); st.classList.toggle('ok', has); }
+      renderList();
+    }
+    function notesBox(id){
+      if(mentorView()) return '';
+      var n=notesAll()[id], has=!!(n && String(n.t||'').trim());
+      return '<div class="stsc-notes" data-notes="'+esc(id)+'">'
+        +'<div class="stsc-notes-h"><span>'+esc(T('Your notes','Tus notas'))+'</span>'
+          +'<em data-nst>'+esc(has ? noteSaved(n.at) : T('Only you can see these','Solo tú las ves'))+'</em></div>'
+        +'<textarea data-ntx rows="4" spellcheck="true" placeholder="'
+          +esc(T('What do you want to remember from this lesson?','¿Qué quieres recordar de esta lección?'))+'">'
+          +esc(has ? n.t : '')+'</textarea></div>';
+    }
+    function wireNotes(body, id){
+      var box=body.querySelector('.stsc-notes[data-notes="'+id+'"]'); if(!box) return;
+      var ta=box.querySelector('textarea'), st=box.querySelector('[data-nst]');
+      function grow(){ ta.style.height='auto'; ta.style.height=Math.max(118, ta.scrollHeight+2)+'px'; }
+      grow();
+      ta.addEventListener('input', function(){
+        notePend={ id:id, t:ta.value };
+        if(st){ st.textContent=T('Saving…','Guardando…'); st.classList.remove('ok'); }
+        grow();
+        if(noteT) clearTimeout(noteT);
+        noteT=setTimeout(flushNote, 900);
+      });
+      ta.addEventListener('blur', flushNote);
+    }
+    var NOTE_IC='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'
+      +'<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>';
+    /* Every note in one place, in course order, each one a step back into its lesson. */
+    function showNotes(scroll){
+      flushNote();
+      notesView=true; cur=null;
+      var body=G('stsc-body'); if(!body) return;
+      var ids=noteIds();
+      var ARROW='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
+      var h='<div class="stsc-notespage"><div class="stsc-lhero">'
+        +'<div class="stsc-eyebrow"><i></i>'+esc(T('Academy','Academia'))+'</div>'
+        +'<h1>'+esc(T('My notes','Mis notas'))+'</h1>'
+        +'<div class="stsc-meta"><span>'+esc(ids.length===1 ? T('1 lesson with notes','1 lección con notas')
+                                          : (ids.length+' '+T('lessons with notes','lecciones con notas')))+'</span>'
+          +'<span>'+esc(T('Only you can see these','Solo tú las ves'))+'</span></div></div>';
+      if(!ids.length){
+        h+='<div class="stsc-call note"><div class="stsc-call-h">'+esc(T('No notes yet','Aún no hay notas'))+'</div>'
+          +'<p>'+esc(T('Every lesson ends with a notes box. What you write there is gathered here, lesson by lesson.',
+                       'Cada lección termina con un cuadro de notas. Lo que escribas ahí se reúne aquí, lección a lección.'))+'</p></div>';
+      }
+      ids.forEach(function(id){
+        var l=find(id), loc=locate(id), n=notesAll()[id];
+        h+='<div class="stsc-ncard">'
+          +'<button type="button" class="stsc-ncard-t" data-nl="'+esc(id)+'"><span>'
+            +'<em>'+esc(T('Module','Módulo')+' '+(loc.mod?loc.mod.n:'')+(n && n.at ? ' · '+noteDay(n.at) : ''))+'</em>'
+            +'<b>'+esc(id+'  '+lt(l))+'</b></span>'+ARROW+'</button>'
+          +'<div class="stsc-ncard-b">'+esc(noteOf(id))+'</div></div>';
+      });
+      h+='</div>';
+      var mt2=G('stsc-mtitle'); if(mt2) mt2.textContent=T('My notes','Mis notas');
+      mobLabel(T('My notes','Mis notas'));
+      mobSheet(false);
+      body.innerHTML='<div class="stsc-doc">'+h+'</div>';
+      if(scroll) toLessonTop();
+      body.querySelectorAll('[data-nl]').forEach(function(b){
+        b.addEventListener('click', function(){ openLesson(b.getAttribute('data-nl'), true); });
+      });
+      renderList();
+    }
+    function notesShown(){ var b=G('stsc-body'); return !!(b && b.querySelector('.stsc-notespage')); }
+    try{ window.addEventListener('pagehide', function(){ try{ flushNote(); }catch(e){} }); }catch(e){}
 
     function build(){
       if(G('stsc')) return;
@@ -69702,6 +69811,36 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
        +'.stsc-sub{margin-top:16px;background:#f472b6;border:none;color:#0b0a0d;font-weight:700;border-radius:8px;padding:10px 18px;cursor:pointer;font:inherit;}'
        +'.stsc-sub[disabled]{opacity:.4;cursor:default;}'
        +'.stsc-res{margin-top:12px;font-size:13px;}'
+       /* Academy notes: the box at the foot of a lesson, the mark in the list, the My notes row and page. */
+       +'.stsc-notes{margin:28px 0 8px;max-width:76ch;border:1px solid #2a2833;border-radius:12px;background:#131218;overflow:hidden;transition:border-color .15s;}'
+       +'.stsc-notes:focus-within{border-color:rgba(255,45,143,.5);}'
+       +'.stsc-notes-h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 14px;border-bottom:1px solid #221f2b;'
+       +'font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#8a8792;}'
+       +'.stsc-notes-h em{font-style:normal;font-weight:600;letter-spacing:0;text-transform:none;font-size:11.5px;color:#8a8792;white-space:nowrap;}'
+       +'.stsc-notes-h em.ok{color:#4ECD8B;}'
+       +'.stsc-notes textarea{display:block;width:100%;box-sizing:border-box;min-height:118px;resize:vertical;background:transparent;border:0;outline:none;'
+       +'color:#f4f3f6;font-family:inherit;font-size:14px;line-height:1.6;padding:12px 14px 14px;margin:0;}'
+       +'.stsc-notes textarea::placeholder{color:#5f5c68;}'
+       +'.stsc-mynotes{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;margin:4px 0 2px;padding:8px 10px;border:1px solid #2a2833;'
+       +'border-radius:8px;background:#131218;color:#d9d7de;font-family:inherit;font-size:13px;text-align:left;cursor:pointer;transition:border-color .15s,color .15s;}'
+       +'.stsc-mynotes:hover{border-color:#8a8792;color:#fff;}'
+       +'.stsc-mynotes.active{border-color:rgba(255,45,143,.6);color:#fff;}'
+       +'.stsc-mynotes-ic{line-height:0;color:#ff2d8f;flex:none;} .stsc-mynotes-ic svg{width:14px;height:14px;}'
+       +'.stsc-mynotes-t{flex:1;min-width:0;}'
+       +'.stsc-mynotes b{font-family:"AppNum","DM Mono",monospace;font-size:11px;font-weight:600;color:#8a8792;}'
+       +'.stsc-nmark{margin-left:auto;flex:none;line-height:0;color:#8a8792;padding-left:6px;} .stsc-nmark svg{width:12px;height:12px;}'
+       +'.stsc-les.active .stsc-nmark{color:#ff2d8f;}'
+       +'.stsc-ncard{max-width:76ch;margin:0 0 14px;border:1px solid #2a2833;border-radius:12px;background:#131218;overflow:hidden;}'
+       +'.stsc-ncard-t{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;box-sizing:border-box;padding:12px 14px;'
+       +'background:transparent;border:0;border-bottom:1px solid #221f2b;color:#f4f3f6;font-family:inherit;text-align:left;cursor:pointer;}'
+       +'.stsc-ncard-t>span{min-width:0;display:flex;flex-direction:column;gap:4px;}'
+       +'.stsc-ncard-t em{font-style:normal;font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#8a8792;}'
+       +'.stsc-ncard-t b{font-size:14px;color:#fff;font-weight:700;}'
+       +'.stsc-ncard-t svg{width:16px;height:16px;flex:none;color:#8a8792;transition:color .15s,transform .15s;}'
+       +'.stsc-ncard-t:hover svg{color:#ff2d8f;transform:translateX(2px);}'
+       +'.stsc-ncard-b{padding:12px 14px 14px;color:#d9d7de;font-size:14px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere;}'
+       /* 16px on a phone: below that iOS zooms the page in when the box takes focus. */
+       +'@media (max-width:760px){.stsc-notes textarea{font-size:16px;}}'
        /* ---- Lesson typography and furniture ----------------------------------------
           A lesson is mostly prose, and prose on black at one weight is what makes a course hard
           to sit through. Everything below exists to break the page into things the eye can land
@@ -70054,6 +70193,12 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       var box=G('stsc-list'); if(!box) return;
       sideTitle();
       var h='';
+      if(!mentorView()){
+        var nn=noteIds().length;
+        h+='<button type="button" class="stsc-mynotes'+(notesShown()?' active':'')+'" data-mynotes="1">'
+          +'<span class="stsc-mynotes-ic">'+NOTE_IC+'</span><span class="stsc-mynotes-t">'+esc(T('My notes','Mis notas'))+'</span>'
+          +(nn?'<b>'+nn+'</b>':'')+'</button>';
+      }
       MODULES.forEach(function(m){
         h+='<div class="stsc-mod">'+esc(m.n+'. '+mt(m))
           +(planLocked(m.n+'.1') ? '<button type="button" class="stsc-modplan" data-plans="1" title="'
@@ -70077,7 +70222,9 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
                 ? T('Included with Journal Pro and Mentorship','Incluida con Journal Pro y Mentoría')
                 : T('Pass the lesson before this one to open it',
                     'Aprueba la lección anterior para abrirla'))+'"'))
-            +'><span class="stsc-tick">'+tick+'</span><span>'+esc(l.id+'  '+lt(l))+'</span></div>';
+            +'><span class="stsc-tick">'+tick+'</span><span>'+esc(l.id+'  '+lt(l))+'</span>'
+            +((!mentorView() && noteOf(l.id).trim()) ? '<span class="stsc-nmark" title="'+esc(T('Has your notes','Tiene tus notas'))+'">'+NOTE_IC+'</span>' : '')
+            +'</div>';
         });
       });
       if(coursePath()!=='st' && !reviewAll() && !unlocked('3.1')){
@@ -70085,6 +70232,9 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
           +esc(T('Already trading? Jump to the ST Method','¿Ya operas? Ir directo al Método ST'))+'</button>';
       }
       box.innerHTML=h;
+      box.querySelectorAll('[data-mynotes]').forEach(function(el){
+        el.addEventListener('click', function(){ showNotes(true); });
+      });
       box.querySelectorAll('[data-jump]').forEach(function(el){
         el.addEventListener('click', function(){ choosePath('st'); });
       });
@@ -70147,6 +70297,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
        and what it belongs to, not get a dialog thrown over the list. */
     function openLocked(id, scroll){
       var l=find(id); if(!l) return;
+      flushNote(); notesView=false;
       var loc=locate(id);
       var body=G('stsc-body'); if(!body) return;
       var mt2=G('stsc-mtitle'); if(mt2) mt2.textContent=l.id+' '+lt(l);
@@ -70189,6 +70340,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
 
     function openLesson(id, scroll){
       var l=find(id); if(!l) return;
+      flushNote(); notesView=false;
       // Checked before the body test: a locked lesson should explain itself whether or not it
       // happens to be written yet.
       if(planLocked(id)){ cur=id; openLocked(id, scroll); return; }
@@ -70252,6 +70404,8 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
          + '<div class="stsc-res" id="stsc-res"></div>';
       }
 
+      h+=notesBox(id);
+
       // Reaching the end of a lesson should offer the next one rather than sending the reader
       // back to hunt the list. Rendered locked when the quiz still gates it, so the button
       // explains the gate instead of silently doing nothing.
@@ -70307,6 +70461,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       });
 
       wireFigs(body);
+      wireNotes(body, id);
       if(l.quiz && l.quiz.length) wireQuiz(l);
       var nx=body.querySelector('[data-next]');
       if(nx) nx.addEventListener('click', function(){ openLesson(nx.getAttribute('data-next'), true); });
@@ -70545,12 +70700,14 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       else if(next) openLesson(next, true);
     }
     function unmount(){
+      try{ flushNote(); }catch(e){}
       var o=G('stsc'); if(!o) return;
       o.classList.remove('open','inline');
       applyChrome();
       if(o.parentNode!==document.body) document.body.appendChild(o);
     }
     function close(){
+      try{ flushNote(); }catch(e){}
       var o=G('stsc'); if(o) o.classList.remove('open');
       bodyScrollLock(false);
       /* A popout is hidden down to the overlay. Closing there would leave an empty window, so
@@ -70563,7 +70720,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
     function relang(){
       try{ if(!G('stsc')) return;
         sideTitle();
-        renderList(); if(cur) openLesson(cur);
+        renderList(); if(notesShown()) showNotes(); else if(cur) openLesson(cur);
       }catch(e){}
     }
     /* For the Academy hub card, so it can say how much course there is and how far in you are. */
@@ -70588,7 +70745,8 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       }catch(e){}
       return out;
     }
-    return { open:open, close:close, relang:relang, stats:stats, mount:mount, unmount:unmount, where:where };
+    return { open:open, close:close, relang:relang, stats:stats, mount:mount, unmount:unmount, where:where,
+             showNotes:showNotes, noteIds:noteIds, noteOf:noteOf };
   })();
   try{ window.STSCHOOL = STSCHOOL; }catch(e){}
 
@@ -72753,6 +72911,8 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       var jr=arr[0], sr=arr[1];
       if((jr && jr.error) || !(jr && jr.data && jr.data.data)){ mvFatal(tt('mvLoadErr')); return; }
       var email=(sr && sr.data && sr.data.owner_email) || '';
+      /* Academy notes are private to the member: dropped before the mentor's view keeps its copy (24 Oct 2026). */
+      try { var _mvd=jr.data.data; if(_mvd && _mvd.school) delete _mvd.school.notes; } catch(e){}
       try { localStorage.setItem('st_mv_payload', JSON.stringify({ id:mvId, email:email, data:jr.data.data, ts:Date.now() })); }
       catch(e){ mvFatal(tt('mvLoadErr')); return; }
       location.replace(location.pathname + '?mv=' + encodeURIComponent(mvId) + '&r=1');
