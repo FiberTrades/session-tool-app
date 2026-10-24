@@ -92117,10 +92117,11 @@ window.__stAZ = (function () {
     var hl0 = S.sym.name + '   ' + dshort(new Date(S.now * 1000)) + '  ' + hm(S.now) + ' ' + tzl(S.now), hr0 = 'Session Terminal · ' + (S && S.live ? T('Live', 'En vivo') : 'Replay');
     g.fillText(hl0, 12, head / 2);
     if (12 + g.measureText(hl0).width + 24 + g.measureText(hr0).width <= gr.width - 12) { g.textAlign = 'right'; g.fillStyle = lt ? '#5d606b' : '#8a8794'; g.fillText(hr0, gr.width - 12, head / 2); g.textAlign = 'left'; }   // a phone's narrow picture: the name only, never on top of the date
-    var mp = panes.filter(function(q){ return q.el.ownerDocument === ud; });   // the charts in that window
+    var mp = panes.filter(function(q){ return q.el.ownerDocument === ud; }), tagR = [];   // the charts in that window
     mp.forEach(function(p){ var pc = p.el.querySelector('.stpr-pc'), r = (pc || p.el).getBoundingClientRect(), x = r.left - gr.left, y = r.top - gr.top + head;
       try { var sc = p.chart.takeScreenshot(); g.drawImage(sc, x, y, r.width, r.height); } catch (e) {}
       try { var er = p.el.getBoundingClientRect(); g.drawImage(p.ov, er.left - gr.left, er.top - gr.top + head, er.width, er.height); } catch (e) {}
+      try { tagR = tagR.concat(shotTags(g, p, gr, head)); } catch (e) {}   // the platform's trade tags, as they show at rest
       /* its timeframe as the app's own button: pink on a dark pill, sized to the chart (Nestor, 22 Oct 2026, of a pasted link: "the TF needs
          to be more vivible, its tiny and it doesnt have background"); the O H L C beside it in a pill of its own */
       var ol = p.el.querySelector('.stpr-ohlc'), tfl = (mixedSyms() ? symShort(PS(p).sym) + ' ' : '') + TFL[p.tf], oh = ol ? Array.prototype.map.call(ol.querySelectorAll('i,b'), function(x){ return x.textContent; }).join(' ') : '';
@@ -92133,7 +92134,7 @@ window.__stAZ = (function () {
     if (mp.length > 1) { g.strokeStyle = lt ? '#d1d4dc' : '#2A2833'; g.lineWidth = 2; mp.forEach(function(p){ var r = p.el.getBoundingClientRect(); g.strokeRect(r.left - gr.left, r.top - gr.top + head, r.width, r.height); }); }
     DW.cx = cx0; dirty();
     cv.__dpr = dpr; cv.__doc = ud; cv.__sym = S.sym && S.sym.name; cv.__live = !!S.live;
-    try { cv.__sens = shotSens(gr, head, mp); } catch (e) { cv.__sens = []; }   // what "Hide trade sizes and money" covers (window.__stShot)
+    try { cv.__sens = tagR.length ? tagR : shotSens(gr, head, mp); } catch (e) { cv.__sens = []; }   // what "Hide trade sizes and money" covers (window.__stShot)
     return cv; }
   function snapCopy(c0){ if (!S) return false;
     var cv = (c0 && c0.getContext) ? c0 : shotOut();   // a picture from the blur editor, else the chart now with the menu's switch applied
@@ -92163,6 +92164,24 @@ window.__stAZ = (function () {
       var x1 = r.left - gr.left + r.width - aw, x0 = Math.max(r.left - gr.left, x1 - 250), y0 = r.top - gr.top + head;
       lvIdeas(PS(p).sym).forEach(function(x){ lvLevels(x).forEach(function(o){ var y = p.series.priceToCoordinate(o.price);
         if (y != null && isFinite(y)) out.push({ x: x0, y: y0 + y - 12, w: x1 - x0, h: 24 }); }); }); });
+    return out; }
+  /* the Charts platform's trade tags are page elements over the chart (plTags), so the chart's own picture misses them: drawn in as they
+     show at rest - BUY 13.5 | +1.54R, TP | 2.0R, SL | -1R in their colours, the BE word - so a shared chart shows the trade (never the
+     money a hovered tag opens to). Hands back the entry tags' rectangles, the trade's size: what "Hide trade sizes and money" covers. */
+  function shotTags(g, p, gr, head){ var box = p._plt, out = [];
+    if (!PL.on || !box || !box.isConnected || !box.children.length) return out;
+    Array.prototype.forEach.call(box.children, function(el){ if (el.hidden) return; var r = el.getBoundingClientRect(); if (!(r.height > 0)) return;
+      var c = el._c || '#2962ff', x1 = r.right - gr.left, y = r.top - gr.top + head, fnt = function(n){ var cs = getComputedStyle(n); return cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily; };
+      g.save(); g.textBaseline = 'middle';
+      if (!el._tag) { var sp = el.querySelector('span'); if (sp) { g.font = fnt(sp); g.fillStyle = c; g.textAlign = 'right'; g.fillText(sp.textContent, x1, y + r.height / 2); } g.restore(); return; }
+      var k = el.querySelector('.k'), v = el.querySelector('.v'); if (!k) { g.restore(); return; }
+      g.font = fnt(k); var kt = k.textContent, vt = v ? v.textContent : '', pad = 7, h = 22, kw = Math.ceil(g.measureText(kt).width) + pad * 2, vw = vt ? Math.ceil(g.measureText(vt).width) + pad * 2 : 0, w = kw + vw, x0 = x1 - w;
+      g.fillStyle = 'rgba(0,0,0,0.4)'; g.fillRect(x0, y + 1, w, h);   // its 1 px shadow, as on screen
+      g.beginPath(); if (g.roundRect) g.roundRect(x0, y, w, h, 3); else g.rect(x0, y, w, h); g.clip();
+      g.fillStyle = c; g.fillRect(x0, y, kw, h); if (vw) { g.fillStyle = '#ffffff'; g.fillRect(x0 + kw, y, vw, h); }
+      g.fillStyle = '#ffffff'; g.fillText(kt, x0 + pad, y + h / 2 + 0.5); if (vw) { g.fillStyle = c; g.fillText(vt, x0 + kw + pad, y + h / 2 + 0.5); }
+      g.restore();
+      if (/\|e$/.test(String(el._k))) out.push({ x: x0 - 2, y: y - 2, w: w + 4, h: h + 4 }); });
     return out; }
   function shotOut(){ var cv = snapShot(); try { if (window.__stShot) window.__stShot.out(cv); } catch (e) {} return cv; }
   function snapDl(c0){ if (!S || !window.__stShot) return; var cv = (c0 && c0.getContext) ? c0 : shotOut();
