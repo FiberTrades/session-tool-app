@@ -54,7 +54,7 @@
     ok('opening another account moves the form there with its own rules (Max trades 3)', item(a2.id).classList.contains('open') && !item(a1.id).classList.contains('open') && item(a2.id).contains(document.getElementById('settings-risk-max-trades')) && document.getElementById('settings-risk-max-trades').value === '3', document.getElementById('settings-risk-max-trades').value);
     item(a3.id).querySelector('.sacc-head').click(); await W(400);
     var b3 = item(a3.id).querySelector('.sacc-body');
-    ok('a personal account: no stage, no payouts, every rule its own; no MT5 says so with Connect MT5', !b3.querySelector('[data-sacc-stage]') && !b3.querySelector('[data-slot="payouts"]').textContent.trim() && /^Rules/i.test(b3.querySelector('[data-slot="rules"] .sacc-sub').textContent.trim()) && b3.querySelector('[data-sacc-cloudfor]'));
+    ok('a personal account: no stage, no payouts, every rule its own; no MT5 says so with Connect MT5', !b3.querySelector('[data-sacc-stage]') && !b3.querySelector('[data-slot="payouts"]').textContent.trim() && /^Your rules/i.test(b3.querySelector('[data-slot="rules"] .sacc-sub').textContent.trim()) && b3.querySelector('[data-sacc-cloudfor]'));
     // 24 Oct 2026 (Nestor: "remove it" - no PC guide): Connect MT5 opens the cloud form for THIS account, nothing else
     b3.querySelector('[data-sacc-cloudfor]').click(); await W(400);
     var aw = document.getElementById('sacc-add-wrap'), ah = aw.querySelector('#sacc-addcloud .set-h');
