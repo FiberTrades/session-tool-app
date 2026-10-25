@@ -88,8 +88,9 @@
       check('...its message box at the bottom, inside the column', cq && cq.width > 200 && cq.bottom <= slr.bottom + 1 && cq.left >= slr.left - 1 && cq.right <= slr.right + 1, cq && [cq.left, cq.right, cq.bottom]);
       check('the channel it opens on: #session-chat', /session-chat/i.test(($('#dcx-ch-title') || {}).textContent || '') || (window.STCommunity.curSlug && window.STCommunity.curSlug() === 'session-chat'), [($('#dcx-ch-title') || {}).textContent, window.STCommunity.curSlug && window.STCommunity.curSlug()]);
       // the burger: the channels as a drawer over the chat
-      document.getElementById('dcx-burger').click(); await W(400);
+      document.getElementById('dcx-burger').click(); await W(300);
       var sd = $('#dcx-root .dcx-side'), sdr = sd && sd.getBoundingClientRect();
+      for (k = 0; k < 15 && sdr && sdr.left < slr.left - 1; k++) { await W(100); sdr = sd.getBoundingClientRect(); }   // its slide in
       check('the burger slides the channel list over the chat, inside the column', root().classList.contains('side-open') && sdr && sdr.left >= slr.left - 1 && sdr.width > 150 && sdr.right <= slr.right + 1, sdr && [sdr.left, sdr.width, slr.left]);
       var msgs = $('#dcx-root .dcx-msgs'); if (msgs) msgs.click(); await W(300);
       check('...a tap on the chat closes it', !root().classList.contains('side-open'));
@@ -133,7 +134,7 @@
       window.__pcShot = 'light';
     } else {
       var chb = $('.ph-icons .ph-chb');
-      check('a phone: Chat in the bottom toolbar, on screen', !!chb && chb.getBoundingClientRect().width > 20 && chb.getBoundingClientRect().right <= innerWidth, chb && Math.round(chb.getBoundingClientRect().right));
+      check('a phone: Chat in the bottom toolbar, on screen', !!chb && chb.getBoundingClientRect().width > 20 && chb.getBoundingClientRect().right <= innerWidth, chb && [Math.round(chb.getBoundingClientRect().right), Array.prototype.map.call(document.querySelectorAll('.ph-bar > *, .ph-icons > *'), function (x) { var r = x.getBoundingClientRect(); return (x.className || x.id || x.tagName).toString().slice(0, 14) + ':' + Math.round(r.left) + '-' + Math.round(r.right); }), getComputedStyle(document.querySelector('.ph-bar')).paddingLeft]);
       chb.click(); await W(400);
       for (k = 0; k < 40 && !(root() && root().classList.contains('dcx-plat')); k++) await W(250);
       var sh = $('.ph-chs'), shr = sh && sh.getBoundingClientRect();
