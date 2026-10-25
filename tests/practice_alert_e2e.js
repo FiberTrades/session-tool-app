@@ -33,12 +33,15 @@
     mev('contextmenu', x, y); await W(40);
     var ctx = pane().el.querySelector('.stpr-ctx');
     ok('a right-click on the bare chart: no menu, no Add alert', !(ctx && ctx.style.display === 'flex' && ctx.querySelector('[data-act="alert"]')), ctx && ctx.textContent);
-    mev('mousemove', x, y); await W(60);
+    mev('mousemove', x, y); await W(60); P._drawOv(0);
+    // the + adds the price the crosshair's label reads - not always the exact price at y: a mouse event lands on a whole pixel
+    // (clientY drops its fraction) and a pixel here is about half a point, enough to tip the fifth decimal
+    var cxl = window.__stAxisLbl(pane().series).get('cx'), shown = cxl ? +cxl.t : null;
     var pw0 = P._kx(0).pw; mev('mousedown', pw0 - 11, y); mev('mouseup', pw0 - 11, y); await W(60);
-    var shown = +Number(P._panes()[0].series.coordinateToPrice(y)).toFixed(5);
     ok('the + adds one line', DW.list.filter(function (d) { return d.type === 'hline'; }).length === 1, DW.list.map(function (d) { return d.type + ':' + d.price + ':' + !!d.alert; }));
     var L = DW.list[DW.list.length - 1];
-    ok('it adds a horizontal line with its alert on, at that price', L && L.type === 'hline' && L.alert === true && !L.hitAt && Math.abs(L.price - shown) < 1e-9 && /Alert set at/.test(flash()), L);
+    ok('it adds a horizontal line with its alert on, at that price', L && L.type === 'hline' && L.alert === true && !L.hitAt && Math.abs(L.price - shown) < 1e-9 && /Alert set at/.test(flash()),
+      L && { price: L.price, shown: shown, alert: L.alert, hitAt: L.hitAt || null, flash: flash() });   // a copy: L itself is reached later on
     var hlT = function () { return (pane().hl || []).map(function (l) { return l.options().title + '|' + l.options().lineStyle; }); };
     P._render(); await W(150);
     // the bell is back (Nestor, 19 Oct 2026: "bring the bell back on alerts"): a bell, not a padlock, at the line's right end
