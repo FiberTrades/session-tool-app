@@ -38,7 +38,7 @@ export function planInput(body: any, lang: "en" | "es"): PlanInput | null {
 
 export function planSystem(lang: "en" | "es"): string {
   return `You check ONE trading chart picture against the trader's OWN written setup, the way a careful mentor would.
-You are given the setup's rules (each line is "Rule: what the setup wants"), the setup's own description, today's Session Bias (the trader's morning read) and a list of the course's lessons.
+You are given the setup's rules (each line is "Rule: what the setup wants"), the setup's own description, today's posted Session Bias for this chart (the trader's morning read: mode, structure, price location, direction, the rule of the week) and a list of the course's lessons.
 
 For EVERY rule, look at the picture and decide:
 - "fits": the picture clearly shows what the rule wants
@@ -61,12 +61,14 @@ Answer with ONLY this JSON, nothing before or after it:
 export function planUserText(i: PlanInput): string {
   const b = (i.bias || []).map((x: any) => {
     const parts: string[] = [];
-    if (x?.sym) parts.push(String(x.sym));
+    if (x?.sym) parts.push(String(x.sym) + (x?.session ? ` (${clip(x.session, 30)} session)` : ""));
+    if (x?.mode) parts.push(`mode ${x.mode}`);
     if (x?.direction) parts.push(`direction ${x.direction}${x.directionLtf ? ` (LTF ${x.directionLtf})` : ""}`);
     if (x?.structure) parts.push(`structure ${x.structure}${x.structureLtf ? ` (LTF ${x.structureLtf})` : ""}`);
     if (x?.location) parts.push(`price location ${x.location}${x.locationLtf ? ` (LTF ${x.locationLtf})` : ""}`);
     if (x?.sessionNews) parts.push(`news ${x.sessionNews}`);
     if (x?.notes) parts.push(`notes: ${clip(x.notes, 300)}`);
+    if (x?.rule) parts.push(`the rule of the week: ${clip(x.rule, 200)}`);
     return "- " + parts.join(", ");
   }).filter((s: string) => s.length > 2);
   return [

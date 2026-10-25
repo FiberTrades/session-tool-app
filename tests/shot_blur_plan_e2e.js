@@ -6,7 +6,7 @@
   var W = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
   var out = [], ok = function (name, cond, got) { out.push({ name: name, ok: !!cond, got: got === undefined ? null : got }); };
   var errs = []; window.addEventListener('error', function (e) { errs.push(String(e.message)); });
-  var SH = null, realFetch = window.fetch, realPb = window.__stPb, realAnchorClick = HTMLAnchorElement.prototype.click;
+  var bias0 = null, SH = null, realFetch = window.fetch, realPb = window.__stPb, realAnchorClick = HTMLAnchorElement.prototype.click;
   try {
     for (var i = 0; i < 200 && !(window.__stPractice && window.__stSB && window.__stShot && window.__stPlanCheck); i++) await W(100);
     await W(1000);
@@ -101,9 +101,27 @@
       describe: function () { return [{ label: 'Price location', text: 'Discount half' }, { label: 'Stop loss', text: 'Below the swing low, 2-4 pips' }]; } });
     try { localStorage.removeItem('st_plancheck_setup'); } catch (e) {}
     var opened = []; var realOpenAt = window.STSCHOOL && window.STSCHOOL.openAt; if (window.STSCHOOL) window.STSCHOOL.openAt = function (id) { opened.push(id); };
+    // today's posted Session Bias: gold in New York (the active slot) and EUR/USD in London (Nestor, 25 Oct 2026: "maybe inside check
+    // my plan there can be my bias too as we are now removing session live tab")
+    bias0 = { slots: data.biasSlots, bias: data.bias, act: data.activeBiasSlot, rules: data.weeklyRules };
+    var mkSlot = function (o) { var sl = Object.assign({ news: 'None', tvLinks: [], date: todayDateStr(), sessionDate: todayDateStr() }, o); sl.copiedAt = new Date(new Date().setHours(8, 12, 0, 0)).toISOString(); sl.postedSig = biasSig(sl); return sl; };
+    var slEU = mkSlot({ symbol: 'EUR/USD', sessionName: 'London', mode: 'Execution', structure: 'Trending', structureLtf: 'Initiating', location: 'Discount Edge', direction: 'Bullish', directionLtf: 'Bullish', notes: 'London took the Asia high; buying the 50%.' });
+    var slXAU = mkSlot({ symbol: 'XAU/USD', sessionName: 'New York', mode: 'Observation', structure: 'Ranging', location: 'Premium Edge', direction: 'Bearish', news: 'Impact News', notes: 'CPI at 13:30.' });
+    data.biasSlots = [slXAU, slEU]; data.activeBiasSlot = 0; data.bias = slXAU;
+    data.weeklyRules = Object.assign({}, data.weeklyRules || {}); data.weeklyRules[getCalendarWeekKey(new Date())] = { rule: 'No entry before the London open' };
     sb.click(); await W(40); it('plan').click(); await W(150);
     var po = document.querySelector('.stpc-ov'), q = function (s) { return po && po.querySelector(s); }, qa = function (s) { return po ? Array.prototype.slice.call(po.querySelectorAll(s)) : []; };
     ok('Check my plan opens with the chart picture', !!po && /^data:image\/jpeg;base64,/.test(q('.stpc-img').getAttribute('src')));
+    var bb = q('.stpc-bias'), bsw = qa('.stpc-bsw button');
+    ok('Your bias today at the top: the chart\'s symbol picked (EUR/USD · London, not the active gold), a switch to the other posted one',
+      !!bb && q('.stpc-bd').firstElementChild === bb && /Your bias today/.test(bb.textContent) && bsw.length === 2 && bsw[1].classList.contains('on') && /EUR\/USD · London/.test(bsw[1].textContent) && /XAU\/USD · New York/.test(bsw[0].textContent),
+      bb && bb.textContent.slice(0, 160));
+    var bt2 = q('.stpc-bgrid').textContent;
+    ok('...its mode, HTF/LTF structure, location, direction, the week\'s rule, notes, and when it was posted',
+      /Mode\s*Execution/.test(bt2) && /HTF\s*Trending\s*·\s*LTF\s*Initiating/.test(bt2) && /Discount Edge/.test(bt2) && /↑ Bullish/.test(bt2) && !!q('.stpc-bgrid .up') && /No entry before the London open/.test(bt2) && /London took the Asia high/.test(bt2) && /Posted 08:12/.test(bb.textContent), bt2);
+    bsw[0].click(); await W(40);
+    ok('the switch: gold in New York, its own read (Observation, Bearish with its down arrow, Impact News)', qa('.stpc-bsw button')[0].classList.contains('on') && /Observation/.test(q('.stpc-bgrid').textContent) && /↓ Bearish/.test(q('.stpc-bgrid').textContent) && /Impact News/.test(q('.stpc-bgrid').textContent) && !!q('.stpc-bgrid .dn'),
+      q('.stpc-bgrid').textContent);
     ok('the member\'s setups to pick from (the first picked) and its rules', qa('.stpc-setups button').length === 2 && qa('.stpc-setups button')[0].classList.contains('on') && qa('.stpc-rules span').length === 2 && /Price location: Discount half/.test(q('.stpc-rules').textContent));
     qa('.stpc-setups button')[1].click(); await W(30);
     ok('picking another setup', qa('.stpc-setups button')[1].classList.contains('on') && !qa('.stpc-setups button')[0].classList.contains('on'));
@@ -133,6 +151,9 @@
       sent.length === 1 && s0.mode === 'plancheck' && s0.image && s0.image.media_type === 'image/jpeg' && s0.image.data.length > 2000 && s0.plan.name === '50% Mitigation' && s0.plan.rules.length === 2
       && Array.isArray(s0.lessons) && s0.lessons.some(function (l) { return l.id === '5.2' && l.title === 'Stop placement'; }) && s0.context.lang === 'en' && s0.chart.sym === 'EURUSD' && Array.isArray(s0.bias),
       { mode: s0.mode, plan: s0.plan, lessons: s0.lessons && s0.lessons.length, chart: s0.chart });
+    var sb0 = (s0.bias || [])[0] || {};
+    ok('what went along is exactly the bias the block showed: one, gold in New York, with its mode and the week\'s rule',
+      (s0.bias || []).length === 1 && sb0.sym === 'XAU/USD' && sb0.session === 'New York' && sb0.mode === 'Observation' && sb0.direction === 'Bearish' && sb0.sessionNews === 'Impact News' && sb0.rule === 'No entry before the London open', s0.bias);
     ok('the setup picked is remembered for next time', localStorage.getItem('st_plancheck_setup') === '50% Mitigation');
     if (mob) {
       var box = q('.stpc').getBoundingClientRect(), wide = qa('button, .stpc-row').filter(function (x) { return x.getBoundingClientRect().right > innerWidth + 1; });
@@ -140,6 +161,19 @@
     }
     rows[1].querySelector('.stpc-les').click(); await W(60);
     ok('the lesson link closes it and opens that lesson in the Academy', !document.querySelector('.stpc-ov') && opened[0] === '5.2', opened);
+    window.__stPlanCheck.open({ canvas: P._snap() }); await W(80); po = document.querySelector('.stpc-ov');
+    q('[data-pc="go"]').click(); for (k = 0; k < 80 && !qa('.stpc-row:not(.stpc-sk)').length; k++) await W(100);
+    var hadRows = qa('.stpc-row:not(.stpc-sk)').length; qa('.stpc-bsw button')[0].click(); await W(40);
+    ok('switching the bias after an answer clears it (an answer is for the bias it was sent with)',
+      hadRows === 2 && !qa('.stpc-row:not(.stpc-sk)').length && /Check this chart/.test(q('[data-pc="go"]').textContent) && sent[sent.length - 1].bias[0].sym === 'EUR/USD', [hadRows, sent.length]);
+    q('[data-pc="close"]').click(); await W(30);
+    if (typeof setLanguage === 'function') {
+      setLanguage('es'); await W(300);
+      window.__stPlanCheck.open({ canvas: P._snap() }); await W(80); po = document.querySelector('.stpc-ov');
+      var esT = (q('.stpc-bias') || {}).textContent || '';
+      ok('in Spanish: Tu sesgo de hoy, Modo, the values translated, Publicado', /Tu sesgo de hoy/.test(esT) && /Modo/.test(esT) && /Publicado 08:12/.test(esT) && !/Execution/.test(esT), esT.slice(0, 220));
+      q('[data-pc="close"]').click(); await W(30); setLanguage('en'); await W(300);
+    }
     answer = { status: 429, body: { error: "That's 30 chart checks today. More tomorrow." } };
     window.__stPlanCheck.open({ canvas: P._snap() }); await W(80); po = document.querySelector('.stpc-ov');
     q('[data-pc="go"]').click(); for (k = 0; k < 30 && !q('.stpc-err'); k++) await W(100);
@@ -155,6 +189,11 @@
     PB = []; window.__stPlanCheck.open(); await W(80); po = document.querySelector('.stpc-ov');
     ok('opened with no picture handed over it takes the chart itself; no setups yet: it says where to make one', !!q('.stpc-img') && /Save one in Session Review/.test(po.textContent) && !q('[data-pc="go"]'));
     q('[data-pc="close"]').click(); await W(30);
+    data.biasSlots.forEach(function (sl) { sl.copiedAt = null; });
+    window.__stPlanCheck.open({ canvas: P._snap() }); await W(80); po = document.querySelector('.stpc-ov');
+    ok('nothing posted today: "No bias posted today", a link to Session Bias, and no bias goes along', /No bias posted today/.test((q('.stpc-bnone') || {}).textContent || '') && !!q('[data-pc="openbias"]') && !q('.stpc-bgrid'));
+    q('[data-pc="openbias"]').click(); await W(400);
+    ok('...the link closes the sheet and opens Session Bias', !document.querySelector('.stpc-ov') && document.querySelector('.tab[data-page="bias"]').classList.contains('active'));
     if (window.STSCHOOL) window.STSCHOOL.openAt = realOpenAt;
     window.__stPb = realPb; window.fetch = realFetch; window.__stPlanCheck._token = null;
     ok('the Academy hands over its written lessons with their titles', window.STSCHOOL && window.STSCHOOL.lessons().some(function (l) { return l.id === '0.1' && l.title === 'What forex trading actually is'; }));
@@ -172,6 +211,6 @@
     }
     ok('no page errors', !errs.length, errs.slice(0, 3));
   } catch (e) { ok('test ran', false, String(e && e.stack || e)); }
-  finally { try { window.fetch = realFetch; window.__stPb = realPb; HTMLAnchorElement.prototype.click = realAnchorClick; if (SH) SH.setHide(false); } catch (e) {} }
+  finally { try { if (bias0) { data.biasSlots = bias0.slots; data.bias = bias0.bias; data.activeBiasSlot = bias0.act; data.weeklyRules = bias0.rules; } window.fetch = realFetch; window.__stPb = realPb; HTMLAnchorElement.prototype.click = realAnchorClick; if (SH) SH.setHide(false); } catch (e) {} }
   return JSON.stringify(out);
 })()

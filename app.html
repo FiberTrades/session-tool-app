@@ -97315,15 +97315,33 @@ window.__stAZ = (function () {
       return (P.describe(rec) || []).map(function (r) { return { label: r.label, text: r.text }; });
     } catch (e) { return []; }
   }
-  // today's Session Bias as the assistant's own data pack carries it
-  function biasToday() {
+  /* "Your bias today" (Nestor, 25 Oct 2026: "maybe inside check my plan there can be my bias too as we are now removing session
+     live tab"): today's POSTED Session Bias slots (a posted bias changed since still counts - the block and the check use it as it
+     is now). The block shows one - the chart's symbol, else the active slot - and the check sends exactly that one. */
+  var BV = { 'Observation': 'opt.observation', 'Execution': 'opt.execution', 'Undecided': 'opt.undecided', 'Initiating': 'opt.initiating', 'Trending': 'opt.trending', 'Ranging': 'opt.ranging',
+    'Premium Edge': 'opt.premium_edge', 'Premium Middle': 'opt.premium_middle', '50%': 'opt.50', 'Discount Middle': 'opt.discount_middle', 'Discount Edge': 'opt.discount_edge', 'Breakout': 'opt.breakout',
+    'Bullish': 'opt.bullish', 'Bearish': 'opt.bearish', 'Unsure': 'opt.unsure', 'Impact News': 'opt.impact_news', 'Bank Holiday': 'opt.bank_holiday', 'None': 'opt.none' };
+  function lv(v) { try { return (BV[v] && typeof t === 'function') ? t(BV[v]) : v; } catch (e) { return v; } }
+  function postedSlots() {
     try {
-      var sl = (typeof data !== 'undefined' && Array.isArray(data.biasSlots) && data.biasSlots.length) ? data.biasSlots : ((typeof data !== 'undefined' && data.bias) ? [data.bias] : []);
-      return sl.filter(function (b) { return b && (b.news || b.direction || b.structure || b.location || b.directionLtf || b.structureLtf || b.locationLtf || (b.notes && String(b.notes).trim())); }).map(function (b) {
-        return { sym: b.symbol || null, sessionNews: b.news || null, direction: b.direction || null, directionLtf: b.directionLtf || null, structure: b.structure || null,
-                 structureLtf: b.structureLtf || null, location: b.location || null, locationLtf: b.locationLtf || null, notes: b.notes ? String(b.notes).trim().slice(0, 400) : null };
-      });
+      var arr = (typeof data !== 'undefined' && Array.isArray(data.biasSlots) && data.biasSlots.length) ? data.biasSlots : ((typeof data !== 'undefined' && data.bias) ? [data.bias] : []);
+      return arr.filter(function (b) { return b && biasSlotHasContent(b) && _biasPostState(b) !== 'new'; });
     } catch (e) { return []; }
+  }
+  function symKey(v) { return String(v || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 6); }
+  function slotFor(sl, sym) {
+    if (!sl.length) return -1;
+    var k = symKey(sym), i;
+    if (k) for (i = 0; i < sl.length; i++) if (symKey(sl[i].symbol) === k) return i;
+    try { var act = data.biasSlots && data.biasSlots[data.activeBiasSlot]; i = sl.indexOf(act); if (i >= 0) return i; } catch (e) {}
+    return 0;
+  }
+  function slotName(b) { return [b.symbol, b.sessionName].filter(Boolean).join(' \u00b7 ') || T('Today', 'Hoy'); }
+  function weekRule(b) { try { var d = b.sessionDate ? new Date(b.sessionDate + 'T12:00:00') : new Date(), r = getRuleForWeek(getCalendarWeekKey(d)); return (r && r.rule) ? String(r.rule) : ''; } catch (e) { return ''; } }
+  function biasObj(b) {
+    return { sym: b.symbol || null, session: b.sessionName || null, sessionNews: b.news || null, mode: b.mode || null, direction: b.direction || null, directionLtf: b.directionLtf || null,
+             structure: b.structure || null, structureLtf: b.structureLtf || null, location: b.location || null, locationLtf: b.locationLtf || null,
+             notes: b.notes ? String(b.notes).trim().slice(0, 400) : null, rule: weekRule(b) || null };
   }
   function lessons() { try { return (window.STSCHOOL && window.STSCHOOL.lessons) ? window.STSCHOOL.lessons() : []; } catch (e) { return []; } }
   function jpeg(cv) {
@@ -97357,6 +97375,15 @@ window.__stAZ = (function () {
     + '.stpc-row b{display:block;font-size:13px;font-weight:600;margin-bottom:2px}.stpc-row p{margin:0;font-size:12.5px;line-height:1.45;color:#c9c6d2}'
     + '.stpc-les{display:inline-block;margin-top:5px;padding:0;border:0;background:none;color:#f472b6;font:inherit;font-size:12px;cursor:pointer;text-align:left}'
     + '.stpc-note{font-size:11.5px;color:#8a8794;line-height:1.45}.stpc-err{font-size:12.5px;color:#f7a24f;line-height:1.45}'
+    + '.stpc-bias{display:flex;flex-direction:column;gap:8px}.stpc-bh{display:flex;align-items:center;justify-content:space-between;gap:8px 12px;flex-wrap:wrap}'
+    + '.stpc-bname{font-size:12px;color:#b9b6c3}.stpc-bsw{display:inline-flex;gap:4px;flex-wrap:wrap}'
+    + '.stpc-bsw button{height:26px;padding:0 10px;border-radius:13px;border:1px solid #34313d;background:#1d1b24;color:#b9b6c3;font:inherit;font-size:11.5px;cursor:pointer}'
+    + '.stpc-bsw button.on{border-color:#f472b6;color:#ffffff;background:rgba(244,114,182,.12)}.stpc-bsw button:focus-visible{outline:2px solid #f472b6;outline-offset:1px}'
+    + '.stpc-bgrid{display:grid;grid-template-columns:84px minmax(0,1fr);gap:7px 12px;padding:12px 14px;border:1px solid #2a2833;border-radius:8px;background:#16151b;font-size:12.5px;line-height:1.45}'
+    + '.stpc-bgrid .k{font-family:"AppNum","DM Mono",monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#8a8794;padding-top:2px}'
+    + '.stpc-bgrid .v{color:#f1eff5;overflow-wrap:anywhere}.stpc-bgrid .v small{color:#8a8794;font-size:10.5px;letter-spacing:.06em;margin-right:5px}.stpc-bgrid .v i{font-style:normal;color:#5d5a66;margin:0 7px}'
+    + '.stpc-bgrid .up{color:#4ecd8b}.stpc-bgrid .dn{color:#e56767}.stpc-bpost{font-size:11px;color:#8a8794}'
+    + '.stpc-bnone{display:flex;align-items:center;justify-content:space-between;gap:8px 12px;flex-wrap:wrap;padding:12px 14px;border:1px dashed #34313d;border-radius:8px;font-size:12.5px;color:#b9b6c3}.stpc-bnone .stpc-les{margin:0}'
     + '.stpc-prog{display:flex;flex-direction:column;gap:8px}'
     + '.stpc-bar{height:3px;border-radius:2px;background:#23212b;overflow:hidden}'
     + '.stpc-bar i{display:block;height:100%;width:100%;border-radius:2px;background:#f472b6;transform:scaleX(0);transform-origin:0 50%;transition:transform 5.2s cubic-bezier(.15,.7,.25,1);will-change:transform}'
@@ -97374,6 +97401,7 @@ window.__stAZ = (function () {
     if (!cv) { try { cv = window.__stChartSnap ? window.__stChartSnap() : null; } catch (e) { cv = null; } }
     var doc = opts.doc || (cv && cv.__doc) || document, win = doc.defaultView || window; css(doc);
     var list = setups(), pick = null, busy = false, res = null, err = '', pic = cv ? jpeg(cv) : null, les = lessons();
+    var slots = postedSlots(), bsel = slotFor(slots, cv && cv.__sym);
     try { var want = (window.__stSetupPick && window.__stSetupPick()) || localStorage.getItem(LAST); pick = list.filter(function (p) { return p.name === want; })[0] || list[0] || null; } catch (e) { pick = list[0] || null; }
     var ov = doc.createElement('div'); ov.className = 'stpc-ov';
     ov.innerHTML = '<div class="stpc" role="dialog" aria-modal="true" aria-label="' + esc(T('Check my plan', 'Revisar mi plan')) + '"><div class="stpc-hd"><b>' + esc(T('Check my plan', 'Revisar mi plan')) + '</b>'
@@ -97387,8 +97415,33 @@ window.__stAZ = (function () {
       return '<div class="stpc-row"><span class="stpc-v ' + esc(V[it.verdict] ? it.verdict : 'unknown') + '">' + esc(V[it.verdict] || V.unknown) + '</span><div><b>' + esc(it.rule) + '</b><p>' + esc(it.why) + '</p>'
         + (lt ? '<button type="button" class="stpc-les" data-pc-les="' + esc(it.lesson) + '">' + esc(T('Lesson', 'Lección') + ' ' + it.lesson + ' · ' + lt) + ' ›</button>' : '') + '</div></div>';
     }
+    function biasBlock() {
+      var h = '<div class="stpc-bias"><div class="stpc-bh"><span class="stpc-lbl">' + esc(T('Your bias today', 'Tu sesgo de hoy')) + '</span>';
+      if (slots.length > 1) h += '<span class="stpc-bsw" role="group" aria-label="' + esc(T('Your biases today', 'Tus sesgos de hoy')) + '">'
+        + slots.map(function (b, i) { return '<button type="button" data-pc-bias="' + i + '" aria-pressed="' + (i === bsel) + '"' + (i === bsel ? ' class="on"' : '') + '>' + esc(slotName(b)) + '</button>'; }).join('') + '</span>';
+      else if (bsel >= 0) h += '<span class="stpc-bname">' + esc(slotName(slots[bsel])) + '</span>';
+      h += '</div>';
+      if (bsel < 0) return h + '<div class="stpc-bnone"><span>' + esc(T('No bias posted today', 'Hoy no has publicado un sesgo')) + '</span><button type="button" class="stpc-les" data-pc="openbias">'
+        + esc(T('Open Session Bias', 'Abrir Sesgo de sesión')) + ' \u203a</button></div></div>';
+      var b = slots[bsel], rows = [], ar = function (d) { return d === 'Bullish' ? '\u2191 ' : d === 'Bearish' ? '\u2193 ' : ''; };
+      var dc = function (d) { return d === 'Bullish' ? 'up' : d === 'Bearish' ? 'dn' : ''; };
+      var pair = function (hi, lo, cls) {   // both timeframes: HTF x · LTF y; one: just it
+        var one = function (tf, v) { return v ? (tf ? '<small>' + tf + '</small>' : '') + '<span class="' + (cls ? cls(v) : '') + '">' + esc((cls ? ar(v) : '') + lv(v)) + '</span>' : ''; };
+        return (hi && lo) ? one('HTF', hi) + '<i>\u00b7</i>' + one('LTF', lo) : one(hi ? '' : 'LTF', hi || lo); };
+      if (b.mode) rows.push([T('Mode', 'Modo'), esc(lv(b.mode))]);
+      if (b.structure || b.structureLtf) rows.push([T('Structure', 'Estructura'), pair(b.structure, b.structureLtf)]);
+      if (b.location || b.locationLtf) rows.push([T('Location', 'Ubicación'), pair(b.location, b.locationLtf)]);
+      if (b.direction || b.directionLtf) rows.push([T('Bias', 'Sesgo'), pair(b.direction, b.directionLtf, dc)]);
+      if (b.news && b.news !== 'None') rows.push([T('News', 'Noticias'), esc(lv(b.news))]);
+      var wr = weekRule(b); if (wr) rows.push([T('Rule', 'Regla'), esc(wr)]);
+      if (b.notes && String(b.notes).trim()) rows.push([T('Notes', 'Notas'), esc(String(b.notes).trim().slice(0, 400))]);
+      h += '<div class="stpc-bgrid">' + rows.map(function (r) { return '<span class="k">' + esc(r[0]) + '</span><span class="v">' + r[1] + '</span>'; }).join('') + '</div>';
+      var at = b.copiedAt ? new Date(b.copiedAt) : null;
+      if (at && !isNaN(at)) h += '<span class="stpc-bpost">' + esc(T('Posted ', 'Publicado ') + ('0' + at.getHours()).slice(-2) + ':' + ('0' + at.getMinutes()).slice(-2)) + '</span>';
+      return h + '</div>';
+    }
     function render() {
-      var h = '', rl = pick ? rulesOf(pick) : [];
+      var h = biasBlock(), rl = pick ? rulesOf(pick) : [];
       h += pic ? '<img class="stpc-img" alt="" src="data:image/jpeg;base64,' + pic + '">' : '<div class="stpc-err">' + esc(T('Open a chart first, then check it against your plan.', 'Abre un gráfico primero y luego revísalo contra tu plan.')) + '</div>';
       if (!list.length) h += '<div class="stpc-note">' + esc(T('You have no setups yet. Save one in Session Review → Trade Setup, then check charts against it here.', 'Aún no tienes setups. Guarda uno en Revisión de sesión → Setup de la operación y revisa aquí tus gráficos con él.')) + '</div>';
       else {
@@ -97426,7 +97479,7 @@ window.__stAZ = (function () {
       try {
         var tk = await token(); if (!tk) throw new Error(T('Sign in to check a chart.', 'Inicia sesión para revisar un gráfico.'));
         var body = { mode: 'plancheck', context: { lang: lang() }, image: { media_type: 'image/jpeg', data: pic },
-          plan: { name: pick.name, desc: pick.desc || '', rules: rulesOf(pick) }, bias: biasToday(), lessons: les, chart: { sym: (cv && cv.__sym) || '', live: !!(cv && cv.__live) } };
+          plan: { name: pick.name, desc: pick.desc || '', rules: rulesOf(pick) }, bias: bsel >= 0 ? [biasObj(slots[bsel])] : [], lessons: les, chart: { sym: (cv && cv.__sym) || '', live: !!(cv && cv.__live) } };
         var r = await fetch(ENDPOINT, { method: 'POST', headers: { 'content-type': 'application/json', apikey: APIKEY, Authorization: 'Bearer ' + tk }, body: JSON.stringify(body) });
         var j = await r.json().catch(function () { return {}; });
         if (!r.ok || !j || !j.plan) throw new Error((j && j.error) || T('The check did not come back. Try again.', 'La revisión no volvió. Inténtalo de nuevo.'));
@@ -97441,7 +97494,9 @@ window.__stAZ = (function () {
     win.addEventListener('keydown', key, true);
     ov.addEventListener('click', function (e) {
       var t = e.target; if (t === ov) { close(); return; }
-      var b = t && t.closest && t.closest('[data-pc],[data-pc-pick],[data-pc-les]'); if (!b) return;
+      var b = t && t.closest && t.closest('[data-pc],[data-pc-pick],[data-pc-les],[data-pc-bias]'); if (!b) return;
+      if (b.hasAttribute('data-pc-bias')) { if (busy) return; var bi = +b.getAttribute('data-pc-bias'); if (slots[bi] && bi !== bsel) { bsel = bi; res = null; err = ''; render(); } return; }   // an answer is for the bias it was sent with
+      if (b.getAttribute('data-pc') === 'openbias') { close(); try { if (doc !== document) window.focus(); var tb = document.querySelector('.tab[data-page="bias"]'); if (tb) tb.click(); } catch (x) {} return; }
       if (b.hasAttribute('data-pc-pick')) { pick = list[+b.getAttribute('data-pc-pick')] || pick; res = null; err = ''; render(); return; }
       if (b.hasAttribute('data-pc-les')) { var id = b.getAttribute('data-pc-les'); close(); try { if (doc !== document) window.focus(); if (window.STSCHOOL && window.STSCHOOL.openAt) window.STSCHOOL.openAt(id); } catch (x) {} return; }
       var a = b.getAttribute('data-pc'); if (a === 'close') close(); else if (a === 'go') go();
