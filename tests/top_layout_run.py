@@ -147,14 +147,13 @@ def phone(W, H):
         return res
     new = session(W, H, True, 'app.html', run)
     old = session(W, H, True, '_top_old.html', run)
-    # Phones keep their top (logo, title, docked TV, the info row). The tabs left it on 24 Oct 2026 for a bar along the bottom
-    # (tests/navbar_e2e.js), so the info row now sits higher by exactly the tab row's old place.
+    # Phones keep their top (logo, title, docked TV); the tabs sit as a row of icon boxes under the title again (25 Oct 2026, after a day
+    # as a bottom bar), the info row under them.
     for st in ('off', 'on'):
         diff = {k: [old[st][k], new[st][k]] for k in ('h1',) if old[st][k] != new[st][k]}
-        lift = old[st]['meta']['t'] - new[st]['meta']['t']
-        if not (0 < lift <= old[st]['tabs']['h'] + 40): diff['meta'] = [old[st]['meta'], new[st]['meta'], old[st]['tabs']]
-        if new[st]['tabs']['b'] - new[st]['tabs']['t'] < 40 or abs(new[st]['tabs']['l']) > 1: diff['bar'] = new[st]['tabs']
-        check('%d phone, TV %s: the top as before, the tabs gone to the bottom bar' % (W, st), not diff, diff)
+        t, h = new[st]['tabs'], new[st]['h1']
+        if not (t['t'] >= h['b'] and t['h'] <= 60 and new[st]['meta']['t'] >= t['b']): diff['row'] = [h, t, new[st]['meta']]
+        check('%d phone, TV %s: the top as before, the tab row under the title' % (W, st), not diff, diff)
     check('%d phone: the TV docked where it was' % W, old['on']['tv'] == new['on']['tv'] and new['on']['tv'] is not None, [old['on']['tv'], new['on']['tv']])
     check('%d phone: no size buttons on the full-width docked TV' % W, not new['btns'], new['btns'])
 
