@@ -107,6 +107,9 @@
     ok('the member\'s setups to pick from (the first picked) and its rules', qa('.stpc-setups button').length === 2 && qa('.stpc-setups button')[0].classList.contains('on') && qa('.stpc-rules span').length === 2 && /Price location: Discount half/.test(q('.stpc-rules').textContent));
     qa('.stpc-setups button')[1].click(); await W(30);
     ok('picking another setup', qa('.stpc-setups button')[1].classList.contains('on') && !qa('.stpc-setups button')[0].classList.contains('on'));
+    var goSize = function () { var gb = q('[data-pc="go"]').getBoundingClientRect(), cb = qa('.stpc-setups button')[0].getBoundingClientRect(); return { w: Math.round(gb.width), dx: Math.round(gb.left - cb.left), c: getComputedStyle(q('[data-pc="go"]')).color, t: q('[data-pc="go"]').textContent }; };
+    var gs = goSize();
+    ok('the Check button: compact (160-230 px, Nestor: "too wide"), lined up with the setups, white on pink', gs.w >= 160 && gs.w <= 230 && Math.abs(gs.dx) <= 1 && gs.c === 'rgb(255, 255, 255)', gs);
     q('[data-pc="go"]').click(); await W(20);
     // every step the line shows, as it is set (a busy machine can hold the page past one, so it is recorded rather than caught)
     var steps = [], stepEl = q('.stpc-step'); if (stepEl) { steps.push(stepEl.textContent); new MutationObserver(function () { steps.push(stepEl.textContent); }).observe(stepEl, { childList: true, characterData: true, subtree: true }); }
@@ -122,6 +125,8 @@
     var rows = qa('.stpc-row:not(.stpc-sk)');
     ok('the answer in: the bar and the placeholders gone', !q('.stpc-prog') && !qa('.stpc-sk').length);
     ok('the answer: each rule with Fits / Doesn\'t fit and why', rows.length === 2 && rows[0].querySelector('.stpc-v.fits').textContent === 'Fits' && rows[1].querySelector('.stpc-v.no').textContent === "Doesn't fit" && /5 pips/.test(rows[1].textContent) && /look at the stop/.test(q('.stpc-sum').textContent), rows.map(function (r) { return r.textContent; }));
+    var gs2 = goSize();
+    ok('Check again: the same compact button', /Check again/.test(gs2.t) && gs2.w === gs.w && Math.abs(gs2.dx) <= 1, [gs, gs2]);
     ok('with the Academy lesson that teaches it, by its real title', /Lesson 5\.2 · Stop placement/.test(rows[1].querySelector('.stpc-les').textContent), rows[1].querySelector('.stpc-les') && rows[1].querySelector('.stpc-les').textContent);
     var s0 = sent[0] || {};
     ok('what went to the assistant: mode plancheck, the picture (JPEG), the picked setup and its rules, the lessons, the language',
