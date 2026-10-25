@@ -231,6 +231,11 @@ def main():
             print('The app did not load')
             return 2
         raw = cdp.eval(test_js)
+        shot = os.environ.get('E2E_SHOT', '')   # a screenshot of the page as the test left it (25 Oct 2026); a phone run's ends _phone.png
+        if shot and mob: shot = shot[:-4] + '_phone.png' if shot.endswith('.png') else shot + '_phone'
+        if shot:
+            try: open(shot, 'wb').write(base64.b64decode(cdp.call('Page.captureScreenshot', format='png')['data']))
+            except Exception as e: print('screenshot failed:', e)
         results = json.loads(raw) if isinstance(raw, str) else (raw or [])
         width = max([len(r['name']) for r in results] + [10])
         for r in results:
