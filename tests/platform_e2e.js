@@ -21,6 +21,8 @@
     var acc0 = (data.accounts || [])[0] || {};
     data.accounts.push(Object.assign(JSON.parse(JSON.stringify(acc0)), { id: 'acc-plat', name: 'FTMO 70K', kind: 'challenge', status: 'active', separate: false, startingBalance: 70000, balanceAtSetup: 70000 }));
     data.mt5LoginMap = Object.assign({}, data.mt5LoginMap || {}, { '90001234': 'acc-plat' });
+    var tr0 = document.querySelector('.container > .tabs') || document.querySelector('.tabs'), ta0 = tr0.querySelector('.tab.active') || tr0.querySelector('.tab'), tk0 = document.querySelector('.ticker-bar');
+    var tabsBefore = { h: tr0.offsetHeight, th: ta0.offsetHeight, fs: getComputedStyle(ta0).fontSize, tb: getComputedStyle(ta0).backgroundColor, bg: getComputedStyle(tr0).backgroundColor, tk: tk0 ? getComputedStyle(tk0).backgroundColor : '' };   // the tab row on another tab
     document.querySelector('.tab[data-page="livecharts"]').click();
     for (var k = 0; k < 120 && !(P._s() && P._s().live && LC.state().fresh && P._panes()[0] && P._panes()[0].bars && P._panes()[0].bars.length); k++) await W(250);
     await W(1500);
@@ -89,8 +91,8 @@
     check('the Watchlist and the Trade Manager on the right, the rail at the far right, the clock along the bottom', $('.plat-right .pl-wl') && $('.plat-right .pl-tmc #stpr-mm') && $('.plat-rail [data-plr="wl"]') && $('.plat-rail [data-plr="tm"]') && $('.plat-foot #stpr-lvbar') && $('.plat-foot [data-plrg="1D"]'));
     var wr = win.getBoundingClientRect();
     check('edge to edge: the whole width of the screen', Math.abs(wr.left) < 1 && Math.abs(wr.width - document.documentElement.clientWidth) < 2, [wr.left, wr.width, document.documentElement.clientWidth]);
-    var tabs = $('.tabs');
-    check('the app\'s tabs stay as a slim strip over it (one click to any other tab)', document.body.classList.contains('st-plat') && tabs.offsetHeight <= 50 && getComputedStyle(tabs).display !== 'none', tabs.offsetHeight);
+    var tabs = $('.container > .tabs') || $('.tabs'), ta1 = tabs.querySelector('.tab.active'), tabsNow = { h: tabs.offsetHeight, th: ta1.offsetHeight, fs: getComputedStyle(ta1).fontSize, tb: getComputedStyle(ta1).backgroundColor, bg: getComputedStyle(tabs).backgroundColor, tk: $('.ticker-bar') ? getComputedStyle($('.ticker-bar')).backgroundColor : '' };
+    check('the app\'s tab row over it exactly as on every other tab: its height, the tabs\' height and font, its colours', JSON.stringify(tabsNow) === JSON.stringify(tabsBefore) && getComputedStyle(tabs).display !== 'none', [tabsBefore, tabsNow]);
     check('as tall as the screen under the tabs', wr.bottom <= innerHeight + 2 && wr.height > innerHeight - 200, [wr.top, wr.bottom, innerHeight]);
     var nm = $('#stpr-grid .pl-nm'), oh = $('#stpr-grid .stpr-ohlc');
     check('the chart\'s legend: Euro / U.S. Dollar · 15 · the account, and O H L C on the same line', nm && /^Euro \/ U\.S\. Dollar · 15 · FTMO 70K$/.test(nm.textContent) && oh && /O.*H.*L.*C/.test(oh.textContent) && Math.abs(nm.getBoundingClientRect().top - oh.getBoundingClientRect().top) < 6,
@@ -234,6 +236,8 @@
     $('[data-plsi]').click(); await W(200);
     $('[data-pltheme]').click(); await W(600);
     check('the sun: TradingView\'s light theme, the chart and the frame', P._cfg().look.bg === '#ffffff' && win.classList.contains('pl-lt') && getComputedStyle($('.plat-top')).backgroundColor === 'rgb(255, 255, 255)', [P._cfg().look.bg, win.className]);
+    var ta2 = tabs.querySelector('.tab.active'), tabsLt = { h: tabs.offsetHeight, th: ta2.offsetHeight, fs: getComputedStyle(ta2).fontSize, tb: getComputedStyle(ta2).backgroundColor, bg: getComputedStyle(tabs).backgroundColor, tk: $('.ticker-bar') ? getComputedStyle($('.ticker-bar')).backgroundColor : '' };
+    check('...only the chart and the platform: the app\'s tab row and the market ticker stay dark, as they are', JSON.stringify(tabsLt) === JSON.stringify(tabsBefore) && !/\|lt/.test(($('#ticker-widget-host') || {})._tickerSig || ''), [tabsBefore, tabsLt]);
     $('[data-pltheme]').click(); await W(600);
     check('the moon: back to the dark colours as they were', !P._cfg().look.bg && !P._cfg().lookDk && !win.classList.contains('pl-lt'), [P._cfg().look, P._cfg().lookDk]);
     $('[data-plrg="5D"]').click(); for (k = 0; k < 40 && P._panes()[0].tf !== 5; k++) await W(200); await W(800);
