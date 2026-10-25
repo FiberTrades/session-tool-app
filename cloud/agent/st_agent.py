@@ -39,6 +39,7 @@ POLL = 10
 HEARTBEAT = 60              # seconds between status reports while nothing changes
 EA_QUIET = 300              # the EA writes "MM alive" to its log every minute: 5 minutes of silence = it stopped
 BOOT_INI_TTL = 120          # seconds the start file (with the password) may live
+NO_SIGNIN = 240             # seconds after a start with no sign-in and no word from the broker: the member is told to check the server
 RESTART_BACKOFF = [10, 30, 60, 300, 900]
 
 state = {}                  # account id -> {"proc", "started", "fails", "next", "status", "ini"}
@@ -449,6 +450,15 @@ def check(acc):
         # the broker's own side - "Service is not available", "No connection" (his 70K on FTMO-Server4 the minute the
         # market closed, 23 Oct 2026): nothing wrong with the account, and MT5 keeps trying by itself, so leave it running
         report(acc, "starting", "%s is not letting anyone sign in right now (%s). MT5 keeps trying." % (acc["server"], why))
+        return
+    if signed:
+        s["signed_once"] = s.get("started")   # this start has signed in: its log may later scroll past "authorized on"
+    if not signed and s.get("started") and s.get("signed_once") != s.get("started") and time.time() - s["started"] > NO_SIGNIN:
+        # Never signed in and the broker said nothing (25 Oct 2026, other brokers than FTMO): most often a server this MT5
+        # doesn't know - the seeded server list is FTMO's (SEED_SERVERS) - or a name typed differently from the broker's.
+        # Before, the account sat on "MT5 is starting" for good. MT5 keeps running and trying.
+        report(acc, "starting", "MT5 has not reached the server %s yet. Check it is written exactly as your broker shows it "
+                                "(in MT5: File > Login to Trade Account), then remove the account and add it again." % acc["server"])
         return
     if signed:
         # the EA itself: it writes "MM alive" to its log every minute, so a log quiet for EA_QUIET means it stopped

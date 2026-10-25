@@ -29,6 +29,11 @@ def bar_tf(m, step):                                 # a closed candle of anothe
 VER = os.environ.get('ST_FAKE_V', '9.00')            # 9.01: answers history asks for other timeframes too; 9.02: the watchlist hub
 # EA 9.02's hub: the broker's symbols it knows (price, digits) - its own symbol walks as above, the others alike from their price
 UNI = {'EURUSD': (1.16420, 5), 'GBPUSD': (1.30112, 5), 'USDJPY': (151.204, 3), 'USDJPY.r': (151.206, 3), 'USDCHF': (0.81230, 5), 'XAUUSD': (4100.0, 2), 'BTCUSD': (67250.0, 2), 'US100.cash': (25140.6, 1)}
+# another broker than FTMO (25 Oct 2026, the cross-broker test): ST_FAKE_UNI names its symbols {"EURUSD.r": [1.1642, 5], "GOLD": [4100, 2]},
+# ST_FAKE_CUR its account currency
+if os.environ.get('ST_FAKE_UNI'): UNI = {k: (float(v[0]), int(v[1])) for k, v in json.loads(os.environ['ST_FAKE_UNI']).items()}
+if SYM not in UNI: UNI[SYM] = (P0, DG)
+CUR = os.environ.get('ST_FAKE_CUR', 'GBP')
 KEYME = SYM + '|' + str(LG)
 def price_sym(sy, t):
     if sy == SYM: return price_at(t)
@@ -61,7 +66,7 @@ def send_acct():
     for tk, sy, ot, ty, vol, op, sl, tp in POS:
         p = round((px - op if ty == 'buy' else op - px) * vol * 100000, 2); prof += p
         rows.append('%s,%s,%d,%s,%.2f,%.*f,%.*f,%.*f,%.*f,%.2f,0.00,%d' % (tk, sy, ot, ty, vol, DG, op, DG, sl, DG, tp, DG, px, p, DG))
-    bal = 65311.87; text(bcast('acct', {'by': KEYME, 'lg': LG, 'cur': 'GBP', 'bal': bal, 'eq': round(bal + prof, 2), 'mg': 0, 'fm': round(bal + prof, 2), 'ml': 0, 'pos': ';'.join(rows), 'ord': ''}))
+    bal = 65311.87; text(bcast('acct', {'by': KEYME, 'lg': LG, 'cur': CUR, 'bal': bal, 'eq': round(bal + prof, 2), 'mg': 0, 'fm': round(bal + prof, 2), 'ml': 0, 'pos': ';'.join(rows), 'ord': ''}))
     log['acct'] += 1
 def send_dhist(p):
     t1 = int(fnow()) - 3600; t0 = t1 - 1800

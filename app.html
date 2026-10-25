@@ -13302,6 +13302,23 @@ try {
     // Re-apply currency to any freshly-rendered input placeholders
     applyCurrencySymbol();
   }
+  // The MT5 account's own currency (25 Oct 2026, Nestor: "make sure that all of these ... works with other MT5 accounts from other
+  // brokers"): the app's currency was GBP unless picked by hand, so a member trading a USD or EUR account read every P&L with "£".
+  // The first time an EA reports its account currency - for the account picked in the app, or any account when none of its logins
+  // is that one - a member who never picked a currency gets it. Picking one in Settings (currencyPicked) keeps it theirs for good.
+  window.__stAdoptCurrency = function (login, code) {
+    try {
+      code = String(code || '').toUpperCase();
+      if (!CURRENCY_SYMBOLS[code] || typeof data === 'undefined' || !data || !data.settings) return;
+      if (data.settings.currencyPicked || data.settings._curAdoptedV1) return;
+      var map = data.mt5LoginMap || {}, act = data.activeAccountId, mine = Object.keys(map).filter(function (k) { return map[k] === act; });
+      if (mine.length && mine.indexOf(String(login)) < 0) return;
+      data.settings._curAdoptedV1 = true;
+      if ((data.settings.currency || 'GBP') === code) { saveData(); return; }
+      setCurrency(code);
+      var sel = document.getElementById('currency-select'); if (sel) sel.value = code;
+    } catch (e) {}
+  };
   // ============================================================================
 
   let today = new Date();
@@ -19455,10 +19472,11 @@ try {
       var x = String(sym || '').toUpperCase().replace(/[^A-Z0-9]/g, ''), out = [];
       CURS.forEach(function (c) { if (x.indexOf(c) !== -1) out.push(c); });
       var add = function (c) { if (out.indexOf(c) === -1) out.push(c); };
-      if (/XAU|XAG|GOLD|SILVER|OIL|WTI|BRENT|US30|US100|US500|NAS|NDX|SPX|SP500|DOW|DJI|US2000/.test(x)) add('USD');
-      if (/GER|DAX|DE40|EU50|STOXX|FRA40|CAC/.test(x)) add('EUR');
+      if (/XAU|XAG|GOLD|SILVER|OIL|WTI|BRENT|US30|US100|US500|NAS|NDX|SPX|SP500|DOW|DJI|US2000|USTEC|USA30|USA500|USA100|WS30|DJ30|XTI|XBR/.test(x)) add('USD');   // other brokers' names too (25 Oct 2026)
+      if (/GER|DAX|DE40|EU50|STOXX|FRA40|CAC|ESP35|IBEX|EUSTX/.test(x)) add('EUR');
       if (/UK100|FTSE/.test(x)) add('GBP');
-      if (/JP225|NIKKEI|NKY/.test(x)) add('JPY');
+      if (/JP225|JPN225|NI225|NIKKEI|NKY/.test(x)) add('JPY');
+      if (/AUS200|ASX/.test(x)) add('AUD');
       return out;
     }
     function myCurs() {
@@ -21335,7 +21353,8 @@ try {
                  settings: GROUPS.map(function (g) { return t(g.label) + ': ' + g.fmt(x); }).join('; ') };
       });
     }
-    function apply(r) { if (!r || !r.login || !r.settings) return; rows[key(r)] = r; try { if (window.__stEAUpdate) window.__stEAUpdate.soon(); } catch (e) {} }
+    function apply(r) { if (!r || !r.login || !r.settings) return; rows[key(r)] = r; try { if (window.__stEAUpdate) window.__stEAUpdate.soon(); } catch (e) {}
+      try { if (r.settings.currency && window.__stAdoptCurrency) window.__stAdoptCurrency(r.login, r.settings.currency); } catch (e) {} }   // the account's own currency, once (25 Oct 2026)
     function logged(r) {
       if (!r || r.id == null) return;
       if (log.some(function (c) { return c.id === r.id; })) return;
@@ -39130,7 +39149,7 @@ try {
       const wrThis = thisStats.wr;
       const wrPrev = prevStats.wr;
       const wrDelta = (wrThis != null && wrPrev != null) ? Math.round((wrThis - wrPrev) * 100) : null;
-      const fmtM = m => (m >= 0 ? '+£' : '-£') + Math.abs(m).toFixed(2);
+      const fmtM = m => (m >= 0 ? '+' : '-') + (typeof curSym === 'function' ? curSym() : '£') + Math.abs(m).toFixed(2);   // the member's currency, not always £ (25 Oct 2026)
       const cls = v => v > 0 ? 'good' : v < 0 ? 'bad' : '';
       const wrDeltaStr = wrDelta == null ? '—' : (wrDelta >= 0 ? '+' : '') + wrDelta + 'pp';
       const prevName = prevStart.toLocaleDateString(tLocale(), { month: 'long' });
@@ -39138,7 +39157,7 @@ try {
       // Strip the leading '+' or '-' since the arrow already conveys direction. Keeps the
       // delta visually compact: "↑ 0.85R" instead of the redundant "↑ +0.85R".
       const stripSign = s => s.replace(/^[+-]/, '');
-      const fmtMUnsigned = m => '£' + Math.abs(m).toFixed(2);
+      const fmtMUnsigned = m => (typeof curSym === 'function' ? curSym() : '£') + Math.abs(m).toFixed(2);
       comparisonHtml = `<div class="month-insight-block">
         <div class="month-insight-title">${t('modal.vs_prev_month').replace(/\{M\}/g, prevName)}</div>
         <div class="month-insight-compare">
@@ -52531,7 +52550,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
     const sel = document.getElementById('currency-select');
     if (!sel) return;
     sel.value = (data.settings.currency || 'GBP');
-    sel.addEventListener('change', e => setCurrency(e.target.value));
+    sel.addEventListener('change', e => { data.settings.currencyPicked = true; setCurrency(e.target.value); });   // picked by hand: never adopted from MT5 again
   })();
   // "What I trade" (Settings → Session): a list of instruments. The first entry is
   // the primary (mirrored into data.settings.pair → dashboard + Discord headers).
@@ -79099,7 +79118,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
   function clInsert(lg, sv, pw, app) {
     lg = String(lg || '').trim(); sv = String(sv || '').trim();
     var err = !/^\d{3,12}$/.test(lg) ? T('The login is the account number: digits only.', 'El login es el número de la cuenta: solo dígitos.')
-      : !sv ? T('Type the server, as the firm wrote it (e.g. FTMO-Demo).', 'Escribe el servidor tal como lo da la firma (p. ej. FTMO-Demo).')
+      : !sv ? T('Type the server exactly as your broker or prop firm wrote it (e.g. FTMO-Demo).', 'Escribe el servidor tal como lo da tu bróker o tu prop firm (p. ej. FTMO-Demo).')
       : !pw ? T('Type the account’s password.', 'Escribe la contraseña de la cuenta.') : '';
     if (err) return Promise.resolve({ ok: false, err: err });
     var tried = {};
@@ -79159,7 +79178,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     if (CL.busy) return;
     var lg = clField('login'), sv = clField('server'), pw = clField('pw'), app = clField('app');
     CL.err = !/^\d{3,12}$/.test(lg) ? T('The login is the account number: digits only.', 'El login es el número de la cuenta: solo dígitos.')
-      : !sv ? T('Type the server, as the firm wrote it (e.g. FTMO-Demo).', 'Escribe el servidor tal como lo da la firma (p. ej. FTMO-Demo).')
+      : !sv ? T('Type the server exactly as your broker or prop firm wrote it (e.g. FTMO-Demo).', 'Escribe el servidor tal como lo da tu bróker o tu prop firm (p. ej. FTMO-Demo).')
       : !pw ? T('Type the account’s password.', 'Escribe la contraseña de la cuenta.')
       : !CL.host ? T('The server can’t be reached right now. Try again in a minute.', 'Ahora no se llega al servidor. Prueba otra vez en un minuto.') : '';
     if (CL.err) { render(true); return; }
@@ -79420,6 +79439,11 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
   function int(v) { var n = parseInt(v, 10); return (isFinite(n) && n > 0) ? n : 0; }
   function key(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
   function symList(v) { var out = []; (Array.isArray(v) ? v : String(v || '').split(/[\s,;\/]+/)).forEach(function (x) { var k = key(x); if (k && out.indexOf(k) < 0) out.push(k); }); return out; }
+  // what the rules check and the EA gets: each symbol typed, plus other brokers' names for it - GOLD for XAUUSD, NAS100 for US100
+  // (25 Oct 2026). The member's own list (symList) stays as typed.
+  function symAll(v) { var out = symList(v);
+    symList(v).forEach(function (k) { try { if (window.__stSymAliases) window.__stSymAliases(k).forEach(function (a) { a = key(a); if (a && out.indexOf(a) < 0) out.push(a); }); } catch (e) {} });
+    return out; }
   function accById(id) { return (D().accounts || []).filter(function (a) { return a && a.id === id; })[0] || null; }
   function loginsOf(acc) { var m = D().mt5LoginMap || {}; return acc ? Object.keys(m).filter(function (k) { return m[k] === acc.id; }).sort() : []; }
   function resolve(o) {
@@ -79495,7 +79519,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     var sR = rr.sessLossMode === 'r', oR = rr.openRiskMode === 'r';
     return { dl: Math.round(((own > 0 && firm > 0) ? Math.min(own, firm) : (own || firm || 0)) * 100) / 100,
              sl: sR ? 0 : num(rr.sessLossAmount), slr: sR ? num(rr.sessLossR) : 0, sn: int(rr.sessTrades), gp: int(rr.entryGapMin),
-             or: oR ? 0 : num(rr.openRiskAmount), orr: oR ? num(rr.openRiskR) : 0, sy: symList(rr.allowedSymbols), ce: rr.closeElsewhere !== false };
+             or: oR ? 0 : num(rr.openRiskAmount), orr: oR ? num(rr.openRiskR) : 0, sy: symAll(rr.allowedSymbols), ce: rr.closeElsewhere !== false };
   }
   function norm(x) { x = x || {}; return { dl: +x.dl || 0, sl: +x.sl || 0, slr: +x.slr || 0, sn: +x.sn || 0, gp: +x.gp || 0, or: +x.or || 0, orr: +x.orr || 0, sy: Array.isArray(x.sy) ? x.sy.slice() : [], ce: x.ce !== false }; }
   function minPos(a, b) { return (a > 0 && b > 0) ? Math.min(a, b) : (a > 0 ? a : (b > 0 ? b : 0)); }
@@ -91449,6 +91473,11 @@ window.__stAZ = (function () {
     }
     return c;
   }
+  // every broker's name for the same market (25 Oct 2026, other brokers than FTMO): the order rules' allowed symbols use it, so
+  // "XAUUSD" also allows a broker's GOLD and "US100" its NAS100 / USTEC. Names under 4 letters (NQ, ES, CL, DAX) are left out:
+  // the rules match a symbol by its start, and "ES" would let ESP35 through.
+  window.__stSymAliases = function(s){ var k = canon(s), a = (ALIAS[k] || []).concat([k]);
+    return a.filter(function(x, i){ return x.length >= 4 && a.indexOf(x) === i; }); };
   function clsOf(k){ if (/^[A-Z]{6}$/.test(k) && CCY.test(k.slice(0, 3)) && CCY.test(k.slice(3))) return 'fx'; if (k === 'XAUUSD' || k === 'XAGUSD') return 'metal'; if (INDEX[k]) return 'index'; if (k === 'BTCUSD' || k === 'ETHUSD') return 'crypto'; return 'other'; }
   var SYMS = null;
   async function loadSymbols(){
@@ -95252,6 +95281,7 @@ window.__stAZ = (function () {
   function tbUi(k, v){ var o = {}; try { o = JSON.parse(localStorage.getItem('st_lctb') || '{}') || {}; } catch (e) {} if (v === undefined) return !!o[k]; o[k] = !!v; try { localStorage.setItem('st_lctb', JSON.stringify(o)); } catch (e) {} return !!v; }
   function tbEA(){ var e = S && S.live && S.ea; return (e && vNum(e.v) >= 9.02) ? (e.hub || (e.raw + '|' + e.lg)) : ''; }
   function tbAcct(p){ if (!p || p.by !== tbEA()) return; TB.acct = p; if (TB.tab === 'trade' || PL.on) tbSoon();
+    try { if (p.cur && window.__stAdoptCurrency) window.__stAdoptCurrency(p.lg, p.cur); } catch (e) {}   // the account's own currency, once (25 Oct 2026)
     var tk = tbRows(p.pos, 12).map(function(r){ return r[0]; }).join(','); if (TB.tk != null && TB.tk !== tk && (TB.tab === 'hist' || PL.on)) setTimeout(tbHistReq, 1500); TB.tk = tk; }   // a trade opened or closed: History again
   function tbSoon(){ if (TB.t) return; TB.t = setTimeout(function(){ TB.t = 0; tbPaint(); }, 250); }
   function tbNum(v, d){ v = Number(v); if (!isFinite(v)) return ''; var s = Math.abs(v).toFixed(d), p = s.split('.'); p[0] = p[0].replace(/\B(?=(\d{3})+(?!\d))/g, ' '); return (v < 0 ? '-' : '') + p.join('.'); }   // MT5's spaced thousands
@@ -95357,6 +95387,8 @@ window.__stAZ = (function () {
     YEN: ['JPY'], AUSSIE: ['AUD'], KIWI: ['NZD'], LOONIE: ['CAD'], SWISSY: ['CHF'], FRANC: ['CHF'] };
   function wlTerms(q){ var Q = q.toUpperCase(), out = [q];
     if (Q.length >= 3) Object.keys(WL_ALIAS).forEach(function(k){ if (k.indexOf(Q) === 0) WL_ALIAS[k].forEach(function(x){ if (out.indexOf(x) < 0 && x.toUpperCase() !== Q) out.push(x); }); });
+    // and the other brokers' names for the same market (25 Oct 2026): XAUUSD finds a broker's GOLD, US100 its NAS100 / USTEC
+    if (Q.length >= 4) (ALIAS[canon(Q)] || []).forEach(function(x){ if (x.length >= 4 && out.indexOf(x) < 0 && x !== Q) out.push(x); });
     return out.slice(0, 5); }
   // Back Testing: each listed symbol's price at the replay's moment, and the day before's close (its stored 5-minute candles)
   function wlBt(s){ var e = WL.bt[s.raw + '|' + S.day]; if (!e || !e.rows) return null; var last = null, pc = null;
@@ -96660,6 +96692,9 @@ window.__stAZ = (function () {
   function plTfTxt(n){ return TFL[n] ? tfBtn(n) : tfLbl(n); }
   function plMoney(v, cur){ v = Number(v); if (!isFinite(v)) return '—'; var s = Math.abs(v).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     return (v < 0 ? '−' : '') + (cur ? (PL_CUR[cur] || cur + ' ') : '') + s; }
+  // the ticket's money sign: the MT5 account's currency, else the app's own - never a bare £ for a USD or ZAR account (25 Oct 2026)
+  function plCurSym(){ var c = plCur(); if (c) return PL_CUR[c] || c + ' ';
+    var a = ''; try { a = window.__stGetCurrency ? window.__stGetCurrency() : ''; } catch (e) {} return PL_CUR[a] || '£'; }
   function plSg(v, cur){ v = Number(v); return (v > 0 ? '+' : '') + plMoney(v, cur); }
   function plR(r, d){ return (r >= 0 ? '+' : '−') + Math.abs(r).toFixed(d == null ? 2 : d) + 'R'; }
   function plR1(r){ var a = Math.abs(r), s = Math.abs(a - Math.round(a)) < 0.05 ? String(Math.round(a)) : a.toFixed(1); return (r < -0.04 ? '−' : (r > 0.04 ? '+' : '')) + s + 'R'; }
@@ -96721,7 +96756,7 @@ window.__stAZ = (function () {
     for (var m = 0; m < 4 && from && q.times[0] > from; m++) { var t0 = q.times[0]; try { await morePast(q); } catch (e) {} q = panes[i]; if (!q || !q.times || q.times[0] >= t0) break; }
     var a = from ? lOfT(q, from) : 0; if (a == null) a = 0; setRange(q, { from: Math.max(0, a), to: q.times.length - 1 + 4 }); dirty(); }
   // ---- the Trade Manager: the EA's panel in TradingView's order-ticket rows ----
-  function plMM(el, x){ var m = CFG.mm, su = stopUnit(), tu = tgtUnit(), rm = m.riskMode || 'amount', st = lvSetOf() || {}, cs = PL_CUR[plCur()] || '£';
+  function plMM(el, x){ var m = CFG.mm, su = stopUnit(), tu = tgtUnit(), rm = m.riskMode || 'amount', st = lvSetOf() || {}, cs = plCurSym();
     var rv = rm === 'percent' ? numTxt(m.riskPct, 2) : (rm === 'lots' ? numTxt(m.lots, 2) : numTxt(m.riskAmt, 2));
     var tpv = !CFG.tgtOn ? '' : (tu === 'R' ? numTxt(CFG.tgtR, 1) : fmtU(tgtDist(stopPx()), tu));
     var seg = function(k, opts, cur){ return '<div class="pl-seg">' + opts.map(function(o){ return '<button type="button" data-mm="' + k + ':' + o[0] + '" class="' + (o[0] === cur ? 'on' : '') + '">' + esc(o[1]) + '</button>'; }).join('') + '</div>'; };
