@@ -4913,7 +4913,7 @@ void LwCmd(string s)
       ok=trade.PositionClose(t); if(!ok) why=LwWhy();
       if(ok){ int cnt; PositionsSL(cnt); if(cnt==0) g_beArmed=false; }
      }
-   else if(a=="part")  // v9.15 (25 Oct 2026, the app's "Close 50%"): a share of it now, at market - cp the percent (50 when not given).
+   else if(a=="part")  // v9.15 (25 Oct 2026, the app's "Close 50%", any 1-99% since the same day): a share of it now, at market - cp the percent (50 when not given).
      {                 // The volume step and minimum lot hold; the partial-close ladder's steps stay as they were (they count from the
                        // original volume, as before); a Follow account mirrors it by its own copier rule, as any partial close
       double pct=StringToDouble(p); if(!(pct>0 && pct<100)) pct=50;
@@ -4925,8 +4925,8 @@ void LwCmd(string s)
       else { ok=trade.PositionClosePartial(t,cut); if(!ok) why=LwWhy(); }
       double left=NormalizeDouble(ok ? vol-cut : vol,VolumeDigits(step));   // what stays open (MT5 updates the position a moment later)
       StringReplace(why,"\"","'");
-      string pj=StringFormat("{\"cid\":\"%s\",\"ok\":%d,\"ca\":\"part\",\"ctk\":\"%s\",\"m\":\"%s\",\"vol\":%s,\"left\":%s,\"open\":%d}",
-                             id,ok?1:0,tk,why,DoubleToString(ok?cut:0.0,2),DoubleToString(left,2),left>0?1:0);
+      string pj=StringFormat("{\"cid\":\"%s\",\"ok\":%d,\"ca\":\"part\",\"ctk\":\"%s\",\"m\":\"%s\",\"vol\":%s,\"left\":%s,\"open\":%d,\"mn\":%s}",
+                             id,ok?1:0,tk,why,DoubleToString(ok?cut:0.0,2),DoubleToString(left,2),left>0?1:0,DoubleToString(vmin,2));   // mn: the broker's minimum lot, for "Too small to split"
       if(LwText(LwBroadcast("ack",pj))) LwCount();
       Print("Session Terminal: part (",DoubleToString(pct,0),"%) on #",tk," - ",(ok?"closed "+DoubleToString(cut,2)+" lots, "+DoubleToString(left,2)+" left":"refused ("+why+")"));
       ChartRedraw();

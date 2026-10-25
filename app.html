@@ -80224,7 +80224,7 @@ window.__stTM = (function () {
     return { px: Number((t.op + d * off * t.rpx).toFixed(dgOf(r))), off: off, at: isFinite(t.sl) && t.sl >= off - 0.02, can: isFinite(t.r) && t.r > off + 0.05 }; }
   function emit() { subs.forEach(function (f) { try { f(); } catch (e) {} }); try { if (window.__stLiveBox) window.__stLiveBox.later(); } catch (e) {} }
   function finish(id, out) { var p = pend[id]; if (!p) return; delete pend[id]; delete busy[p.k];
-    last[p.k] = { a: p.a, ok: !!out.ok, why: out.why || '', at: Date.now(), p: p.p, vol: out.vol }; if (out.ok) done[p.k + '|' + p.a] = Date.now(); emit(); try { p.res(out); } catch (e) {} }
+    last[p.k] = { a: p.a, ok: !!out.ok, why: out.why || '', at: Date.now(), p: p.p, vol: out.vol, mn: out.mn }; if (out.ok) done[p.k + '|' + p.a] = Date.now(); emit(); try { p.res(out); } catch (e) {} }
   // a = sl | tp | be | ts | pc (a line to a price; ts / pc with the step's index) | close
   function send(r, a, price, idx) {
     if (gated()) return Promise.resolve({ ok: false, why: 'mv' });
@@ -80243,7 +80243,7 @@ window.__stTM = (function () {
       });
     }, function () { delete busy[key]; emit(); return { ok: false, why: 'crypto' }; });
   }
-  function ack(x) { if (!x || !x.cid || !pend[x.cid]) return; finish(x.cid, { ok: +x.ok === 1, why: String(x.m || ''), sl: +x.sl, tp: +x.tp, open: +x.open === 1, px: +x.px, vol: +x.vol, dir: +x.dir, tk: String(x.ctk || '') }); }
+  function ack(x) { if (!x || !x.cid || !pend[x.cid]) return; finish(x.cid, { ok: +x.ok === 1, why: String(x.m || ''), sl: +x.sl, tp: +x.tp, open: +x.open === 1, px: +x.px, vol: +x.vol, dir: +x.dir, tk: String(x.ctk || ''), mn: +x.mn || 0 }); }
   // a command not about an open trade (EA 9.02, 18 Oct 2026): 'open' a new order from Live Charts (cp: the stop's price; ci: 'm',
   // or 'l' / 's' and the entry), 'cfg' the panel's settings (cp: 'k=v;k=v') - to the EA on that symbol's chart and account
   function acct(o) {
@@ -80289,11 +80289,11 @@ window.__stTM = (function () {
     price: ['That price was not valid.', 'Ese precio no era válido.'],
     atbe: ['The stop is at break-even already.', 'El stop ya está en break-even.'],
     notbe: ['The price has to pass break-even first.', 'El precio tiene que pasar el break-even primero.'],
-    min: ['Half of it would be below the broker\'s minimum lot, so nothing was closed.', 'La mitad quedaría por debajo del lote mínimo del bróker, así que no se cerró nada.'] };
+    min: ['Too small to split: it would go below the broker\'s minimum lot, so nothing was closed.', 'Demasiado pequeña para dividir: quedaría por debajo del lote mínimo del bróker, así que no se cerró nada.'] };
   function whyTxt(w) { if (/^rule:/.test(String(w || ''))) { try { return window.__stRules.codeText(w); } catch (e) {} }   // an order rule (EA 9.15)
     var x = WHY[w]; if (x) return T2(x[0], x[1]); if (/algo trading/i.test(String(w || ''))) return T2('Algo Trading is off in MT5, so orders from here are not placed. Turn it on with the Algo Trading button in MT5\'s toolbar (it turns green), then place the trade again.', 'Algo Trading está apagado en MT5, así que las órdenes desde aquí no se colocan. Actívalo con el botón Algo Trading de la barra de MT5 (se pone verde) y vuelve a colocar la operación.');   // the EA's "Trading not allowed - enable Algo Trading."
     return w ? T2('MT5 refused it: ', 'MT5 lo rechazó: ') + w : ''; }
-  var DONE = { tobe: ['Moved to BE', 'Movido a BE'], close: ['Closed', 'Cerrada'], part: ['Closed half', 'Cerrada la mitad'], sl: ['SL moved', 'SL movido'], tp: ['TP moved', 'TP movido'], be: ['BE line moved', 'Línea BE movida'], ts: ['Step moved', 'Paso movido'], pc: ['Step moved', 'Paso movido'] };
+  var DONE = { tobe: ['Moved to BE', 'Movido a BE'], close: ['Closed', 'Cerrada'], part: ['Closed part', 'Cerrada en parte'], sl: ['SL moved', 'SL movido'], tp: ['TP moved', 'TP movido'], be: ['BE line moved', 'Línea BE movida'], ts: ['Step moved', 'Paso movido'], pc: ['Step moved', 'Paso movido'] };
   // MT5's state and Close trade, for a trade's card and for Live Charts
   // trading from the app - Close trade on the Session Live card too - is Nestor's only for now, with Live Charts (18 Oct 2026:
   // "Close trade on the Session Live card. why would this stay if this is useless to someone that hasnt got access to live charts?")
@@ -80317,23 +80317,60 @@ window.__stTM = (function () {
   // a trade by its ticket among the open ones (a copy's own ticket too)
   function tradeOf(k) { try { var L = (window.__stLive && window.__stLive.openIdeas) ? window.__stLive.openIdeas() : [];
       for (var i = 0; i < L.length; i++) { var rs = L[i].rows || [L[i].main || L[i]]; for (var j = 0; j < rs.length; j++) if (String(rs[j].ticket) === k) return String((L[i].main || {}).ticket) === k ? L[i].main : rs[j]; } } catch (e) {} return null; }
-  // "Close 50%" (EA 9.15's "part", 25 Oct 2026): asked once in its own place - "Close half of BUY 3.85 EURUSD?" Close half / Keep - then
-  // sent; the button says "Closing half..." and then "Closed 1.92 lots" (a posted button's way, no toast). The question goes after 8 s.
-  var CONF = {};
+  // "Close 50%" (EA 9.15's "part", 25 Oct 2026), any share since the same day (Nestor: "this button should be adjustable so i can put
+  // close 25%, close 80%, etc"): a split button. Its chevron opens a small menu - 25 / 33 / 50 / 75 / 80 and a box for any 1-99 - and
+  // the pick is the button's label, kept on this device. The main part asks once in its own place ("Close 25% of BUY 3.57 EURUSD?"
+  // Close 25% / Keep), then the button says "Closing 25%..." and "Closed 0.89 lots" (a posted button's way, no toast). The question
+  // goes after 8 s; a refusal shows in its place for 8 s ("Too small to split: 0.01 lots is the minimum.").
+  var CONF = {}, PCTS = [25, 33, 50, 75, 80], PCT_KEY = 'st_partPct', MENU = null, PM = null;
+  function partPct() { var v = NaN; try { v = parseInt(localStorage.getItem(PCT_KEY), 10); } catch (e) {} return (v >= 1 && v <= 99) ? v : 50; }
+  function setPartPct(v) { v = Math.round(+v); if (!(v >= 1 && v <= 99)) return false; try { localStorage.setItem(PCT_KEY, String(v)); } catch (e) {} emit(); return true; }
+  function partNo(k) { var l = last[k]; return (l && l.a === 'part' && !l.ok && l.why && l.why !== 'busy' && Date.now() - l.at < 8000) ? l : null; }
+  function minTxt(l) { return l.why === 'min' && +l.mn > 0 ? T2('Too small to split: ' + Number(l.mn).toFixed(2) + ' lots is the minimum.', 'Demasiado pequeña para dividir: el mínimo es ' + Number(l.mn).toFixed(2) + ' lotes.') : whyTxt(l.why); }
+  var CHEV = '<svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
   function partHtml(k, o) {
-    o = o || {}; k = String(k); var b = busy[k], l = last[k], d = done[k + '|part'], dis = o.dis ? ' disabled' : '';
-    if (b && b.a === 'part') return '<button type="button" class="pl-ab" disabled>' + esc(T2('Closing half…', 'Cerrando la mitad…')) + '</button>';
+    o = o || {}; k = String(k); var b = busy[k], l = last[k], d = done[k + '|part'], dis = o.dis ? ' disabled' : '', c = CONF[k], p = partPct(), no = partNo(k);
+    if (b && b.a === 'part') return '<button type="button" class="pl-ab" disabled>' + esc(T2('Closing ' + (+b.p || p) + '%…', 'Cerrando el ' + (+b.p || p) + '%…')) + '</button>';
     if (d && Date.now() - d < 60000 && l && l.a === 'part' && l.ok) return '<button type="button" class="pl-ab done" disabled>' + esc(T2('Closed ' + Number(l.vol || 0).toFixed(2) + ' lots', 'Cerrados ' + Number(l.vol || 0).toFixed(2) + ' lotes')) + '</button>';
-    if (CONF[k] && Date.now() - CONF[k] < 8000) return '<span class="pl-conf"><span class="pl-cq">' + esc(T2('Close half of ', 'Cerrar la mitad de ') + (o.side || '') + ' ' + (o.lots || '') + ' ' + (o.sym || '') + '?') + '</span>'
-      + '<button type="button" class="pl-ab x" data-tma="part!" data-tmk="' + esc(k) + '"' + dis + '>' + esc(T2('Close half', 'Cerrar la mitad')) + '</button><button type="button" class="pl-ab" data-tma="partno" data-tmk="' + esc(k) + '">' + esc(T2('Keep', 'Mantener')) + '</button></span>';
-    return '<button type="button" class="pl-ab" data-tma="part" data-tmk="' + esc(k) + '"' + dis + '>' + esc(T2('Close 50%', 'Cerrar 50%')) + '</button>'; }
+    if (c && Date.now() - c.at < 8000) return '<span class="pl-conf"><span class="pl-cq">' + esc(T2('Close ' + c.p + '% of ', 'Cerrar el ' + c.p + '% de ') + (o.side || '') + ' ' + (o.lots || '') + ' ' + (o.sym || '') + '?') + '</span>'
+      + '<button type="button" class="pl-ab x" data-tma="part!" data-tmk="' + esc(k) + '"' + dis + '>' + esc(T2('Close ' + c.p + '%', 'Cerrar ' + c.p + '%')) + '</button><button type="button" class="pl-ab" data-tma="partno" data-tmk="' + esc(k) + '">' + esc(T2('Keep', 'Mantener')) + '</button></span>';
+    var split = '<span class="pl-split"><button type="button" class="pl-ab pl-sm" data-tma="part" data-tmk="' + esc(k) + '"' + dis + '>' + esc(T2('Close ' + p + '%', 'Cerrar ' + p + '%')) + '</button>'
+      + '<button type="button" class="pl-ab pl-sd" data-tma="partmenu" data-tmk="' + esc(k) + '" aria-haspopup="menu" aria-expanded="' + (MENU === k) + '" aria-label="' + esc(T2('How much to close', 'Cuánto cerrar')) + '" title="' + esc(T2('How much to close', 'Cuánto cerrar')) + '">' + CHEV + '</button></span>';
+    return no ? '<span class="pl-conf"><span class="pl-cq pl-no">' + esc(minTxt(no)) + '</span>' + split + '</span>' : split; }
+  function partAsking(k) { k = String(k); return !!((CONF[k] && Date.now() - CONF[k].at < 8000) || partNo(k)); }
+  // the menu: one at a time, beside its chevron inside the platform window (repaints of the rows don't touch it), above it when there
+  // is no room below; a pick, a click elsewhere or Escape closes it
+  function closePct() { if (PM) { try { PM.remove(); } catch (e) {} } PM = null; if (MENU !== null) { MENU = null; emit(); } }
+  function openPct(btn, k) {
+    if (PM && MENU === k) { closePct(); return; }
+    closePct();
+    var host = btn.closest('.stpr-win') || document.body, p = partPct();
+    PM = document.createElement('div'); PM.className = 'pl-pm'; PM.setAttribute('role', 'menu'); MENU = k;
+    PM.innerHTML = '<div class="pl-pmh">' + esc(T2('Close how much?', '¿Cuánto cerrar?')) + '</div><div class="pl-pmg">'
+      + PCTS.map(function (v) { return '<button type="button" role="menuitemradio" aria-checked="' + (v === p) + '" data-tmpct="' + v + '">' + v + '%</button>'; }).join('') + '</div>'
+      + '<form class="pl-pmc"><input type="number" min="1" max="99" step="1" inputmode="numeric" placeholder="' + esc(T2('Other', 'Otro')) + '" value="' + (PCTS.indexOf(p) < 0 ? p : '') + '" aria-label="' + esc(T2('Another share, 1 to 99', 'Otra parte, del 1 al 99')) + '"><span>%</span><button type="submit">' + esc(T2('Set', 'Fijar')) + '</button></form>'
+      + '<div class="pl-pme" hidden></div>';
+    host.appendChild(PM);
+    var r = btn.getBoundingClientRect(), hr = host.getBoundingClientRect(), w = PM.offsetWidth, h = PM.offsetHeight, top = r.bottom + 4, left = Math.max(hr.left + 6, Math.min(r.right - w, hr.right - w - 6));
+    if (top + h > Math.min(window.innerHeight, hr.bottom) - 6 && r.top - 4 - h > Math.max(0, hr.top)) top = r.top - 4 - h;
+    if (host === document.body) { PM.style.position = 'fixed'; PM.style.left = left + 'px'; PM.style.top = top + 'px'; }
+    else { PM.style.left = (left - hr.left + host.scrollLeft - host.clientLeft) + 'px'; PM.style.top = (top - hr.top + host.scrollTop - host.clientTop) + 'px'; }
+    PM.addEventListener('click', function (e) { e.stopPropagation(); var x = e.target.closest && e.target.closest('[data-tmpct]'); if (x) { setPartPct(+x.getAttribute('data-tmpct')); closePct(); } });
+    PM.querySelector('form').addEventListener('submit', function (e) { e.preventDefault(); var i = PM.querySelector('input'), v = Number(i.value);
+      if (!(v >= 1 && v <= 99 && Math.round(v) === v)) { var er = PM.querySelector('.pl-pme'); er.hidden = false; er.textContent = T2('A whole number from 1 to 99.', 'Un número entero del 1 al 99.'); i.focus(); return; }
+      setPartPct(v); closePct(); });
+    emit();
+  }
+  document.addEventListener('click', function (e) { if (!PM) return; var t = e.target; if ((t && t.closest && (t.closest('.pl-pm') || t.closest('[data-tma="partmenu"]')))) return; closePct(); }, true);
+  document.addEventListener('keydown', function (e) { if (PM && e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); closePct(); } }, true);
   document.addEventListener('click', function (e) { var b = e.target && e.target.closest && e.target.closest('[data-tma]'); if (!b) return; e.preventDefault(); e.stopPropagation(); if (b.disabled) return;
     var a = b.getAttribute('data-tma'), k = String(b.getAttribute('data-tmk'));
-    if (a === 'part') { CONF[k] = Date.now(); delete done[k + '|part']; emit(); setTimeout(function () { if (CONF[k] && Date.now() - CONF[k] >= 8000) { delete CONF[k]; emit(); } }, 8100); return; }
+    if (a === 'partmenu') { openPct(b, k); return; }
+    if (a === 'part') { CONF[k] = { at: Date.now(), p: partPct() }; delete done[k + '|part']; if (last[k] && last[k].a === 'part') delete last[k]; emit(); setTimeout(function () { if (CONF[k] && Date.now() - CONF[k].at >= 8000) { delete CONF[k]; emit(); } }, 8100); return; }
     if (a === 'partno') { delete CONF[k]; emit(); return; }
-    if (a === 'part!') { delete CONF[k]; a = 'part'; }
-    var r = tradeOf(k); if (r) send(r, a, a === 'part' ? 50 : undefined); }, true);
-  return { send: send, acct: acct, ack: ack, state: state, row: row, whyTxt: whyTxt, partHtml: partHtml, partAsking: function (k) { k = String(k); return !!(CONF[k] && Date.now() - CONF[k] < 8000); }, on: function (f) { subs.push(f); }, last: function (k) { return last[String(k)] || null; }, busy: function (k) { return busy[String(k)] || null; }, _hmac: hmac };
+    var pc = 50; if (a === 'part!') { pc = CONF[k] ? CONF[k].p : partPct(); delete CONF[k]; a = 'part'; }
+    var r = tradeOf(k); if (r) send(r, a, a === 'part' ? pc : undefined); }, true);
+  return { send: send, acct: acct, ack: ack, state: state, row: row, whyTxt: whyTxt, partHtml: partHtml, partAsking: partAsking, partPct: partPct, setPartPct: setPartPct, on: function (f) { subs.push(f); }, last: function (k) { return last[String(k)] || null; }, busy: function (k) { return busy[String(k)] || null; }, _hmac: hmac };
 })();
 </script>
 <script>
@@ -91084,6 +91121,23 @@ window.__stAZ = (function () {
   .pl-cq { font: 12px var(--pl-font); color: var(--pl-txt); white-space: nowrap; margin-right: 2px; }
   .pl-t .pl-conf { display: inline-grid; grid-template-columns: auto auto; gap: 4px; justify-items: end; justify-content: end; vertical-align: middle; } .pl-t .pl-cq { grid-column: 1 / -1; margin: 0; }   /* the row: the question, then Close half / Keep under it */
   .ph-pa .pl-conf { flex-wrap: wrap; justify-content: flex-end; } .ph-pa .pl-cq { flex: 1 0 100%; text-align: right; margin: 0 0 4px; }
+  .pl-cq.pl-no { color: var(--pl-dn, #f23645); white-space: normal; max-width: 260px; text-align: right; }
+  /* Close N% as a split button: the label closes, the chevron picks how much (25 Oct 2026) */
+  .pl-split { display: inline-flex; margin-left: 4px; vertical-align: middle; } .pl-split .pl-ab { margin-left: 0; }
+  .pl-split .pl-sm { border-radius: 4px 0 0 4px; } .pl-split .pl-sd { border-radius: 0 4px 4px 0; padding: 0 6px; margin-left: 1px; display: inline-flex; align-items: center; }
+  .pl-split .pl-sd[aria-expanded="true"] { background: var(--pl-line2, #363a45); color: var(--pl-hi, #fff); }
+  .pl-t .pl-conf .pl-split { grid-column: 1 / -1; justify-self: end; margin-left: 0; }
+  .ph-pa .pl-split { margin: 0; } .ph-pa .pl-split .pl-sd { padding: 0 10px; }
+  .pl-pm { position: absolute; z-index: 60; width: 214px; box-sizing: border-box; padding: 10px; border-radius: 6px; background: var(--pl-pane, #1e222d); border: 1px solid var(--pl-line2, #363a45); box-shadow: 0 8px 24px rgba(0,0,0,.45); font: 12px var(--pl-font, sans-serif); color: var(--pl-txt, #d1d4dc); }
+  .pl-pmh { margin: 0 0 8px; color: var(--pl-dim, #787b86); }
+  .pl-pmg { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+  .pl-pmg button, .pl-pmc button { height: 28px; border: 0; border-radius: 4px; background: var(--pl-pane2, #2a2e39); color: var(--pl-txt, #d1d4dc); font: 12px var(--pl-font, sans-serif); cursor: pointer; padding: 0; }
+  .pl-pmg button[aria-checked="true"] { background: var(--pl-blue, #2962ff); color: #fff; }
+  .pl-pmc { display: flex; align-items: center; gap: 6px; margin: 8px 0 0; }
+  .pl-pmc input { flex: 1 1 auto; min-width: 0; height: 28px; box-sizing: border-box; padding: 0 8px; border: 1px solid var(--pl-line2, #363a45); border-radius: 4px; background: var(--pl-bg, #131722); color: var(--pl-hi, #fff); font: 12px var(--pl-font, sans-serif); text-align: right; }
+  .pl-pmc button { flex: none; padding: 0 12px; }
+  .pl-pme { margin-top: 6px; color: var(--pl-dn, #f23645); }
+  @media (hover: hover) { .pl-pmg button:not([aria-checked="true"]):hover, .pl-pmc button:hover { background: var(--pl-line2, #363a45); color: var(--pl-hi, #fff); } }
   @media (hover: hover) { .pl-ab:not(:disabled):hover { filter: brightness(1.25); } }
   .pl-side { padding: 2px 6px; border-radius: 3px; font-size: 11px; font-weight: 700; } .pl-side.b { background: rgba(41,98,255,.18); color: #5b8bff; } .pl-side.s { background: rgba(242,54,69,.16); color: #f7525f; }
   .pl-wait { margin: 0; padding: 14px 12px; color: var(--pl-dim); font-size: 12.5px; }

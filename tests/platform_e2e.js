@@ -46,7 +46,14 @@
       for (k = 0; k < 40 && !/lots/.test($('.ph-sum') ? $('.ph-sum').textContent : ''); k++) await W(250);
       check('...the side it places: the order fills, the bar shows the trade', /BUY|SELL/.test($('.ph-sum').textContent) && /lots/.test($('.ph-sum').textContent), $('.ph-trade').textContent);
       $('[data-phgo]').click(); await W(500);
-      check('the sheet lists the open trade with Move to BE, Close 50% and Close', $('.ph-pos .ph-p') && $('.ph-pos [data-tma="part"]') && $('.ph-pos [data-tma="close"]'), $('.ph-pos') && $('.ph-pos').textContent.slice(0, 120));
+      check('the sheet lists the open trade with Move to BE, Close 50% (and its chevron) and Close', $('.ph-pos .ph-p') && $('.ph-pos [data-tma="part"]') && $('.ph-pos [data-tma="partmenu"]') && $('.ph-pos [data-tma="close"]'), $('.ph-pos') && $('.ph-pos').textContent.slice(0, 120));
+      // how much to close (25 Oct 2026): the chevron's menu on screen, over the sheet; 75% picked is the button's label
+      try { localStorage.removeItem('st_partPct'); } catch (e) {}
+      $('.ph-pos [data-tma="partmenu"]').click(); await W(300);
+      var pm0 = $('.pl-pm'), pq = pm0 && pm0.getBoundingClientRect(), pat = pq && document.elementFromPoint(pq.left + pq.width / 2, pq.top + pq.height / 2);
+      check('...its chevron: 25 / 33 / 50 / 75 / 80 and a box, on screen over the sheet', pm0 && pm0.querySelectorAll('[data-tmpct]').length === 5 && pm0.querySelector('input') && pat && pm0.contains(pat) && pq.left >= 0 && pq.right <= innerWidth && pq.top >= 0 && pq.bottom <= innerHeight, pq && [pq.left, pq.top, pq.right, pq.bottom]);
+      pm0.querySelector('[data-tmpct="75"]').click(); await W(400);
+      check('...75%: the sheet\'s button says Close 75%', !$('.pl-pm') && $('.ph-pos [data-tma="part"]') && /^Close 75%$/.test($('.ph-pos [data-tma="part"]').textContent.trim()), $('.ph-pos [data-tma="part"]') && $('.ph-pos [data-tma="part"]').textContent);
       $('.ph-dim').click(); await W(400);
       check('a tap outside closes it', !win.classList.contains('ph-open'));
       // the order rules: Take a break in the sheet, the docked Execute locked, short
@@ -79,6 +86,10 @@
         check('...a tab from there: that page, the chart put away', document.getElementById('page-bias').classList.contains('active') && getComputedStyle(win).display === 'none' || !document.getElementById('page-livecharts').classList.contains('active'));
         document.querySelector('.tab[data-page="livecharts"]').click(); await W(1500); }
       check('no errors', errs.length === 0, errs.slice(0, 3));
+      // for the picture: the sheet open, the chevron's menu showing
+      try { if (window.__stNav && window.__stNav.isOpen()) window.__stNav.close(); } catch (e) {} await W(400);
+      if ($('[data-phgo]')) { $('[data-phgo]').click(); await W(600); if ($('.ph-pos [data-tma="partmenu"]')) { $('.ph-pos [data-tma="partmenu"]').click(); await W(300); } }
+      try { localStorage.removeItem('st_partPct'); } catch (e) {}
       return results;
     }
 
@@ -171,7 +182,7 @@
     ask.querySelector('[data-plno]').click(); for (k = 0; k < 12 && document.querySelector('.pl-tag.ask'); k++) await W(150);
     check('...Keep: nothing sent, the tag as it was', !document.querySelector('.pl-tag.ask') && P._plat().ask === null);
     var ab = Array.prototype.map.call(document.querySelectorAll('.pl-t [data-tma]'), function (b) { return b.getAttribute('data-tma') + (b.disabled ? ':off' : ':on'); });
-    check('the position\'s row: Move to BE, Close 50% and Close, on (MT5 manages it from here)', ab.join(',') === 'tobe:on,part:on,close:on', ab);
+    check('the position\'s row: Move to BE, Close 50% (and its chevron) and Close, on (MT5 manages it from here)', ab.join(',') === 'tobe:on,part:on,partmenu:on,close:on', ab);
 
     // ---- the rail, the fold, remembered ----
     $('[data-plr="wl"]').click(); await W(200);
@@ -222,7 +233,7 @@
     document.dispatchEvent(new KeyboardEvent('keydown', { key: String(P._cfg().mm.key || 'O').toLowerCase(), bubbles: true })); await W(400);
     check('...the execution key doesn\'t arm it either, and says why on the chart', !P._s().exec && /On a break/.test($('#stpr-cw').textContent), [P._s().exec, $('#stpr-cw').textContent.slice(0, 160)]);
     var ab2 = Array.prototype.map.call(document.querySelectorAll('.pl-t [data-tma]'), function (b) { return b.getAttribute('data-tma') + (b.disabled ? ':off' : ':on'); });
-    check('locked, the open trade is still managed: Move to BE, Close 50% and Close on', ab2.join(',') === 'tobe:on,part:on,close:on', ab2);
+    check('locked, the open trade is still managed: Move to BE, Close 50% and Close on', ab2.join(',') === 'tobe:on,part:on,partmenu:on,close:on', ab2);
     $('[data-plr="wl"]').click(); $('[data-plr="tm"]').click(); await W(500);
     var tx = $('.pl-exec');
     check('...the top bar\'s Execute (panels hidden): Locked with the time left, why on hover', tx.classList.contains('lock') && tx.disabled && /^Locked 59:5\d$/.test(tx.textContent) && /On a break/.test(tx.title), [tx.textContent, tx.title]);
@@ -257,15 +268,25 @@
     document.querySelector('#lc-mode [data-lcm="live"]').click(); await W(200); document.getElementById('lc-ask-bg').querySelector('[data-lca="1"]').click();
     for (k = 0; k < 80 && !(P._s() && P._s().live && LC.state().fresh); k++) await W(250); await W(1500);
     check('back to Live: the platform again', win.classList.contains('plat') && $('.plat-left #stpr-tools') && $('.plat-top #stpr-tb2'), win.className);
-    // ---- Close 50% (EA 9.15's "part", 25 Oct 2026): asked once in the row, in its own place (left showing for the picture) ----
+    // ---- Close 50% (EA 9.15's "part", 25 Oct 2026), any share since the same day: the chevron picks how much, the row asks once in
+    //      its own place; the menu is left showing for the picture ----
+    try { localStorage.removeItem('st_partPct'); } catch (e) {}
     if ($('[data-pltab="pos"]')) { $('[data-pltab="pos"]').click(); await W(400); }
     for (k = 0; k < 40 && !$('.pl-t [data-tma="part"]'); k++) await W(250);
+    $('.pl-t [data-tma="partmenu"]').click(); await W(300);
+    var pm = $('.pl-pm'), pr = pm && pm.getBoundingClientRect(), wr2 = $('#stpr-win').getBoundingClientRect(), pat2 = pr && document.elementFromPoint(pr.left + pr.width / 2, pr.top + pr.height / 2);
+    check('the row\'s chevron opens how much to close: 25 / 33 / 50 / 75 / 80 and a box, inside the window, on top', pm && pm.querySelectorAll('[data-tmpct]').length === 5 && pat2 && pm.contains(pat2) && pr.left >= wr2.left && pr.right <= wr2.right + 1 && pr.top >= wr2.top && pr.bottom <= wr2.bottom + 1, pr && [pr.left, pr.top, pr.right, pr.bottom, wr2.right, wr2.bottom]);
+    pm.querySelector('[data-tmpct="25"]').click(); await W(400);
+    check('...25%: the row\'s button says Close 25%', !$('.pl-pm') && /^Close 25%$/.test($('.pl-t [data-tma="part"]').textContent.trim()), $('.pl-t [data-tma="part"]').textContent);
     var pb = $('.pl-t [data-tma="part"]'); if (pb) pb.click();
     for (k = 0; k < 20 && !$('.pl-t .pl-conf'); k++) await W(150);
     var cq = $('.pl-t .pl-conf');
-    check('Close 50% in the row asks once: "Close half of BUY ... ?" Close half / Keep, nothing sent yet', cq && /Close half of BUY [\d.]+ EURUSD\?/.test(cq.textContent) && cq.querySelector('[data-tma="part!"]') && cq.querySelector('[data-tma="partno"]'), cq && cq.textContent);
+    check('Close 25% in the row asks once: "Close 25% of BUY ... ?" Close 25% / Keep, nothing sent yet', cq && /Close 25% of BUY [\d.]+ EURUSD\?/.test(cq.textContent) && cq.querySelector('[data-tma="part!"]') && cq.querySelector('[data-tma="partno"]'), cq && cq.textContent);
     var tr = cq && cq.closest('tr'), tb = tr && tr.closest('.pl-t, table'), over = tr ? tr.scrollWidth - tr.clientWidth : -1;
     check('...the row still fits its panel', !!tr && tb.getBoundingClientRect().right <= $('#stpr-win').getBoundingClientRect().right + 1, [tb && tb.getBoundingClientRect().right, $('#stpr-win').getBoundingClientRect().right]);
+    cq.querySelector('[data-tma="partno"]').click(); await W(300);
+    if ($('.pl-t [data-tma="partmenu"]')) { $('.pl-t [data-tma="partmenu"]').click(); await W(300); }   // for the picture
+    try { localStorage.removeItem('st_partPct'); } catch (e) {}
     check('no errors', errs.length === 0, errs.slice(0, 3));
   } catch (e) { results.push({ name: 'test ran', ok: false, got: String(e && e.stack || e) }); }
   return results;
