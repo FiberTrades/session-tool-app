@@ -56,7 +56,7 @@ else
   src 'rm -f /root/.ssh/st_push /root/.ssh/st_push.pub && ssh-keygen -q -t ed25519 -N "" -f /root/.ssh/st_push -C st-push-temp'
   PUB=$(src 'cat /root/.ssh/st_push.pub')
   new "mkdir -p /root/.ssh && touch /root/.ssh/authorized_keys && sed -i '/st-push-temp/d' /root/.ssh/authorized_keys && echo '$PUB' >> /root/.ssh/authorized_keys"
-  src "tar -C / -cf - home/st/mt5-template opt/st/seed-common.ini opt/st/servers-ftmo.dat opt/st/ea etc/st-agent/config.json etc/st-agent/agent.key etc/st-agent/extra-symbols.json \
+  src "tar -C / -cf - home/st/mt5-template opt/st/seed-common.ini opt/st/servers-ftmo.dat opt/st/servers-all.dat opt/st/ea etc/st-agent/config.json etc/st-agent/agent.key etc/st-agent/extra-symbols.json \
        | ssh -i /root/.ssh/st_push -o StrictHostKeyChecking=accept-new -o BatchMode=yes root@$NEW 'mkdir -p /etc/st-agent /opt/st && tar -C / -xpf -'"
   new 'chown -R st:st /home/st/mt5-template && chmod 700 /etc/st-agent && chmod 600 /etc/st-agent/config.json /etc/st-agent/agent.key && touch /home/st/mt5-template/.st-copied'
   new 'du -sh /home/st/mt5-template | cut -f1' | sed 's/^/template: /'

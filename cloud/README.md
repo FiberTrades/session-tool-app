@@ -25,8 +25,13 @@ To drive a terminal's screen, use `stx <login> <xdotool args>`; `stx <login> sho
 Each terminal's screen also runs openbox (`agent/run-in-x.sh`). Without a window manager, windows can't be focused
 and menus draw black. Wine's virtual desktop (set in `install-mt5.sh`) draws MT5's layered dialogs.
 
-**Brokers:** a fresh MT5 only knows MetaQuotes' servers. FTMO's list (`servers.dat`, from Nestor's FTMO MT5) is
-seeded into each account as `/opt/st/servers-ftmo.dat`. Another firm needs its own list.
+**Brokers (25 Oct 2026):** MT5 finds a server only through its `Config/servers.dat`. With FTMO's list alone an
+ICMarketsSC-Demo account never even tried to connect (tested on uk1). `/opt/st/servers-all.dat` holds FTMO's servers plus
+those of IC Markets, Pepperstone, Exness, XM, Vantage, FP Markets, Tickmill, Eightcap, RoboForex, Admirals, Blueberry,
+Fusion, Darwinex, OANDA, FundedNext, The5ers, Funding Pips, E8, Alpha Capital, Blue Guardian and FXIFY, demo and live.
+The agent copies it into every NEW account; an account already running keeps its own list. `/opt/st/servers-ftmo.dat` is
+the first seed, kept as the backup. To add a firm: put its MT5 company name in `cloud/seed/brokers.txt` and run
+`bash cloud/seed-servers.sh` (a throwaway MT5 on uk1 searches each name in File > Open an Account; no account, no login).
 
 ## How an account runs
 

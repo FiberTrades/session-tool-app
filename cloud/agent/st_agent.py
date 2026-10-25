@@ -34,7 +34,8 @@ PROFILE = "STCloud"         # the chart set the agent writes before each start (
 TEMPLATE_EA = "STCloudEA.tpl"   # EA 9.14 opens a new symbol's chart with this (write_template)
 CHART_GRACE = 15            # seconds a new chart may take to be opened by the EA itself before MT5 is restarted for it
 SEED_COMMON = "/opt/st/seed-common.ini"      # MT5's saved settings, see prepare()
-SEED_SERVERS = "/opt/st/servers-ftmo.dat"     # FTMO's server list
+SEED_SERVERS = "/opt/st/servers-all.dat"      # MT5's server list: FTMO's plus 20+ brokers' and prop firms' (cloud/seed-servers.sh)
+SEED_FTMO = "/opt/st/servers-ftmo.dat"        # FTMO's alone, the first seed - kept as the backup
 POLL = 10
 HEARTBEAT = 60              # seconds between status reports while nothing changes
 EA_QUIET = 300              # the EA writes "MM alive" to its log every minute: 5 minutes of silence = it stopped
@@ -303,9 +304,16 @@ def prepare(acc):
     if not has and os.path.exists(SEED_COMMON):
         shutil.copyfile(SEED_COMMON, ci)
     set_maxbars(ci)
+    # The server list (25 Oct 2026, other brokers than FTMO): MT5 finds a server only by this list - with FTMO's alone, an
+    # ICMarketsSC-Demo account never even tried to connect (tested on uk1). An MT5 that has never run here gets the full list;
+    # one already running keeps its own (his 70K and the demo sign in with theirs), unless it is missing or smaller than FTMO's.
     sv = os.path.join(cfg, "servers.dat")
-    if os.path.exists(SEED_SERVERS) and (not os.path.exists(sv) or os.path.getsize(sv) < os.path.getsize(SEED_SERVERS)):
-        shutil.copyfile(SEED_SERVERS, sv)
+    seed = SEED_SERVERS if os.path.exists(SEED_SERVERS) else SEED_FTMO
+    fresh = not glob.glob(os.path.join(ad, "logs", "*.log"))
+    have = os.path.getsize(sv) if os.path.exists(sv) else 0
+    small = os.path.exists(SEED_FTMO) and have < os.path.getsize(SEED_FTMO)
+    if os.path.exists(seed) and (have == 0 or small or (fresh and have < os.path.getsize(seed))):
+        shutil.copyfile(seed, sv)
     ex = os.path.join(ad, "MQL5", "Experts", "SessionTerminal")
     os.makedirs(ex, exist_ok=True)
     dst = os.path.join(ex, "MinimalistManager.ex5")
