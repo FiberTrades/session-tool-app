@@ -47,6 +47,24 @@
       check('the sheet lists the open trade with Move to BE and Close', $('.ph-pos .ph-p') && $('.ph-pos [data-tma="close"]'), $('.ph-pos') && $('.ph-pos').textContent.slice(0, 120));
       $('.ph-dim').click(); await W(400);
       check('a tap outside closes it', !win.classList.contains('ph-open'));
+      // the order rules: Take a break in the sheet, the docked Execute locked, short
+      var acQ = data.accounts.filter(function (a) { return a.id === 'acc-plat'; })[0];
+      $('[data-phgo]').click(); await W(600);
+      var mg0 = Array.prototype.map.call(document.querySelectorAll('.ph-pos [data-tma]'), function (b) { return b.getAttribute('data-tma') + (b.disabled ? ':off' : ':on'); }).join(',');
+      var tb0 = $('.ph-sheet [data-plbrk]');
+      check('the sheet: Take a break under Execute', !!tb0 && tb0.getBoundingClientRect().bottom <= innerHeight);
+      tb0.click(); await W(300);
+      var bm0 = $('#stpr-menu.show'), bq = bm0 && bm0.getBoundingClientRect(), at0 = bq && document.elementFromPoint(bq.left + bq.width / 2, bq.top + 24);
+      check('...its choices over the sheet, on screen', bm0 && bm0.querySelectorAll('[data-plbrkv]').length === 5 && at0 && bm0.contains(at0) && bq.top >= 0 && bq.bottom <= innerHeight && bq.left >= 0 && bq.right <= innerWidth, bq && [bq.left, bq.top, bq.right, bq.bottom]);
+      bm0.querySelector('[data-plbrkv="2h"]').click(); await W(300); $('[data-plbrkgo="2h"]').click(); await W(800);
+      check('a 2-hour break: the sheet\'s Execute locked with the time left, the lock under the title', $('.ph-sheet .pl-x.lock') && /^Locked(1:59:5\d|2:00:00)$/.test($('.ph-sheet .pl-x').textContent) && /On a break/.test($('.ph-sheet .pl-lks').textContent), [$('.ph-sheet .pl-x').textContent, $('.ph-sheet .pl-lks') && $('.ph-sheet .pl-lks').textContent]);
+      var mg1 = Array.prototype.map.call(document.querySelectorAll('.ph-pos [data-tma]'), function (b) { return b.getAttribute('data-tma') + (b.disabled ? ':off' : ':on'); }).join(',');
+      check('...Move to BE and Close as they were', mg1 === mg0 && /close/.test(mg1), [mg0, mg1]);
+      $('.ph-dim').click(); await W(500);
+      var pg = $('.ph-go');
+      check('...docked: Execute locked, the time left, on screen', pg && pg.classList.contains('lock') && /^1:59:5\d$/.test(pg.textContent) && pg.getBoundingClientRect().right <= innerWidth + 1 && /On a break/.test(pg.getAttribute('aria-label')), pg && [pg.textContent, Math.round(pg.getBoundingClientRect().right)]);
+      delete acQ.ruleBreak; window.dispatchEvent(new CustomEvent('st-rules-change')); await W(600);
+      check('the break over: the docked Execute back', $('.ph-go') && !$('.ph-go').classList.contains('lock') && $('.ph-go').textContent === 'Execute', $('.ph-go') && $('.ph-go').textContent);
       $('[data-phtf]').click(); await W(300);
       var mn = $('#stpr-menu.show'), mr = mn && mn.getBoundingClientRect();
       check('the timeframe opens its list above the bar', mn && mr.bottom <= bar.getBoundingClientRect().top + 1 && mn.querySelector('[data-phtfv="60"]'), mr && [mr.top, mr.bottom]);
@@ -171,6 +189,44 @@
     $('[data-pltab="acct"]').click(); await W(300);
     check('the Account tab: balance, equity, margin, free margin', /Balance/.test($('.pl-acg').textContent) && /Free margin/.test($('.pl-acg').textContent), $('.pl-acg') && $('.pl-acg').textContent.slice(0, 100));
     $('[data-pltab="pos"]').click(); await W(200);
+
+    // ---- Check my plan in the top bar (window.__stPlanCheck) ----
+    var pc0 = window.__stPlanCheck, pcGot = null; window.__stPlanCheck = { open: function (o) { pcGot = o || {}; } }; await W(1000);
+    var plb = $('.plat-top .pl-plan');
+    check('Check my plan in the top bar, beside Replay', plb && !plb.hidden && plb.getBoundingClientRect().width > 0 && plb.title === 'Check this chart against your plan' && plb.previousElementSibling === $('.plat-top .pl-rp'), plb && [plb.hidden, plb.title]);
+    plb.click(); await W(400);
+    check('...it opens the plan check with the chart\'s picture', !!(pcGot && pcGot.canvas), pcGot && Object.keys(pcGot));
+    window.__stPlanCheck = pc0;
+
+    // ---- the order rules (window.__stRules): Take a break, Execute locked with the time left, the open trade still managed ----
+    var acP = data.accounts.filter(function (a) { return a.id === 'acc-plat'; })[0];
+    var tbk = $('#stpr-mm [data-plbrk]');
+    check('Take a break under Execute', !!tbk && /Take a break/.test(tbk.textContent));
+    tbk.click(); await W(300);
+    var bm = $('#stpr-menu.show'), bmr = bm && bm.getBoundingClientRect(), tbr = $('#stpr-mm [data-plbrk]').getBoundingClientRect();
+    check('...how long: 1 hour, 2 hours, 4 hours, until the next session, until tomorrow - above the button, on screen', bm && Array.prototype.map.call(bm.querySelectorAll('[data-plbrkv]'), function (b) { return b.textContent; }).join('|') === '1 hour|2 hours|4 hours|Until the next session|Until tomorrow' && bmr.bottom <= tbr.top + 1 && bmr.top >= 0 && bmr.right <= innerWidth,
+      bm && [Math.round(bmr.top), Math.round(bmr.bottom), Math.round(tbr.top), bm.textContent.slice(0, 80)]);
+    bm.querySelector('[data-plbrkv="1h"]').click(); await W(300);
+    check('...a pick asks once more: no new entries on FTMO 70K until then, it can\'t be lifted early', /No new entries on FTMO 70K until \d\d:\d\d\. It can’t be lifted early\./.test($('#stpr-menu').textContent) && $('[data-plbrkgo="1h"]'), $('#stpr-menu').textContent);
+    $('[data-plbrkgo="1h"]').click(); await W(800);
+    check('the break starts: an hour on this account', acP.ruleBreak && Math.abs(acP.ruleBreak.until - Date.now() - 3600000) < 5000, acP.ruleBreak);
+    var lk = $('#stpr-mm .pl-lks');
+    check('...its lock under the Trade Manager\'s title, with the time left', lk && /On a break\. Trading opens again at \d\d:\d\d\./.test(lk.textContent) && /(59:5\d|1:00:00)$/.test(lk.textContent), lk && lk.textContent);
+    var lx = $('#stpr-mm .pl-x');
+    check('...Execute: Locked and the time left, not pressable; managing open trades said under it', lx && lx.classList.contains('lock') && lx.disabled && /^Locked(59:5\d|1:00:00)$/.test(lx.textContent) && /still be managed and closed/.test($('.pl-why2').textContent), lx && [lx.textContent, $('.pl-why2') && $('.pl-why2').textContent]);
+    var c1 = $('#stpr-mm .pl-x .pl-cd').textContent; await W(2100); var c2 = $('#stpr-mm .pl-x .pl-cd').textContent;
+    check('...the countdown runs', c1 !== c2 && /^59:5\d$/.test(c2), [c1, c2]);
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: String(P._cfg().mm.key || 'O').toLowerCase(), bubbles: true })); await W(400);
+    check('...the execution key doesn\'t arm it either, and says why on the chart', !P._s().exec && /On a break/.test($('#stpr-cw').textContent), [P._s().exec, $('#stpr-cw').textContent.slice(0, 160)]);
+    var ab2 = Array.prototype.map.call(document.querySelectorAll('.pl-t [data-tma]'), function (b) { return b.getAttribute('data-tma') + (b.disabled ? ':off' : ':on'); });
+    check('locked, the open trade is still managed: Move to BE and Close on', ab2.join(',') === 'tobe:on,close:on', ab2);
+    $('[data-plr="wl"]').click(); $('[data-plr="tm"]').click(); await W(500);
+    var tx = $('.pl-exec');
+    check('...the top bar\'s Execute (panels hidden): Locked with the time left, why on hover', tx.classList.contains('lock') && tx.disabled && /^Locked 59:5\d$/.test(tx.textContent) && /On a break/.test(tx.title), [tx.textContent, tx.title]);
+    $('[data-plr="wl"]').click(); $('[data-plr="tm"]').click(); await W(400);
+    delete acP.ruleBreak; window.dispatchEvent(new CustomEvent('st-rules-change')); await W(600);
+    check('the break over: Execute back, the lock gone', $('#stpr-mm .pl-x').textContent === 'Execute' && !$('#stpr-mm .pl-x').disabled && !$('#stpr-mm .pl-lks') && $('.pl-exec').textContent === 'Execute', [$('#stpr-mm .pl-x').textContent, !!$('#stpr-mm .pl-lks')]);
 
     // ---- Session Indicator once, the theme, the range buttons ----
     var si0 = P._cfg().mini; $('[data-plsi]').click(); await W(300);
