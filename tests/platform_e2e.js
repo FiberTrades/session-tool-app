@@ -164,6 +164,13 @@
     data.currentSeries = data.currentSeries.filter(function (x) { return x !== jt; });
     check('the summary along the tabs: Open P&L, Today, Margin, Free margin', /Open P&L/.test($('.pl-sum').textContent) && /Free margin/.test($('.pl-sum').textContent), $('.pl-sum').textContent);
     check('the top bar: the account, its balance and equity', /FTMO 70K/.test($('.pl-acct').textContent) && /Equity/.test($('.pl-acct').textContent), $('.pl-acct').textContent);
+    // a long account name, in the cloud (Nestor, 25 Oct 2026, ~1500 px: the sun pushed out of the row): the bar steps down, never overflows
+    var accN = data.accounts.filter(function (a) { return a.id === 'acc-plat'; })[0], nm0 = accN.name, mc0 = window.__stMt5c, top0 = $('.plat-top');
+    accN.name = 'FTMO 70K - Challenge Phase 2 Swing Account'; window.__stMt5c = Object.assign({}, mc0 || {}, { cloud: function () { return [{ login: '90001234', status: 'running' }]; } }); await W(1600);
+    var thr = $('.pl-theme').getBoundingClientRect(), ann = $('.pl-ann'), tpr = top0.getBoundingClientRect();
+    check('a long account name: the top bar fits (the sun and full screen in the row), the name cut with … and whole on hover', top0.scrollWidth <= top0.clientWidth + 1 && thr.right <= tpr.right && $('#stpr-pop').getBoundingClientRect().right <= tpr.right && ann.scrollWidth > ann.clientWidth && ann.title === accN.name && /Cloud/.test($('.pl-acct').textContent),
+      [top0.scrollWidth, top0.clientWidth, Math.round(thr.right), Math.round(tpr.right), ann.title, win.className.match(/\bpt\d\b/g)]);
+    accN.name = nm0; window.__stMt5c = mc0; await W(1000);
 
     // ---- the open trade on the chart: its tags against the price scale ----
     var rr = { symbol: 'EURUSD', ticket: tkn || 7001, login: 90001234, direction: 'long', lots: 13.5, openedAt: Date.now() - 50 * 60000, risk0: 250, risk: 250,
