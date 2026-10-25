@@ -4075,7 +4075,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Session quick-log: hidden outside the session, shown in place of the Trade Log
      table while the window is live. */
   #session-quick-log { display: none; }
-  #page-review.session-live-collapsed #session-quick-log { display: block; }
+  #page-review.session-live-collapsed #session-quick-log, #page-review.st-sess-on #session-quick-log { display: block; }
   /* Auto-sync from MT5 makes the in-session rapid trade-entry redundant. Hide the
      Long/Short + Win/Lose/BE quick buttons; the normal Trade Log stays visible for
      manual (non-EA) trades, and the Finish-session control is kept (it also triggers
@@ -14143,11 +14143,11 @@ try {
     return localizeSessionName(ss[idx].name || '');
   }
 
-  // The Review tab + the big header title read "Session Live" while the session window is
-  // open, and revert to "Session Review" otherwise. Centralised so the tab strip, the header
-  // <h1>, and the per-second refresh all use the same wording.
+  // The Review tab + the big header title. They read "Session Live" during the session until 25 Oct 2026, when Nestor took that
+  // tab away ("now with this amazing trade terminal in charts, can i get rid of the session live tab"): the session is traded on
+  // Charts, with Today and Chat beside the chart. Kept as one function so the tab strip and the header agree.
   function reviewModeLabel() {
-    return isSessionLive() ? (t('tab.review_live') || 'Session Live') : (t('tab.review') || 'Session Review');
+    return t('tab.review') || 'Session Review';
   }
 
   // Show/hide the session-live coaching banner on the Review tab.
@@ -14188,8 +14188,12 @@ try {
     // the window ends. Done before the early returns below so it always tracks `live`.
     const reviewPage = document.getElementById('page-review');
     if (reviewPage) {
-      const _wasCollapsed = reviewPage.classList.contains('session-live-collapsed');
-      reviewPage.classList.toggle('session-live-collapsed', live);
+      // The page no longer collapses into Session Live (25 Oct 2026); the session's start and end are still followed here, on the
+      // page itself (data-st-live), and .st-sess-on keeps the quick log (Finish session) on screen while it runs.
+      if (reviewPage.classList.contains('session-live-collapsed')) reviewPage.classList.remove('session-live-collapsed');
+      const _wasCollapsed = reviewPage.getAttribute('data-st-live') === '1';
+      reviewPage.setAttribute('data-st-live', live ? '1' : '0');
+      reviewPage.classList.toggle('st-sess-on', live);
       if (_wasCollapsed !== live) { try { window.__stLiveBox && window.__stLiveBox.later(); window.__stHeadNews && window.__stHeadNews.tick(); } catch (e) {} }
       try {   // quick-log buttons: the member's own switch, else on only without the EA
         const _qlOn = window.__stManualLogOn ? window.__stManualLogOn() : true;
@@ -14198,7 +14202,7 @@ try {
       } catch (e) {}
       /* Keeps trades that are still running (they move above the Trade Log); clears the rest. */
       try { if (!live && _wasCollapsed && window.__stLive) window.__stLive.endSession(); } catch (e) {}
-      /* And back into the Session Live panel when a session starts. */
+      /* And drawn again when a session starts (above the Trade Log since 25 Oct 2026). */
       try { if (live && !_wasCollapsed && window.__stLive) window.__stLive.render(); } catch (e) {}
       // On the live\u2192ended transition (early finish OR natural window end), re-render the
       // review UI so the trade picker (#section-trade-select) + per-trade sections reappear.
@@ -14214,9 +14218,10 @@ try {
       const headerMode = document.getElementById('header-mode');
       if (headerMode) headerMode.textContent = reviewModeLabel();
     }
-    // The full advisory banner sits on the Review tab and respects a per-session dismiss,
-    // so dismissing one session's banner doesn't hide the next session's.
-    if (!banner) return;
+    // The advisory banner described the Session Live page ("your morning bias sits just below..."): with that page gone (25 Oct
+    // 2026) it is not shown. The pill above stays on every tab while the session is live.
+    if (banner) { banner.classList.add('hidden'); _clearBannerAutoHide(); _bannerShown = false; }
+    return;
     const liveIdx = liveSessionIndex();
     if (liveIdx < 0) { banner.classList.add('hidden'); _clearBannerAutoHide(); _bannerShown = false; _bannerShownIdx = -1; return; }
     const todayKey = new Date().toISOString().slice(0, 10);
@@ -21194,6 +21199,7 @@ try {
         }
         var mv = false; try { mv = !!new URLSearchParams(location.search).get('mv'); } catch (e) {}
         var pr = document.getElementById('page-review'), live = !!(pr && pr.classList.contains('session-live-collapsed'));
+        mv = true;   // retired 25 Oct 2026 with the Session Live tab: its news and budget are Today in the Charts platform, its trades Positions
         var ideas = []; try { ideas = window.__stLive && window.__stLive.openIdeas ? window.__stLive.openIdeas() : []; } catch (e) {}
         var nhost = document.getElementById('st-livenews');
         if (mv || (!live && !ideas.length)) { Object.keys(charts).forEach(dropChart); if (!host.hidden) { host.hidden = true; host.innerHTML = ''; } if (nhost && !nhost.hidden) { nhost.hidden = true; nhost.innerHTML = ''; nhost.removeAttribute('data-h'); } return; }
@@ -21241,7 +21247,7 @@ try {
                so: c.series ? (function () { var o = c.series.options(); return { lvv: o.lastValueVisible, pls: o.priceLineStyle, up: o.upColor, dn: o.downColor }; })() : null,
                bg: c.chart ? (function () { var b = c.chart.options().layout.background; return b.color || b.topColor || ''; })() : '',
                cdl: c.series && c.series.__stAx && c.series.__stAx.get('cd') ? c.series.__stAx.get('cd').t : null, info: c.cd && !c.cd.hidden ? c.cd.textContent : null }; }); }
-    return { render: render, later: later, charts: chartDiag, parseLad: parseLad, levels: levelsOf, relook: relook };
+    return { render: render, later: later, charts: chartDiag, parseLad: parseLad, levels: levelsOf, relook: relook, newsHtml: newsHtml, budgetHtml: budgetHtml };   // news + budget: the Charts platform's Today panel (25 Oct 2026)
   })();
 
   /* ===== Account snapshot for the phone nudges (2 Oct 2026) =====
@@ -59045,7 +59051,39 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
         '.dcx-root.dcx-embed.sc-members-on #dcx-mtoggle{color:#fff !important;}' +
         '.dcx-root:not(.dcx-embed) .st-sc-minbtn{display:none !important;}' +
         '.dcx-root.dcx-embed #dcx-mtoggle{margin-left:auto !important;}' +   /* members, bell and minimise sit together on the right */
-        '@media (max-width:760px){.dcx-root.dcx-embed{height:72vh;}.dcx-root.dcx-embed .dcx-main-topic{display:none !important;}}';
+        '@media (max-width:760px){.dcx-root.dcx-embed{height:72vh;}.dcx-root.dcx-embed .dcx-main-topic{display:none !important;}}' +
+        /* in the Charts platform (25 Oct 2026): the whole column, the channels as a drawer from the burger, DMs, the members over the chat */
+        '.dcx-root.dcx-embed.dcx-plat{height:auto !important;flex:1 1 auto;min-height:0;border:0 !important;border-radius:6px !important;position:relative;overflow:hidden;}' +
+        '.dcx-root.dcx-embed.dcx-plat .dcx-side{display:flex !important;position:absolute !important;left:0;top:0;bottom:0;z-index:20;width:min(260px,84%) !important;transform:translateX(-100%);transition:transform .2s;box-shadow:6px 0 20px rgba(0,0,0,.4);}' +
+        '.dcx-root.dcx-embed.dcx-plat.side-open .dcx-side{transform:translateX(0);}' +
+        '.dcx-root.dcx-embed.dcx-plat #dcx-burger{display:block !important;}' +
+        '.dcx-root.dcx-embed.dcx-plat #dcx-dm-btn{display:inline-flex !important;}' +
+        '.dcx-root.dcx-embed.dcx-plat .dcx-main-topic{display:none !important;}' +
+        '.dcx-root.dcx-embed.dcx-plat .dcx-main-head{padding-left:10px;padding-right:6px;gap:4px;}' +
+        '.dcx-root.dcx-embed.dcx-plat .dcx-main-title{min-width:0;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}' +
+        '.dcx-root.dcx-embed.dcx-plat .dcx-members{position:absolute !important;right:0;top:48px;bottom:0;z-index:21;}' +
+        '.dcx-root.dcx-embed.dcx-plat.sc-members-on .dcx-members{width:min(220px,80%) !important;box-shadow:-6px 0 20px rgba(0,0,0,.35);}' +
+        '.dcx-root.dcx-embed.dcx-plat .dcx-composer{margin:0 10px 10px;}' +
+        '.dcx-root.dcx-embed.dcx-plat .dcx-media{max-width:100%;}' +
+        /* the platform's light theme on the chat's own surfaces */
+        '.stpr-win.pl-lt .dcx-root.dcx-plat,.stpr-win.pl-lt .dcx-root.dcx-plat .dcx-main,.stpr-win.pl-lt .dcx-root.dcx-plat .dcx-side,.stpr-win.pl-lt .dcx-root.dcx-plat .dcx-members{background:#ffffff !important;}' +
+        '.stpr-win.pl-lt .dcx-root.dcx-plat .dcx-main-head,.stpr-win.pl-lt .dcx-root.dcx-plat .dcx-side-head,.stpr-win.pl-lt .dcx-root.dcx-plat .dcx-members-head{background:#f8f9fd !important;border-bottom-color:#e0e3eb !important;box-shadow:none !important;color:#131722 !important;}' +
+        '.stpr-win.pl-lt .dcx-root.dcx-plat .dcx-main-title,.stpr-win.pl-lt .dcx-root.dcx-plat .dcx-content,.stpr-win.pl-lt .dcx-root.dcx-plat .dcx-me-name{color:#131722 !important;}' +
+        '.stpr-win.pl-lt .dcx-root.dcx-plat .dcx-name{color:#131722;}' +
+        '.stpr-win.pl-lt .dcx-root.dcx-plat .dcx-time{color:#6a6d78 !important;}' +
+        '.stpr-win.pl-lt .dcx-root.dcx-plat .dcx-msg:hover,.stpr-win.pl-lt .dcx-root.dcx-plat .dcx-chan:hover,.stpr-win.pl-lt .dcx-root.dcx-plat .dcx-member:hover{background:#f0f3fa !important;}' +
+        '.stpr-win.pl-lt .dcx-root.dcx-plat .dcx-chan.active{background:#e0e3eb !important;}' +
+        '.stpr-win.pl-lt .dcx-root.dcx-plat .dcx-chan-name,.stpr-win.pl-lt .dcx-root.dcx-plat .dcx-cat-name{color:#434651 !important;}' +
+        '.stpr-win.pl-lt .dcx-root.dcx-plat .dcx-composer{background:#f0f3fa !important;border-color:#d1d4dc !important;}' +
+        '.stpr-win.pl-lt .dcx-root.dcx-plat .dcx-input{color:#131722 !important;}' +
+        '.stpr-win.pl-lt .dcx-root.dcx-plat .dcx-plus,.stpr-win.pl-lt .dcx-root.dcx-plat .dcx-emo{background:#d1d4dc !important;color:#131722 !important;}' +
+        '.stpr-win.pl-lt .dcx-root.dcx-plat .dcx-members-toggle,.stpr-win.pl-lt .dcx-root.dcx-plat .dcx-burger,.stpr-win.pl-lt .dcx-root.dcx-plat .dcx-dm-btn{color:#6a6d78 !important;}' +
+        '.stpr-win.pl-lt .dcx-root.dcx-plat .dcx-mchan,.stpr-win.pl-lt .dcx-root.dcx-plat .dcx-muser{color:#c2185b !important;}' +
+        '.stpr-win.pl-lt .dcx-root.dcx-plat .dcx-name[style*="#fff"],.stpr-win.pl-lt .dcx-root.dcx-plat .dcx-name[style*="#FFF"],.stpr-win.pl-lt .dcx-root.dcx-plat .dcx-name[style*="255, 255, 255"]{color:#131722 !important;}' +   /* a white role colour on the white chat */
+        '.stpr-win.pl-lt .dcx-root.dcx-plat{border:1px solid #e0e3eb !important;}' +
+        /* the "Turn on notifications" ask never over the Trade Manager: bottom left on the platform, above the toolbar on a phone */
+        'body.st-plat .dcx-notif-prompt{right:auto;left:66px;bottom:44px;}' +
+        'body.st-plph .dcx-notif-prompt{left:10px;right:10px;bottom:124px;max-width:none;}';
       document.head.appendChild(st);
     }
 
@@ -61988,7 +62026,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
         var _tb=G('dcx-resize'); if(_tb && _tb.parentNode===r.parentNode && r.nextElementSibling!==_tb) r.insertAdjacentElement('afterend', _tb);
       }catch(e){}
     }
-    return { embedIn:embedIn, unembed:unembed, embedded:function(){ return _emb.on; }, refreshIdentity:refreshIdentity, startCall:startCall, friends:function(){ return FR; }, canTalk:canTalk,
+    return { embedIn:embedIn, unembed:unembed, embedded:function(){ return _emb.on; }, curSlug:function(){ try{ return (cur&&cur.id)?String(_chSlug(cur)):''; }catch(e){ return ''; } }, refreshIdentity:refreshIdentity, startCall:startCall, friends:function(){ return FR; }, canTalk:canTalk,
              respondRequest:respondRequest, cancelRequest:cancelRequest, loadFriends:loadFriends, roster:function(){ return roster; },
              paintBell:paintBell, openNotifs:openNotifs, setupCallSignal:_callSignalSetup, ensurePush:ensurePush, forcePush:forcePush, open:open, esc:esc, fmtTime:fmtTime, avaHtml:avaHtml, myName:myName, myAvatar:myAvatar, EMOJIS:EMOJIS, REACT_EMOJIS:REACT_EMOJIS, up:up, build:build, openImg:openImg, nameColor:nameColor, linkify:linkify, previewImg:previewImg, picLinks:picLinks, dropPicLinks:dropPicLinks, openInApp:openInApp, renderUnfurls:renderUnfurls, dayKey:dayKey, dateSepHtml:dateSepHtml, bumpEmoji:bumpEmoji, topEmojis:topEmojis, isDmMod:isDmMod, postToChannel:postToChannel, relang:relang, wireMentions:wireMentions, gotoChannel:gotoChannel };
   })();
@@ -62007,8 +62045,11 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       unread = now.filter(function (id) { return !seen[id]; }).length;
     }
     function T2(en, es) { try { return window._stT ? window._stT(en, es) : en; } catch (e) { return en; } }
-    function isMin() { try { return localStorage.getItem(MIN_KEY) === '1'; } catch (e) { return false; } }
-    function liveUi() { var p = document.getElementById('page-review'); return !!(p && p.classList.contains('active') && p.classList.contains('session-live-collapsed')); }
+    // The Charts platform's chat since 25 Oct 2026 (Nestor: "literally move the chat and all its functions from session live tab to here"):
+    // its slot while Charts shows the platform (window.__stPlatChat), "minimised" = the panel closed - new messages then count on its icon
+    function platSlot() { try { return window.__stPlatChat && window.__stPlatChat.slot ? window.__stPlatChat.slot() : null; } catch (e) { return null; } }
+    function isMin() { try { return !!(window.__stPlatChat && !window.__stPlatChat.open()); } catch (e) { return false; } }
+    function liveUi() { return !!platSlot(); }
     function reviewOpen() { var p = document.getElementById('page-review'); return !!(p && p.classList.contains('active')); }
     function signedIn() { try { return !window.__MV && !!(window.currentUser && window.currentUser.id); } catch (e) { return false; } }
     // Something not sent yet: text in the box, or an attachment waiting. Focus alone is not a draft - after Send the box
@@ -62020,8 +62061,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
     var DOWN = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
     var UP = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>';
     function place() {
-      var after = document.getElementById('st-livebox') || document.getElementById('saved-bias-card');
-      if (after && after.parentNode && host.previousSibling !== after) after.parentNode.insertBefore(host, after.nextSibling);
+      var s = platSlot(); if (s && host.parentNode !== s) s.appendChild(host);
     }
     function ensure() {
       if (host) { place(); return; }
@@ -62032,6 +62072,11 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       slot = host.querySelector('.st-sc-slotin'); bar = host.querySelector('.st-sc-bar');
       bar.title = T2('Show the session chat', 'Mostrar el chat de la sesión');
       bar.addEventListener('click', function () { setMin(false); });
+      // a channel picked from the drawer closes it, and so does a tap on the chat beside it
+      document.addEventListener('click', function (e) {
+        var r = document.getElementById('dcx-root'), t = e.target; if (!r || !r.classList.contains('dcx-plat') || !r.classList.contains('side-open') || !t || !t.closest) return;
+        if (t.closest('.dcx-chan') || (r.contains(t) && !t.closest('.dcx-side') && !t.closest('#dcx-burger'))) setTimeout(function () { r.classList.remove('side-open'); }, 60);
+      }, true);
       // The members button here is the chat's own, but with its own remembered setting (Community's is left alone):
       // caught on the way down so Community's handler never sees it.
       // Sent (button or Enter): check straight away, so a chat kept open after the session goes as soon as the message is out.
@@ -62065,7 +62110,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
     function minBtn() {
       var head = document.querySelector('#dcx-root .dcx-main-head'); if (!head || head.querySelector('.st-sc-minbtn')) return;
       var b = document.createElement('button'); b.type = 'button'; b.className = 'dcx-members-toggle st-sc-minbtn'; b.style.marginLeft = '10px';
-      b.title = T2('Minimise the chat', 'Minimizar el chat'); b.setAttribute('aria-label', b.title); b.innerHTML = DOWN;
+      b.title = T2('Hide the chat', 'Ocultar el chat'); b.setAttribute('aria-label', b.title); b.innerHTML = DOWN;
       b.addEventListener('click', function () { setMin(true); });
       head.appendChild(b);
     }
@@ -62093,6 +62138,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       } catch (e) { return ''; }
     }
     function paintBar() {
+      try { if (window.__stPlatChat && window.__stPlatChat.badge) window.__stPlatChat.badge(isMin() ? unread : 0); } catch (e) {}
       if (!bar) return;
       var nw = bar.querySelector('.st-sc-new'); nw.hidden = !unread; nw.textContent = unread + ' ' + T2('new', 'nuevos');
       bar.querySelector('.st-sc-last').innerHTML = lastLine();
@@ -62118,13 +62164,14 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       [150, 500, 1000, 1800, 2600].forEach(function (ms) { pinT.push(setTimeout(go, ms)); });
     }
     function setMin(on) {
-      try { if (on) localStorage.setItem(MIN_KEY, '1'); else localStorage.removeItem(MIN_KEY); } catch (e) {}
+      try { if (window.__stPlatChat && window.__stPlatChat.set) window.__stPlatChat.set(!on); } catch (e) {}
       seen = null; unread = 0; if (on) countNew();
       apply();
       if (!on) toLatest();
     }
     function apply() {
       if (!host) return; var m = isMin();
+      if (!m) { seen = null; unread = 0; try { if (window.__stPlatChat && window.__stPlatChat.badge) window.__stPlatChat.badge(0); } catch (e) {} }
       host.classList.toggle('min', m);
       try { slot.inert = m; bar.parentNode.inert = !m; } catch (e) {}   // what is folded away can't be tabbed into
       if (m) { countNew(); paintBar(); }
@@ -62133,26 +62180,34 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       ensure();
       if (!host.hidden && window.STCommunity && STCommunity.embedded && STCommunity.embedded()) { apply(); return; }
       if (!window.STCommunity || !STCommunity.embedIn) return;
-      STCommunity.embedIn(slot, 'session-chat', function (yes) {
+      var slug = 'session-chat'; try { slug = localStorage.getItem('st_platchat_ch') || 'session-chat'; } catch (e) {}   // the channel it was left on
+      var done = function (yes) {
         ok = yes;
         if (!yes) { host.hidden = true; try { STCommunity.unembed(); } catch (e) {} return; }
-        host.hidden = false; minBtn(); watch(); apply();
+        host.hidden = false; try { var r0 = document.getElementById('dcx-root'); if (r0) r0.classList.add('dcx-plat'); } catch (e) {}
+        minBtn(); watch(); apply();
         if (!isMin()) toLatest();
         try { var _r = document.getElementById('dcx-root'), _on = localStorage.getItem('st_sesschat_members') === '1'; if (_r) _r.classList.toggle('sc-members-on', _on); var _mt = document.getElementById('dcx-mtoggle'); if (_mt) _mt.setAttribute('aria-pressed', _on ? 'true' : 'false'); } catch (x) {}
+      };
+      STCommunity.embedIn(slot, slug, function (yes) {
+        if (!yes && slug !== 'session-chat') { try { localStorage.removeItem('st_platchat_ch'); } catch (e) {} slug = 'session-chat'; STCommunity.embedIn(slot, slug, done); return; }
+        done(yes);
       });
     }
     function hide() {
       if (!host || host.hidden) return;
       host.hidden = true;
-      try { var _r2 = document.getElementById('dcx-root'); if (_r2) _r2.classList.remove('sc-members-on'); } catch (e) {}
+      try { var _r2 = document.getElementById('dcx-root'); if (_r2) _r2.classList.remove('sc-members-on', 'dcx-plat', 'side-open'); } catch (e) {}
       try { if (STCommunity.embedded && STCommunity.embedded()) STCommunity.unembed(); } catch (e) {}
     }
     function sync() {
       try {
         if (!signedIn()) { hide(); return; }
-        if (liveUi()) { if (ok !== false) show(); return; }
-        // the session ended (or another tab) with a message half-written: keep it on screen here until it is sent or cleared
-        if (host && !host.hidden && reviewOpen() && draft()) return;
+        if (liveUi()) {
+          if (ok !== false) show();
+          try { if (host && !host.hidden && STCommunity.curSlug) { var cs = STCommunity.curSlug(); if (cs) localStorage.setItem('st_platchat_ch', cs); } } catch (e) {}   // the channel it is on, for next time
+          return;
+        }
         hide();
       } catch (e) {}
     }
@@ -80480,7 +80535,7 @@ window.__stTM = (function () {
       return '<div class="stt-k">EUR/USD · LONG · 5m <b class="g">+0.8R</b></div><svg class="stt-chart" viewBox="0 0 300 124" aria-hidden="true">'
         +'<line x1="0" x2="240" y1="16" y2="16" stroke="#4ECD8B" stroke-width="1.2"/><line x1="0" x2="240" y1="80" y2="80" stroke="#9a96a6" stroke-dasharray="4 4"/><line x1="0" x2="240" y1="112" y2="112" stroke="#E56767" stroke-width="1.2"/><line x1="0" x2="240" y1="42" y2="42" stroke="rgba(255,255,255,.35)" stroke-dasharray="2 3"/>'
         +k+tag(16,'TP','#4ECD8B','#08140e')+tag(42,'1.16182','#E8E6EA','#111')+tag(80,T('ENTRY','ENTRADA'),'#3a3744','#E8E6EA')+tag(112,'SL','#E56767','#1a0808')+'</svg>'
-        +'<div class="stt-chips"><span class="stt-chip r">'+T('Red news in 1h 12m','Noticia roja en 1h 12m')+'</span><span class="stt-chip">'+T('Daily stop: £620 left','Stop diario: quedan £620')+'</span></div>';
+        +'<div class="stt-chips"><span class="stt-chip r">'+T('Red news in 1h 12m','Noticia roja en 1h 12m')+'</span><span class="stt-chip">'+T('Daily stop: £620 left','Stop diario: quedan £620')+'</span><span class="stt-chip">#session-chat · '+T('3 new','3 nuevos')+'</span></div>';
     }
     if(name==='review') return '<div class="stt-k">'+T('TRADE LOG','REGISTRO DE OPERACIONES')+'</div><div class="stt-tr"><span>#1</span><span>EUR/USD</span><span class="stt-res g">'+T('WIN','GANADA')+'</span><span class="g">+2.0R</span><span class="g">+£980</span></div><div class="stt-tr"><span>#2</span><span>EUR/USD</span><span class="stt-res r">'+T('LOSS','PERDIDA')+'</span><span class="r">−1.0R</span><span class="r">−£510</span></div><div class="stt-chips" style="margin-top:10px"><span class="stt-chip">'+T('Import from MT5','Importar de MT5')+'</span><span class="stt-chip g">'+T('Execution: flawless','Ejecución: impecable')+'</span></div>';
     if(name==='nudge') return '<div class="stt-nudge"><div class="stt-k" style="color:#E8CF63">'+T('NUDGE','AVISO')+'</div><div class="stt-nt">'+T('Re-entered 4 minutes after a loss on EURUSD. Is this the plan, or the last trade talking?','Has vuelto a entrar 4 minutos después de una pérdida en EURUSD. ¿Es el plan, o habla la última operación?')+'</div><div class="stt-pill sm">'+T('Got it','Entendido')+'</div></div><div class="stt-chips" style="margin-top:10px"><span class="stt-chip g">'+T('Stop moved to break-even','Stop movido a break-even')+'</span><span class="stt-chip">'+T('On your phone too','También en tu móvil')+'</span></div>';
@@ -80506,15 +80561,15 @@ window.__stTM = (function () {
               : _t('A quick look around: seventeen short steps through everything the app does for you. You can take it again any time from Settings, Profile.','Un vistazo rápido: diecisiete pasos cortos por todo lo que la app hace por ti. Puedes repetirlo cuando quieras desde Ajustes, Perfil.') },
       { sel:'.tab[data-page="bias"]', pre:showTab('bias'), pv:'bias', ch:_t('PLAN YOUR DAY','PLANIFICA TU DÍA'), t:_t('Session Bias','Sesgo de sesión'),
         b:_t('Before the session, write your read for each symbol: direction, structure and where price is. Then post it. It is your plan, and your review is checked against it later.','Antes de la sesión, escribe tu lectura de cada símbolo: dirección, estructura y dónde está el precio. Luego publícala. Es tu plan, y tu revisión se compara con él después.') },
-      // Session Live is the Session Review tab during the session (Nestor, 19 Oct 2026: "this isnt true, session review tab turns into session live")
-      { sel:'.tab[data-page="review"]', pre:showTab('review'), pv:'live', ch:_t('TRADE THE SESSION','OPERA LA SESIÓN'), t:_t('Session Live','Sesión en vivo'),
-        b:_t('When your session starts, the Session Review tab turns into Session Live: the session clock, red news coming up, what is left of your risk budget, and a live chart of every open trade with your entry, stop and target on it. When the session ends, it is Session Review again.','Cuando empieza tu sesión, la pestaña Revisión de Sesión se convierte en Sesión en Vivo: el reloj de la sesión, las noticias rojas que vienen, lo que queda de tu presupuesto de riesgo y un gráfico en vivo de cada operación abierta con tu entrada, stop y objetivo. Cuando termina la sesión, vuelve a ser Revisión de Sesión.') },
       { sel:'.tab[data-page="review"]', pre:showTab('review'), pv:'review', ch:_t('LOG AND REVIEW','REGISTRA Y REVISA'), t:_t('Session Review','Revisión de sesión'),
         b:_t('After the session, log your trades: by hand, with Import from MT5, or automatically with the EA. Grade how well you executed, then post it, and your trades join your Series of 10.','Después de la sesión, registra tus operaciones: a mano, con Importar de MT5 o automáticamente con el EA. Valora tu ejecución, publícala y tus operaciones pasan a tu Serie de 10.') },
       { sel:null, pre:showTab('review'), pv:'nudge', ch:_t('LOG AND REVIEW','REGISTRA Y REVISA'), t:_t('Live nudges and trade alerts','Avisos en vivo y alertas de operación'),
         b:_t('With the EA running, the app watches your trades as they happen: a re-entry right after a loss, a losing run, red news coming, your stop moving to break-even, your target or stop being hit. A card and a chime, and on your phone too.','Con el EA activo, la app vigila tus operaciones en directo: volver a entrar justo tras una pérdida, una racha perdedora, una noticia roja que llega, tu stop a break-even, tu objetivo o stop alcanzado. Una tarjeta y un sonido, también en tu móvil.') },
       { sel:'.tab[data-page="livecharts"]', pre:closeAll(), pv:'charts', ch:_t('TRADE AND PRACTISE','OPERA Y PRACTICA'), t:_t('Charts: Live and Replay','Gráficos: En vivo y Replay'),
         b:_t('Live is your MT5 prices, tick by tick: draw, set alerts, and place or manage your trades from here. Replay is any day of the past year, candle by candle, to practise: those trades go in your Replay account and nothing is sent to MT5. Switch between them at the top of the tab.','En vivo son tus precios de MT5, tick a tick: dibuja, pon alertas, y abre o gestiona tus operaciones desde aquí. Replay es cualquier día del último año, vela a vela, para practicar: esas operaciones van a tu cuenta de Replay y no se envía nada a MT5. Cambia entre los dos arriba de la pestaña.') },
+      // Chat and Today beside the chart (25 Oct 2026: Session Live's tab removed; its news, risk budget and #session-chat are on Charts)
+      { sel:'.tab[data-page="livecharts"]', pre:closeAll(), pv:'live', ch:_t('TRADE THE SESSION','OPERA LA SESIÓN'), t:_t('Chat and Today, beside the chart','Chat y Hoy, junto al gráfico'),
+        b:_t('While you trade on Charts, two icons on the right open a column beside the chart: Today, with your session clock, red news coming up and what is left of your risk budget, and Chat, the community chat with its channels and DMs, opening on #session-chat.','Mientras operas en Gráficos, dos iconos a la derecha abren una columna junto al gráfico: Hoy, con el reloj de tu sesión, las noticias rojas que vienen y lo que queda de tu presupuesto de riesgo, y Chat, el chat de la comunidad con sus canales y mensajes directos, abierto en #session-chat.') },
       { sel:'.tab[data-page="stats"]', pre:showTab('stats'), pv:'series', ch:_t('MEASURE YOUR EDGE','MIDE TU VENTAJA'), t:_t('Series of 10','Serie de 10'),
         b:_t('Your trades in batches of ten, every box showing its R. Ten trades is enough to judge a plan and short enough to fix it. Finish a series and share it as a card.','Tus operaciones en bloques de diez, cada casilla con su R. Diez operaciones bastan para juzgar un plan y son pocas para corregirlo. Termina una serie y compártela como tarjeta.') },
       { sel:'.tab[data-page="trades"]', pre:showTab('trades'), pv:'stats', ch:_t('MEASURE YOUR EDGE','MIDE TU VENTAJA'), t:_t('Statistics','Estadísticas'),
@@ -91129,6 +91184,48 @@ window.__stAZ = (function () {
   .pl-rb { width: 30px; height: 30px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--pl-dim); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
   .pl-rb svg { width: 18px; height: 18px; } .pl-rb.on { background: var(--pl-pane2); color: var(--pl-hi); }
   @media (hover: hover) { .pl-rb:hover { color: var(--pl-hi); } }
+  /* Today and Chat (Nestor, 25 Oct 2026): their own column between the chart and the Watchlist, its width by its left edge */
+  .plat-side, .pl-rsep, .pl-rbn { display: none; }
+  .stpr-win.plat:not(.plph) .pl-rsep { display: block; flex: none; width: 22px; height: 1px; margin: 4px 0; background: var(--pl-line2); }
+  .pl-rb { position: relative; }
+  .pl-rbn:not([hidden]) { display: block; position: absolute; top: 0; right: -2px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; background: #f23645; color: #fff; font: 700 9.5px/15px var(--pl-font); font-style: normal; text-align: center; box-sizing: border-box; pointer-events: none; }
+  .stpr-win.plat.pl-side { grid-template-columns: 52px minmax(0, 1fr) var(--pl-sw, 380px) 300px 40px; grid-template-areas: "top top top top top" "left chart side right rail" "left bottom side right rail" "foot foot foot foot foot"; }
+  .stpr-win.plat.pl-side.pl-nor { grid-template-columns: 52px minmax(0, 1fr) var(--pl-sw, 380px) 40px; grid-template-areas: "top top top top" "left chart side rail" "left bottom side rail" "foot foot foot foot"; }
+  @media (max-width: 1140px) { .stpr-win.plat.pl-side:not(.pl-nor) { grid-template-columns: 52px minmax(0, 1fr) var(--pl-sw, 380px) 264px 40px; } }
+  .stpr-win.plat.pl-side:not(.plph) > .plat-side { grid-area: side; display: flex; flex-direction: column; gap: 4px; min-height: 0; min-width: 0; position: relative; }
+  .pl-swd { position: absolute; left: -6px; top: 0; bottom: 0; width: 8px; z-index: 5; cursor: col-resize; touch-action: none; }
+  .pl-swd::after { content: ''; position: absolute; left: 3px; top: 50%; width: 2px; height: 36px; margin-top: -18px; border-radius: 2px; background: var(--pl-line2); opacity: 0; transition: opacity .15s; }
+  @media (hover: hover) { .pl-swd:hover::after { opacity: 1; } }
+  .plat-side > .pl-card { background: var(--pl-bg); border-radius: 6px; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .plat-side > .pl-td { flex: 0 1 auto; max-height: 46%; }
+  .stpr-win.plat.pl-noch .plat-side > .pl-td { flex: 1 1 auto; max-height: none; }
+  .stpr-win.plat.pl-notd .plat-side > .pl-td, .stpr-win.plat.pl-noch .plat-side > .pl-ch { display: none; }
+  .plat-side > .pl-ch { flex: 1 1 0; }
+  .pl-chslot { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  .pl-chslot .st-sesschat { margin: 0; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; animation: none; }
+  .pl-chslot .st-sc-barf { display: none !important; }
+  .pl-chslot .st-sc-slot { flex: 1 1 auto; min-height: 0; display: flex !important; opacity: 1 !important; }
+  .pl-chslot .st-sc-slotin { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: visible; }
+  .pl-tdb { flex: 1 1 auto; min-height: 0; overflow: auto; scrollbar-width: thin; padding: 0 12px 10px; }
+  .pl-tdsec { padding: 9px 0 10px; border-top: 1px solid var(--pl-line); } .pl-tdsec:first-child { border-top: 0; padding-top: 2px; }
+  .pl-tdk { margin-bottom: 6px; color: var(--pl-dim); font-size: 11.5px; }
+  .pl-tdr { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; font-size: 12.5px; } .pl-tdr span { color: var(--pl-dim); } .pl-tdr b { font-weight: 500; text-align: right; } .pl-tdr b.u { color: #22ab94; } .pl-tdr b.d { color: var(--pl-dn); }
+  .pl-tde { margin: 0; color: var(--pl-dim); font-size: 12.5px; line-height: 1.45; }
+  .pl-tdl { padding: 0; border: 0; background: transparent; color: var(--pl-blue); font: inherit; cursor: pointer; } .stpr-win.plat:not(.pl-lt) .pl-tdl { color: #5b8bff; }
+  .pl-tdnews { display: flex; flex-direction: column; gap: 6px; }
+  .pl-tdnews .slx-news { width: auto; max-width: none; padding: 8px 10px; border-radius: 4px; background: var(--pl-pane); border: 1px solid var(--pl-line); }
+  .pl-tdnews .slx-l { margin-bottom: 3px; font-size: 9.5px; } .pl-tdnews .slx-v { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 6px; font-size: 13px; color: var(--pl-txt); } .pl-tdnews .slx-v small { margin-left: 0; font-size: 11px; color: var(--pl-dim); white-space: nowrap; }
+  .pl-tdnews .slx-news.has .slx-v, .pl-tdnews .slx-news.has .slx-l { color: var(--pl-dn); }
+  .pl-tdrb .slx-rb { display: grid; grid-template-columns: 1fr !important; gap: 1px; background: var(--pl-line); border: 1px solid var(--pl-line); border-radius: 4px; overflow: hidden; }
+  .pl-tdrb .slx-c { background: var(--pl-bg); padding: 8px 10px; } .pl-tdrb .slx-l { font-size: 9.5px; margin-bottom: 4px; } .pl-tdrb .slx-v { font-size: 14px; color: var(--pl-txt); } .pl-tdrb .slx-v small { font-size: 11px; color: var(--pl-dim); }
+  .pl-tdrb .slx-bar { background: var(--pl-pane2); }
+  .ph-chs, .ph-chb { display: none; }
+  .stpr-win.plph .ph-chb { display: inline-flex; position: relative; align-items: center; justify-content: center; width: 38px; height: 38px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--pl-txt); }
+  .stpr-win.plph .ph-chb svg { width: 21px; height: 21px; } .stpr-win.plph.ph-chaton .ph-chb { color: var(--pl-hi); background: var(--pl-pane); }
+  .stpr-win.plph.ph-chaton .ph-chs { display: flex; flex-direction: column; position: absolute; left: 0; right: 0; bottom: 0; top: 7%; z-index: 26; background: var(--pl-bg); border-top: 1px solid var(--pl-line2); border-radius: 14px 14px 0 0; box-shadow: 0 -10px 30px rgba(0,0,0,.45); padding-bottom: env(safe-area-inset-bottom); }
+  .ph-chh { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 6px 0 16px; flex: none; border-bottom: 1px solid var(--pl-line); } .ph-chh b { font-size: 15px; }
+  .ph-chx { margin-left: auto; width: 38px; height: 38px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--pl-dim); font-size: 26px; line-height: 1; cursor: pointer; }
+  .ph-chslot { flex: 1 1 auto; min-height: 0; }
   /* Positions / Orders / History / Account */
   .stpr-win.plat > .lc-tb { grid-area: bottom; margin: 0; border: 0; border-radius: 6px !important; background: var(--pl-bg); display: flex; flex-direction: column; min-height: 0; height: auto !important; overflow: hidden; position: relative; }
   .stpr-win.plat > .lc-tb[hidden] { display: none; }
@@ -96623,13 +96720,15 @@ window.__stAZ = (function () {
     tm: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 9l4-3 4 3M8 15l4 3 4-3"/></svg>',
     sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg>',
     moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>' };
+  PL_I.today = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4M7.5 13.5h4M7.5 16.5h7"/></svg>';
+  PL_I.chat = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a7.5 7.5 0 0 1-10.9 6.7L4 20l1.4-4.4A7.5 7.5 0 1 1 20 12z"/></svg>';
   var PL_LT = { bgT: 'solid', bg: '#ffffff', vgc: '#f0f3fa', hgc: '#f0f3fa', tx: '#131722', ln: '#e0e3eb', cxc: '#9598a1', wmc: 'rgba(19,23,34,0.06)' };
   var PL_RG = [['1D', 1, 86400], ['5D', 5, 5 * 86400], ['1M', 30, 31 * 86400], ['3M', 60, 92 * 86400], ['6M', 240, 183 * 86400], ['YTD', 1440, -1], ['1Y', 1440, 366 * 86400], ['All', 10080, 0]];
   var PL_CUR = { GBP: '£', USD: '$', EUR: '€', JPY: '¥', AUD: 'A$', CAD: 'C$', NZD: 'NZ$', CHF: 'CHF ' };
   var PL_NM = { EUR: 'Euro', USD: 'U.S. Dollar', GBP: 'British Pound', JPY: 'Japanese Yen', CHF: 'Swiss Franc', AUD: 'Australian Dollar', CAD: 'Canadian Dollar', NZD: 'New Zealand Dollar', XAU: 'Gold', XAG: 'Silver', BTC: 'Bitcoin', ETH: 'Ethereum' };
   var PL_IX = { US100: 'Nasdaq 100', NAS100: 'Nasdaq 100', USTEC: 'Nasdaq 100', US30: 'Dow Jones 30', DJ30: 'Dow Jones 30', WS30: 'Dow Jones 30', US500: 'S&P 500', SPX500: 'S&P 500', GER40: 'DAX 40', DE40: 'DAX 40',
     UK100: 'FTSE 100', JP225: 'Nikkei 225', JPN225: 'Nikkei 225', FRA40: 'CAC 40', EU50: 'Euro Stoxx 50', DXY: 'U.S. Dollar Index', USOIL: 'WTI Crude Oil', UKOIL: 'Brent Crude Oil' };
-  function plSt(){ if (!PL.st) { var o = {}; try { o = JSON.parse(localStorage.getItem('st_plat') || '{}') || {}; } catch (e) {} PL.st = Object.assign({ wl: true, tm: true, bh: 150, fold: false, tab: 'pos' }, o); } return PL.st; }
+  function plSt(){ if (!PL.st) { var o = {}; try { o = JSON.parse(localStorage.getItem('st_plat') || '{}') || {}; } catch (e) {} PL.st = Object.assign({ wl: true, tm: true, td: false, ch: false, sw: 380, bh: 150, fold: false, tab: 'pos' }, o); } return PL.st; }
   function plSave(){ try { localStorage.setItem('st_plat', JSON.stringify(PL.st)); } catch (e) {} }
   function plWant(){ var win = $('stpr-win'); if (window.__stPlatOff || !win || win.ownerDocument !== document || !win.classList.contains('lc')) return '';   // __stPlatOff: the tests of the window as it was
     if (phone() || landPhone()) return (LV.inl && !LV.max) ? 'ph' : '';   // a phone: the phone layout, in the tab
@@ -96639,10 +96738,12 @@ window.__stAZ = (function () {
   function plClasses(){ var win = $('stpr-win'), st = plSt(); if (!win) return; var cl = lightBg(); if (win.classList.contains('pl-clt') !== cl) win.classList.toggle('pl-clt', cl);   // the chart's own background: what sits on it
     if (PL.ph) { var l0 = plLight(); if (win.classList.contains('pl-lt') !== l0) win.classList.toggle('pl-lt', l0); return; }   // a phone: its theme only
     var tb = $('lc-tb'), notb = !tb || tb.hidden || tb.parentNode !== win;
-    var lt = plLight(), want = { 'pl-nowl': !st.wl, 'pl-notm': !st.tm, 'pl-nor': !st.wl && !st.tm, 'pl-folded': !!st.fold && !notb, 'pl-notb': notb, 'pl-lt': lt, 'pl-one': (CFG.layout || 1) <= 1 };
+    var lt = plLight(), want = { 'pl-nowl': !st.wl, 'pl-notm': !st.tm, 'pl-nor': !st.wl && !st.tm, 'pl-folded': !!st.fold && !notb, 'pl-notb': notb, 'pl-lt': lt, 'pl-one': (CFG.layout || 1) <= 1, 'pl-side': !!st.td || !!st.ch, 'pl-notd': !st.td, 'pl-noch': !st.ch };
     for (var k in want) if (win.classList.contains(k) !== want[k]) win.classList.toggle(k, want[k]);
     var bh = Math.round(Math.max(80, +st.bh || 150)) + 'px'; if (win.style.getPropertyValue('--pl-bh') !== bh) win.style.setProperty('--pl-bh', bh);
-    var r = PL.el.rail; if (r) { r.querySelector('[data-plr="wl"]').classList.toggle('on', !!st.wl); r.querySelector('[data-plr="tm"]').classList.toggle('on', !!st.tm); } }
+    var sw = Math.round(Math.min(640, Math.max(280, +st.sw || 380))) + 'px'; if (win.style.getPropertyValue('--pl-sw') !== sw) win.style.setProperty('--pl-sw', sw);
+    var r = PL.el.rail; if (r) { r.querySelector('[data-plr="wl"]').classList.toggle('on', !!st.wl); r.querySelector('[data-plr="tm"]').classList.toggle('on', !!st.tm);
+      var r3 = r.querySelector('[data-plr="td"]'), r4 = r.querySelector('[data-plr="ch"]'); if (r3) r3.classList.toggle('on', !!st.td); if (r4) r4.classList.toggle('on', !!st.ch); } }
   function platBuild(win){ var D = win.ownerDocument, E = PL.el, mk = function(cls, html){ var d = D.createElement('div'); d.className = cls; d.innerHTML = html || ''; win.appendChild(d); return d; };
     E.top = mk('plat-top', '<span class="pl-mark">' + PL_MARK + '</span><span class="pl-sep pl-s1"></span><span class="pl-tfs" role="group"></span><span class="pl-sep pl-s2"></span>'
       + '<span class="pl-si"><button type="button" class="pl-chip" data-plsi="1"><i></i><span>Session Indicator</span></button><button type="button" class="pl-chipv" data-plsiset="1">' + PL_I.chev + '</button></span><span class="pl-sep pl-s3"></span>'
@@ -96652,6 +96753,15 @@ window.__stAZ = (function () {
     E.cur = D.createElement('button'); E.cur.type = 'button'; E.cur.className = 'stpr-ico pl-cur'; E.cur.setAttribute('data-plcur', '1'); E.cur.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 4v16M4 12h16"/></svg>'; E.left.appendChild(E.cur);
     E.right = mk('plat-right', '<div class="pl-card pl-wl"><div class="pl-h"><span class="pl-wlt"></span><small class="pl-wls"></small></div><div class="pl-wlh"><span></span><span></span><span>Chg%</span></div><div class="pl-wlb"></div></div><div class="pl-card pl-tmc"></div>');
     E.rail = mk('plat-rail', '<button type="button" class="pl-rb" data-plr="wl">' + PL_I.list + '</button><button type="button" class="pl-rb" data-plr="tm">' + PL_I.tm + '</button>');
+    // Today and Chat (Nestor, 25 Oct 2026: "can we add the community icon here so i can chat whilst i look at the chart?"; Session Live's
+    // tab is gone, so its news, bias and risk budget sit here too): their own column between the chart and the Watchlist
+    E.rail.insertAdjacentHTML('beforeend', '<span class="pl-rsep"></span><button type="button" class="pl-rb" data-plr="td">' + PL_I.today + '</button><button type="button" class="pl-rb pl-rbch" data-plr="ch">' + PL_I.chat + '<i class="pl-rbn" hidden></i></button>');
+    E.side = mk('plat-side', '<div class="pl-swd" data-plsw="1"></div><div class="pl-card pl-td"><div class="pl-h"><span class="pl-tdt"></span><small class="pl-tds"></small></div><div class="pl-tdb"></div></div><div class="pl-card pl-ch"><div class="pl-chslot"></div></div>');
+    win.addEventListener('pointerdown', function(e){ var hd = e.target && e.target.closest && e.target.closest('[data-plsw]'); if (!hd || !PL.on || PL.ph) return; e.preventDefault();
+      var st = plSt(), x0 = e.clientX, w0 = E.side.getBoundingClientRect().width;
+      var mv2 = function(ev){ var w = Math.round(Math.min(640, Math.max(280, w0 + (x0 - ev.clientX)))); st.sw = w; win.style.setProperty('--pl-sw', w + 'px'); };
+      var up = function(){ D.removeEventListener('pointermove', mv2); D.removeEventListener('pointerup', up); plSave(); try { lcFit(); } catch (er) {} dirty(); };
+      D.addEventListener('pointermove', mv2); D.addEventListener('pointerup', up); });
     E.foot = mk('plat-foot', '<span class="pl-rg">' + PL_RG.map(function(r){ return '<button type="button" data-plrg="' + r[0] + '">' + r[0] + '</button>'; }).join('') + '</span>');
     E.tfs = E.top.querySelector('.pl-tfs'); E.si = E.top.querySelector('.pl-si'); E.rp = E.top.querySelector('.pl-rp'); E.exec = E.top.querySelector('.pl-exec'); E.acct = E.top.querySelector('.pl-acct'); E.theme = E.top.querySelector('.pl-theme');
     E.wlb = E.right.querySelector('.pl-wlb'); E.wls = E.right.querySelector('.pl-wls'); E.tmc = E.right.querySelector('.pl-tmc');
@@ -96668,11 +96778,11 @@ window.__stAZ = (function () {
     PL.on = true; win.classList.add('plat'); try { document.body.classList.add('st-plat'); } catch (e) {} plClasses(); placeMM(); try { tbPaint(); } catch (e) {} lcFit(); platPaint();
     try { satBarWatch(); if (tbObs && !PL.obs) { tbObs.observe(E.left, { subtree: true, attributes: true, childList: true, characterData: true }); PL.obs = true; } } catch (e) {}
     if (S && S.live) { try { paintMM(); linesAll(); } catch (e) {} } dirty(); }
-  function platOff(){ var win = $('stpr-win'); PL.on = false; PL.ph = false; PH.open = false; PH.nav = false; try { document.body.classList.remove('st-plat', 'st-plph'); } catch (e) {}
+  function platOff(){ var win = $('stpr-win'); PL.on = false; PL.ph = false; PH.open = false; PH.nav = false; PH.chat = false; try { document.body.classList.remove('st-plat', 'st-plph'); } catch (e) {}
     panes.forEach(function(p){ if (p._plF) { p._plF = 0; try { p.chart.applyOptions({ layout: { fontFamily: "'AppNum','DM Mono',monospace" } }); } catch (e) {} } });
     for (var i = PL.moved.length - 1; i >= 0; i--) { var m = PL.moved[i]; try { if (m.n && m.n.parentNode === m.p) m.p.insertBefore(m.el, m.n); else m.p.appendChild(m.el); } catch (e) {} }
     PL.moved = []; PL.kids = null;
-    if (win) { win.classList.remove('plat', 'plph', 'ph-open', 'ph-navon', 'pl-nowl', 'pl-notm', 'pl-nor', 'pl-folded', 'pl-notb', 'pl-lt', 'pl-clt', 'pl-one'); win.style.removeProperty('--pl-bh'); win.style.width = ''; win.style.marginLeft = ''; win.style.height = ''; }
+    if (win) { win.classList.remove('plat', 'plph', 'ph-open', 'ph-navon', 'pl-nowl', 'pl-notm', 'pl-nor', 'pl-folded', 'pl-notb', 'pl-lt', 'pl-clt', 'pl-one', 'pl-side', 'pl-notd', 'pl-noch', 'ph-chaton'); win.style.removeProperty('--pl-bh'); win.style.removeProperty('--pl-sw'); win.style.width = ''; win.style.marginLeft = ''; win.style.height = ''; }
     placeMM(); try { tbPaint(); } catch (e) {} lcFit(); if (S) { try { paintMM(); linesAll(); } catch (e) {} } dirty(); }
   // the market ticker in the platform's theme while the Charts tab shows it light (its own widget: built again only when that changes)
   // the Trade Manager is never cut: the Watchlist above it gives way, down to three rows; past that the ticket's rows scroll under a pinned Execute
@@ -96697,6 +96807,31 @@ window.__stAZ = (function () {
   // the browser window resized on Charts: the platform sits under the tab row again, all of it on screen (lcSnap, as when the tab opens)
   try { window.addEventListener('resize', function(){ clearTimeout(PL.rsT); PL.rsT = setTimeout(function(){ var win = $('stpr-win');
     if (!PL.on || PL.ph || !LV.inl || LV.max || !win || !win.offsetParent || !document.querySelector('#page-livecharts.active')) return; try { lcSnap(); } catch (e) {} }, 150); }); } catch (e) {}
+  // ---- Today (Nestor, 25 Oct 2026, Session Live's tab removed): this morning's bias, the session, red / medium news and bank holidays,
+  //      the risk budget - what the Session Live board showed, in the platform's own look ----
+  //      (this morning's bias is in Check my plan - Nestor, 25 Oct 2026 - so not here)
+  function plTdSess(){ try { if (typeof getSessions !== 'function') return ''; var ss = getSessions() || [], li = (typeof liveSessionIndex === 'function') ? liveSessionIndex() : -1, now = new Date(), nm = now.getHours() * 60 + now.getMinutes();
+      var mm = function(x){ var a = String(x || '').split(':'); return (+a[0] || 0) * 60 + (+a[1] || 0); }, inT = function(m){ m = Math.max(0, Math.round(m)); return m >= 60 ? Math.floor(m / 60) + 'h ' + (m % 60) + 'm' : m + ' min'; };
+      if (li >= 0 && ss[li]) { var e = mm(ss[li].end), left = e >= nm ? e - nm : e + 1440 - nm; return (ss[li].name || T('Session', 'Sesión')) + ' · ' + T('live, ' + inT(left) + ' left', 'en vivo, quedan ' + inT(left)); }
+      var best = null; ss.forEach(function(x){ var a = mm(x.start), d = a > nm ? a - nm : a + 1440 - nm; if (!best || d < best.d) best = { x: x, d: d }; });
+      return best ? (best.x.name || T('Session', 'Sesión')) + ' ' + T('in ' + inT(best.d), 'en ' + inT(best.d)) : ''; } catch (e) { return ''; } }
+  function plTdPaint(){ var E = PL.el; if (!PL.on || PL.ph || !E.side || !plSt().td) return; plTxt(E.side.querySelector('.pl-tdt'), T('Today', 'Hoy')); plTxt(E.side.querySelector('.pl-tds'), plTdSess());
+    var h = '', nh = '', bh = ''; try { nh = window.__stLiveBox && window.__stLiveBox.newsHtml ? window.__stLiveBox.newsHtml() : ''; } catch (e) {} try { bh = window.__stLiveBox && window.__stLiveBox.budgetHtml ? window.__stLiveBox.budgetHtml() : ''; } catch (e) {}
+    if (nh) h += '<div class="pl-tdsec"><div class="pl-tdk">' + esc(T('News', 'Noticias')) + '</div><div class="pl-tdnews">' + nh + '</div></div>';
+    if (bh) h += '<div class="pl-tdsec"><div class="pl-tdk">' + esc(T('Risk budget', 'Presupuesto de riesgo')) + '</div><div class="pl-tdrb">' + bh + '</div></div>';
+    if (!h) h = '<p class="pl-tde">' + esc(T('Nothing due today.', 'Nada pendiente hoy.')) + '</p>';
+    plSet(E.side.querySelector('.pl-tdb'), h); }
+  // the chat: the Community's own (STCommunity.embedIn, moved in by the session-chat module) - its slot here on a computer, a sheet on a phone
+  function plSideSync(){ try { if (window.__stSessChat) window.__stSessChat.sync(); } catch (e) {} if (PL.on && !PL.ph) { try { plTdPaint(); } catch (e) {} } }
+  function plChatPh(on){ PH.chat = !!on; var win = $('stpr-win'); if (win) win.classList.toggle('ph-chaton', PH.chat); if (PH.chat && PH.open) plSheet(false); plSideSync(); }
+  window.__stPlatChat = {
+    slot: function(){ if (!PL.on || !document.querySelector('#page-livecharts.active')) return null; if (PL.ph) return (PH.el && PH.el.chslot) || null; return PL.el.side ? PL.el.side.querySelector('.pl-chslot') : null; },
+    open: function(){ if (!PL.on) return false; return PL.ph ? !!PH.chat : !!plSt().ch; },
+    set: function(on){ if (!PL.on) return; if (PL.ph) { if (!!PH.chat !== !!on) plChatPh(on); return; } var st = plSt(); if (!!st.ch === !!on) return; st.ch = !!on; plSave(); plClasses(); platPaint(); plRightFit(); dirty(); },
+    badge: function(n){ n = +n || 0; var tx = n > 99 ? '99+' : String(n);
+      [PL.el.rail && PL.el.rail.querySelector('.pl-rbch .pl-rbn'), PH.el && PH.el.chb && PH.el.chb.querySelector('.pl-rbn')].forEach(function(x){ if (!x) return; if (x.hidden !== !n) x.hidden = !n; if (n && x.textContent !== tx) x.textContent = tx; }); },
+    today: function(){ try { plTdPaint(); } catch (e) {} return PL.el.side ? PL.el.side.querySelector('.pl-tdb').innerHTML : ''; } };
+  try { setInterval(function(){ if (PL.on && !PL.ph && plSt().td) { try { plTdPaint(); } catch (e) {} } }, 15000); } catch (e) {}
   function plTb2Html(src){ return (PL.on && PL.kids) ? PL.kids.map(function(k){ return k.outerHTML || ''; }).join('') : src.innerHTML; }
   function plSet(el, h){ var k = plKey(h); if (el && el._h !== k) { el._h = k; el.innerHTML = h; } }
   function plTxt(el, t){ if (el && el.textContent !== t) el.textContent = t; }
@@ -96744,6 +96879,9 @@ window.__stAZ = (function () {
     E.cur.classList.toggle('on', DW.tool === 'none'); var ct = T('Cross: no drawing tool', 'Cruz: sin herramienta de dibujo'); if (E.cur.title !== ct) { E.cur.title = ct; E.cur.setAttribute('aria-label', ct); }
     var r1 = E.rail.querySelector('[data-plr="wl"]'), r2 = E.rail.querySelector('[data-plr="tm"]'), w1 = T('Watchlist', 'Lista'), w2 = 'Trade Manager';
     if (r1.title !== w1) { r1.title = w1; r1.setAttribute('aria-label', w1); } if (r2.title !== w2) { r2.title = w2; r2.setAttribute('aria-label', w2); }
+    var r5 = E.rail.querySelector('[data-plr="td"]'), r6 = E.rail.querySelector('[data-plr="ch"]'), w5 = T('Today: session, news, risk', 'Hoy: sesión, noticias, riesgo'), w6 = T('Chat', 'Chat');
+    if (r5 && r5.title !== w5) { r5.title = w5; r5.setAttribute('aria-label', w5); } if (r6 && r6.title !== w6) { r6.title = w6; r6.setAttribute('aria-label', w6); }
+    try { plTdPaint(); } catch (e) {}
     plWlPaint(); try { lvWlSend(); } catch (e) {} plTopFit(); }
   function plTopFit(){ var E = PL.el, win = $('stpr-win'), top = E.top; if (!PL.on || PL.ph || !top || !win) return; var w = top.clientWidth; if (!w) return;
     var pb = top.querySelector('.pl-plan'), k = w + '|' + (E.acct._h || '') + '|' + win.classList.contains('pl-notm') + '|' + (pb ? pb.hidden : '') + '|' + (E.exec.classList.contains('lock') ? 'L' : (S && S.exec ? 'C' : 'E')) + '|' + (E.tfs._h || '') + '|' + E.si.className + '|' + document.documentElement.lang;
@@ -96753,7 +96891,8 @@ window.__stAZ = (function () {
     while (over() && n < 8) { n++; win.classList.add('pt' + n); }
     PL.pt = n; }
   function plClick(e){ if (!PL.on || PL.ph) return; var t = e.target, b; if (!t || !t.closest) return; if (plRulesClick(t)) return;
-    if ((b = t.closest('[data-plr]'))) { var st = plSt(), k = b.getAttribute('data-plr'); st[k] = !st[k]; plSave(); plClasses(); platPaint(); plRightFit(); dirty(); return; }
+    if (t.closest('[data-pltdgo]')) { var tb0 = document.querySelector('.tab[data-page="bias"]'); if (tb0) tb0.click(); return; }
+    if ((b = t.closest('[data-plr]'))) { var st = plSt(), k = b.getAttribute('data-plr'); st[k] = !st[k]; plSave(); plClasses(); platPaint(); plRightFit(); plSideSync(); dirty(); return; }
     if ((b = t.closest('[data-pltf]'))) { var pa = actPane() || panes[0]; if (pa) setTf(pa.i, +b.getAttribute('data-pltf')); return; }
     if (t.closest('[data-plsi]')) { var p = showTgt(); if (p) { showSet(p, 'mini', !showOn(p, 'mini')); save(); dirty(); platPaint(); } return; }
     if (t.closest('[data-plsiset]')) { var p1 = showTgt(); closeMenu(); miniDialog(null, p1); return; }
@@ -96836,6 +96975,8 @@ window.__stAZ = (function () {
     E.dim = mk('ph-dim'); E.dim.setAttribute('data-phclose', '1');
     E.sheet = mk('ph-sheet', '<button type="button" class="ph-grab" data-phclose="1"></button><div class="ph-pos"></div><div class="ph-tm"></div>');
     E.navs = mk('ph-navs');
+    E.chs = mk('ph-chs', '<div class="ph-chh"><b></b><button type="button" class="ph-chx" data-phchatx="1">&times;</button></div><div class="pl-chslot ph-chslot"></div>'); E.chslot = E.chs.querySelector('.ph-chslot');
+    E.chb = D.createElement('button'); E.chb.type = 'button'; E.chb.className = 'ph-chb'; E.chb.setAttribute('data-phchat', '1'); E.chb.innerHTML = PL_I.chat + '<i class="pl-rbn" hidden></i>';
     E.tm = E.sheet.querySelector('.ph-tm'); E.pos = E.sheet.querySelector('.ph-pos');
     var g = E.sheet.querySelector('.ph-grab'), y0 = null;
     g.addEventListener('pointerdown', function(e){ y0 = e.clientY; }); g.addEventListener('pointerup', function(e){ if (y0 != null && e.clientY - y0 > 30) plSheet(false); y0 = null; });
@@ -96846,6 +96987,7 @@ window.__stAZ = (function () {
     var ic = E.bar.querySelector('.ph-icons');
     mv('stpr-sym', E.bar.querySelector('.ph-symw')); mv('stpr-drawbtn', ic); mv('stpr-undo', ic); mv('stpr-layersbtn', ic); mv('stpr-alertsbtn', ic); mv('stpr-tools', E.tray);
     var cw = $('stpr-cw'); if (cw && E.ov.parentNode !== cw) cw.appendChild(E.ov);
+    if (E.chb && E.chb.parentNode !== ic) ic.appendChild(E.chb);   // Chat, last in the bottom toolbar
     PL.on = true; PL.ph = true; win.classList.add('plat', 'plph'); try { document.body.classList.add('st-plph'); } catch (e) {} plClasses(); placeMM(); lcFit(); platPaint();
     if (S && S.live) { try { paintMM(); linesAll(); } catch (e) {} } dirty(); }
   function plSheet(on){ PH.open = !!on; var win = $('stpr-win'); if (win) win.classList.toggle('ph-open', PH.open); if (on) { PH.nav = false; if (win) win.classList.remove('ph-navon'); try { paintMM(); } catch (e) {} } }
@@ -96856,6 +96998,8 @@ window.__stAZ = (function () {
       h += '<button type="button" class="ph-navt' + (t.classList.contains('active') ? ' on' : '') + '" data-phnavt="' + esc(pg) + '">' + t.innerHTML + '</button>'; });
     PH.el.navs.innerHTML = h; }
   function plPhClick(e){ if (!PL.on || !PL.ph) return; var t = e.target, b; if (!t || !t.closest) return; if (plRulesClick(t)) return;
+    if (t.closest('[data-phchat]')) { plChatPh(!PH.chat); return; }
+    if (t.closest('[data-phchatx]')) { plChatPh(false); return; }
     if (t.closest('[data-phnav]')) { if (window.__stNav && window.__stNav.open) { try { window.__stNav.open(); return; } catch (er) {} } plNav(!PH.nav); return; }
     if (t.closest('[data-phnavx]')) { plNav(false); return; }
     if ((b = t.closest('[data-phnavt]'))) { var pg = b.getAttribute('data-phnavt'); plNav(false); var tb = document.querySelector('.tab[data-page="' + pg + '"]'); if (tb) tb.click(); return; }
@@ -96874,6 +97018,8 @@ window.__stAZ = (function () {
     if (S.exec && PH.open) plSheet(false);   // aiming: the sheet goes down so the stop line can be dragged on the chart
     plTxt(E.bar.querySelector('.ph-live span'), T('LIVE', 'EN VIVO')); var on = lvFresh(); E.bar.querySelector('.ph-live').classList.toggle('on', !!on);
     var pa = actPane() || panes[0], ptf = pa ? ((CFG.tfs && CFG.tfs[pa.i]) || pa.tf) : 0; plTxt(E.bar.querySelector('.ph-tf span'), ptf ? plTfTxt(ptf) : '');
+    if (E.chs) { plTxt(E.chs.querySelector('.ph-chh b'), T('Chat', 'Chat')); var cx = E.chs.querySelector('.ph-chx'), cxt = T('Close the chat', 'Cerrar el chat'); if (cx.title !== cxt) { cx.title = cxt; cx.setAttribute('aria-label', cxt); }
+      var ct2 = T('Chat', 'Chat'); if (E.chb.title !== ct2) { E.chb.title = ct2; E.chb.setAttribute('aria-label', ct2); } }
     var lg = E.bar.querySelector('.ph-logo'), lt = T('Session Terminal: the app\'s tabs', 'Session Terminal: las pestañas de la app'); if (lg.title !== lt) { lg.title = lt; lg.setAttribute('aria-label', lt); }
     var sp = showTgt(), si = !!(sp && showOn(sp, 'mini')), nm = String(lvAcctName()).split(' · ')[0];
     plSet(E.ov, '<span class="ph-sir"><button type="button" class="ph-si' + (si ? ' on' : '') + '" data-phsi="1"><i></i>Session Indicator</button>' + (si ? '<button type="button" class="ph-sig" data-phsiset="1" aria-label="' + esc(T('Session Indicator settings', 'Ajustes del Session Indicator')) + '">' + PL_I.chev + '</button>' : '') + '</span>'

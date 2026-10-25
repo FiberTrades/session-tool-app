@@ -42,24 +42,20 @@
   if (sameDay) {
     data.settings.sessions = [{ name: 'London', start: hm(new Date(now.getTime() - 30 * 60000)), end: hm(new Date(now.getTime() + 40 * 60000)) }];
     data._calendarCache = { events: [ev(soon, 'USD', 'Medium', 'ISM Services PMI')] };
-    var rv = document.querySelector('.tab[data-page="review"]'); if (rv) rv.click(); await W(700);
-    var pr = document.getElementById('page-review'); pr.classList.add('session-live-collapsed');
-    try { window.__stLiveBox.render(); } catch (e) {}
-    await W(400);
-    // on a weekend the app's own session tick takes 'session live' off the page again (failed 1 run in 3 on Saturday 24 Oct 2026, before any change): keep it on and wait for the box, up to 4 s
-    for (var k = 0; k < 40; k++) { var nh0 = document.getElementById('st-livenews'); if (nh0 && !nh0.hidden && nh0.querySelector('.slx-news.med')) break; pr.classList.add('session-live-collapsed'); try { window.__stLiveBox.render(); } catch (e) {} await W(100); }
-    var nh = document.getElementById('st-livenews'), mb = nh.querySelector('.slx-news.med'), kids = Array.from(nh.children).map(function (n) { return n.className; });
-    ok('Session Live shows the yellow box', !nh.hidden && !!mb && /ISM Services PMI \(USD\) · \d\d:\d\d/.test(mb.querySelector('.slx-v').textContent) && /medium news/i.test(mb.querySelector('.slx-l').textContent), [nh.hidden, nh.innerText]);
+    // Since 25 Oct 2026 the boxes are in the Charts platform's Today panel (Session Live's tab removed): its news, drawn the same way
+    var nh = document.createElement('div'); nh.className = 'pl-tdnews'; document.body.appendChild(nh);
+    var paint = function () { try { nh.innerHTML = window.__stLiveBox.newsHtml(); } catch (e) { nh.innerHTML = ''; } };
+    for (var k = 0; k < 40; k++) { paint(); if (nh.querySelector('.slx-news.med')) break; await W(100); }
+    var mb = nh.querySelector('.slx-news.med'), kids = Array.from(nh.children).map(function (n) { return n.className; });
+    ok('Today (Charts) shows the yellow box', !!mb && /ISM Services PMI \(USD\) · \d\d:\d\d/.test(mb.querySelector('.slx-v').textContent) && /medium news/i.test(mb.querySelector('.slx-l').textContent), nh.innerText);
     ok('in the calendar yellow', !!mb && getComputedStyle(mb.querySelector('.slx-v')).color === 'rgb(255, 210, 77)' && getComputedStyle(mb.querySelector('.slx-l')).color === 'rgb(255, 210, 77)', mb && getComputedStyle(mb.querySelector('.slx-v')).color);
     ok('after Red news and before Bank holiday', !!mb && kids.indexOf('slx-news med') > 0 && /^slx-news( has)?$/.test(kids[0]) && (kids.indexOf('slx-news hol') < 0 || kids.indexOf('slx-news hol') > kids.indexOf('slx-news med')), kids);
     ok('its countdown stays on one line', !!mb && getComputedStyle(mb.querySelector('small')).whiteSpace === 'nowrap');
     // a release outside the session: no box at all, not an empty one
     data.settings.sessions = [{ name: 'London', start: hm(new Date(now.getTime() - 30 * 60000)), end: hm(new Date(now.getTime() + 5 * 60000)) }];
-    pr.classList.add('session-live-collapsed');
-    try { window.__stLiveBox.render(); } catch (e) {}
-    await W(400);
-    ok('outside your session there is no medium box at all', !document.querySelector('#st-livenews .slx-news.med'), document.getElementById('st-livenews').innerText);
-    pr.classList.remove('session-live-collapsed');
+    paint(); await W(200);
+    ok('outside your session there is no medium box at all', !nh.querySelector('.slx-news.med'), nh.innerText);
+    nh.remove();
   }
   data._calendarCache = keepCache;
   return out;

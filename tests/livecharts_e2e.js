@@ -609,17 +609,9 @@
       [win.parentNode.id, !!P._s()]);
     check('nothing on screen shows a live chart or the trade card: the line stops watching (the EA stops sending)', !LN.state().watching, LN.state());
 
-    // ---- Session Live's chart: Open in Live Charts ----
+    // (Session Live's trade card and its "Open in Charts" went with that tab on 25 Oct 2026: the trade is in the platform's Positions)
     document.querySelector('.tab[data-page="review"]').click(); await W(400);
-    var pr = document.getElementById('page-review'); if (pr) pr.classList.add('session-live-collapsed');
-    for (k = 0; k < 30; k++) { await W(250); try { window.__stLiveBox.render(); } catch (e) {} if (document.querySelector('#st-livebox .slx-open')) break; }
-    var ob = document.querySelector('#st-livebox .slx-open');
-    check('the Session Live chart has "Open in Charts" (the tab is Charts since 19 Oct 2026)', ob && /Open in Charts/.test(ob.textContent) && !/Live Charts/.test(ob.textContent), ob && ob.textContent);
-    var card = document.querySelector('#st-livebox .slx-tc[data-k="990077"]');
-    check('its card has MT5\'s state, Move to BE and the same Close trade (done at its time)', card && card.querySelector('.stm-st.on') && !!card.querySelector('[data-tma="tobe"]') && !card.querySelector('[data-tma="half"]') && /^Closed \d\d:\d\d$/.test(card.querySelector('[data-tma="close"]').textContent), card && card.querySelector('.stm') && card.querySelector('.stm').textContent);
-    if (ob) ob.click();
-    for (k = 0; k < 60; k++) { await W(250); st = LC.state(); if (st.live) break; }
-    check('it opens Live Charts on that trade\'s symbol', document.getElementById('page-livecharts').classList.contains('active') && st.live && st.sym === 'EURUSD', st);
+    check('Session Review during the session is Session Review: no Session Live board', !document.querySelector('#st-livebox .slx-tc') && !document.getElementById('page-review').classList.contains('session-live-collapsed'));
 
     // ---- Back Testing's today (18 Oct 2026): today's candles from the EA, any moment of it replayed, then the live price ----
     document.querySelector('.tab[data-page="trades"]').click(); await W(600);
