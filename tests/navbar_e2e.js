@@ -30,6 +30,27 @@
     var icons = row.classList.contains('tabs-icons');
     var clipped = tabs.filter(function (t) { var l = t.querySelector('.tab-short'); return l && getComputedStyle(l).visibility !== 'hidden' && l.scrollWidth > l.clientWidth + 1; });
     ok('every label whole (or icons only on the tightest screens, the open tab keeping its word)', clipped.length === 0, { icons: icons, size: getComputedStyle(row).getPropertyValue('--st-navlabel'), clipped: clipped.map(function (t) { return t.getAttribute('data-page'); }) });
+    // every label whole with 8 tabs and with 7 (signed out, or no Charts), in English and in Spanish
+    var labelState = function () {
+      var vis = [].filter.call(row.querySelectorAll('.tab'), function (t) { return t.offsetWidth > 0; });
+      var bad = vis.filter(function (t) { var l = t.querySelector('.tab-short'); if (!l || getComputedStyle(l).visibility === 'hidden') return false;
+        var lb = l.getBoundingClientRect(), tb = t.getBoundingClientRect();
+        return l.scrollWidth > l.clientWidth + 1 || (!row.classList.contains('tabs-icons') && (lb.left < tb.left - 0.5 || lb.right > tb.right + 0.5)); });
+      return { n: vis.length, icons: row.classList.contains('tabs-icons'), size: row.style.getPropertyValue('--st-navlabel') || '10px',
+               words: vis.map(function (t) { var l = t.querySelector('.tab-short'); return l ? l.textContent : ''; }).join(' '), cut: bad.map(function (t) { return t.querySelector('.tab-short').textContent; }) };
+    };
+    var set7 = function () { var c = row.querySelector('.tab[data-page="livecharts"]'); if (c) c.style.setProperty('display', 'none', 'important'); window.dispatchEvent(new Event('resize')); };   // as signed out: Charts hidden inline
+    for (var li = 0; li < 2; li++) {
+      var lang = li ? 'es' : 'en';
+      try { setLanguage(lang); } catch (e) {}
+      await W(400);
+      all8(); await W(450); var s8 = labelState();
+      ok(lang.toUpperCase() + ', 8 tabs: every label whole', s8.n === 8 && s8.cut.length === 0, s8);
+      set7(); await W(450); var s7 = labelState();
+      ok(lang.toUpperCase() + ', 7 tabs: every label whole', s7.n === 7 && s7.cut.length === 0 && s7.words.indexOf('Communit') < 0, s7);
+    }
+    try { setLanguage('en'); } catch (e) {}
+    all8(); await W(450);
     var act = row.querySelector('.tab.active');
     ok('the open tab is pink', getComputedStyle(act).color.replace(/\s/g, '') === 'rgb(244,114,182)', getComputedStyle(act).color);
     var cont = document.querySelector('.container'), pb = parseFloat(getComputedStyle(cont).paddingBottom);
