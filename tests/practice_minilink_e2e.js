@@ -16,7 +16,7 @@
     var p0 = function () { return P._panes()[0]; }, p1 = function () { return P._panes()[1]; }, dlg = function () { return document.querySelector('.stpr-dlg'); };
     P._miniDialog(null, p1()); await W(80);
     var lk = dlg().querySelector('[data-k="mlink"]');
-    ok('two charts: its window offers "Same settings on every chart", ticked (linked, as before)', lk && lk.checked && /Same settings on every chart/.test(dlg().textContent) && /^Minimalist\s*×?/.test(dlg().querySelector('.stpr-dlgh b').textContent) && dlg().querySelector('.stpr-dlgh b').textContent === 'Minimalist');
+    ok('two charts: its window offers "Same settings on every chart", ticked (linked, as before)', lk && lk.checked && /Same settings on every chart/.test(dlg().textContent) && dlg().querySelector('.stpr-dlgh b').textContent === 'Session Indicator');   // its name since 24 Oct 2026 (9dd06b84: Session Indicator everywhere in the app)
     lk.click(); await W(80);
     ok('unticked: each chart gets its own copy, and this window says it is chart 2 (1h)', C.miniLink === false && C.miniPer && C.miniPer[0] && C.miniPer[1] && /chart 2 · 1h/.test(dlg().querySelector('.stpr-dlgh b').textContent) && !dlg().querySelector('[data-k="mlink"]').checked, dlg().querySelector('.stpr-dlgh b').textContent);
     var len = dlg().querySelector('[data-k="len"]'); len.value = '50'; len.dispatchEvent(new Event('input', { bubbles: true })); await W(30);

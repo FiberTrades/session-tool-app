@@ -7,6 +7,7 @@
   var out = [], ok = function (name, cond, got) { out.push({ name: name, ok: !!cond, got: got === undefined ? null : got }); };
   try {
     for (var i = 0; i < 200 && !(window.__stPractice && window.__stSB); i++) await W(100);
+    if (innerWidth > 760) { ok('a phone\'s panel: run with E2E_MOBILE=375x812 (a computer has the execution key, no button)', false, innerWidth); return out; }
     await W(1000);
     Array.prototype.forEach.call(document.querySelectorAll('[class^="st-tour"]'), function (e) { e.remove(); });
     var P = window.__stPractice;

@@ -32,12 +32,16 @@
     // drawn: the note's colour left of the tag, the tag's colour right of it
     var ovc = p.ov, dpr = window.devicePixelRatio || 1, g = ovc.getContext('2d'), y = Math.round(p.series.priceToCoordinate(tp.p) * dpr), pw = ovc.width / dpr - p.chart.priceScale('right').width();
     var at = function (x) { return Array.prototype.slice.call(g.getImageData(Math.round(x * dpr), y, 1, 1).data); };
-    var noteX = pw - ov[0].x - 2 - 6, inTag = pw - ov[0].x / 2;
-    ok('...on the overlay: red at the note, nothing of ours over the tag', at(noteX)[0] > 180 && at(noteX)[3] > 200 && at(inTag)[3] === 0, [at(noteX), at(inTag)]);
-    // moved off the TP: the library's label again
+    var inTag = pw - ov[0].x / 2;
+    // the note is written the TradingView way since 23 Oct 2026 (372fa33d: "without the background behind the text"): red letters on the
+    // line, no box - so red somewhere along the words' band, not at one fixed spot
+    var redIn = function (x1) { for (var yy = -4; yy <= 4; yy++) for (var x = x1 - 150; x <= x1; x++) { var c = Array.prototype.slice.call(g.getImageData(Math.round(x * dpr), y + Math.round(yy * dpr), 1, 1).data); if (c[0] > 180 && c[1] < 120 && c[3] > 200) return true; } return false; };
+    ok('...on the overlay: red letters at the note, nothing of ours over the tag', redIn(pw - ov[0].x - 2) && at(inTag)[3] === 0, [at(inTag)]);
+    // moved off the TP: still the note's own words on the line, now against the scale (no box: the library's title stays empty)
     d.price = tp.p + 0.0020; P._render(); await W(400);
-    hl = (p.hl || []).filter(function (l) { return Math.abs(l.options().price - d.price) < 1e-9; })[0];
-    ok('moved off the TP: the note is the line\'s own label on the scale again', hl && hl.options().title === 'LOW 29th May 2025' && !(p._hlOv || []).length, hl && hl.options().title);
+    hl = (p.hl || []).filter(function (l) { return Math.abs(l.options().price - d.price) < 1e-9; })[0]; var ov2 = p._hlOv || [];
+    y = Math.round(p.series.priceToCoordinate(d.price) * dpr);
+    ok('moved off the TP: the note against the scale, still on the line (no box)', hl && hl.options().title === '' && hl.options().axisLabelVisible && ov2.length === 1 && !ov2[0].x && redIn(pw - 2), [hl && hl.options().title, ov2]);
   } catch (e) { ok('test ran', false, String(e && e.stack || e)); }
   try { window.__stPractice.close(); } catch (e) {}
   return out;
