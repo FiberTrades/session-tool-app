@@ -30,6 +30,8 @@
 
     if (phoneNow) {   // ---- a phone: the phone layout (Nestor approved the phone mockup, 24 Oct 2026) ----
       var wr0 = win.getBoundingClientRect();
+      // the sheet's slide (.32 s) waited out rather than a fixed pause: up (open) or down (closed), its class and its place both
+      var sheetAt = async function (open) { for (var q = 0; q < 40; q++) { var sr = $('.ph-sheet').getBoundingClientRect(); if (win.classList.contains('ph-open') === open && (open ? sr.bottom <= innerHeight + 1 : sr.top >= innerHeight - 1)) return true; await W(100); } return false; };
       check('a phone: Live fills the screen', win.classList.contains('plph') && P._plat().on && Math.abs(wr0.top) < 1 && Math.abs(wr0.left) < 1 && Math.abs(wr0.width - innerWidth) < 2 && Math.abs(wr0.height - innerHeight) < 2, [win.className, wr0.top, wr0.height, innerHeight]);
       var nm0 = $('#stpr-grid .pl-nm'), oh0 = $('#stpr-grid .stpr-ohlc');
       check('its legend: the name, then O H L C on the line under it, then the Session Indicator line and the account pill', nm0 && /^Euro \/ U\.S\. Dollar · 15 · /.test(nm0.textContent) && oh0 && oh0.getBoundingClientRect().top > nm0.getBoundingClientRect().top + 8 && $('.ph-ov [data-phsi]') && $('.ph-ov [data-phpill]') && /ON|OFF/.test($('[data-phpill]').textContent),
@@ -38,14 +40,14 @@
       check('the bottom toolbar: the logo first, Live, the symbol, the timeframe, drawing tools, undo, Show on chart, alerts - all on screen', kids.every(function (k) { return k && k.getBoundingClientRect().width > 0 && k.getBoundingClientRect().right <= innerWidth + 1; }) && !!$('.ph-logo svg'),
         kids.map(function (k) { return k ? Math.round(k.getBoundingClientRect().right) : null; }));
       check('above it, docked: the open trade (or None) and a square pink Execute', (/No open trade/.test($('.ph-trade').textContent) || /lots/.test($('.ph-trade').textContent)) && $('.ph-go') && parseFloat(getComputedStyle($('.ph-go')).borderRadius) <= 4 && $('.ph-trade').getBoundingClientRect().bottom <= bar.getBoundingClientRect().top + 1);
-      $('[data-phpill]').click(); await W(1200);
+      $('[data-phpill]').click(); await sheetAt(true); await W(200);
       check('the pill slides up the Trade Manager, Setup and Why in it', win.classList.contains('ph-open') && $('.ph-sheet #stpr-mm.pl-mm') && $('.ph-sheet [data-plsetup]') && $('.ph-sheet [data-plwhy]') && $('.ph-sheet').getBoundingClientRect().bottom <= innerHeight + 1, [win.className, !!$('.ph-sheet #stpr-mm.pl-mm'), !!$('.ph-sheet [data-plsetup]'), Math.round($('.ph-sheet').getBoundingClientRect().bottom), innerHeight]);
-      $('.ph-sheet .pl-x').click(); await W(600);
+      $('.ph-sheet .pl-x').click(); await sheetAt(false);
       check('Execute in it: the sheet goes down, the bar says Cancel and what it places', !win.classList.contains('ph-open') && P._s().exec && $('.ph-trade [data-phx]') && /BUY|SELL/.test($('.ph-trade [data-phplace]').textContent), $('.ph-trade').textContent);
       $('.ph-trade [data-phplace]').click();
       for (k = 0; k < 40 && !/lots/.test($('.ph-sum') ? $('.ph-sum').textContent : ''); k++) await W(250);
       check('...the side it places: the order fills, the bar shows the trade', /BUY|SELL/.test($('.ph-sum').textContent) && /lots/.test($('.ph-sum').textContent), $('.ph-trade').textContent);
-      $('[data-phgo]').click(); await W(500);
+      $('[data-phgo]').click(); await sheetAt(true);
       check('the sheet lists the open trade with Move to BE, Close 50% (and its chevron) and Close', $('.ph-pos .ph-p') && $('.ph-pos [data-tma="part"]') && $('.ph-pos [data-tma="partmenu"]') && $('.ph-pos [data-tma="close"]'), $('.ph-pos') && $('.ph-pos').textContent.slice(0, 120));
       // how much to close (25 Oct 2026): the chevron's menu on screen, over the sheet; 75% picked is the button's label
       try { localStorage.removeItem('st_partPct'); } catch (e) {}
@@ -54,14 +56,14 @@
       check('...its chevron: 25 / 33 / 50 / 75 / 80 and a box, on screen over the sheet', pm0 && pm0.querySelectorAll('[data-tmpct]').length === 5 && pm0.querySelector('input') && pat && pm0.contains(pat) && pq.left >= 0 && pq.right <= innerWidth && pq.top >= 0 && pq.bottom <= innerHeight, pq && [pq.left, pq.top, pq.right, pq.bottom]);
       pm0.querySelector('[data-tmpct="75"]').click(); await W(400);
       check('...75%: the sheet\'s button says Close 75%', !$('.pl-pm') && $('.ph-pos [data-tma="part"]') && /^Close 75%$/.test($('.ph-pos [data-tma="part"]').textContent.trim()), $('.ph-pos [data-tma="part"]') && $('.ph-pos [data-tma="part"]').textContent);
-      $('.ph-dim').click(); await W(400);
+      $('.ph-dim').click(); await sheetAt(false);
       check('a tap outside closes it', !win.classList.contains('ph-open'));
       // the order rules: Take a break in the sheet, the docked Execute locked, short
       var acQ = data.accounts.filter(function (a) { return a.id === 'acc-plat'; })[0];
-      $('[data-phgo]').click(); await W(600);
+      $('[data-phgo]').click(); await sheetAt(true);
       var mg0 = Array.prototype.map.call(document.querySelectorAll('.ph-pos [data-tma]'), function (b) { return b.getAttribute('data-tma') + (b.disabled ? ':off' : ':on'); }).join(',');
       var tb0 = $('.ph-sheet [data-plbrk]');
-      check('the sheet: Take a break under Execute', !!tb0 && tb0.getBoundingClientRect().bottom <= innerHeight);
+      check('the sheet: Take a break under Execute', !!tb0 && tb0.getBoundingClientRect().bottom <= innerHeight, [win.className, tb0 && Math.round(tb0.getBoundingClientRect().bottom), innerHeight]);
       tb0.click(); await W(300);
       var bm0 = $('#stpr-menu.show'), bq = bm0 && bm0.getBoundingClientRect(), at0 = bq && document.elementFromPoint(bq.left + bq.width / 2, bq.top + 24);
       check('...its choices over the sheet, on screen', bm0 && bm0.querySelectorAll('[data-plbrkv]').length === 5 && at0 && bm0.contains(at0) && bq.top >= 0 && bq.bottom <= innerHeight && bq.left >= 0 && bq.right <= innerWidth, bq && [bq.left, bq.top, bq.right, bq.bottom]);
@@ -69,7 +71,7 @@
       check('a 2-hour break: the sheet\'s Execute locked with the time left, the lock under the title', $('.ph-sheet .pl-x.lock') && /^Locked(1:59:5\d|2:00:00)$/.test($('.ph-sheet .pl-x').textContent) && /On a break/.test($('.ph-sheet .pl-lks').textContent), [$('.ph-sheet .pl-x').textContent, $('.ph-sheet .pl-lks') && $('.ph-sheet .pl-lks').textContent]);
       var mg1 = Array.prototype.map.call(document.querySelectorAll('.ph-pos [data-tma]'), function (b) { return b.getAttribute('data-tma') + (b.disabled ? ':off' : ':on'); }).join(',');
       check('...Move to BE and Close as they were', mg1 === mg0 && /close/.test(mg1), [mg0, mg1]);
-      $('.ph-dim').click(); await W(500);
+      $('.ph-dim').click(); await sheetAt(false);
       var pg = $('.ph-go');
       check('...docked: Execute locked, the time left, on screen', pg && pg.classList.contains('lock') && /^1:59:5\d$/.test(pg.textContent) && pg.getBoundingClientRect().right <= innerWidth + 1 && /On a break/.test(pg.getAttribute('aria-label')), pg && [pg.textContent, Math.round(pg.getBoundingClientRect().right)]);
       delete acQ.ruleBreak; window.dispatchEvent(new CustomEvent('st-rules-change')); await W(600);
@@ -258,6 +260,18 @@
     check('...only the chart and the platform: the app\'s tab row and the market ticker stay dark, as they are', JSON.stringify(tabsLt) === JSON.stringify(tabsBefore) && !/\|lt/.test(($('#ticker-widget-host') || {})._tickerSig || ''), [tabsBefore, tabsLt]);
     $('[data-pltheme]').click(); await W(600);
     check('the moon: back to the dark colours as they were', !P._cfg().look.bg && !P._cfg().lookDk && !win.classList.contains('pl-lt'), [P._cfg().look, P._cfg().lookDk]);
+    // the frame's theme and the chart's colours apart (Nestor, 25 Oct 2026: "i like the dark theme but i want my charts to be able to be white")
+    var dark = function (el) { var m = /rgba?\((\d+), (\d+), (\d+)/.exec(getComputedStyle(el).color); return m && (+m[1] + +m[2] + +m[3]) < 240; };
+    P._lookSet('bg', '#ffffff'); await W(600);
+    check('Chart settings, a white background in the dark theme: the frame stays dark, the chart white, its name dark on it', !win.classList.contains('pl-lt') && win.classList.contains('pl-clt') && getComputedStyle($('.plat-top')).backgroundColor === 'rgb(19, 23, 34)' && dark($('#stpr-grid .pl-nm')) && P._cfg().plLt === false,
+      [win.className, getComputedStyle($('.plat-top')).backgroundColor, getComputedStyle($('#stpr-grid .pl-nm')).color]);
+    $('[data-pltheme]').click(); await W(600);
+    check('...the sun now: the frame light, the chart\'s colours the member\'s own (white, nothing else changed)', win.classList.contains('pl-lt') && P._cfg().look.bg === '#ffffff' && !('vgc' in P._cfg().look) && !P._cfg().lookTh, P._cfg().look);
+    P._lookSet('bg', '#131722'); await W(600);
+    check('a dark chart in the light theme: the frame stays light, the chart\'s name light on it', win.classList.contains('pl-lt') && !win.classList.contains('pl-clt') && getComputedStyle($('.plat-top')).backgroundColor === 'rgb(255, 255, 255)' && !dark($('#stpr-grid .pl-nm')),
+      [win.className, getComputedStyle($('#stpr-grid .pl-nm')).color]);
+    $('[data-pltheme]').click(); await W(300); P._lookReset(); await W(600);
+    check('...the moon and Chart settings\' reset: dark frame, dark chart', !win.classList.contains('pl-lt') && !win.classList.contains('pl-clt') && P._cfg().plLt === false, win.className);
     $('[data-plrg="5D"]').click(); for (k = 0; k < 40 && P._panes()[0].tf !== 5; k++) await W(200); await W(800);
     check('5D: the 5-minute chart, five days on screen', P._panes()[0].tf === 5, P._panes()[0].tf);
 
