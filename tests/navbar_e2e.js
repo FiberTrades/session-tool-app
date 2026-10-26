@@ -17,10 +17,37 @@
     var vis = function () { return [].filter.call(row.querySelectorAll('.tab'), function (t) { return t.offsetWidth > 0; }); };
     all8(); window.dispatchEvent(new Event('resize')); await W(500); all8(); await W(200);
     var phone = innerWidth <= 820;
+    var sess = document.getElementById('meta-session'), full = sess.querySelector('.ms-full'), shortS = sess.querySelector('.ms-short');
     if (!phone) {
       ok('computer: the tab row in the page with its labels', getComputedStyle(row).position !== 'fixed' && vis().every(function (t) { var l = t.querySelector('span[data-i18n]'); return l && l.offsetWidth > 0; }), getComputedStyle(row).position);
+      ok('computer: the session in full ("London 8AM-10AM"), not the phone\'s short form', full && full.offsetWidth > 0 && (!shortS || shortS.offsetWidth === 0), sess.innerText);
       return out;
     }
+    // symbol / session / date / time: ONE row under the tab icons, small, tight, nothing cut (25 Oct 2026)
+    var meta = document.querySelector('.container > .meta');
+    var metaState = function () {
+      var cells = [].slice.call(meta.querySelectorAll('.meta-cell')), v0 = meta.querySelector('.meta-value'), l0 = meta.querySelector('.meta-label');
+      return { two: meta.classList.contains('meta-two'), tops: cells.map(function (c) { return Math.round(c.getBoundingClientRect().top); }),
+               cut: cells.filter(function (c) { var v = c.querySelector('.meta-value'); return v.scrollWidth > v.clientWidth + 1 || c.getBoundingClientRect().right > meta.getBoundingClientRect().right + 1; }).length,
+               vfs: parseFloat(getComputedStyle(v0).fontSize), lfs: parseFloat(getComputedStyle(l0).fontSize), words: cells.map(function (c) { return c.querySelector('.meta-value').innerText; }) };
+    };
+    for (var ml = 0; ml < 2; ml++) {
+      try { setLanguage(ml ? 'es' : 'en'); } catch (e) {}
+      await W(500);
+      var ms = metaState(), rb = row.getBoundingClientRect(), mb = meta.getBoundingClientRect();
+      ok((ml ? 'ES' : 'EN') + ': the four in one row right under the tab icons, small and whole', !ms.two && ms.tops.every(function (t) { return t === ms.tops[0]; }) && ms.cut === 0
+         && mb.top - rb.bottom >= 0 && mb.top - rb.bottom <= 30 && ms.vfs >= 11 && ms.vfs <= 12.5 && ms.lfs <= 9, { meta: ms, gap: Math.round(mb.top - rb.bottom) });
+    }
+    try { setLanguage('en'); } catch (e) {}
+    await W(400);
+    full = sess.querySelector('.ms-full'); shortS = sess.querySelector('.ms-short');   // the language switch drew the cell again
+    ok('the session in its short form on a phone ("London 8–10AM")', shortS && shortS.offsetWidth > 0 && full.offsetWidth === 0 && /–/.test(shortS.textContent), sess.innerText);
+    var pair = document.getElementById('meta-pair'), pairWas = pair.textContent;
+    pair.textContent = 'EUR/USD · XAU/USD · GBP/JPY'; await W(700);
+    var mt = metaState();
+    ok('too wide for one row (three symbols): an even 2 x 2, nothing cut', mt.two && mt.cut === 0 && mt.tops[0] === mt.tops[1] && mt.tops[2] === mt.tops[3] && mt.tops[2] > mt.tops[0], mt);
+    pair.textContent = pairWas; await W(400);
+    ok('...and back to one row when it fits again', !meta.classList.contains('meta-two'), metaState());
     var h1 = document.querySelector('.header h1').getBoundingClientRect(), rr = row.getBoundingClientRect();
     ok('phone: the row sits under the page title, in the page (not a bottom bar)', getComputedStyle(row).position !== 'fixed' && rr.top >= h1.bottom && rr.bottom < innerHeight, [h1.bottom, rr.top, rr.bottom, getComputedStyle(row).position]);
     var shape = function () { var v = vis(); return { n: v.length, ws: v.map(function (t) { return Math.round(t.getBoundingClientRect().width); }), hs: v.map(function (t) { return Math.round(t.getBoundingClientRect().height); }),
