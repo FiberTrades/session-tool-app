@@ -33,23 +33,28 @@
   await window.__stWeekly.load(); await W(200);
   var el = document.getElementById('st-week'), txt = function (n) { return n ? n.innerText.replace(/\s+/g, ' ').trim() : ''; };
   var tiles = el ? [].map.call(el.querySelectorAll('.st-wk-tile'), function (x) { return txt(x); }) : [];
-  ok('heading: "Your week · 19 – 25 Oct"', /Your week · 19 – 25 Oct/i.test(txt(el.querySelector('.st-week-t'))), txt(el.querySelector('.st-week-t')));
+  var head = txt(el.querySelector('.st-wk-head'));
+  ok('title row: "Your week", the week 19 – 25 Oct, and a soft status "Strong week" in green', /Your week/.test(head) && /19 – 25 Oct/i.test(head) && /Strong week/i.test(head) && !!el.querySelector('.st-wk-status.good'), head);
   ok('four tiles: Net R, Trades, Win rate, Days traded', tiles.length === 4 && /Net R/i.test(tiles[0]) && /Trades/i.test(tiles[1]) && /Win rate/i.test(tiles[2]) && /Days traded/i.test(tiles[3]), tiles);
   ok('Net R +3.44R in green, +1.72R a trade under it', /\+3\.44R/.test(tiles[0]) && el.querySelector('.st-wk-tile .st-wk-v').classList.contains('g') && /avg \+1\.72R a trade/.test(tiles[0]), tiles[0]);
   ok('Trades 2, with 1 W · 1 L under it', /2/.test(tiles[1]) && /1 W · 1 L/.test(tiles[1]), tiles[1]);
-  ok('Win rate 50%', /50%/.test(tiles[2]), tiles[2]);
-  ok('Days traded 2, of 5 planned', /\b2\b/.test(tiles[3]) && /of 5 planned/.test(tiles[3]), tiles[3]);
+  ok('Win rate 50%', /50\s*%/.test(tiles[2]), tiles[2]);
+  ok('Days traded 2 / 5, days planned', /2\s*\/\s*5/.test(tiles[3]) && /days planned/.test(tiles[3]), tiles[3]);
   var tb = [].map.call(el.querySelectorAll('.st-wk-tile'), function (x) { var b = x.getBoundingClientRect(); return [Math.round(b.width), Math.round(b.height)]; });
   ok('the tiles are the same size', tb.length === 4 && tb.every(function (b) { return Math.abs(b[0] - tb[0][0]) <= 1 && Math.abs(b[1] - tb[0][1]) <= 1; }), tb);
-  var svg = el.querySelector('.st-wk-chart svg'), bars = svg ? svg.querySelectorAll('rect') : [];
-  ok('R per day: Mon to Fri, a red bar Monday and a green one Thursday', svg && bars.length === 2 && bars[0].getAttribute('fill') === '#E56767' && bars[1].getAttribute('fill') === '#4ECD8B' && /Mon.*Tue.*Wed.*Thu.*Fri/.test(svg.textContent), svg ? svg.textContent : 'no chart');
-  ok('the best trade is starred: "★ +4.72R Thu"', svg && /★ \+4\.72R Thu/.test(svg.textContent), svg && svg.textContent);
+  var svg = el.querySelector('.st-wk-chart svg'), bars = svg ? [].filter.call(svg.querySelectorAll('rect'), function (r) { return /^#(E56767|4ECD8B)$/.test(r.getAttribute('fill')); }) : [];
+  ok('R by day: Mon to Fri, a red bar Monday and a green one Thursday, each with its R on it', svg && bars.length === 2 && bars[0].getAttribute('fill') === '#E56767' && bars[1].getAttribute('fill') === '#4ECD8B' && /−1\.28R/.test(svg.textContent) && /Mon.*Tue.*Wed.*Thu.*Fri/.test(svg.textContent), svg ? svg.textContent : 'no chart');
+  ok('the best trade is starred on its bar and named above the chart: "Best trade ★ +4.72R Thu"', svg && /★ \+4\.72R/.test(svg.textContent) && /Best trade ★ \+4\.72R Thu/.test(txt(el.querySelector('.st-wk-lbl em'))), [svg && svg.textContent, txt(el.querySelector('.st-wk-lbl em'))]);
   var chips = el ? [].map.call(el.querySelectorAll('.st-wk-chip'), function (x) { return [x.className.replace('st-wk-chip ', ''), txt(x).replace(/^([!✓]) /, '$1')]; }) : [];
-  ok('rule checks: in session, trades per day and risk per trade amber (1 day each); daily loss, stop, red news, bias green', chips.length === 7
-    && chips.filter(function (c) { return c[0] === 'flag'; }).map(function (c) { return c[1]; }).join('|') === '!In session · 1 day|!Trades per day · 1 day|!Risk per trade · 1 day'
-    && chips.filter(function (c) { return c[0] === 'ok'; }).length === 4, chips);
+  var groups = [].map.call(el.querySelectorAll('.st-wk-group'), function (g) { return txt(g); });
+  ok('rules in two groups: Kept (daily loss, stop loss, red news, with your bias) then To watch (in session, trades per day, risk per trade, 1 day each)', groups.length === 2
+    && /^Kept/i.test(groups[0]) && /Daily loss/.test(groups[0]) && /Stop loss/.test(groups[0]) && /Red news/.test(groups[0]) && /With your bias/.test(groups[0])
+    && /^To watch/i.test(groups[1]) && chips.filter(function (c) { return c[0] === 'flag'; }).map(function (c) { return c[1].replace(/\s+/g, ' '); }).join('|') === '!In session · 1 day|!Trades per day · 1 day|!Risk per trade · 1 day', [groups, chips]);
   ok('never a red chip', !el.querySelector('.st-wk-chip.bad, .st-wk-chip.red'));
-  ok('then two short lines: the highlight and the focus', /\+4\.72R helped close the week/.test(txt(el.querySelector('.st-week-b'))) && /Next week, keep an eye on your session times\./.test(txt(el.querySelector('.st-week-b'))), txt(el.querySelector('.st-week-b')));
+  var lines = txt(el.querySelector('.st-wk-lines'));
+  ok('then the two lines, labelled: Highlight, then Focus', /^Highlight .*\+4\.72R helped close the week.* Focus Next week, keep an eye on your session times\.$/i.test(lines), lines);
+  var gb = el.querySelector('[data-st-week-ok]'), eb = el.getBoundingClientRect();
+  ok('Got it sits on the right', gb && Math.abs(gb.getBoundingClientRect().right - (eb.right - parseFloat(getComputedStyle(el).paddingRight) - 1)) < 4, gb && [gb.getBoundingClientRect().right, eb.right]);
   var q = calls.filter(function (c) { return c[0] === 'weekly_summaries'; })[0] || [];
   ok('it asks for the newest unread one, with its numbers', JSON.stringify(q).indexOf('card') > 0 && JSON.stringify(q).indexOf('"is","read_at",null') > 0 && JSON.stringify(q).indexOf('"limit",1') > 0, JSON.stringify(q));
   if (window.innerWidth <= 420) {
@@ -79,16 +84,17 @@
   await window.__stWeekly.load(); await W(200);
   tiles = [].map.call(el.querySelectorAll('.st-wk-tile'), function (x) { return txt(x); });
   chips = [].map.call(el.querySelectorAll('.st-wk-chip'), function (x) { return [x.className.replace('st-wk-chip ', ''), txt(x).replace(/^([!✓]) /, '$1')]; });
-  ok('no stored numbers: worked out from the journal (+1.00R, 3 trades 1 W · 1 L · 1 BE, 50%, 3 of 5 planned)', /\+1\.00R/.test(tiles[0]) && /3/.test(tiles[1]) && /1 W · 1 L · 1 BE/.test(tiles[1]) && /50%/.test(tiles[2]) && /of 5 planned/.test(tiles[3]) && /\b3\b/.test(tiles[3]), tiles);
+  ok('no stored numbers: worked out from the journal (+1.00R, 3 trades 1 W · 1 L · 1 BE, 50%, 3 / 5)', /\+1\.00R/.test(tiles[0]) && /3/.test(tiles[1]) && /1 W · 1 L · 1 BE/.test(tiles[1]) && /50\s*%/.test(tiles[2]) && /3\s*\/\s*5/.test(tiles[3]), tiles);
   ok('its rule checks: trades per day amber on 1 day; daily loss and risk per trade not shown (not set)', chips.some(function (c) { return c[0] === 'flag' && /Trades per day · 1 day/.test(c[1]); }) && !chips.some(function (c) { return /Daily loss|Risk per trade/.test(c[1]); }), chips);
-  ok('and the text it was stored with', /Old text\./.test(txt(el.querySelector('.st-week-b'))), txt(el.querySelector('.st-week-b')));
+  ok('and the text it was stored with, as its summary', /Summary Old text\./i.test(txt(el.querySelector('.st-wk-lines'))), txt(el.querySelector('.st-wk-lines')));
   // nothing unread: no card; a mentor view never shows it
   rows = []; await window.__stWeekly.load(); await W(80);
   ok('nothing unread: no card', el.hidden);
   rows = [{ id: 'w2', week_key: '2026-10-19', card: CARD, created_at: new Date().toISOString() }];
-  document.body.classList.add('mentor-viewing'); var n0 = calls.length;
+  var wsCalls = function () { return calls.filter(function (c) { return c[0] === 'weekly_summaries'; }).length; };
+  document.body.classList.add('mentor-viewing'); var n0 = wsCalls();
   await window.__stWeekly.load(); await W(80);
-  ok('a mentor view never asks or shows', el.hidden && calls.length === n0);
+  ok('a mentor view never asks or shows', el.hidden && wsCalls() === n0, [el.hidden, wsCalls(), n0]);
   document.body.classList.remove('mentor-viewing');
   window.__stSB = realSB; window.currentUser = realUser; window.__stJournalPulled = realPulled;
   return out;
