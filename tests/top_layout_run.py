@@ -29,7 +29,8 @@ SIZE_JS = """(async function(){var W=function(ms){return new Promise(function(r)
   var sm=document.getElementById('bloomberg-floater-smaller'), bg=document.getElementById('bloomberg-floater-bigger'), f=document.getElementById('bloomberg-floater');
   var geo=function(){var b=f.getBoundingClientRect(),t=document.querySelector('.tabs').getBoundingClientRect(),h=document.querySelector('.header h1').getBoundingClientRect();
     var cs=[].slice.call(document.querySelectorAll('.header .meta .meta-cell')).map(function(c){return Math.round(c.getBoundingClientRect().top);});
-    return {w:Math.round(b.width),bottom:Math.round(b.bottom),tabsTop:Math.round(t.top),h1h:Math.round(h.height),rows:cs.filter(function(v,i,a){return a.indexOf(v)===i;}).length,smD:sm.disabled,bgD:bg.disabled,vis:getComputedStyle(sm).display!=='none'&&getComputedStyle(bg).display!=='none'};};
+    var mc=[].slice.call(document.querySelectorAll('.header .meta .meta-cell')).map(function(c){return c.getBoundingClientRect();});var gap=mc.length>1?Math.round(mc[1].left-mc[0].right):0;
+    return {gap:gap,w:Math.round(b.width),bottom:Math.round(b.bottom),tabsTop:Math.round(t.top),h1h:Math.round(h.height),rows:cs.filter(function(v,i,a){return a.indexOf(v)===i;}).length,smD:sm.disabled,bgD:bg.disabled,vis:getComputedStyle(sm).display!=='none'&&getComputedStyle(bg).display!=='none'};};
   var out={down:null,up:[]};
   for(var i=0;i<6&&!sm.disabled;i++){sm.click();await W(150);} out.down=geo();
   for(var j=0;j<6&&!bg.disabled;j++){bg.click();await W(150);out.up.push(geo());}
@@ -95,6 +96,9 @@ def desk(W, H):
           and all(b - a == 80 for a, b in zip(ws, ws[1:])) and (not sz['up'] or sz['up'][-1]['bgD']) and len(ws) >= (2 if W >= 1100 else 4), ws)
     check(tag + 'TV size: at every size the TV stays above the tabs' + (', the title on one line, the info in one row' if W >= 1100 else ''),
           all(u['bottom'] <= u['tabsTop'] and (W < 1100 or (u['h1h'] <= 100 and u['rows'] == 1)) for u in [sz['down']] + sz['up']), [sz['down']] + sz['up'])
+    if W >= 1100:
+        gs = [sz['down']['gap']] + [u['gap'] for u in sz['up']]
+        check(tag + 'TV size: the bigger the TV, the tighter the info ("these move left"), the smaller, the wider', all(b <= a for a, b in zip(gs, gs[1:])) and (len(gs) < 2 or gs[0] > gs[-1]), {'widths': ws, 'gaps': gs})
     check(tag + 'TV size: remembered on this device after a reload', g['kept']['tv'] and g['kept']['tv']['w'] == ws[-1], [g['kept']['tv'], ws[-1]])
     check(tag + 'no sideways scroll', on['sx'] <= on['vw'] and off['sx'] <= off['vw'], [on['sx'], off['sx'], on['vw']])
     check(tag + 'title 76px tall line', on['h1'] and 60 <= on['h1']['h'] <= 100, on['h1'])
@@ -111,10 +115,11 @@ def desk(W, H):
         # "spread these right a bit more": first cell on the title's left edge, the last ending about 40px short of the TV, text left-aligned in each
         cs = on['cells']
         gaps = [cs[i + 1]['c']['l'] - cs[i]['c']['r'] for i in range(len(cs) - 1)]
-        want = min(72, round(0.046 * W))
-        check(tag + 'TV on: from the title, about 72px between the cells, ending well short of the TV ("compact this a little more")',
+        free = on['meta']['w'] - sum(x['c']['w'] for x in cs)
+        want = max(28, min(140, free * 0.48 / 3))   # "the bigger the TV is these move left and the smaller they spread right" (25 Oct 2026)
+        check(tag + 'TV on: from the title, gaps from the room left of the TV, ending well short of it',
               tv and abs(cs[0]['c']['l'] - on['h1']['l']) <= 3 and all(abs(g - want) <= 2 for g in gaps) and tv['l'] - cs[-1]['c']['r'] >= 60,
-              {'gaps': gaps, 'want': want, 'to_tv': tv and tv['l'] - cs[-1]['c']['r'], 'first': cs[0]['c'], 'h1': on['h1']})
+              {'gaps': gaps, 'want': round(want, 1), 'to_tv': tv and tv['l'] - cs[-1]['c']['r'], 'first': cs[0]['c'], 'h1': on['h1']})
         check(tag + 'TV on: text left-aligned in each cell', all(abs(x['v']['l'] - x['c']['l']) <= 2 and abs(x['lab']['l'] - x['c']['l']) <= 2 for x in cs), [[x['c']['l'], x['v']['l'], x['lab']['l']] for x in cs])
         check(tag + 'TV off: no TV, header without tv-on', off['tv'] is None and not off['tvOn'], [off['tv'], off['tvOn']])
         check(tag + 'TV off: the info beside the title', off['meta']['l'] > off['h1']['r'], [off['h1'], off['meta']])
