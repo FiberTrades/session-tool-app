@@ -6370,6 +6370,23 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   #edit-trade-modal-bg .et-k b.be { color: var(--info); }
   #edit-trade-modal-bg #edit-trade-chart { border: 1px solid var(--border-2); border-radius: 12px; overflow: hidden; }
   #edit-trade-modal-bg .et-chart-img { display: block; width: 100%; height: auto; aspect-ratio: 12 / 5; object-fit: cover; cursor: zoom-in; }
+  /* The trade's photo (26 Oct 2026): a trade with none gets an Add photo slot - upload, drop or paste an image - and a trade with
+     one gets Replace and Remove on it. Stored as the trade's review chart links always were (chart-shots + reviewSnap.tvLinks). */
+  #edit-trade-modal-bg #edit-trade-chart.et-empty { border: 0; overflow: visible; }
+  #edit-trade-modal-bg .et-photo { position: relative; }
+  #edit-trade-modal-bg .et-photo-add { width: 100%; min-height: 150px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; padding: 16px; border: 1px dashed var(--border-2); border-radius: 12px; background: var(--bg); color: var(--text-mid); cursor: pointer; font: inherit; transition: border-color .15s, color .15s; }
+  #edit-trade-modal-bg .et-photo-add:hover, #edit-trade-modal-bg .et-photo-add:focus-visible { border-color: var(--text-dim); color: var(--text); outline: none; }
+  #edit-trade-modal-bg .et-photo.drag .et-photo-add, #edit-trade-modal-bg .et-photo.drag .et-chart-img { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: -2px; }
+  #edit-trade-modal-bg .et-photo-add svg { width: 26px; height: 26px; opacity: .85; }
+  #edit-trade-modal-bg .et-photo-t { font-family: 'Inter', system-ui, sans-serif; font-size: 14px; font-weight: 600; letter-spacing: -0.005em; }
+  #edit-trade-modal-bg .et-photo-s { font-family: 'AppNum', 'DM Mono', monospace; font-size: 10.5px; letter-spacing: 0.03em; color: var(--text-dim); text-align: center; }
+  #edit-trade-modal-bg .et-photo-tools { position: absolute; right: 10px; bottom: 10px; display: flex; gap: 6px; }
+  #edit-trade-modal-bg .et-photo-tools button { height: 28px; padding: 0 11px; border-radius: 7px; border: 1px solid var(--border-2); background: rgba(12,12,16,.86); color: var(--text); font: 600 11.5px Inter, system-ui, sans-serif; cursor: pointer; }
+  #edit-trade-modal-bg .et-photo-tools button:hover { border-color: var(--text-dim); }
+  #edit-trade-modal-bg .et-photo-tools button.sure { color: var(--bad); border-color: rgba(232,93,93,.55); }
+  #edit-trade-modal-bg .et-photo-busy { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; border-radius: 12px; background: rgba(10,10,14,.72); font-family: 'AppNum', 'DM Mono', monospace; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text); }
+  #edit-trade-modal-bg .et-photo-msg { margin: 8px 2px 0; font-family: 'AppNum', 'DM Mono', monospace; font-size: 11px; color: var(--text-dim); }
+  #edit-trade-modal-bg .et-photo-msg:empty { display: none; }
   /* The fields: two to a row on a computer, each with its label above it, in natural pairs - Date + Result, Aimed +
      Realized, Side + Type, Entry + Exit, Risk & SL + Gross, Costs + Net. At 800px one to a row made every box 570px
      long (Nestor, 10 Oct 2026: "i dont like how all these boxes are so long, can you organize them so the look tidy
@@ -37014,36 +37031,162 @@ try {
     // function here, not at this scope, which stopped the modal opening at all.)
     document.getElementById('edit-trade-modal-bg').classList.add('show');
 
-    // Chart attached to this trade, if any. pickTradeChartUrl() prefers the post-trade
-    // review snapshot over the pre-session bias one - the review shot is the one marked
-    // up with how the trade actually played out.
-    try {
-      const box = document.getElementById('edit-trade-chart');
-      if (box) {
-        let url = null;
-        try { url = pickTradeChartUrl(t); } catch (e) {}
-        if (!url) {
-          box.style.display = 'none';
-          box.textContent = '';
-        } else {
-          let img = url;
-          try { img = tradingViewImageUrl(url) || url; } catch (e) {}
-          box.textContent = '';
-          const im = document.createElement('img');   // no string building, so nothing to escape
-          im.src = img;
-          im.alt = '';
-          // Sized by CSS (.et-chart-img: a 12:5 crop), never by the snapshot's own shape: TradingView captures at
-          // whatever aspect the trader's screen was at the time, so one trade's chart came back wide and short
-          // and the next tall and square, and the whole window changed height with it.
-          im.className = 'et-chart-img';
-          im.addEventListener('error', function(){ box.style.display = 'none'; });
-          im.addEventListener('click', function(){ try { window.stOpenChart(url); } catch (e) {} });
-          box.appendChild(im);
-          box.style.display = '';
-        }
-      }
-    } catch (e) { /* never let the chart stop you editing the trade */ }
+    // The trade's photo, if any (pickTradeChartUrl() prefers the post-trade review snapshot over the pre-session bias one), else
+    // the Add photo slot - see etPhotoPaint.
+    try { etPhotoPaint(t); } catch (e) { /* never let the chart stop you editing the trade */ }
   }
+
+
+  /* ===== Edit Trade: the trade's photo (26 Oct 2026, Nestor: "if a trade like this one that doesnt have a photo can i have the
+     option from edit trade to add the missing photo?") =====
+     No photo: an Add photo slot - click to choose a picture, drop one on it, or paste one (Ctrl+V) while the window is open. A photo:
+     Replace and Remove on it. The picture is uploaded the way every chart picture is (__stUploadChart: compressed into chart-shots)
+     and its link goes into the trade's review chart links (reviewSnap.tvLinks, first), where every surface already reads a trade's
+     photo; the journal saves and syncs it at once, so it does not wait for Save Changes. Remove asks once on the button ("Sure?")
+     and deletes only a picture of ours, never a TradingView link. Not in a mentor view. */
+  const ET_T = (en, es) => { try { return window._stT ? window._stT(en, es) : en; } catch (e) { return en; } };
+  let _etBusy = false;
+  function etPhotoTouch() { try { return window.matchMedia('(hover: none)').matches; } catch (e) { return false; } }
+  function etPhotoMentor() { try { return document.body.classList.contains('mentor-viewing'); } catch (e) { return false; } }
+  function etPhotoMsg(txt) { const m = document.getElementById('edit-trade-photo-msg'); if (m) m.textContent = txt || ''; }
+  function etPhotoPaint(t) {
+    const box = document.getElementById('edit-trade-chart');
+    if (!box) return;
+    let url = null;
+    try { url = pickTradeChartUrl(t); } catch (e) {}
+    box.textContent = '';
+    if (!url) {
+      if (etPhotoMentor()) { box.style.display = 'none'; box.classList.remove('et-empty'); return; }
+      box.classList.add('et-empty');
+      box.innerHTML = '<div class="et-photo"><button type="button" class="et-photo-add" data-et-photo="add">'
+        + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><circle cx="8.5" cy="10" r="1.6"/><path d="M21 15l-4.5-4.5L8 19"/><path d="M19 2v6M16 5h6"/></svg>'
+        + '<span class="et-photo-t">' + ET_T('Add photo', 'Añadir foto') + '</span>'
+        + '<span class="et-photo-s">' + (etPhotoTouch() ? ET_T('Tap to choose a picture', 'Toca para elegir una imagen') : ET_T('Choose a picture, drop one here, or paste it (Ctrl+V)', 'Elige una imagen, suéltala aquí o pégala (Ctrl+V)')) + '</span>'
+        + '</button></div><p class="et-photo-msg" id="edit-trade-photo-msg"></p>';
+      box.style.display = '';
+      return;
+    }
+    box.classList.remove('et-empty');
+    let img = url;
+    try { img = tradingViewImageUrl(url) || url; } catch (e) {}
+    const wrap = document.createElement('div'); wrap.className = 'et-photo';
+    const im = document.createElement('img');   // no string building, so nothing to escape
+    im.src = img; im.alt = '';
+    // Sized by CSS (.et-chart-img: a 12:5 crop), never by the snapshot's own shape: TradingView captures at whatever aspect the
+    // trader's screen was at the time, so one trade's chart came back wide and short and the next tall and square.
+    im.className = 'et-chart-img';
+    im.addEventListener('error', function () { box.style.display = 'none'; });
+    im.addEventListener('click', function () { try { window.stOpenChart(url); } catch (e) {} });
+    wrap.appendChild(im);
+    if (!etPhotoMentor()) {
+      const tools = document.createElement('div'); tools.className = 'et-photo-tools';
+      tools.innerHTML = '<button type="button" data-et-photo="replace">' + ET_T('Replace', 'Cambiar') + '</button><button type="button" data-et-photo="remove">' + ET_T('Remove', 'Quitar') + '</button>';
+      wrap.appendChild(tools);
+    }
+    box.appendChild(wrap);
+    const msg = document.createElement('p'); msg.className = 'et-photo-msg'; msg.id = 'edit-trade-photo-msg'; box.appendChild(msg);
+    box.style.display = '';
+  }
+  // which list holds the photo shown, and where
+  function etPhotoAt(t) {
+    const url = pickTradeChartUrl(t);
+    if (!url) return null;
+    for (const k of ['reviewSnap', 'biasSnap']) {
+      const arr = t[k] && Array.isArray(t[k].tvLinks) ? t[k].tvLinks : null;
+      if (!arr) continue;
+      const i = arr.findIndex(l => l && String(l.url || '').trim() === url);
+      if (i >= 0) return { arr: arr, i: i, url: url, where: k };
+    }
+    return null;
+  }
+  function etPhotoUpload(file, mode) {
+    if (_etBusy || !file || !/^image\//i.test(file.type || '')) return;
+    const t = editingTradeId ? findTradeById(editingTradeId) : null;
+    if (!t || etPhotoMentor()) return;
+    if (!window.__stUploadChart) { etPhotoMsg(ET_T('Photos cannot be added right now. Refresh the app and try again.', 'Ahora no se pueden añadir fotos. Recarga la app y vuelve a intentarlo.')); return; }
+    _etBusy = true;
+    const wrap = document.querySelector('#edit-trade-chart .et-photo');
+    let busy = null;
+    if (wrap) { busy = document.createElement('div'); busy.className = 'et-photo-busy'; busy.textContent = ET_T('Uploading…', 'Subiendo…'); wrap.appendChild(busy); }
+    etPhotoMsg('');
+    const id = t.id;
+    Promise.resolve(window.__stUploadChart(file)).then(function (url) {
+      const tr = findTradeById(id);   // looked up again: the journal may have been merged while it uploaded
+      if (!tr || !url) return;
+      const at = etPhotoAt(tr);
+      if (mode === 'replace' && at && at.where === 'reviewSnap') {
+        const old = at.url;
+        at.arr[at.i] = Object.assign({}, at.arr[at.i], { url: url });
+        if (old && old !== url && window.__stDeleteChart) window.__stDeleteChart(old);   // ours only; a TradingView link is left alone
+      } else {
+        if (!tr.reviewSnap || typeof tr.reviewSnap !== 'object') tr.reviewSnap = { tvLinks: [] };
+        if (!Array.isArray(tr.reviewSnap.tvLinks)) tr.reviewSnap.tvLinks = [];
+        tr.reviewSnap.tvLinks.unshift({ url: url, notes: '' });   // first, so it is the photo this trade shows everywhere
+      }
+      try { saveData(); } catch (e) {}
+      if (editingTradeId === id) { etPhotoPaint(tr); etPhotoMsg(ET_T('Photo saved', 'Foto guardada')); }
+      setTimeout(function () { try { refreshAllSurfaces(); } catch (e) {} }, 0);
+    }).catch(function (err) {
+      const m = String(err && err.message || '');
+      etPhotoMsg(/Premium/i.test(m) ? ET_T('Adding photos is part of Journal Pro.', 'Añadir fotos forma parte de Journal Pro.') : ET_T('The photo could not be uploaded. Check your connection and try again.', 'No se pudo subir la foto. Revisa tu conexión y vuelve a intentarlo.'));
+    }).then(function () { _etBusy = false; if (busy && busy.parentNode) busy.parentNode.removeChild(busy); });
+  }
+  function etPhotoRemove(btn) {
+    const t = editingTradeId ? findTradeById(editingTradeId) : null;
+    if (!t || etPhotoMentor()) return;
+    if (!btn.classList.contains('sure')) {   // asked once, on the button itself
+      btn.classList.add('sure'); btn.textContent = ET_T('Sure? Remove', '¿Seguro? Quitar');
+      setTimeout(function () { if (btn.isConnected) { btn.classList.remove('sure'); btn.textContent = ET_T('Remove', 'Quitar'); } }, 3500);
+      return;
+    }
+    const at = etPhotoAt(t);
+    if (!at) return;
+    at.arr.splice(at.i, 1);
+    if (window.__stDeleteChart) window.__stDeleteChart(at.url);   // ours only; a TradingView link is left alone
+    try { saveData(); } catch (e) {}
+    etPhotoPaint(t);
+    setTimeout(function () { try { refreshAllSurfaces(); } catch (e) {} }, 0);
+  }
+  (function etPhotoWire() {
+    const bg = document.getElementById('edit-trade-modal-bg');
+    if (!bg) return;
+    const pick = function (mode) {
+      const fi = document.createElement('input'); fi.type = 'file'; fi.accept = 'image/*';
+      fi.addEventListener('change', function () { const f = fi.files && fi.files[0]; if (f) etPhotoUpload(f, mode); });
+      fi.click();
+    };
+    bg.addEventListener('click', function (e) {
+      const b = e.target && e.target.closest ? e.target.closest('[data-et-photo]') : null;
+      if (!b) return;
+      e.preventDefault(); e.stopPropagation();
+      const k = b.getAttribute('data-et-photo');
+      if (k === 'remove') etPhotoRemove(b); else pick(k);
+    });
+    const box = document.getElementById('edit-trade-chart');
+    if (box) {
+      box.addEventListener('dragover', function (e) { if (etPhotoMentor()) return; e.preventDefault(); const w = box.querySelector('.et-photo'); if (w) w.classList.add('drag'); });
+      box.addEventListener('dragleave', function () { const w = box.querySelector('.et-photo'); if (w) w.classList.remove('drag'); });
+      box.addEventListener('drop', function (e) {
+        const w = box.querySelector('.et-photo'); if (w) w.classList.remove('drag');
+        const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (!f || etPhotoMentor()) return;
+        e.preventDefault();
+        etPhotoUpload(f, box.classList.contains('et-empty') ? 'add' : 'replace');
+      });
+    }
+    // a picture pasted while the window is open: added, or replacing the photo shown
+    document.addEventListener('paste', function (e) {
+      if (!bg.classList.contains('show') || !editingTradeId || etPhotoMentor()) return;
+      const items = (e.clipboardData && e.clipboardData.items) ? Array.prototype.slice.call(e.clipboardData.items) : [];
+      const it = items.find(x => x && x.kind === 'file' && /^image\//i.test(x.type || ''));
+      const f = it && it.getAsFile();
+      if (!f) return;
+      e.preventDefault();
+      const b2 = document.getElementById('edit-trade-chart');
+      etPhotoUpload(f, b2 && b2.classList.contains('et-empty') ? 'add' : 'replace');
+    });
+  })();
+  try { window.__stEtPhoto = { paint: etPhotoPaint, upload: etPhotoUpload }; } catch (e) {}
 
   function updateEditNetPL() {
     const grossEl = document.getElementById('edit-profit');
@@ -38830,11 +38973,15 @@ try {
   // Returns the first valid TradingView snapshot URL attached to a trade, or null.
   // Prefers reviewSnap.tvLinks (post-trade analysis) over biasSnap.tvLinks (pre-session bias).
   function pickTradeChartUrl(t) {
+    // A TradingView snapshot, or one of our own pictures: a short snapshot link (x.sessionterminal.com) or an uploaded chart
+    // (chart-shots) - the photo added in Edit Trade is one of those (26 Oct 2026).
     function firstValidUrl(arr) {
       if (!Array.isArray(arr)) return null;
       for (const link of arr) {
         const url = (link && link.url || '').trim();
         if (/^https?:\/\/(www\.)?tradingview\.com\/x\//i.test(url)) return url;
+        if (window.stShortImg && window.stShortImg(url)) return url;
+        if (/^https?:\/\/[^\/]+\/storage\/v1\/object\/public\/chart-shots\//i.test(url)) return url;
       }
       return null;
     }
@@ -38849,8 +38996,7 @@ try {
     const url = pickTradeChartUrl(tr);
     if (!url) return '';
     const m = url.match(/tradingview\.com\/x\/([^\/\?#]+)/i);
-    if (!m) return '';
-    const imgUrl = `https://www.tradingview.com/x/${m[1]}/`;
+    const imgUrl = m ? `https://www.tradingview.com/x/${m[1]}/` : ((window.stShortImg && window.stShortImg(url)) || url);   // our own pictures as they are
     const safeUrl = url.replace(/"/g, '&quot;');
     // Single-thumb wrapper. Click goes through but the parent cell click also fires — stop propagation
     // so opening the chart in a new tab doesn't also close the modal and open the day view.
