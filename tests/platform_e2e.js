@@ -198,10 +198,7 @@
     check('the rail: the Watchlist hides, the Trade Manager takes its room', win.classList.contains('pl-nowl') && getComputedStyle($('.pl-wl')).display === 'none' && $('.pl-tmc').getBoundingClientRect().height > 400);
     $('[data-plr="tm"]').click(); await W(300);
     var cw = $('#stpr-cw').getBoundingClientRect();
-    check('both hidden: the chart takes their room, Execute in the top bar', win.classList.contains('pl-nor') && getComputedStyle($('.pl-exec')).display !== 'none' && cw.right > $('.plat-rail').getBoundingClientRect().left - 10 && cw.height > 300, [cw.right, cw.height]);
-    $('.pl-exec').click(); await W(200);
-    check('...the top bar\'s Execute arms it too', P._s().exec && $('.pl-exec').textContent === 'Cancel');
-    $('.pl-exec').click(); await W(200);
+    check('both hidden: the chart takes their room, no second Execute in the top bar (Nestor, 26 Oct 2026)', win.classList.contains('pl-nor') && !$('.pl-exec') && !/Execute/.test($('.plat-top').textContent) && cw.right > $('.plat-rail').getBoundingClientRect().left - 10 && cw.height > 300, [cw.right, cw.height]);
     $('[data-pltab]') && $('[data-plfold]').click(); await W(300);
     check('the arrow folds Positions to its tabs', win.classList.contains('pl-folded') && $('#lc-tb').getBoundingClientRect().height < 45, $('#lc-tb').getBoundingClientRect().height);
     var saved = {}; try { saved = JSON.parse(localStorage.getItem('st_plat') || '{}'); } catch (e) {}
@@ -243,12 +240,8 @@
     check('...the execution key doesn\'t arm it either, and says why on the chart', !P._s().exec && /On a break/.test($('#stpr-cw').textContent), [P._s().exec, $('#stpr-cw').textContent.slice(0, 160)]);
     var ab2 = Array.prototype.map.call(document.querySelectorAll('.pl-t [data-tma]'), function (b) { return b.getAttribute('data-tma') + (b.disabled ? ':off' : ':on'); });
     check('locked, the open trade is still managed: Move to BE, Close 50% and Close on', ab2.join(',') === 'tobe:on,part:on,partmenu:on,close:on', ab2);
-    $('[data-plr="wl"]').click(); $('[data-plr="tm"]').click(); await W(500);
-    var tx = $('.pl-exec');
-    check('...the top bar\'s Execute (panels hidden): Locked with the time left, why on hover', tx.classList.contains('lock') && tx.disabled && /^Locked 59:5\d$/.test(tx.textContent) && /On a break/.test(tx.title), [tx.textContent, tx.title]);
-    $('[data-plr="wl"]').click(); $('[data-plr="tm"]').click(); await W(400);
     delete acP.ruleBreak; window.dispatchEvent(new CustomEvent('st-rules-change')); await W(600);
-    check('the break over: Execute back, the lock gone', $('#stpr-mm .pl-x').textContent === 'Execute' && !$('#stpr-mm .pl-x').disabled && !$('#stpr-mm .pl-lks') && $('.pl-exec').textContent === 'Execute', [$('#stpr-mm .pl-x').textContent, !!$('#stpr-mm .pl-lks')]);
+    check('the break over: Execute back, the lock gone', $('#stpr-mm .pl-x').textContent === 'Execute' && !$('#stpr-mm .pl-x').disabled && !$('#stpr-mm .pl-lks'), [$('#stpr-mm .pl-x').textContent, !!$('#stpr-mm .pl-lks')]);
 
     // ---- Session Indicator once, the theme, the range buttons ----
     var si0 = P._cfg().mini; $('[data-plsi]').click(); await W(300);
