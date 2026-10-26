@@ -463,7 +463,7 @@ def check(acc):
         s["signed_once"] = s.get("started")   # this start has signed in: its log may later scroll past "authorized on"
     if not signed and s.get("started") and s.get("signed_once") != s.get("started") and time.time() - s["started"] > NO_SIGNIN:
         # Never signed in and the broker said nothing (25 Oct 2026, other brokers than FTMO): most often a server this MT5
-        # doesn't know - the seeded server list is FTMO's (SEED_SERVERS) - or a name typed differently from the broker's.
+        # doesn't know (a broker missing from SEED_SERVERS - add it with cloud/seed-servers.sh) or a name typed differently.
         # Before, the account sat on "MT5 is starting" for good. MT5 keeps running and trying.
         report(acc, "starting", "MT5 has not reached the server %s yet. Check it is written exactly as your broker shows it "
                                 "(in MT5: File > Login to Trade Account), then remove the account and add it again." % acc["server"])
