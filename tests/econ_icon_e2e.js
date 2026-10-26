@@ -12,6 +12,16 @@
     out.push({ name: 'the search icon right after the label', ok: gap >= 4 && gap <= 16, got: { gap: gap, label: [Math.round(a.left), Math.round(a.right)], icon: [Math.round(b.left), Math.round(b.right)], bar: [Math.round(h.left), Math.round(h.right)] } });
     out.push({ name: 'on the label\'s line, vertically centred with it', ok: Math.abs((a.top + a.bottom) / 2 - (b.top + b.bottom) / 2) <= 3, got: [a.top, a.bottom, b.top, b.bottom] });
     out.push({ name: 'still a search icon (an svg) and still in the bar', ok: !!ic.querySelector('svg') && b.left >= h.left && b.right <= h.right, got: ic.innerHTML.slice(0, 40) });
+    // Calendar: the "Replay · All Trades History" bar, the same fix (25 Oct 2026)
+    document.querySelector('.tab[data-page="tradeview"]').click(); await W(900);
+    var ah = document.getElementById('alltrades-toggle'), at = ah.querySelector('.alltrades-title'), ai = ah.querySelector('.alltrades-hint');
+    if (innerWidth > 760) {
+      var c = at.getBoundingClientRect(), d = ai.getBoundingClientRect();
+      var g2 = Math.round(d.left - c.right);
+      out.push({ name: "Calendar: the history bar's search icon right after its title", ok: g2 >= 4 && g2 <= 16 && Math.abs((c.top + c.bottom) / 2 - (d.top + d.bottom) / 2) <= 3, got: { gap: g2, title: [Math.round(c.left), Math.round(c.right)], icon: [Math.round(d.left), Math.round(d.right)] } });
+    } else {
+      out.push({ name: "Calendar on a phone: the history bar's icon stays hidden, as before", ok: getComputedStyle(ai).display === 'none', got: getComputedStyle(ai).display });
+    }
   } catch (e) { out.push({ name: 'ran', ok: false, got: String(e && e.stack || e) }); }
   return out;
 })()
