@@ -68,6 +68,18 @@
     check('switched on: the entry tag turns to square blocks (its lots unreadable)', after < before / 2 && after <= 0.16, [before, after]);
     check('...the TP tag stays readable', count(cv, tr.left - gr.left, tr.top - gr.top + 30, tr.width, tr.height, green) > 30);
     SH.setHide(false);
+    // ---- the picture's timeframe: TradingView's rounded pill, no O H L C beside it (Nestor, 26 Oct 2026) ----
+    var pcr = p0.el.querySelector('.stpr-pc').getBoundingClientRect(), fs0 = Math.max(12, Math.min(15, Math.round(pcr.width / 100))), ph0 = Math.round(fs0 * 1.9);
+    var px1 = function (c, x, y) { var dd = c.getContext('2d').getImageData(Math.round(x * d), Math.round(y * d), 1, 1).data; return [dd[0], dd[1], dd[2]]; };
+    var near = function (a, b) { return Math.abs(a[0] - b[0]) <= 12 && Math.abs(a[1] - b[1]) <= 12 && Math.abs(a[2] - b[2]) <= 12; };
+    var pinkIn = function (c, x, y, w, h) { return count(c, x, y, w, h, function (r, g, b) { return r > 200 && g < 150 && b > 140; }); };
+    var bx0 = pcr.left - gr.left + 10, by0 = pcr.top - gr.top + 30 + 10, cvD = P._snap();
+    check('the picture\'s timeframe on a dark chart: a rounded grey pill, no pink square, no O H L C box', near(px1(cvD, bx0 + 5, by0 + ph0 / 2), [42, 46, 57]) && pinkIn(cvD, bx0 - 10, by0 - 10, 360, ph0 + 20) === 0
+      && count(cvD, bx0 + 70, by0 + 4, 260, ph0 - 8, function (r, g, b) { return r > 225 && g > 225 && b > 225; }) < 40, px1(cvD, bx0 + 5, by0 + ph0 / 2));
+    $('[data-pltheme]').click(); await W(800);
+    var cvL = P._snap();
+    check('...on a light chart: a light grey pill with dark text', near(px1(cvL, bx0 + 5, by0 + ph0 / 2), [224, 227, 235]) && pinkIn(cvL, bx0 - 10, by0 - 10, 360, ph0 + 20) === 0, px1(cvL, bx0 + 5, by0 + ph0 / 2));
+    $('[data-pltheme]').click(); await W(600);
     check('the money a hovered tag opens to is never in the picture', count(P._snap(), br.left - gr.left - 200, br.top - gr.top + 30, 200, br.height, white) < 30);
 
     // ---- Blur then share and Check my plan open over the whole frame ----
