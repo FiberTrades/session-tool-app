@@ -286,7 +286,14 @@
     for (k = 0; k < 80 && !(P._s() && !P._s().live && P._panes().length && P._panes()[0].n); k++) await W(150); await W(1200);
     check('in Replay the window is as it was: the tools row and the header back in their places', !win.classList.contains('plat') && $('#stpr-tb2').parentNode === win && $('#stpr-tools').parentNode === $('#stpr-tb2') && $('#stpr-sym').closest('.stpr-hd') && !document.body.classList.contains('st-plat'),
       [win.className, $('#stpr-tools').parentNode.id]);
-    document.querySelector('#lc-mode [data-lcm="live"]').click(); await W(200); document.getElementById('lc-ask-bg').querySelector('[data-lca="1"]').click();
+    // one Replay on a computer (Nestor, 25 Oct 2026: "why have 2 relay buttons now? i like the one on the chart better"): no switch above the
+    // chart, Replay's own header has Live, asking first as the top bar's Replay does
+    var lvb = $('#stpr-lvback');
+    check('in Replay: no Live | Replay switch above, a Live button in Replay\'s header', getComputedStyle($('#lc-mode')).display === 'none' && lvb && getComputedStyle(lvb).display !== 'none' && lvb.closest('.stpr-hd') && /Live/.test(lvb.textContent), [getComputedStyle($('#lc-mode')).display, lvb && getComputedStyle(lvb).display]);
+    check('...and no prop firm progress under the chart (Statistics and Accounts have it)', getComputedStyle($('#lc-pfp')).display === 'none');
+    lvb.click(); await W(200);
+    check('...Live asks first: Switch to Live?', $('#lc-ask-bg') && /Switch to Live\?/.test($('#lc-ask-bg').textContent), $('#lc-ask-bg') && $('#lc-ask-bg').textContent.slice(0, 60));
+    document.getElementById('lc-ask-bg').querySelector('[data-lca="1"]').click();
     for (k = 0; k < 80 && !(P._s() && P._s().live && LC.state().fresh); k++) await W(250); await W(1500);
     check('back to Live: the platform again', win.classList.contains('plat') && $('.plat-left #stpr-tools') && $('.plat-top #stpr-tb2'), win.className);
     // ---- Close 50% (EA 9.15's "part", 25 Oct 2026), any share since the same day: the chevron picks how much, the row asks once in

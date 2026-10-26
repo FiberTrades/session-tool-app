@@ -142,9 +142,8 @@
     check('every tick: several a second over the relay', gaps.length >= 5 && gaps.filter(function (g) { return g < 300; }).length >= gaps.length * 0.6, gaps);
 
     // ---- the account chart 1's EA is on (its login in the EA's "hi") ----
-    for (k = 0; k < 20 && getComputedStyle(document.getElementById('lcp-section')).display === 'none'; k++) await W(250);
-    var pfp = document.getElementById('lcp-section');
-    check('under the Toolbox, Prop Firm Progress for that account (Statistics\' card): its target and its room to the floor', getComputedStyle(pfp).display !== 'none' && /Prop Firm Progress/.test(pfp.textContent) && /FTMO 70K Challenge/.test(pfp.textContent) && /Profit target/.test(pfp.textContent) && /Room to the floor/.test(pfp.textContent) && document.getElementById('lc-host').nextElementSibling.id === 'lc-pfp', pfp.textContent.slice(0, 200));
+    // Nestor, 25 Oct 2026: "remove the prop firm challenge progress from below the chart" - it lives in Statistics and Accounts
+    check('no Prop Firm Progress under the chart (Statistics and Accounts have it)', getComputedStyle(document.getElementById('lc-pfp')).display === 'none', getComputedStyle(document.getElementById('lc-pfp')).display);
 
     // ---- each chart its own symbol (18 Oct 2026: "give every chart the oportunity to be a different asset ... also for live charts"):
     // ---- chart 2 on gold, whose EA runs on another account (90005678, on Supabase) ----
