@@ -90,7 +90,7 @@
     var MX = Math.round(r.width * 0.2), MY0 = Math.round(r.height * 0.25), MY1 = Math.round(r.height * 0.6);
     click(MX, MY0); await W(30); click(MX + 90, MY1); await W(60);
     var M0 = S.drawings[2]; tx = await painted();
-    ok('Measure: two clicks, its reading (pips · R · bars) under the arrow\'s tip', M0 && M0.type === 'range' && tx.some(function (t) { return /p · [-+]\d+\.\d\dR · \d+ bars/.test(t); }), tx.filter(function (t) { return / bars/.test(t); }));
+    ok('Measure: two clicks, its reading (pips · bars · time, no R since 26 Oct 2026) under the arrow\'s tip', M0 && M0.type === 'range' && tx.some(function (t) { return /p · −?\d+ bars · −?\d+[wdhm]/.test(t) && !/R/.test(t); }), tx.filter(function (t) { return / bars/.test(t); }));
 
     // ---- Lock ----
     pz = R._posGeo(L0); click((pz.x0 + pz.x1) / 2, pz.ye - 8); await W(40); bx = box();
