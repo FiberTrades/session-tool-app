@@ -39,6 +39,7 @@ SIZE_JS = """(async function(){var W=function(ms){return new Promise(function(r)
 CLOSE_TV = "(function(){var f=document.getElementById('bloomberg-floater');if(!f.hidden)document.getElementById('bloomberg-floater-close').click();return f.hidden;})()"
 
 out = []
+TOTV = []   # (width, [(tv width, cell gap, TIME->TV px)]) for the report
 def check(name, ok, got=None):
     out.append((name, bool(ok), got)); print('%s  %s%s' % ('PASS' if ok else 'FAIL', name, '' if ok else '   got: ' + json.dumps(got)[:400]))
 
@@ -107,8 +108,11 @@ def desk(W, H):
         gs = [sz['down']['gap']] + [u['gap'] for u in sz['up']]
         check(tag + 'TV size: the bigger the TV, the tighter the info ("these move left"), the smaller, the wider', all(b <= a for a, b in zip(gs, gs[1:])) and (len(gs) < 2 or gs[0] > gs[-1]), {'widths': ws, 'gaps': gs})
     if W >= 1100:
-        sm = sz['down']   # the smallest TV: the info uses most of the free width, still ending well short of it ("move more to the right when the tv is so small")
-        check(tag + 'TV size: with the smallest TV the info spreads nearly to it, still well short', sm['w'] == 320 and 60 <= sm['toTv'] <= 0.25 * sm['free'] + 40 + 6, {'toTv': sm['toTv'], 'free': sm['free'], 'gap': sm['gap']})
+        # 27 Oct 2026 ("it needs to be more gradual"): TIME ends the same 150px from the TV at every TV size, unless the cells are at their 28px minimum
+        steps = [sz['down']] + sz['up']
+        TOTV.append((W, [(u['w'], u['gap'], u['toTv']) for u in steps]))
+        check(tag + 'TV size: TIME ends 150px from the TV at every size (28px cell gaps at the least)',
+              all((150 <= u['toTv'] <= 154) or (u['gap'] <= 29 and u['toTv'] < 150) for u in steps), [(u['w'], u['gap'], u['toTv']) for u in steps])
     check(tag + 'TV size: remembered on this device after a reload', g['kept']['tv'] and g['kept']['tv']['w'] == ws[-1], [g['kept']['tv'], ws[-1]])
     check(tag + 'no sideways scroll', on['sx'] <= on['vw'] and off['sx'] <= off['vw'], [on['sx'], off['sx'], on['vw']])
     # "the name of tab should be a little bigger" (26 Oct 2026): 88px from ~1160px wide, 80-88 on a small laptop, always one line
@@ -133,10 +137,9 @@ def desk(W, H):
         cs = on['cells']
         gaps = [cs[i + 1]['c']['l'] - cs[i]['c']['r'] for i in range(len(cs) - 1)]
         free = on['meta']['w'] - sum(x['c']['w'] for x in cs)
-        f = max(0.48, min(0.82, 0.48 + (400 - tv['w']) / 80 * 0.34)) if tv else 0.48   # 48% of the free width at 400+, up to 82% with a 320px TV (26 Oct 2026)
-        want = max(28, min(260, free * f / 3))   # "the bigger the TV is these move left and the smaller they spread right" (25 Oct 2026)
-        check(tag + 'TV on: from the title, gaps from the room left of the TV, ending well short of it',
-              tv and abs(cs[0]['c']['l'] - on['h1']['l']) <= 3 and all(abs(g - want) <= 2 for g in gaps) and tv['l'] - cs[-1]['c']['r'] >= 60,
+        want = max(28, (free + 40 - 150) / 3)   # the row ends 150px from the TV (27 Oct 2026); the TV sits 40px right of the info's column
+        check(tag + 'TV on: from the title, equal gaps, TIME 150px short of the TV',
+              tv and abs(cs[0]['c']['l'] - on['h1']['l']) <= 3 and max(gaps) - min(gaps) <= 1 and all(abs(g - want) <= 2 for g in gaps) and tv['l'] - cs[-1]['c']['r'] >= 60,
               {'gaps': gaps, 'want': round(want, 1), 'to_tv': tv and tv['l'] - cs[-1]['c']['r'], 'first': cs[0]['c'], 'h1': on['h1']})
         check(tag + 'TV on: text left-aligned in each cell', all(abs(x['v']['l'] - x['c']['l']) <= 2 and abs(x['lab']['l'] - x['c']['l']) <= 2 for x in cs), [[x['c']['l'], x['v']['l'], x['lab']['l']] for x in cs])
         check(tag + 'TV off: no TV, header without tv-on', off['tv'] is None and not off['tvOn'], [off['tv'], off['tvOn']])
@@ -184,7 +187,7 @@ def phone(W, H):
 try:
     ONLY = os.environ.get('TOP_ONLY', '')   # 'desk' or 'phone' runs just that half
     if ONLY != 'phone':
-        for W, H in ((1920, 1080), (1500, 940), (1280, 900), (1100, 860), (1024, 768)):
+        for W, H in ((1920, 1080), (1600, 900), (1500, 940), (1440, 900), (1280, 900), (1100, 860), (1024, 768)):
             desk(W, H)
     if ONLY != 'desk':
         for W in (375, 390):
@@ -192,6 +195,8 @@ try:
 finally:
     try: os.remove(OLD)
     except Exception: pass
+for W, rows in TOTV:
+    print('TIME->TV at %d: ' % W + '  '.join('TV %d: gap %d, to TV %d' % r for r in rows))
 bad = [o for o in out if not o[1]]
 print('\n%d checks, %d failed' % (len(out), len(bad)))
 sys.exit(1 if bad or not out else 0)
