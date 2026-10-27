@@ -50,6 +50,10 @@
 -- it is the account's whole day again, every symbol together - the function body is byte for byte what it was before
 -- (md5 6f97ef27175fd394d80ba70a0e87b191). The EA still counts each chart's own symbol (8.94).
 --
+-- 27 Oct 2026: written from the LIVE function (pg_get_functiondef), which had drifted from this file. Leaderboard opt-out:
+-- a member with lb_prefs.hidden (Settings -> Profile -> Show me on the leaderboard, off) is left out of `people`, so of every
+-- live board, and of the all-time board; see supabase/leaderboard_optout.sql. Live md5 (LF) 4d1ebd86432a8dff694b74f2640a5aac.
+--
 CREATE OR REPLACE FUNCTION public.st_rebuild_leaderboard()
  RETURNS void
  LANGUAGE plpgsql
@@ -1062,13 +1066,17 @@ begin
       group by user_id
     ),
     people as (
-      select user_id from period_trades
-      union select user_id from bias
-      union select user_id from review
-      union select user_id from weekly
-      union select user_id from weekly_post_weeks
-      union select user_id from posts
-      union select user_id from commit_adh
+      -- a member who switched "Show me on the leaderboard" off (lb_prefs, 27 Oct 2026) is on no board
+      select pp.user_id from (
+        select user_id from period_trades
+        union select user_id from bias
+        union select user_id from review
+        union select user_id from weekly
+        union select user_id from weekly_post_weeks
+        union select user_id from posts
+        union select user_id from commit_adh
+      ) pp
+      where not public.st_lb_hidden(pp.user_id)
     ),
     scored as (
       select
@@ -1213,105 +1221,7 @@ begin
     where period = 'month'
     order by user_id, points desc, period_start desc
   ) bm
-  where bm.points > 0;
+  where bm.points > 0 and not public.st_lb_hidden(bm.user_id);
 
 end;
 $function$;
-
--- 2026-10-23, A REVIEW KEEPS ITS DAY. Nestor posted Thursday's review at 17:43, corrected it at 00:02 Friday
--- (st_post_review kept both: another day), deleted the original by hand, corrected again at 00:39. The 00:39 copy
--- scored as Friday's review: Thursday missed (-10) and Friday's real review earned nothing. Now (rev_posts):
--- a correction of another day's review keeps that review's moment (channel_message_scored_at), and a review
--- posted after midnight, before the session starts, counts for the day before when that day has none after its
--- own session start. Also lb_excluded_trades: trades the admin leaves out (his 19 Oct XAUUSD tests on an
--- unlinked demo login, judged as 70K trades: max trades broken and Monday's review "before the last close").
--- See supabase/lb_review_day.sql.
-
--- 2026-09-06, A REVIEWED WEEK BELONGS TO THE MONTH IT ENDS IN, not the month its Monday falls in.
--- weekly_post_weeks filtered a reviewed week into a period by its Monday:
---     where z.monday >= v_start and z.monday < v_end
--- while weeks_pledged - which decides whether a review was OWED - derives its weeks from the bias
--- days inside the period. For a week straddling a month boundary the two disagree:
---
---   Week Mon 31 Aug - Sun 6 Sep, biases posted 1-3 Sep, review posted Sun 6 Sep
---     weeks_pledged (September)     -> {31 Aug}   the bias days are September days
---     weekly_post_weeks (September) -> {}         31 Aug < 1 Sep
---
--- So the +20 was dropped, and from the following Monday - when the week becomes penalisable - the
--- SAME week scored as a missed review: -20 for a review that was actually written. Worse, it was
--- unrecoverable. st_rebuild_leaderboard derives every period_start from now(), so it only ever
--- rebuilds the current week/month/year; August's row was frozen on 31 Aug and could never collect
--- a review posted on 6 Sep.
---
--- Now filtered on (z.monday + 6), the week's Sunday. That month owns most of the week's days, it
--- is where the pledge already lands, and it can never strand a review: the Sunday is always in the
--- month the review was written in or later, which is still rebuildable.
---
--- Only the period FILTER moved. The join key stays `monday`, so weekly_post_weeks and
--- weeks_pledged still match on the same week identity - which is what turns a pledge into "done"
--- rather than "missed".
---
--- Applied by pg_get_functiondef rewrite (DB functions do not deploy from git), asserting exactly
--- one occurrence before replacing. Verified by RUNNING it, since plpgsql bodies are not checked at
--- CREATE time: September went from weekly_reviews 0 / weekly 0 to 3 reviews and 60 points across
--- the three traders, each correctly showing 1 of 1 week.
-
--- 2026-09-09, A REVIEW COUNTS ONCE YOUR SESSION ENDED, not once the settings window did.
--- The boundary was sess_end - 10:00 for an 08:00-10:00 trader - so finishing early and reviewing
--- promptly scored nothing. Six reviews posted on six days counted as two:
---     02 Sep 19:09 (counted)   03 Sep 09:40   04 Sep 10:46 (counted)
---     07 Sep 09:22             08 Sep 09:53   09 Sep 08:51
--- Every one of the four that missed was written within twenty minutes of the last trade closing,
--- while the window still had an hour to run. A discipline board should reward that, not deduct
--- for it - and it was deducting twice, once on the count and once as -20 on the month.
---
--- The boundary is now the trader's own last trade that day, from trades_verified. On a day with NO
--- trades there is no session to be after, so any time counts: reviewing a day you watched and did
--- not trade is not less honest at 09:53 than at 10:01.
---
--- THE FINISH-SESSION BUTTON would be truer and is what was asked for, but data._sessionEndedEarly
--- holds only { date, idxs } - no time - is cleared whenever session settings change, and keeps no
--- history. It can say nothing about past days and would only work from the day a client change
--- shipped. Last trade close is already stored per trade with a timestamp and gave the same answer
--- on every day checked. Revisit if the button ever logs a time per day.
---
--- BOTH USES MOVED TOGETHER. The boundary appears twice: in `review`, which produces the
--- review_days count on the card, and in `review_ok_dates`, which feeds the per-day points.
--- Changing one alone would have made the number and the score disagree - the first attempt
--- asserted a single occurrence, found two, and refused to run.
---
--- bias_ok_dates is untouched: "before the session started" is a real on-time test and sess_start
--- is the right boundary for it.
---
--- After rebuilding, September: Nestor 6/6 reviews (+60, was 2/6 and -20), Troy 5/6, Aurora 4/5.
-
--- 2026-09-09, FINISH SESSION IS THE END OF THE SESSION. The client now writes
--- data.sessionEndLog, a durable map of local date -> local HH:MM, written whenever the Finish
--- session button is pressed, LAST press of the day winning (finish one session at 09:10 and
--- another at 15:30 and the day ended at 15:30). It lives in the journal, so it syncs and this
--- function can read it.
---
--- The boundary a review must beat is now, in order:
---   1. the declared finish for that day, if the button was pressed
---   2. the last trade that closed that day, if there were trades
---   3. any time - a day with neither has no session to be after
---
--- Step 2 stays because sessionEndLog only exists from the day it shipped: nobody has a history of
--- presses, and a trader who never touches the button would otherwise lose the boundary entirely.
---
--- _sessionEndedEarly was NOT reused: it holds { date, idxs } with no time, is cleared whenever
--- session settings change, and keeps no history. It can say "you finished early today" and
--- nothing else.
---
--- THE KEY IS THE LOCAL DATE. The client builds it from getFullYear/getMonth/getDate rather than
--- its own _todayKey(), which is toISOString().slice(0,10) - a UTC date. Through BST the two differ
--- either side of midnight, and a key that does not match is a lookup that silently misses. This
--- side uses to_char((created_at at time zone s.tz)::date,'YYYY-MM-DD') to match.
---
--- ANCHORED ON SINGLE-LINE FRAGMENTS. pg_get_functiondef returns this body with CRLF endings, so a
--- multi-line anchor written with \n matches nothing at all. The first attempt asserted one
--- occurrence, found zero, and refused to run.
---
--- Proved by running it: with no log, September reads 6/6 and 130 pts; inject a declared finish of
--- 23:00 on 9 Sep and the 08:51 review stops counting - 5/6, 110 pts - then roll back. The drop is
--- the evidence the log is read and that it outranks the last-trade fallback.

@@ -8384,6 +8384,16 @@ try {
       </div>
       <!-- What the button's state means, right under it (not a settings-hint: those go to the left of a row). -->
       <div id="settings-notif-cap" class="settings-notif-cap"></div>
+      <!-- Privacy (27 Oct 2026, Nestor: "there needs to be a way in settings to opt out being on the leaderboard, some users might want
+           to have more privacy about their trading"). On by default; off leaves the member out of every board (lb_prefs). -->
+      <label class="settings-label" id="settings-lb-label" style="margin-top:24px;" data-i18n="settings.privacy_label">Privacy</label>
+      <p class="settings-hint" data-i18n="settings.lb_hint">Off: you are left out of the Discipline Leaderboard everywhere, its medals and the month's podium included. Your own stats stay exactly as they are, and you can turn it back on at any time.</p>
+      <label class="tk-switch" id="settings-lb-row">
+        <span class="tk-switch-label" data-i18n="settings.lb_toggle">Show me on the leaderboard</span>
+        <input type="checkbox" id="settings-lb-show" checked>
+        <span class="tk-switch-track"><span class="tk-switch-knob"></span></span>
+      </label>
+      <div id="settings-lb-cap" class="settings-notif-cap"></div>
       <!-- Admin only: push a refresh to every open app. Hidden unless the signed-in
            account is the owner; renderAdminReload() decides. Sits above Data, so for
            everyone else (who never sees this block) Data simply stays last. -->
@@ -10560,6 +10570,9 @@ try {
       'settings.tour_hint': 'Seventeen short steps through everything the app does.',
       'settings.tour_btn': 'Take the tour',
       'settings.notif_label': 'Notifications',
+      'settings.privacy_label': 'Privacy',
+      'settings.lb_toggle': 'Show me on the leaderboard',
+      'settings.lb_hint': 'Off: you are left out of the Discipline Leaderboard everywhere, its medals and the month\u2019s podium included. Your own stats stay exactly as they are, and you can turn it back on at any time.',
       'settings.install_label': 'Install on your PC',
       'settings.install_hint': 'Session Terminal as an app of its own: its own window and icon, no browser bars, and it can open when your computer starts.',
       'settings.install_chip': 'Install app',
@@ -12521,6 +12534,9 @@ try {
       'settings.tour_hint': 'Diecisiete pasos cortos por todo lo que hace la app.',
       'settings.tour_btn': 'Hacer el tour',
       'settings.notif_label': 'Notificaciones',
+      'settings.privacy_label': 'Privacidad',
+      'settings.lb_toggle': 'Mostrarme en el ranking',
+      'settings.lb_hint': 'Desactivado: quedas fuera del Ranking de disciplina en todas partes, incluidas sus medallas y el podio del mes. Tus propias estadísticas siguen exactamente igual, y puedes volver a activarlo cuando quieras.',
       'settings.install_label': 'Instalar en tu ordenador',
       'settings.install_hint': 'Session Terminal como una aplicación propia: su propia ventana e icono, sin las barras del navegador, y puede abrirse al encender el ordenador.',
       'settings.install_chip': 'Instalar app',
@@ -30075,6 +30091,61 @@ try {
     }
     if (tb.getAttribute('data-h') !== h) { tb.innerHTML = h; tb.setAttribute('data-h', h); }
   }
+
+
+  /* ===== Leaderboard opt-out (27 Oct 2026) =====
+     Settings -> Profile -> Privacy -> "Show me on the leaderboard". The choice lives on the server (lb_prefs, read through RLS for your
+     own row only) and changes only through st_set_leaderboard_hidden, which rebuilds the live boards without (or with) you and closes
+     up the places on the closed ones you were on. Every board, the community medals, the month's podium and the assistant's standing
+     read leaderboard_entries, whose rows of a hidden member nobody can read - so one switch covers them all. Your own stats never
+     change. window.__stLbHidden: true / false once known (the board's and the reviews' note). */
+  (function stLbOptOut() {
+    const T = (en, es) => { try { return window._stT ? window._stT(en, es) : en; } catch (e) { return en; } };
+    const uid = () => { try { return (window.currentUser && window.currentUser.id) || null; } catch (e) { return null; } };
+    const mentor = () => { try { return document.body.classList.contains('mentor-viewing') || !!window.__MV; } catch (e) { return false; } };
+    let tries = 0;
+    async function load() {
+      const sb = window.__stSB;
+      if (!sb || !sb.from || !uid()) return null;
+      try {
+        const r = await sb.from('lb_prefs').select('hidden').eq('user_id', uid()).maybeSingle();
+        if (r && !r.error) window.__stLbHidden = !!(r.data && r.data.hidden);
+      } catch (e) {}
+      return window.__stLbHidden;
+    }
+    function cap(txt) { const c = document.getElementById('settings-lb-cap'); if (c) c.textContent = txt || ''; }
+    async function paint() {
+      const cb = document.getElementById('settings-lb-show');
+      if (!cb) return;
+      const lb = document.getElementById('settings-lb-label'), row = cb.closest('.set-row') || cb.closest('label');
+      if (mentor()) { if (row) row.style.display = 'none'; return; }
+      if (!uid()) { cb.disabled = true; cap(T('Sign in to choose.', 'Inicia sesión para elegir.')); return; }
+      cb.disabled = false;
+      if (window.__stLbHidden === undefined) await load();
+      cb.checked = window.__stLbHidden !== true;
+      cap('');
+    }
+    document.addEventListener('change', async e => {
+      const cb = e.target;
+      if (!cb || cb.id !== 'settings-lb-show') return;
+      const sb = window.__stSB, show = cb.checked;
+      if (!sb || !sb.rpc || !uid()) { cb.checked = !show; return; }
+      cb.disabled = true; cap(T('Saving…', 'Guardando…'));
+      try {
+        const r = await sb.rpc('st_set_leaderboard_hidden', { p_hidden: !show });
+        if (r && r.error) throw r.error;
+        window.__stLbHidden = !show;
+        cap(show ? T('Saved: you are on the leaderboard', 'Guardado: apareces en el ranking') : T('Saved: you are off the leaderboard', 'Guardado: no apareces en el ranking'));
+        try { if (window.STBoard && window.STBoard.refresh) window.STBoard.refresh(); } catch (er) {}
+      } catch (er) {
+        cb.checked = !show;
+        cap(T('Not saved. Check your connection and try again.', 'No se guardó. Revisa tu conexión y vuelve a intentarlo.'));
+      } finally { cb.disabled = false; }
+    });
+    // known once the journal is in (the board and the reviews ask for it)
+    const iv = setInterval(() => { if (uid() && window.__stSB && window.__stJournalPulled) { clearInterval(iv); load(); } else if (++tries > 600) clearInterval(iv); }, 1000);
+    try { window.__stLbOpt = { load: load, paint: paint }; } catch (e) {}
+  })();
 
   /* ===== The assistant's weekly summary (24 Oct 2026, Nestor: "A weekly summary from the assistant") =====
      weekly-summary (edge function) writes it every Sunday at 18:00 London into weekly_summaries and pushes its highlight to the
@@ -55529,6 +55600,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       // here rather than only from renderServices (a different tab of this modal).
       try { if (window.stRenderAdminReload) window.stRenderAdminReload(); } catch (e) {}
       try { if (window.STAIMeter) window.STAIMeter.updateTab(); } catch (e) {}   // reveal the admin AI Meter tab
+      try { if (window.__stLbOpt) window.__stLbOpt.paint(); } catch (e) {}   // Privacy: Show me on the leaderboard (27 Oct 2026)
       // Always open on the Profile tab — don't resume whichever section was last viewed.
       try {
         var _snavs = document.querySelectorAll('#settings-modal-bg .settings-nav-item');
@@ -83303,6 +83375,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 .stb-clean b{color:var(--text);font-weight:600;}
 @media(max-width:620px){.stb-cols{grid-template-columns:1fr;}}
 .stb-empty{padding:18px;text-align:center;color:var(--text-dim);font-size:11.5px;}
+.stb-hiddenme{margin:0 0 12px;padding:10px 14px;border:1px solid var(--border-2);border-radius:10px;background:rgba(255,255,255,.02);font-family:'AppNum','DM Mono',monospace;font-size:11px;letter-spacing:.02em;line-height:1.55;color:var(--text-mid);}
 @media(max-width:760px){#stb-board{margin:24px 0 32px;padding:14px;} .stb-hide-sm{display:none;}}
 </style>
 <script>
@@ -83599,6 +83672,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
           var r=rr[0], m=rr[1] && rr[1].data;
           var x=r && r.data;
           var title=noTitle ? '' : '<div class="month-insight-title">'+_t('Leaderboard achievements','Logros en el ranking')+'</div>';
+          if(!x && window.__stLbHidden===true) return title+'<div class="month-insight-empty">'+_t('You are not on the leaderboard: you turned it off in Settings \u2192 Profile \u2192 Privacy.','No apareces en el ranking: lo desactivaste en Ajustes \u2192 Perfil \u2192 Privacidad.')+'</div>';
           if(!x) return title+'<div class="month-insight-empty">'+(period==='week'
             ? _t('No leaderboard score for this week yet.','Aún no hay puntuación del ranking esta semana.')
             : _t('No leaderboard score for this month yet.','Aún no hay puntuación del ranking este mes.'))+'</div>';
@@ -83712,6 +83786,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       }, function(){ box.classList.remove('stb-busy'); box.innerHTML='<div class="stb-empty">'+_t('Leaderboard unavailable.','Clasificaci\u00f3n no disponible.')+'</div>'; });
   }
 
+  // You turned "Show me on the leaderboard" off (Settings -> Profile, 27 Oct 2026): the board says so above itself.
+  function lbNote(){
+    if(window.__stLbHidden!==true) return '';
+    return '<div class="stb-hiddenme">'+_t('You are not on the leaderboard: you turned it off in Settings \u2192 Profile \u2192 Privacy. Your own stats are unchanged.','No apareces en el ranking: lo desactivaste en Ajustes \u2192 Perfil \u2192 Privacidad. Tus estadísticas no cambian.')+'</div>';
+  }
   function paint(){
     var box=el('stb-body'); if(!box) return;
     box.classList.remove('stb-busy');
@@ -83730,7 +83809,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
                    : S.rows.slice().sort(function(a,b){ return (Number(b.points)||0)-(Number(a.points)||0); });   /* Live: everyone with activity, by points */
     var top=pool.slice(0,10);
     if(!top.length){
-      box.innerHTML='<div class="stb-empty">'+(rec
+      box.innerHTML=lbNote()+'<div class="stb-empty">'+(rec
         ? _t('No best months yet — finish a month with points and it shows here.','Aún no hay mejores meses — termina un mes con puntos y aparece aquí.')
         : _t('No activity yet this period. Post a bias, a review, or take a trade to get on the board.','A\u00fan no hay actividad en este periodo. Publica un sesgo, una revisi\u00f3n o toma una operaci\u00f3n para entrar.'))+'</div>';
     } else if(rec){
@@ -83748,7 +83827,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         });
         h+='</tbody></table>';
       }
-      box.innerHTML=h;
+      box.innerHTML=lbNote()+h;
     } else {
       var podium=top.slice(0,3), rest=top.slice(3);
       var h='';
@@ -83764,7 +83843,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         });
         h+='</tbody></table>';
       }
-      box.innerHTML=h;
+      box.innerHTML=lbNote()+h;
     }
     /* Tap a podium card OR a list row -> full per-category points breakdown popup. */
     Array.prototype.forEach.call(box.querySelectorAll('.stb-card-click, .stb-row-click'), function(cd){
