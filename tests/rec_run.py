@@ -8,6 +8,7 @@
 import base64, calendar, faulthandler, functools, http.server, json, math, os, random, shutil, socket, struct, subprocess, sys, tempfile, threading, time, urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import lowprio  # noqa: F401  (below normal priority: Nestor trades on this PC)
 import browser_test as bt
 
 faulthandler.dump_traceback_later(900, exit=True)
@@ -123,6 +124,37 @@ def ev(c, js, gesture=False):
     return r.get('result', {}).get('value')
 
 
+def at(cdp, sel):
+    """The middle of an element on that page (scrolled into view), or None."""
+    return ev(cdp, "(function(){var e=document.querySelector(%s); if(!e) return null; e.scrollIntoView({block:'center', inline:'center'}); var b=e.getBoundingClientRect(); return [b.left+b.width/2, b.top+b.height/2, b.width, b.height];})()" % json.dumps(sel))
+
+
+def rclick(cdp, sel, dx=0):
+    """A real click with the mouse (trusted input through DevTools), as a person's: the element's middle."""
+    p = at(cdp, sel)
+    if not p: return False
+    x, y = p[0] + dx, p[1]
+    cdp.call('Input.dispatchMouseEvent', type='mouseMoved', x=x, y=y)
+    cdp.call('Input.dispatchMouseEvent', type='mousePressed', x=x, y=y, button='left', buttons=1, clickCount=1)
+    cdp.call('Input.dispatchMouseEvent', type='mouseReleased', x=x, y=y, button='left', buttons=0, clickCount=1)
+    time.sleep(0.15)
+    return True
+
+
+def rdrag(cdp, x0, y0, x1, y1, steps=8):
+    cdp.call('Input.dispatchMouseEvent', type='mouseMoved', x=x0, y=y0)
+    cdp.call('Input.dispatchMouseEvent', type='mousePressed', x=x0, y=y0, button='left', buttons=1, clickCount=1)
+    for i in range(1, steps + 1):
+        cdp.call('Input.dispatchMouseEvent', type='mouseMoved', x=x0 + (x1 - x0) * i / steps, y=y0 + (y1 - y0) * i / steps, button='left', buttons=1)
+        time.sleep(0.02)
+    cdp.call('Input.dispatchMouseEvent', type='mouseReleased', x=x1, y=y1, button='left', buttons=0, clickCount=1)
+    time.sleep(0.2)
+
+
+def where(c):
+    return json.loads(ev(c, '__recT.where()'))
+
+
 def page(c, mobile=False):
     if mobile:
         c.call('Emulation.setDeviceMetricsOverride', width=390, height=844, deviceScaleFactor=2, mobile=True)
@@ -187,6 +219,99 @@ try:
             add([{'name': fmt + ': the file is an MP4 of %d x %d with a sound track' % (ew, eh), 'ok': bool(vt) and vt[0]['w'] == ew and vt[0]['h'] == eh and 'soun' in (info.get('handlers') or []) and 'vide' in (info.get('handlers') or []),
                   'got': info}])
             shutil.move(os.path.join(dl, f), os.path.join(OUT, 'rec_%s%s' % (tag, os.path.splitext(f)[1])))   # out of Downloads: the next one may share its minute, so its name
+    # ---- the real mouse (Nestor, 27 Oct 2026: "these buttons in record dont do anything"): every button of the set-up and the control,
+    #      clicked as a person clicks, through DevTools' input - not element.click() ----
+    R1 = []
+    def chk(name, ok, got=None): R1.append({'name': name, 'ok': bool(ok), 'got': got})
+    rclick(c, '.plat-top .pl-rec'); time.sleep(0.6)
+    w0 = where(c); chk('real mouse: Record opens the set-up', w0['main']['sheet'], w0)
+    for k in ('tl', 'tr', 'br', 'bl'):
+        rclick(c, '#st-rec-bg [data-rcn="%s"]' % k); chk('real mouse: the camera corner %s takes the click' % k, where(c)['corner'] == k and ev(c, "document.querySelector('#st-rec-bg [data-rcn=\"%s\"]').classList.contains('on')" % k), where(c)['corner'])
+    rclick(c, '#st-rec-bg [data-rbg="blur"]'); chk('real mouse: Background Blur', where(c)['bg'] == 'blur')
+    rclick(c, '#st-rec-bg [data-rbg="none"]'); chk('real mouse: Background None', where(c)['bg'] == 'none')
+    rclick(c, '#st-rec-bg [data-rf="yt"]'); chk('real mouse: a format', ev(c, "document.querySelector('#st-rec-bg [data-rf=\"yt\"]').classList.contains('on')"))
+    zr = at(c, '#st-rec-bg [data-rz]'); z0 = ev(c, "+document.querySelector('#st-rec-bg [data-rz]').value")
+    rdrag(c, zr[0] - zr[2] / 2 + 3, zr[1], zr[0] + zr[2] / 4, zr[1]); z1 = ev(c, "+document.querySelector('#st-rec-bg [data-rz]').value")
+    chk('real mouse: the zoom slider drags (%.2f -> %.2f)' % (z0, z1), z1 > z0 + 0.3, [z0, z1])
+    fk = list(where(c)['frames'].keys()); fx0 = where(c)['frames'][fk[0]]['x'] if fk else None
+    pv = at(c, '#st-rec-bg .rs-pv'); rdrag(c, pv[0], pv[1], pv[0] + 40, pv[1] + 10); fx1 = where(c)['frames'][fk[0]]['x'] if fk else None
+    chk('real mouse: a drag in the preview moves the framing (x %s -> %s)' % (fx0, fx1), fk and fx1 is not None and fx1 > fx0, [fx0, fx1])
+    rclick(c, '#st-rec-bg [data-r="go"]')   # a real click: the browser's own gesture
+    for _ in range(60):
+        if where(c)['st'] == 'rec': break
+        time.sleep(0.25)
+    chk('real mouse: Start recording records', where(c)['st'] == 'rec', where(c))
+    rclick(c, '#st-rec-ctl [data-rc="pause"]'); chk('real mouse: the control pauses', where(c)['st'] == 'pause')
+    rclick(c, '#st-rec-ctl [data-rc="pause"]'); chk('real mouse: ...and resumes', where(c)['st'] == 'rec')
+    rclick(c, '#st-rec-ctl [data-rc="mute"]'); chk('real mouse: the control mutes the microphone', where(c)['muted'])
+    rclick(c, '#st-rec-ctl [data-rc="mute"]'); chk('real mouse: ...and back', not where(c)['muted'])
+    time.sleep(1.5); rclick(c, '#st-rec-ctl [data-rc="stop"]')
+    for _ in range(40):
+        if where(c)['main']['pv']: break
+        time.sleep(0.25)
+    chk('real mouse: Stop saves and shows the preview', where(c)['main']['pv'])
+    time.sleep(1.0); rclick(c, '#st-rec-pv .rs-f [data-p="x"]'); time.sleep(0.3); chk('real mouse: Discard closes it', not where(c)['main']['pv'])
+    add(R1)
+    for f in os.listdir(dl): shutil.move(os.path.join(dl, f), os.path.join(OUT, 'rec_realmouse' + os.path.splitext(f)[1]))
+    # ---- Live Charts in its own window (Nestor: "if i press record on an external window why is this menu opening on the app and not on
+    #      the external window?"): the set-up, the capture, the control and the preview all in that window ----
+    R2 = []
+    def chk2(name, ok, got=None): R2.append({'name': name, 'ok': bool(ok), 'got': got})
+    po = json.loads(ev(c, '__recT.popOpen()')); chk2('Live Charts opens in its own window, the platform drawn there', po.get('on') and po.get('there'), po)
+    pc = None
+    for _ in range(40):
+        try:
+            pt = [t for t in json.loads(urllib.request.urlopen('http://127.0.0.1:%d/json/list' % dbg, timeout=2).read()) if t.get('type') == 'page' and 'livecharts.html' in t.get('url', '')]
+            if pt: pc = bt.CDP(pt[0]['webSocketDebuggerUrl']); break
+        except Exception: pass
+        time.sleep(0.25)
+    if pc:
+        pc.call('Runtime.enable')
+        try:
+            wid = pc.call('Browser.getWindowForTarget')['windowId']; pc.call('Browser.setWindowBounds', windowId=wid, bounds={'width': 1440, 'height': 940})
+        except Exception as e: print('window size not set:', e)
+        try: pc.call('Page.bringToFront')
+        except Exception: pass
+        time.sleep(2.5)
+        for _ in range(20):
+            if where(c)['pop']['rec']: break
+            time.sleep(0.25)
+        chk2('that window\'s top bar has the Record button', where(c)['pop']['rec'], where(c)['pop'])
+        rclick(pc, '.plat-top .pl-rec'); time.sleep(0.8); w1 = where(c)
+        chk2('real mouse there: the set-up opens in that window, not in the app\'s', w1['pop']['sheet'] and not w1['main']['sheet'], w1)
+        try: print('pop-out set-up:', open(os.path.join(OUT, 'rec_popout_setup.png'), 'wb').write(base64.b64decode(pc.call('Page.captureScreenshot', format='png')['data'])) and os.path.join(OUT, 'rec_popout_setup.png'))
+        except Exception as e: print('pop-out shot failed', e)
+        rclick(pc, '#st-rec-bg [data-rcn="br"]'); chk2('real mouse there: the corner buttons answer', where(c)['corner'] == 'br')
+        rclick(pc, '#st-rec-bg [data-r="go"]')
+        for _ in range(60):
+            if where(c)['st'] == 'rec': break
+            time.sleep(0.25)
+        w2 = where(c); w2['err'] = ev(pc, "(document.querySelector('#st-rec-bg .rs-err')||{}).textContent||''")
+        chk2('...it records that window\'s platform (Element Capture), the control in that window', w2['st'] == 'rec' and w2['mode'] == 'el' and w2['pop']['ctl'] and not w2['main']['ctl'] and w2['pop']['on'], w2)
+        try: print('pop-out recording:', open(os.path.join(OUT, 'rec_popout_recording.png'), 'wb').write(base64.b64decode(pc.call('Page.captureScreenshot', format='png')['data'])) and os.path.join(OUT, 'rec_popout_recording.png'))
+        except Exception as e: print('pop-out shot failed', e)
+        ev(pc, "(function(){var t=document.getElementById('st-rec-ctl'), p=document.getElementById('stpr-cw').getBoundingClientRect(); t.style.background='#ff00ff'; t.style.borderColor='#ff00ff'; t.style.transform='none'; t.style.bottom='auto'; t.style.left=Math.round(p.left+p.width*0.4)+'px'; t.style.top=Math.round(p.top+p.height*0.5)+'px'; return 1;})()")   # the test's mark, over the chart
+        time.sleep(3); rclick(pc, '#st-rec-ctl [data-rc="stop"]')
+        for _ in range(40):
+            if where(c)['pop']['pv']: break
+            time.sleep(0.25)
+        w3 = where(c); chk2('...Stop: the preview in that window too', w3['pop']['pv'] and not w3['main']['pv'], w3)
+        lf = json.loads(ev(c, '__recT.lastFrame()'))
+        chk2('...the video: 1920 x 1080, the platform in it, the control (marked magenta over the chart) nowhere in it', lf['w'] == 1920 and lf['h'] == 1080 and lf['mag'] < 20 and lf['blue'] > 150, {k: lf[k] for k in ('w', 'h', 'mag', 'blue')})
+        open(os.path.join(OUT, 'rec_frame_popout.png'), 'wb').write(base64.b64decode(lf['frame'].split(',', 1)[1])); print('frame:', os.path.join(OUT, 'rec_frame_popout.png'))
+        f = None
+        for _ in range(40):
+            nf = [x for x in os.listdir(dl) if not x.endswith('.crdownload')]
+            if nf: f = nf[0]; break
+            time.sleep(0.25)
+        chk2('...and the file saved', bool(f), f)
+        if f:
+            info = mp4_info(os.path.join(dl, f)); vt = [t for t in info['tracks'] if t['w']]
+            chk2('...a %d x %d MP4' % (1920, 1080), bool(vt) and vt[0]['w'] == 1920 and vt[0]['h'] == 1080, info)
+            shutil.move(os.path.join(dl, f), os.path.join(OUT, 'rec_popout' + os.path.splitext(f)[1]))
+        time.sleep(1.0); rclick(pc, '#st-rec-pv .rs-f [data-p="x"]'); time.sleep(0.3); chk2('real mouse there: Discard closes the preview', not where(c)['pop']['pv'])
+    add(R2)
+    chk3 = ev(c, '__recT.popClose()'); add([{'name': 'Live Charts back in the app', 'ok': bool(chk3), 'got': chk3}])
     add(json.loads(ev(c, '__recT.refused()')))
     add(json.loads(ev(c, '__recT.es()')))
     add([{'name': 'the set-up in the light theme', 'ok': bool(ev(c, '__recT.light(true)')), 'got': None}])

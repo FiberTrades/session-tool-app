@@ -169,7 +169,7 @@
         check(fmt + ': named for the symbol and the time it started', !!x && /^Session Terminal – EURUSD – \d{4}-\d\d-\d\d \d{4}\.mp4$/.test(x.name), x && x.name);
         check(fmt + ': Streamer mode, the control and full screen all undone', !document.body.classList.contains('st-rec-sm') && !document.body.classList.contains('st-rec-on') && !$('#st-rec-ctl') && !document.fullscreenElement && !window.__stPractice._lv().max,
           [document.body.className.match(/st-rec-\w+/g), !!$('#st-rec-ctl'), !!document.fullscreenElement, window.__stPractice._lv().max]);
-        await W(1600); var v2 = view0();   // the chart's own view is put back a moment after the platform
+        await W(3000); var v2 = view0();   // the chart's own view is put back a moment after the platform
         check(fmt + ': the chart\'s view back as it was', Math.abs(v2.to - window.__recV0.to) < 1.5 && Math.abs((v2.to - v2.from) - (window.__recV0.to - window.__recV0.from)) < 1.5, [v2, window.__recV0]);
         check(fmt + ': the platform back exactly as it was', !document.body.classList.contains('st-rec-tall') && !document.body.style.getPropertyValue('--st-rec-w') && Math.abs($('#stpr-win').getBoundingClientRect().width - window.__recW0) < 2, [document.body.className.match(/st-rec-\w+/g), $('#stpr-win').getBoundingClientRect().width, window.__recW0]);
         check(fmt + ': the panels and the Record button are back', vis($('.plat-right')) && vis($('#stpr-win > .lc-tb')) && vis($('.plat-top .pl-rec')), [vis($('.plat-right')), vis($('#stpr-win > .lc-tb')), vis($('.plat-top .pl-rec'))]);
@@ -228,6 +228,23 @@
     light: async function (on) { var th = $('[data-pltheme]'), lt = $('#stpr-win').classList.contains('pl-lt'); if (lt !== on) { th.click(); await W(700); }
       if (on) { $('.plat-top .pl-rec').click(); await W(400); return !!($('#st-rec-bg') && $('#st-rec-bg').classList.contains('lt')); }
       var x = $('#st-rec-bg [data-r="close"]'); if (x) x.click(); await W(100); return !$('#stpr-win').classList.contains('pl-lt'); },
+    // where the recorder's pieces are: the app's window or Live Charts' own window (the runner clicks with the real mouse in between)
+    where: function () { var sw = window.__recSatW, sd = null; try { sd = sw && !sw.closed ? sw.document : null; } catch (e) {} var st = window.__stRec.state();
+      var has = function (d, id) { return !!(d && d.getElementById(id)); };
+      return JSON.stringify({ st: st.st, mode: st.mode || null, elErr: st.elErr || '', iso: (function () { try { var w2 = sd && sd.getElementById('stpr-win'); return w2 ? sd.defaultView.getComputedStyle(w2).isolation + '|' + sd.defaultView.getComputedStyle(w2).transform : null; } catch (e) { return String(e); } })(), corner: window.__stRec._cfg().corner, bg: window.__stRec._cfg().bg, frames: window.__stRec._cfg().frames, muted: !!(window.__stRec._r() && window.__stRec._r().muted),
+        main: { sheet: has(document, 'st-rec-bg'), ctl: has(document, 'st-rec-ctl'), pv: has(document, 'st-rec-pv') }, pop: { sheet: has(sd, 'st-rec-bg'), ctl: has(sd, 'st-rec-ctl'), pv: has(sd, 'st-rec-pv'), rec: !!(sd && sd.querySelector('.plat-top .pl-rec')), on: !!(sd && sd.body.classList.contains('st-rec-on')) } }); },
+    // Live Charts in its own window (the platform drawn there from here)
+    popOpen: async function () { var P = window.__stPractice, wo = window.open, k;
+      window.open = function (u, n, f) { window.__recSatW = wo.call(window, u, n, f); return window.__recSatW; }; P._lcPop(); window.open = wo;
+      for (k = 0; k < 160 && !(P._stage().on && window.__recSatW && P._panes()[0].el.ownerDocument === window.__recSatW.document && P._panes()[0].n > 30); k++) await W(150);
+      await W(1500); return JSON.stringify({ on: P._stage().on, there: !!(window.__recSatW && P._panes()[0].el.ownerDocument === window.__recSatW.document) }); },
+    // the last video's frame at 2.5 s: its size, the magenta of a marked control (must be 0), the blue of the BUY tag and line
+    lastFrame: async function () { var x = window.__stRec._last(), v = document.createElement('video'); v.muted = true; v.src = x.url; v.preload = 'auto'; document.body.appendChild(v);
+      await new Promise(function (res) { v.onloadedmetadata = res; v.onerror = res; setTimeout(res, 5000); }); v.currentTime = Math.min(2.5, (v.duration || 5) / 2); await new Promise(function (res) { v.onseeked = res; setTimeout(res, 4000); }); await W(150);
+      var c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight; var g = c.getContext('2d'); g.drawImage(v, 0, 0); var d = g.getImageData(0, 0, c.width, c.height).data, mag = 0, blue = 0;
+      for (var i = 0; i < d.length; i += 4) { var r = d[i], gg = d[i + 1], b = d[i + 2]; if (r > 200 && gg < 70 && b > 200) mag++; if (b > 180 && r < 110 && gg < 160 && b - r > 90) blue++; }
+      var f = c.toDataURL('image/png'); v.remove(); return JSON.stringify({ w: c.width, h: c.height, mag: mag, blue: blue, frame: f }); },
+    popClose: async function () { try { window.__stPractice._stageDetach(true); } catch (e) {} await W(1500); return !!document.getElementById('stpr-win'); },
     phone: async function () { var C = mk(), check = C.check;
       try { for (var k = 0; k < 60 && !(window.__stPractice && window.__stRec); k++) await W(100); window.__stPlatOff = false; window.__stLcForce = true;
         document.querySelector('.tab[data-page="livecharts"]').click(); await W(3000);

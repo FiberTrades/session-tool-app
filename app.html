@@ -99997,7 +99997,7 @@ window.__stAZ = (function () {
   .stpr-win.plat .plat-top > .pl-rec svg { width: 18px; height: 18px; }
   .stpr-win.plat .plat-top > .pl-rec .rd { fill: #f23645; }
   body.st-rec-on .stpr-win.plat .plat-top > .pl-rec { display: none !important; }
-  body.st-rec-on #stpr-win { isolation: isolate; }   /* Element Capture records only an element that is a stacking context of its own */
+  body.st-rec-on :is(#stpr-win, #stpr-bg) { isolation: isolate; }   /* Element Capture records only an element that is a stacking context of its own */
   /* Streamer mode: the platform keeps its top bar, the drawing tools, the chart and the footer; Positions, the Watchlist and Trade
      Manager, Today and Chat go; the account's name leaves the legend; trade sizes and money on the chart are blurred */
   body.st-rec-sm .stpr-win.plat:not(.plph):not(.plsat) { grid-template-columns: 52px minmax(0, 1fr) !important; grid-template-rows: 44px minmax(0, 1fr) 30px !important; grid-template-areas: "top top" "left chart" "foot foot" !important; }
@@ -100147,16 +100147,24 @@ window.__stAZ = (function () {
     if (!FMT[d.fmt]) d.fmt = 'yt'; if (d.fps !== 60) d.fps = 30; if (['tl', 'tr', 'bl', 'br'].indexOf(d.corner) < 0) d.corner = 'bl'; if (['none', 'blur', 'image'].indexOf(d.bg) < 0) d.bg = 'none'; if (!d.frames || typeof d.frames !== 'object' || Array.isArray(d.frames)) d.frames = {}; d.sm = true; return d; }
   function save() { try { var o = {}; Object.keys(CFG).forEach(function (k) { if (k !== 'sm') o[k] = CFG[k]; }); localStorage.setItem('st_rec', JSON.stringify(o)); } catch (e) {} }
   // a computer's Chrome or Edge: it can capture its own tab and record it; a phone or tablet never sees the button
-  function can() { try { var md = navigator.mediaDevices; if (!(md && md.getDisplayMedia && window.MediaRecorder && window.HTMLCanvasElement && HTMLCanvasElement.prototype.captureStream)) return false;
+  function can() { try { var md = CX.w.navigator.mediaDevices; if (!(md && md.getDisplayMedia && window.MediaRecorder && window.HTMLCanvasElement && HTMLCanvasElement.prototype.captureStream)) return false;
     return !(matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches); } catch (e) { return false; } }
-  function win() { return document.getElementById('stpr-win'); }
-  function hiOk() { var d = window.devicePixelRatio || 1; return Math.round(screen.width * d) >= 2560 && Math.round(screen.height * d) >= 1440; }
+  // the window the recorder works in (27 Oct 2026, Nestor: "if i press record on an external window why is this menu opening on the app"):
+  // the one Record was pressed in - the app's, or Live Charts' own window, whose platform this page draws from here. The set-up, the
+  // capture (that window's tab), the control, the countdown and the preview all live there
+  var CX = { d: document, w: window };
+  function cssIn(d) { try { if (d === document || d.getElementById('st-rec-css')) return; var st = document.getElementById('st-rec-css'); if (st) d.head.appendChild(d.importNode(st, true)); } catch (e) {} }
+  function cxSet(el) { var d = (el && el.ownerDocument) || document, w = d.defaultView || window; CX = { d: d, w: w }; cssIn(d); }
+  function cxOk() { try { if (CX.w.closed || !CX.d.body) CX = { d: document, w: window }; } catch (e) { CX = { d: document, w: window }; } }   // that window closed: back to the app's
+  function stageDoc() { try { var lv = window.__stPractice._lv(), w = lv && lv.sat; return (w && !w.closed && w.document) || null; } catch (e) { return null; } }
+  function win() { return CX.d.getElementById('stpr-win'); }
+  function hiOk() { var d = CX.w.devicePixelRatio || 1; return Math.round(CX.w.screen.width * d) >= 2560 && Math.round(CX.w.screen.height * d) >= 1440; }
   function size() { var f = FMT[CFG.fmt]; return (CFG.fmt === 'yt' && CFG.hi && hiOk()) ? { w: 2560, h: 1440 } : { w: f.w, h: f.h }; }
   function symKey() { try { var P = window.__stPractice, s = P && P._s && P._s(); if (s && s.sym && s.sym.key) return String(s.sym.key).replace(/[^A-Za-z0-9.]/g, '').toUpperCase(); } catch (e) {} return 'Chart'; }
   function stamp(d) { var p = function (n) { return (n < 10 ? '0' : '') + n; }; return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + p(d.getMinutes()); }
   function light() { var w = win(); return !!(w && w.classList.contains('pl-lt')); }
-  function refit() { setTimeout(function () { try { window.dispatchEvent(new Event('resize')); } catch (e) {} }, 30); }
-  function sm(on) { var b = document.body; if (b.classList.contains('st-rec-sm') === !!on) return; b.classList.toggle('st-rec-sm', !!on); refit(); }
+  function refit() { setTimeout(function () { try { window.dispatchEvent(new Event('resize')); } catch (e) {} if (CX.w !== window) try { CX.w.dispatchEvent(new CX.w.Event('resize')); } catch (e) {} }, 30); }
+  function sm(on) { var b = CX.d.body; if (b.classList.contains('st-rec-sm') === !!on) return; b.classList.toggle('st-rec-sm', !!on); refit(); }
   function stopS(s) { try { if (s) s.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {} }
   // plain words for a refused camera, microphone or screen
   function why(e, k) { var n = e && e.name;
@@ -100172,12 +100180,14 @@ window.__stAZ = (function () {
     return cam ? T('The camera did not start.', 'La cámara no arrancó.') : T('The microphone did not start.', 'El micrófono no arrancó.'); }
 
   // ---- the Record button in the top bar (order 22: just left of the camera) ----
-  function inject() { var top = document.querySelector('.stpr-win.plat:not(.plph):not(.plsat) > .plat-top'); if (!top) return;
+  function inject() { [document, stageDoc()].forEach(function (d) { if (d) injectIn(d); }); }
+  function injectIn(d) { var top = d.querySelector('.stpr-win.plat:not(.plph):not(.plsat) > .plat-top'); if (!top) return;
     var b = top.querySelector('.pl-rec'), t = T('Record a video', 'Grabar un vídeo');
-    if (!b) { if (!can()) return; b = document.createElement('button'); b.type = 'button'; b.className = 'pl-b pl-rec'; b.innerHTML = I.rec; b.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); open(); }); top.appendChild(b); }
+    if (!b) { if (!can()) return; b = d.createElement('button'); b.type = 'button'; b.className = 'pl-b pl-rec'; b.innerHTML = I.rec; b.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); open(e.currentTarget); }); top.appendChild(b); }
     if (b.title !== t) { b.title = t; b.setAttribute('aria-label', t); } }
   setInterval(inject, 1000); setTimeout(inject, 300);
-  window.addEventListener('beforeunload', function (e) { if (R && (R.st === 'rec' || R.st === 'pause')) { e.preventDefault(); e.returnValue = ''; } });   // a reload mid-recording would lose it: the browser asks first
+  function bu(e) { if (R && (R.st === 'rec' || R.st === 'pause')) { e.preventDefault(); e.returnValue = ''; } }
+  window.addEventListener('beforeunload', bu);   // a reload mid-recording would lose it: the browser asks first
 
   // ---- the set-up ----
   function fmtBtn(k) { var f = FMT[k]; return '<button type="button" class="rs-fmt" data-rf="' + k + '"><i style="--w:' + f.gw + ';--h:' + f.gh + '"></i><b>' + esc(T(f.en, f.es)) + '</b><small data-rfs="' + k + '"></small></button>'; }
@@ -100217,13 +100227,13 @@ window.__stAZ = (function () {
     ['cam', 'mic', 'sm', 'fs'].forEach(function (k) { var i = q('[data-rsw="' + k + '"]'); if (i) i.checked = !!CFG[k]; });
     q('[data-rdev="cam"]').disabled = !CFG.cam; q('[data-rdev="mic"]').disabled = !CFG.mic;
     q('.rs-camx').hidden = !CFG.cam; q('.rs-mt').style.visibility = CFG.mic ? '' : 'hidden';
-    var fr = frameOf(camKey()), rz = q('[data-rz]'); if (rz && document.activeElement !== rz) rz.value = fr.z; var rzv = q('[data-rzv]'); if (rzv) rzv.textContent = fr.z.toFixed(1) + '×';
+    var fr = frameOf(camKey()), rz = q('[data-rz]'); if (rz && CX.d.activeElement !== rz) rz.value = fr.z; var rzv = q('[data-rzv]'); if (rzv) rzv.textContent = fr.z.toFixed(1) + '×';
     bg.querySelectorAll('[data-rbg]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-rbg') === CFG.bg); });
     var bi = q('.rs-bgi'), im = bgImgUrl(); bi.hidden = CFG.bg !== 'image'; bi.querySelector('img').hidden = !im; if (im && bi.querySelector('img').src !== im) bi.querySelector('img').src = im;
     bi.querySelector('[data-rbgpick]').textContent = im ? T('Change the picture', 'Cambiar la imagen') : T('Choose a picture', 'Elegir una imagen');
     bg.querySelectorAll('[data-rcn]').forEach(function (b) { var on = b.getAttribute('data-rcn') === CFG.corner; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); b.disabled = !CFG.cam; }); }
   function err(m, k) { var e = q('.rs-err'); if (!e) return; if (!m && k && SH.ek && SH.ek !== k) return; SH.ek = m ? (k || 'x') : ''; e.textContent = m || ''; e.hidden = !m; }
-  async function devices() { if (!SH) return; var list = []; try { list = await navigator.mediaDevices.enumerateDevices(); } catch (e) {}
+  async function devices() { if (!SH) return; var list = []; try { list = await CX.w.navigator.mediaDevices.enumerateDevices(); } catch (e) {}
     if (!SH) return;
     [['cam', 'videoinput', T('Camera', 'Cámara')], ['mic', 'audioinput', T('Microphone', 'Micrófono')]].forEach(function (k) {
       var sel = q('[data-rdev="' + k[0] + '"]'), ds = list.filter(function (d) { return d.kind === k[1] && d.deviceId !== 'communications'; }), s = SH[k[0]], tr = s && s.getTracks()[0], cur = (tr && tr.getSettings && tr.getSettings().deviceId) || CFG[k[0] + 'Id'];
@@ -100232,33 +100242,34 @@ window.__stAZ = (function () {
       if (cur && ds.some(function (d) { return d.deviceId === cur; })) sel.value = cur === 'default' ? '' : cur; }); }
   var TOK = { cam: 0, mic: 0 };
   async function camOn() { if (!SH) return; var my = ++TOK.cam; camOff(); var id = CFG.camId;
-    try { var s = await navigator.mediaDevices.getUserMedia({ video: Object.assign({ width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }, id ? { deviceId: { exact: id } } : {}), audio: false });   // 1080p: zoomed to the face it stays sharp
+    try { var s = await CX.w.navigator.mediaDevices.getUserMedia({ video: Object.assign({ width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }, id ? { deviceId: { exact: id } } : {}), audio: false });   // 1080p: zoomed to the face it stays sharp
       if (!SH || my !== TOK.cam || !CFG.cam) { stopS(s); return; }
       SH.cam = s; SH.fx = camFx(s); pvOn(); if (CFG.bg !== 'none') fxLoad(); err('', 'cam'); paint(); devices(); }
     catch (e) { if (my !== TOK.cam) return; if (id && e && e.name === 'OverconstrainedError') { CFG.camId = ''; save(); camOn(); return; } CFG.cam = false; save(); paint(); err(why(e, 'cam'), 'cam'); } }
   function camOff() { if (!SH) return; pvOff(); if (SH.fx) SH.fx.stop(); SH.fx = null; stopS(SH.cam); SH.cam = null; paint(); }
   // the preview: the framed picture as the video will have it, mirrored; drag to pan, the wheel or the slider to zoom
   function pvOn() { pvOff(); var c = q('.rs-pv canvas'); if (!c) return; var g = c.getContext('2d'), my = SH;
-    var tick = function () { if (SH !== my || !my.fx) return; my.pvRaf = requestAnimationFrame(tick); if (my.fx.n !== my.pvN) { my.pvN = my.fx.n; g.drawImage(my.fx.out, 0, 0, c.width, c.height); } };
-    my.pvRaf = requestAnimationFrame(tick); }
-  function pvOff() { if (SH) try { cancelAnimationFrame(SH.pvRaf); } catch (e) {} }
+    var tick = function () { if (SH !== my || !my.fx) return; my.pvRaf = CX.w.requestAnimationFrame(tick); if (my.fx.n !== my.pvN) { my.pvN = my.fx.n; g.drawImage(my.fx.out, 0, 0, c.width, c.height); } };
+    my.pvRaf = CX.w.requestAnimationFrame(tick); }
+  function pvOff() { if (SH) try { CX.w.cancelAnimationFrame(SH.pvRaf); } catch (e) {} }
 
   async function micOn() { if (!SH) return; var my = ++TOK.mic; micOff(); var id = CFG.micId;
-    try { var s = await navigator.mediaDevices.getUserMedia({ audio: Object.assign({ echoCancellation: true, noiseSuppression: true, autoGainControl: true }, id ? { deviceId: { exact: id } } : {}), video: false });
+    try { var s = await CX.w.navigator.mediaDevices.getUserMedia({ audio: Object.assign({ echoCancellation: true, noiseSuppression: true, autoGainControl: true }, id ? { deviceId: { exact: id } } : {}), video: false });
       if (!SH || my !== TOK.mic || !CFG.mic) { stopS(s); return; }
       SH.mic = s; meter(s); err('', 'mic'); paint(); devices(); }
     catch (e) { if (my !== TOK.mic) return; if (id && e && e.name === 'OverconstrainedError') { CFG.micId = ''; save(); micOn(); return; } CFG.mic = false; save(); paint(); err(why(e, 'mic'), 'mic'); } }
   function micOff() { if (!SH) return; meterOff(); stopS(SH.mic); SH.mic = null; paint(); }
   function meter(s) { meterOff(); try { var ac = new (window.AudioContext || window.webkitAudioContext)(), an = ac.createAnalyser(); an.fftSize = 1024; ac.createMediaStreamSource(s).connect(an); var buf = new Float32Array(an.fftSize), bar = q('.rs-mt i'), lv = 0;
     SH.ac = ac; SH.lv = 0; var tick = function () { if (!SH || SH.ac !== ac) return; an.getFloatTimeDomainData(buf); var sum = 0; for (var i = 0; i < buf.length; i++) sum += buf[i] * buf[i]; var rms = Math.sqrt(sum / buf.length);
-      lv = Math.max(rms, lv * 0.86); SH.lv = Math.max(SH.lv, rms); bar.style.width = Math.min(100, Math.round(Math.sqrt(lv) * 160)) + '%'; SH.raf = requestAnimationFrame(tick); }; SH.raf = requestAnimationFrame(tick); } catch (e) {} }
-  function meterOff() { if (!SH) return; try { cancelAnimationFrame(SH.raf); } catch (e) {} try { if (SH.ac) SH.ac.close(); } catch (e) {} SH.ac = null; var bar = q('.rs-mt i'); if (bar) bar.style.width = '0'; }
-  function open() { if (R || SH) return; closePv(); if (!can()) return;
-    var bg = document.createElement('div'); bg.id = 'st-rec-bg'; if (light()) bg.className = 'lt'; bg.innerHTML = sheetHtml(); document.body.appendChild(bg);
+      lv = Math.max(rms, lv * 0.86); SH.lv = Math.max(SH.lv, rms); bar.style.width = Math.min(100, Math.round(Math.sqrt(lv) * 160)) + '%'; SH.raf = CX.w.requestAnimationFrame(tick); }; SH.raf = CX.w.requestAnimationFrame(tick); } catch (e) {} }
+  function meterOff() { if (!SH) return; try { CX.w.cancelAnimationFrame(SH.raf); } catch (e) {} try { if (SH.ac) SH.ac.close(); } catch (e) {} SH.ac = null; var bar = q('.rs-mt i'); if (bar) bar.style.width = '0'; }
+  function open(from) { if (SH) { var gone = true; try { gone = !SH.bg.isConnected || SH.bg.ownerDocument.defaultView.closed; } catch (e) {} if (gone) closeSheet(false); }   // a set-up left in a window since closed
+    if (R || SH) return; closePv(); if (!can()) return; cxSet(from && from.nodeType ? from : (document.getElementById('stpr-win') ? null : stageDoc() && stageDoc().body));
+    var bg = CX.d.createElement('div'); bg.id = 'st-rec-bg'; if (light()) bg.className = 'lt'; bg.innerHTML = sheetHtml(); CX.d.body.appendChild(bg);
     SH = { bg: bg, cam: null, mic: null, views: views() }; CFG.sm = true; sm(true); paint(); devices();   // views: each chart as it was before Streamer mode widened it
-    bg.addEventListener('click', onClick); bg.addEventListener('change', onChange); bg.addEventListener('input', onInput); document.addEventListener('keydown', onKey, true); pvDrag(bg.querySelector('.rs-pv'));
+    bg.addEventListener('click', onClick); bg.addEventListener('change', onChange); bg.addEventListener('input', onInput); CX.d.addEventListener('keydown', onKey, true); pvDrag(bg.querySelector('.rs-pv'));
     if (CFG.cam) camOn(); if (CFG.mic) micOn(); }
-  function closeSheet(keep) { if (!SH) return; var s = SH; meterOff(); pvOff(); if (!keep) { if (s.fx) s.fx.stop(); stopS(s.cam); stopS(s.mic); sm(false); putViews(s.views); } document.removeEventListener('keydown', onKey, true); s.bg.remove(); SH = null; }
+  function closeSheet(keep) { if (!SH) return; var s = SH; meterOff(); pvOff(); if (!keep) { if (s.fx) s.fx.stop(); stopS(s.cam); stopS(s.mic); sm(false); putViews(s.views); } CX.d.removeEventListener('keydown', onKey, true); s.bg.remove(); SH = null; }
   function onKey(e) { if (e.key === 'Escape' && SH) { e.preventDefault(); e.stopPropagation(); closeSheet(false); } }
   function onClick(e) { var t = e.target, b = t && t.closest && t.closest('button'); if (t === SH.bg) { closeSheet(false); return; } if (!b) return;
     var a = b.getAttribute('data-r');
@@ -100382,36 +100393,39 @@ window.__stAZ = (function () {
     var c = ['video/mp4;codecs=avc1.' + lvl + a, 'video/mp4;codecs=avc1.640028' + a, 'video/mp4;codecs=avc1.4d0028' + a, 'video/mp4', 'video/webm;codecs=vp9' + o, 'video/webm;codecs=vp8' + o, 'video/webm'];
     for (var i = 0; i < c.length; i++) { try { if (MediaRecorder.isTypeSupported(c[i])) return c[i]; } catch (e) {} } return ''; }
   function bps(W, H) { return Math.round(Math.max(6e6, Math.min(30e6, 12e6 * (W * H) / (1920 * 1080) * (CFG.fps > 30 ? 1.5 : 1)))); }
-  function vid(s) { var v = document.createElement('video'); v.className = 'st-rec-v'; v.muted = true; v.playsInline = true; v.autoplay = true; v.srcObject = s; document.body.appendChild(v); v.play().catch(noop); return v; }
-  function start() { if (R || !SH) return; var d = window.devicePixelRatio || 1, gp, fsP, sw = Math.max(screen.width, innerWidth), sh = Math.max(screen.height, innerHeight);
+  function vid(s) { var v = CX.d.createElement('video'); v.className = 'st-rec-v'; v.muted = true; v.playsInline = true; v.autoplay = true; v.srcObject = s; CX.d.body.appendChild(v); v.play().catch(noop); return v; }
+  function start() { if (R || !SH) return; var d = CX.w.devicePixelRatio || 1, gp, fsP, sw = Math.max(CX.w.screen.width, CX.w.innerWidth), sh = Math.max(CX.w.screen.height, CX.w.innerHeight);
     // the screen first, then full screen, in the same click: full screen spends the click, the screen's request does not
-    try { gp = navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: CFG.fps, max: CFG.fps }, width: { ideal: Math.round(sw * d) }, height: { ideal: Math.round(sh * d) } }, audio: false,
+    try { gp = CX.w.navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: CFG.fps, max: CFG.fps }, width: { ideal: Math.round(sw * d) }, height: { ideal: Math.round(sh * d) } }, audio: false,
       preferCurrentTab: true, selfBrowserSurface: 'include', surfaceSwitching: 'exclude', monitorTypeSurfaces: 'exclude' }); } catch (e) { gp = Promise.reject(e); }
-    fsP = (CFG.fs && !document.fullscreenElement && document.documentElement.requestFullscreen) ? document.documentElement.requestFullscreen({ navigationUI: 'hide' }).then(function () { return true; }, function () { return false; }) : Promise.resolve(false);
+    fsP = (CFG.fs && !CX.d.fullscreenElement && CX.d.documentElement.requestFullscreen) ? CX.d.documentElement.requestFullscreen({ navigationUI: 'hide' }).then(function () { return true; }, function () { return false; }) : Promise.resolve(false);
     var r = R = { st: 'starting', cam: CFG.cam ? SH.cam : null, mic: CFG.mic ? SH.mic : null, sm: !!CFG.sm, fmt: CFG.fmt, fps: CFG.fps, at: new Date(), paused: 0, muted: false, views: SH.views };
     r.fx = CFG.cam && SH.cam ? SH.fx : null; if (!r.fx && SH.fx) SH.fx.stop(); SH.fx = null;
     if (!CFG.cam) stopS(SH.cam); if (!CFG.mic) stopS(SH.mic); SH.cam = SH.mic = null; closeSheet(true);
     go(r, gp, fsP); }
   async function go(r, gp, fsP) { var vs;
-    try { vs = await gp; } catch (e) { fsP.then(function (f) { if (f) document.exitFullscreen().catch(noop); }); fail(r, why(e, 'screen')); return; }
+    try { vs = await gp; } catch (e) { fsP.then(function (f) { if (f) CX.d.exitFullscreen().catch(noop); }); fail(r, why(e, 'screen')); return; }
     if (R !== r) { stopS(vs); return; }
     r.vs = vs; var tr = vs.getVideoTracks()[0]; tr.addEventListener('ended', function () { if (R === r) stop(); });   // the browser's own "Stop sharing"
     r.fs = await fsP;
-    if (!r.fs && CFG.fs && !document.fullscreenElement) { try { if (!navigator.userActivation || navigator.userActivation.isActive) { await document.documentElement.requestFullscreen({ navigationUI: 'hide' }); r.fs = true; } } catch (e) {} }
+    if (!r.fs && CFG.fs && !CX.d.fullscreenElement) { try { if (!CX.w.navigator.userActivation || CX.w.navigator.userActivation.isActive) { await CX.d.documentElement.requestFullscreen({ navigationUI: 'hide' }); r.fs = true; } } catch (e) {} }
     r.tall = r.fmt !== 'yt' && CFG.fit === 'fill';   // a tall or square format filled: the platform takes its shape (shape), so it needs the whole window
-    if (CFG.fs || r.tall) { try { var P = window.__stPractice, lv = P && P._lv && P._lv(), mb = document.getElementById('stpr-max'); if (lv && lv.inl && !lv.max && mb) { mb.click(); r.maxed = true; } } catch (e) {} }
-    document.body.classList.add('st-rec-on'); sm(r.sm);
-    if (r.tall) { shape(r); window.addEventListener('resize', r.onRs = function () { shape(r); }); }
+    if (CFG.fs || r.tall) { try { var P = window.__stPractice, lv = P && P._lv && P._lv(), mb = CX.d.getElementById('stpr-max'); if (lv && lv.inl && !lv.max && mb) { mb.click(); r.maxed = true; } } catch (e) {} }
+    CX.d.body.classList.add('st-rec-on'); sm(r.sm); if (CX.w !== window) try { CX.w.addEventListener('beforeunload', bu); } catch (e) {}
+    if (r.tall) { shape(r); CX.w.addEventListener('resize', r.onRs = function () { shape(r); }); }
     await wait(r.tall ? 800 : 500); if (R !== r) return;   // the platform at its new size, the charts fitted to it
     var w = win(); r.mode = 'full';
-    if (w && window.RestrictionTarget && tr.restrictTo) { try { await tr.restrictTo(await RestrictionTarget.fromElement(w)); r.mode = 'el'; } catch (e) {} }
-    if (r.mode === 'full' && w && window.CropTarget && tr.cropTo) { try { await tr.cropTo(await CropTarget.fromElement(w)); r.mode = 'crop'; } catch (e) {} }
-    if (r.mode === 'full') { var st = tr.getSettings ? tr.getSettings() : {}; if (st.displaySurface === 'browser' && st.width && st.height && Math.abs(st.width / st.height - innerWidth / innerHeight) < 0.03) r.mode = 'canvas'; }
+    // Live Charts' own window: the platform was brought over from the app's window and keeps the capture mark it may have been given there
+    // (Element Capture answers "Invalid target"), so that window's own frame around it is captured and cropped to the platform (src)
+    var tgt = w; if (w && CX.w !== window) { var fb = CX.d.getElementById('stpr-bg'); if (fb && fb.contains(w)) { tgt = fb; r.viaBg = true; } }
+    if (w && CX.w.RestrictionTarget && tr.restrictTo) { try { var rt = CX.w === window ? function (t, el) { return RestrictionTarget.fromElement(el).then(function (x) { return t.restrictTo(x); }); } : new CX.w.Function('t', 'el', 'return RestrictionTarget.fromElement(el).then(function (x) { return t.restrictTo(x); });'); /* in that window's own realm */ await rt(tr, tgt); r.mode = 'el'; r.tgt = tgt; } catch (e) { r.elErr = String((e && e.name) || '') + ': ' + String((e && e.message) || e); } }
+    if (r.mode === 'full' && w && CX.w.CropTarget && tr.cropTo) { try { await tr.cropTo(await CX.w.CropTarget.fromElement(w)); r.mode = 'crop'; } catch (e) {} }
+    if (r.mode === 'full') { var st = tr.getSettings ? tr.getSettings() : {}; if (st.displaySurface === 'browser' && st.width && st.height && Math.abs(st.width / st.height - CX.w.innerWidth / CX.w.innerHeight) < 0.03) r.mode = 'canvas'; }
     if (R !== r) return;
     var sz = { w: FMT[r.fmt].w, h: FMT[r.fmt].h }; if (r.fmt === 'yt' && CFG.hi && hiOk()) sz = { w: 2560, h: 1440 };
     var cv = document.createElement('canvas'); cv.width = sz.w; cv.height = sz.h;
     r.W = sz.w; r.H = sz.h; r.cv = cv; r.g = cv.getContext('2d', { alpha: false }); r.fit = r.fmt === 'yt' ? 'auto' : CFG.fit; r.lt = light(); r.sym = symKey();
-    try { r.bg = getComputedStyle(w).backgroundColor || '#0b0d12'; if (/rgba\(0, 0, 0, 0\)|transparent/.test(r.bg)) r.bg = r.lt ? '#e0e3eb' : '#0b0d12'; } catch (e) { r.bg = '#0b0d12'; }
+    try { r.bg = CX.w.getComputedStyle(w).backgroundColor || '#0b0d12'; if (/rgba\(0, 0, 0, 0\)|transparent/.test(r.bg)) r.bg = r.lt ? '#e0e3eb' : '#0b0d12'; } catch (e) { r.bg = '#0b0d12'; }
     r.sv = vid(vs); r.cvid = r.fx ? r.fx.v : null;
     if (r.cvid) { r.cb = camBox(r); r.cbT = setInterval(function () { if (R === r) r.cb = camBox(r); }, 700); }   // where the camera goes, looked at again as the chart moves
     var tracks = cv.captureStream(r.fps).getVideoTracks();
@@ -100423,17 +100437,20 @@ window.__stAZ = (function () {
     r.rec.onstop = function () { done(r); };
     loop(r);
     countdown(r, function () { if (R !== r) return; try { r.rec.start(1000); } catch (e) { fail(r, T('The recording did not start.', 'La grabación no arrancó.')); return; } r.t0 = performance.now(); r.n0 = r.n || 0; r.st = 'rec'; ctl(r); tallView(r); azRefresh(); if (r.fx) r.fx.reset(); }); }
-  function loop(r) { var gap = 1000 / r.fps - 4, last = 0;
-    var tick = function (ts) { if (R !== r) return; r.raf = requestAnimationFrame(tick); if (ts - last < gap) return; last = ts; draw(r); pace(r, ts); };
-    r.raf = requestAnimationFrame(tick);
-    r.iv = setInterval(function () { if (R === r && document.hidden) draw(r); }, 1000 / r.fps); }   // a hidden tab draws no frames: the clock and the camera keep moving
+  function loop(r) { var iv = 1000 / r.fps, next = 0;   // a frame on each 1/fps step of the screen's own refresh: exactly the format's rate, never more (a 120 Hz screen drew 44 a second)
+    var tick = function (ts) { if (R !== r) return; r.raf = CX.w.requestAnimationFrame(tick); if (ts < next - 1.5) return; next = (next && ts - next < iv) ? next + iv : ts + iv; draw(r); pace(r, ts); };
+    r.raf = CX.w.requestAnimationFrame(tick);
+    r.iv = setInterval(function () { if (R === r && CX.d.hidden) draw(r); }, 1000 / r.fps); }   // a hidden tab draws no frames: the clock and the camera keep moving
   // the video's own rate, measured each second: under 90% of it, the camera processes every 2nd, 3rd... of its frames; back up when there is room
   function pace(r, ts) { if (!r.fx || r.st !== 'rec') return; if (!r.pc) { r.pc = { t: ts, n: r.n, ok: 0, bad: 0 }; return; } if (ts - r.pc.t < 1000) return; var f = (r.n - r.pc.n) * 1000 / (ts - r.pc.t);
     if (f < r.fps * 0.85) { r.pc.ok = 0; if (++r.pc.bad >= 2 && r.fx.skip < 4) { r.fx.skip++; r.pc.bad = 0; } } else { r.pc.bad = 0; if (f >= r.fps * 0.93 && r.fx.skip > 0 && ++r.pc.ok >= 2) { r.fx.skip--; r.pc.ok = 0; } }   // two seconds short: give way; two good: back
     r.pc.t = ts; r.pc.n = r.n; r.vfps = Math.round(f); }
   function rr(g, x, y, w, h, rad) { g.beginPath(); g.moveTo(x + rad, y); g.arcTo(x + w, y, x + w, y + h, rad); g.arcTo(x + w, y + h, x, y + h, rad); g.arcTo(x, y + h, x, y, rad); g.arcTo(x, y, x + w, y, rad); g.closePath(); }
-  function src(r, vw, vh) { if (r.mode !== 'canvas') return { x: 0, y: 0, w: vw, h: vh }; var w = win(); if (!w) return { x: 0, y: 0, w: vw, h: vh };
-    var b = w.getBoundingClientRect(), kx = vw / innerWidth, ky = vh / innerHeight, x = Math.max(0, b.left * kx), y = Math.max(0, b.top * ky);
+  function src(r, vw, vh) { var w = win();
+    if (r.mode === 'el' && r.viaBg && w && r.tgt) { var fb = r.tgt.getBoundingClientRect(), pb = w.getBoundingClientRect(), fx2 = vw / Math.max(1, fb.width), fy2 = vh / Math.max(1, fb.height), x0 = Math.max(0, (pb.left - fb.left) * fx2), y0 = Math.max(0, (pb.top - fb.top) * fy2);
+      return { x: x0, y: y0, w: Math.max(1, Math.min(vw - x0, pb.width * fx2)), h: Math.max(1, Math.min(vh - y0, pb.height * fy2)) }; }   // the window's frame captured: the platform cut out of it
+    if (r.mode !== 'canvas' || !w) return { x: 0, y: 0, w: vw, h: vh };
+    var b = w.getBoundingClientRect(), kx = vw / CX.w.innerWidth, ky = vh / CX.w.innerHeight, x = Math.max(0, b.left * kx), y = Math.max(0, b.top * ky);
     return { x: x, y: y, w: Math.max(1, Math.min(vw - x, b.width * kx)), h: Math.max(1, Math.min(vh - y, b.height * ky)) }; }
   function fitOf(r, aw, ah) { if (r.fit !== 'auto') return r.fit; var q2 = (aw / ah) / (r.W / r.H); return (q2 >= 0.985 && q2 <= 1.1) ? 'fill' : 'fit'; }   // YouTube: filled when the platform is a little wider than 16:9, else fitted
   function draw(r) { var g = r.g, W = r.W, H = r.H, v = r.sv, vw = v.videoWidth, vh = v.videoHeight;
@@ -100452,14 +100469,14 @@ window.__stAZ = (function () {
     g.fillStyle = r.lt ? '#6a6d78' : '#868993'; g.font = '400 ' + s2 + 'px ' + FONT; g.fillText('Session Terminal', m, y + s1 * 0.2 + s2 * 1.5); g.restore(); }
   function camW(r) { return Math.round(r.W * (r.W > r.H ? 0.16 : 0.22)); }   // 22% of the width on the tall and square formats; on 16:9 that is 40% of the height, so 16%
   // Fill on a tall or square format: the platform the screen's height and the format's shape, centred (the CSS above); again when the window changes
-  function shape(r) { var bg = document.getElementById('stpr-bg'), H = (bg && bg.clientHeight) || innerHeight, f = FMT[r.fmt], w = Math.min(innerWidth, Math.round(H * f.w / f.h));
-    if (r.shapeW === w) return; if (!r.views) r.views = views(); r.shapeW = w; document.body.style.setProperty('--st-rec-w', w + 'px'); document.body.classList.add('st-rec-tall'); refit();
+  function shape(r) { var bg = CX.d.getElementById('stpr-bg'), H = (bg && bg.clientHeight) || CX.w.innerHeight, f = FMT[r.fmt], w = Math.min(CX.w.innerWidth, Math.round(H * f.w / f.h));
+    if (r.shapeW === w) return; if (!r.views) r.views = views(); r.shapeW = w; CX.d.body.style.setProperty('--st-rec-w', w + 'px'); CX.d.body.classList.add('st-rec-tall'); refit();
     clearTimeout(r.vwT); clearTimeout(r.vwT2); r.vwT = setTimeout(function () { tallView(r); }, 450); r.vwT2 = setTimeout(function () { tallView(r); }, 1200); }   // after the platform's own refit (and its maximise's put-back)
   // the tall shape's view: the candles as wide as before, the space after the newest candle keeping its share of the chart
   function tallView(r) { if (R !== r || !r.tall) return; (r.views || []).forEach(function (o) { try { var ts = o.p.chart.timeScale(), w1 = ts.width(); if (!(w1 > 0)) return; var nb = w1 / o.sp, to = o.last + nb * o.fut; ts.setVisibleLogicalRange({ from: to - nb, to: to }); } catch (e) {} }); }
   // each chart's view and the width of its candles, taken when the set-up opens: Streamer mode, full screen and the tall shape all change the
   // chart's width, and the platform keeps the number of candles, so without this each recording left the chart a little more zoomed out
-  function putViews(vs) { if (!vs || !vs.length) return; var put = function () { vs.forEach(function (o) { try { o.p.chart.timeScale().setVisibleLogicalRange(o.vr); } catch (e) {} }); }; setTimeout(put, 550); setTimeout(put, 1300); }   // after the platform's own put-back (300 ms), and again once full screen has gone
+  function putViews(vs) { if (!vs || !vs.length) return; var put = function () { vs.forEach(function (o) { try { o.p.chart.timeScale().setVisibleLogicalRange(o.vr); } catch (e) {} }); }; setTimeout(put, 550); setTimeout(put, 1300); setTimeout(put, 2600); }   // after the platform's own put-back (300 ms), and again as the window settles (a busy computer is slower)
   function views() { var out = []; try { (window.__stPractice._panes() || []).forEach(function (p) { if (!p || !p.chart) return; var ts = p.chart.timeScale(), vr = ts.getVisibleLogicalRange(), w0 = ts.width(); if (vr && w0 > 0 && vr.to > vr.from) { var last = (p.n || (p.bars || []).length) - 1; out.push({ p: p, vr: { from: vr.from, to: vr.to }, sp: w0 / (vr.to - vr.from), last: last, fut: Math.max(0, Math.min(0.35, (vr.to - last) / (vr.to - vr.from))) }); } }); } catch (e) {} return out; }
   // The camera's square, in the platform's own pixels (27 Oct 2026: top right it hid the price scale and the TP tag): in the chosen corner of the
   // chart's plotting area - under the legend, above the time axis and the chart's logo, inside the toolbars; a right-hand corner also left of the
@@ -100487,20 +100504,20 @@ window.__stAZ = (function () {
     r.camC = { x: x, y: y, s: cw }; var rad = Math.round(cw * 0.1), lw = Math.max(2, Math.round(W / 720));
     g.save(); rr(g, x, y, cw, cw, rad); g.clip(); g.translate(x + cw, y); g.scale(-1, 1); g.drawImage(src, sx, sy, s, s, 0, 0, cw, cw); g.restore();
     g.save(); rr(g, x + lw / 2, y + lw / 2, cw - lw, cw - lw, Math.max(0, rad - lw / 2)); g.lineWidth = lw; g.strokeStyle = r.lt ? 'rgba(19,23,34,.7)' : 'rgba(255,255,255,.88)'; g.stroke(); g.restore(); }
-  function countdown(r, cb) { var w = win(), b = w ? w.getBoundingClientRect() : { left: 0, top: 0, width: innerWidth, height: innerHeight }, el = document.createElement('div'), n = 3;
-    el.id = 'st-rec-cd'; el.style.left = b.left + 'px'; el.style.top = b.top + 'px'; el.style.width = b.width + 'px'; el.style.height = b.height + 'px'; document.body.appendChild(el); r.cd = el;
+  function countdown(r, cb) { var w = win(), b = w ? w.getBoundingClientRect() : { left: 0, top: 0, width: CX.w.innerWidth, height: CX.w.innerHeight }, el = CX.d.createElement('div'), n = 3;
+    el.id = 'st-rec-cd'; el.style.left = b.left + 'px'; el.style.top = b.top + 'px'; el.style.width = b.width + 'px'; el.style.height = b.height + 'px'; CX.d.body.appendChild(el); r.cd = el;
     var show = function () { el.innerHTML = '<span>' + n + '</span><small>' + esc(T('Recording starts…', 'La grabación empieza…')) + '</small>'; };
     show(); r.cdT = setInterval(function () { if (R !== r) { clearInterval(r.cdT); return; } n--; if (n > 0) { show(); return; } clearInterval(r.cdT); el.remove(); r.cd = null; cb(); }, 1000); }
   function fmtT(ms) { var s = Math.max(0, Math.floor(ms / 1000)), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), p = function (x) { return (x < 10 ? '0' : '') + x; }; return (h ? h + ':' + p(m) : p(m)) + ':' + p(s % 60); }
   function elapsed(r) { if (!r.t0) return 0; var now = performance.now(); return now - r.t0 - r.paused - (r.st === 'pause' && r.pAt ? now - r.pAt : 0); }
-  function ctl(r) { var el = document.createElement('div'); el.id = 'st-rec-ctl'; el.setAttribute('role', 'toolbar'); el.setAttribute('aria-label', T('Recording', 'Grabando'));
+  function ctl(r) { var el = CX.d.createElement('div'); el.id = 'st-rec-ctl'; el.setAttribute('role', 'toolbar'); el.setAttribute('aria-label', T('Recording', 'Grabando'));
     el.innerHTML = '<span class="rc-g" title="' + esc(T('Drag to move', 'Arrastra para mover')) + '"><i class="rc-d"></i><span class="rc-t">00:00</span></span><span class="rc-s"></span>'
       + '<button type="button" data-rc="pause"></button>' + (r.gn ? '<button type="button" data-rc="mute"></button>' : '') + '<button type="button" class="x" data-rc="stop" title="' + esc(T('Stop and save', 'Parar y guardar')) + '" aria-label="' + esc(T('Stop and save', 'Parar y guardar')) + '">' + I.stop + '</button>';
-    document.body.appendChild(el); r.ctl = el; ctlPaint(r);
+    CX.d.body.appendChild(el); r.ctl = el; ctlPaint(r);
     el.addEventListener('click', function (e) { var b = e.target.closest && e.target.closest('[data-rc]'); if (!b) return; var a = b.getAttribute('data-rc'); if (a === 'stop') stop(); else if (a === 'pause') pause(); else if (a === 'mute') mute(); });
     var g0 = el.querySelector('.rc-g');
     g0.addEventListener('pointerdown', function (e) { e.preventDefault(); var b = el.getBoundingClientRect(), dx = e.clientX - b.left, dy = e.clientY - b.top; g0.setPointerCapture(e.pointerId);
-      var mv = function (ev) { el.style.transform = 'none'; el.style.bottom = 'auto'; el.style.left = Math.max(4, Math.min(innerWidth - b.width - 4, ev.clientX - dx)) + 'px'; el.style.top = Math.max(4, Math.min(innerHeight - b.height - 4, ev.clientY - dy)) + 'px'; };
+      var mv = function (ev) { el.style.transform = 'none'; el.style.bottom = 'auto'; el.style.left = Math.max(4, Math.min(CX.w.innerWidth - b.width - 4, ev.clientX - dx)) + 'px'; el.style.top = Math.max(4, Math.min(CX.w.innerHeight - b.height - 4, ev.clientY - dy)) + 'px'; };
       var up = function () { g0.removeEventListener('pointermove', mv); g0.removeEventListener('pointerup', up); g0.removeEventListener('pointercancel', up); };
       g0.addEventListener('pointermove', mv); g0.addEventListener('pointerup', up); g0.addEventListener('pointercancel', up); });
     r.tk = setInterval(function () { if (R !== r || !r.ctl) return; var t = r.ctl.querySelector('.rc-t'), s = fmtT(elapsed(r)); if (t.textContent !== s) t.textContent = s; }, 250); }
@@ -100515,37 +100532,37 @@ window.__stAZ = (function () {
   function stop() { var r = R; if (!r) return;
     if (r.st === 'rec' || r.st === 'pause') { if (r.st === 'pause') { r.paused += performance.now() - r.pAt; r.pAt = 0; } r.dur = elapsed(r); r.st = 'end'; try { r.rec.stop(); } catch (e) { done(r); } return; }
     if (r.st !== 'end') cleanup(r); }   // before the countdown ends: nothing was recorded
-  function cleanup(r) { if (R === r) R = null; try { cancelAnimationFrame(r.raf); } catch (e) {} clearInterval(r.iv); clearInterval(r.tk); clearInterval(r.cdT);
+  function cleanup(r) { if (R === r) R = null; try { CX.w.cancelAnimationFrame(r.raf); } catch (e) {} clearInterval(r.iv); clearInterval(r.tk); clearInterval(r.cdT);
     stopS(r.vs); stopS(r.cam); stopS(r.mic); try { if (r.ac) r.ac.close(); } catch (e) {}
     if (r.fx) r.fx.stop(); setTimeout(azRefresh, 60);
     [r.sv, r.ctl, r.cd].forEach(function (el) { try { if (el) { if (el.srcObject) el.srcObject = null; el.remove(); } } catch (e) {} });
-    if (r.onRs) window.removeEventListener('resize', r.onRs); clearInterval(r.cbT);
-    if (document.body.classList.contains('st-rec-tall')) { document.body.classList.remove('st-rec-tall'); document.body.style.removeProperty('--st-rec-w'); refit(); clearTimeout(r.vwT); clearTimeout(r.vwT2); }
-    document.body.classList.remove('st-rec-on'); sm(false);
-    if (r.maxed) { try { var P = window.__stPractice, lv = P && P._lv && P._lv(), mb = document.getElementById('stpr-max'); if (lv && lv.max && mb) mb.click(); } catch (e) {} }
+    if (r.onRs) CX.w.removeEventListener('resize', r.onRs); clearInterval(r.cbT);
+    if (CX.d.body.classList.contains('st-rec-tall')) { CX.d.body.classList.remove('st-rec-tall'); CX.d.body.style.removeProperty('--st-rec-w'); refit(); clearTimeout(r.vwT); clearTimeout(r.vwT2); }
+    CX.d.body.classList.remove('st-rec-on'); sm(false); if (CX.w !== window) try { CX.w.removeEventListener('beforeunload', bu); } catch (e) {}
+    if (r.maxed) { try { var P = window.__stPractice, lv = P && P._lv && P._lv(), mb = CX.d.getElementById('stpr-max'); if (lv && lv.max && mb) mb.click(); } catch (e) {} }
     var put = function () { putViews(r.views); };   // each chart's view as it was, once full screen has gone
-    if (r.fs && document.fullscreenElement) { try { document.exitFullscreen().then(put, put); } catch (e) { put(); } } else put(); }
+    if (r.fs && CX.d.fullscreenElement) { try { CX.d.exitFullscreen().then(put, put); } catch (e) { put(); } } else put(); }
   function fail(r, m) { cleanup(r); open(); err(m, 'screen'); }
   function done(r) { var mp4 = /mp4/i.test(r.mime), blob = new Blob(r.chunks, { type: mp4 ? 'video/mp4' : 'video/webm' }), name = 'Session Terminal – ' + r.sym + ' – ' + stamp(r.at) + (mp4 ? '.mp4' : '.webm');
-    cleanup(r); if (!blob.size) return;
+    cleanup(r); if (!blob.size) return; cxOk();
     var u = URL.createObjectURL(blob); download(u, name);
     LAST = { name: name, size: blob.size, type: blob.type, w: r.W, h: r.H, dur: r.dur || 0, mode: r.mode, mime: r.mime, frames: (r.n || 0) - (r.n0 || 0), cam: r.camC || null, tall: !!r.tall, url: u };
     preview(LAST); }
-  function download(u, name) { var a = document.createElement('a'); a.href = u; a.download = name; a.style.display = 'none'; document.body.appendChild(a); a.click(); setTimeout(function () { try { a.remove(); } catch (e) {} }, 1000); }
+  function download(u, name) { var a = CX.d.createElement('a'); a.href = u; a.download = name; a.style.display = 'none'; CX.d.body.appendChild(a); a.click(); setTimeout(function () { try { a.remove(); } catch (e) {} }, 1000); }
   function mb(n) { return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
-  function preview(x) { closePv(); var bg = document.createElement('div'); bg.id = 'st-rec-pv'; if (light()) bg.className = 'lt';
+  function preview(x) { closePv(); var bg = CX.d.createElement('div'); bg.id = 'st-rec-pv'; if (light()) bg.className = 'lt';
     bg.innerHTML = '<div class="rs" role="dialog" aria-modal="true" aria-labelledby="st-rec-pt"><div class="rs-h"><span class="rs-ok">' + I.ok + '</span><b id="st-rec-pt">' + esc(T('Saved to your Downloads', 'Guardado en tus Descargas')) + '</b><button type="button" class="rs-x" data-p="x" aria-label="' + esc(T('Close', 'Cerrar')) + '">' + I.x + '</button></div>'
       + '<div class="rp-v"><video controls playsinline preload="metadata"></video></div>'
       + '<div class="rp-i"><b>' + esc(x.name) + '</b><small>' + esc([fmtT(x.dur), x.w + ' × ' + x.h, mb(x.size), /mp4/.test(x.type) ? 'MP4' : 'WebM'].join('  ·  ')) + '</small></div>'
       + '<div class="rs-f"><span class="rs-n">' + esc(T('Nothing was uploaded.', 'No se subió nada.')) + '</span><button type="button" class="rs-b" data-p="x" title="' + esc(T('Close this preview. The saved file stays in your Downloads.', 'Cierra esta vista. El archivo guardado se queda en tus Descargas.')) + '">' + esc(T('Discard', 'Descartar')) + '</button><button type="button" class="rs-b pri" data-p="save">' + esc(T('Save again', 'Guardar otra vez')) + '</button></div></div>';
-    document.body.appendChild(bg); var v = bg.querySelector('video'); v.src = x.url; PV = { bg: bg, x: x };
+    CX.d.body.appendChild(bg); var v = bg.querySelector('video'); v.src = x.url; PV = { bg: bg, x: x };
     bg.addEventListener('click', function (e) { var t = e.target, b = t && t.closest && t.closest('[data-p]'); if (t === bg) { closePv(); return; } if (!b) return; if (b.getAttribute('data-p') === 'save') download(x.url, x.name); else closePv(); });
-    PV.key = function (e) { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closePv(); } }; document.addEventListener('keydown', PV.key, true); }
-  function closePv() { if (!PV) return; var p = PV; PV = null; document.removeEventListener('keydown', p.key, true); try { var v = p.bg.querySelector('video'); v.pause(); v.removeAttribute('src'); v.load(); } catch (e) {} p.bg.remove();
+    PV.d = CX.d; PV.key = function (e) { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closePv(); } }; CX.d.addEventListener('keydown', PV.key, true); }
+  function closePv() { if (!PV) return; var p = PV; PV = null; try { (p.d || document).removeEventListener('keydown', p.key, true); } catch (e) {} try { var v = p.bg.querySelector('video'); v.pause(); v.removeAttribute('src'); v.load(); } catch (e) {} p.bg.remove();
     setTimeout(function () { try { URL.revokeObjectURL(p.x.url); } catch (e) {} }, 60000); }
   function onVid(r) { var b = r.cb, a = r.mp; if (!b || !a || !(a.k > 0)) return null; var X = function (v) { return Math.round(a.dx + v * a.k); }, Y = function (v) { return Math.round(a.dy + v * a.k); };
     return { plot: { l: X(b.plot.l), t: Y(b.plot.t), r: X(b.plot.r), b: Y(b.plot.b), rx: X(b.plot.rx) }, nx: b.nx == null ? null : X(b.nx), right: X(b.ww) }; }   // the plotting area, the newest candle and the platform's right edge, on the video
-  function state() { return R ? { st: R.st, mode: R.mode || null, fmt: R.fmt, w: R.W || 0, h: R.H || 0, mime: R.mime || '', t: elapsed(R), frames: (R.n || 0) - (R.n0 || 0), fs: !!R.fs, maxed: !!R.maxed, tall: !!R.tall, shapeW: R.shapeW || 0, corner: CFG.corner, cam: R.camC || null, on: onVid(R), fx: R.fx ? R.fx.stats() : null } : { st: SH ? 'setup' : (PV ? 'preview' : 'idle'), last: LAST, fx: SH && SH.fx ? SH.fx.stats() : null }; }
+  function state() { return R ? { st: R.st, mode: R.mode || null, elErr: R.elErr || '', fmt: R.fmt, w: R.W || 0, h: R.H || 0, mime: R.mime || '', t: elapsed(R), frames: (R.n || 0) - (R.n0 || 0), fs: !!R.fs, maxed: !!R.maxed, tall: !!R.tall, shapeW: R.shapeW || 0, corner: CFG.corner, cam: R.camC || null, on: onVid(R), fx: R.fx ? R.fx.stats() : null } : { st: SH ? 'setup' : (PV ? 'preview' : 'idle'), last: LAST, fx: SH && SH.fx ? SH.fx.stats() : null }; }
   window.__stRec = { open: open, start: start, stop: stop, pause: pause, mute: mute, state: state, can: can, _cfg: function () { return CFG; }, _r: function () { return R; }, _last: function () { return LAST; } };
 })();
 </script>
