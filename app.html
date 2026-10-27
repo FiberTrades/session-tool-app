@@ -2883,6 +2883,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .ss-row.sel { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 600; }
   .equity-tooltip { position: absolute; pointer-events: none; z-index: 5; background: var(--bg-elev2); border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); box-shadow: none; padding: 7px 10px; font-family: 'AppNum', 'DM Mono', monospace; color: var(--text); white-space: nowrap; text-align: center; line-height: 1.5; opacity: 0; transform: translateY(-100%); transition: opacity 0.12s ease; }
   .equity-tooltip.show { opacity: 1; }
+  /* the equity curve's currency switch (27 Oct 2026), only with accounts in more than one currency */
+  .eq-cur { display: inline-flex; margin-left: 10px; border: 1px solid var(--border-2); border-radius: 7px; overflow: hidden; vertical-align: middle; }
+  .eq-cur button { border: 0; border-left: 1px solid var(--border-2); background: transparent; color: var(--text-dim); font: 500 11px 'AppNum', 'DM Mono', monospace; padding: 3px 9px; cursor: pointer; }
+  .eq-cur button:first-child { border-left: 0; } .eq-cur button[aria-pressed="true"] { background: #232129; color: var(--text); }
   .equity-tooltip.et-below { transform: translateY(0); }   /* sits below the point when near the chart's top */
   .equity-tooltip .et-val { font-size: 13px; font-weight: 500; }
   .equity-tooltip .et-delta { font-size: 10px; }
@@ -17629,6 +17633,33 @@ try {
     return accs.reduce((sum, a) => sum + ((a && a.separate) ? 0 : accPaidOut(a)), 0);
   }
   window.__stPayouts = { list: accPayouts, received: payoutReceived, paidOut: accPaidOut };
+  // ---- Money in more than one currency (27 Oct 2026: his 70K in £ and OneFunded in $). A trade's money is in its account's currency.
+  //      Statistics never adds £ and $: a money figure shows each currency ("£2,357.56 · $140.00"), a money chart one currency at a
+  //      time (the switch beside the equity curve). R, pips, win rate, counts and streaks stay combined. One currency: nothing changes.
+  function scopeAccountsList() {
+    const r = currentScopeResolved(), accs = (Array.isArray(data.accounts) ? data.accounts : []);
+    if (r.kind === 'account') return r.account ? [r.account] : [];
+    if (r.kind === 'group') return r.accountIds.map(id => accs.find(x => x.id === id)).filter(Boolean);
+    return accs.filter(a => a && !a.separate);
+  }
+  function tradeCur(t) { const a = (t && t.accountId) ? (data.accounts || []).find(x => x.id === t.accountId) : null; return accCur(a); }
+  function statsCurs(trades) {
+    const seen = {}; scopeAccountsList().forEach(a => { seen[accCur(a)] = 1; }); (trades || []).forEach(t => { seen[tradeCur(t)] = 1; });
+    const main = accCur(null); return Object.keys(seen).sort((a, b) => (a === main ? -1 : b === main ? 1 : a.localeCompare(b)));
+  }
+  function moneyBy(list, fn) { const m = {}; (list || []).forEach(t => { const c = tradeCur(t); m[c] = (m[c] || 0) + (Number(fn(t)) || 0); }); return m; }
+  function fmtMoneyBy(m, opts) {
+    const main = accCur(null), ks = Object.keys(m || {}).sort((a, b) => (a === main ? -1 : b === main ? 1 : a.localeCompare(b)));
+    if (!ks.length) return fmtMoney(0, opts);
+    return ks.map(c => fmtMoney(m[c], Object.assign({}, opts || {}, { cur: c }))).join(' · ');
+  }
+  function avgBy(list, fn, wt) { const s = moneyBy(list, fn), n = moneyBy(list, wt), out = {}; Object.keys(s).forEach(c => { if (n[c] > 0) out[c] = s[c] / n[c]; }); return out; }
+  function baselineIn(cur) { return scopeAccountsList().reduce((s, a) => s + (accCur(a) === cur ? accBaseline(a) : 0), 0); }
+  function paidOutIn(cur) { return scopeAccountsList().reduce((s, a) => s + (accCur(a) === cur ? accPaidOut(a) : 0), 0); }
+  // the money charts' currency while there are several (the equity curve's switch); null with one
+  let _statsCur = null;
+  function statsChartCur(trades) { const cs = statsCurs(trades); if (cs.length < 2) return null; if (!_statsCur || cs.indexOf(_statsCur) < 0) _statsCur = cs[0]; return _statsCur; }
+  window.__stStatsCur = { set: function (c) { _statsCur = c; }, get: function () { return _statsCur; }, curs: statsCurs, by: moneyBy, fmt: fmtMoneyBy };
   function getScopedSB() {
     const r = currentScopeResolved();
     if (r.kind === 'lifetime') return getStatsLifetimeStartingBalance();
@@ -21889,12 +21920,13 @@ try {
     const str = abs.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     return `${opts.noSign ? '' : sign}${opts.cur ? curSymOf(opts.cur) : curSym()}${str}`;   // opts.cur: a currency of its own (an account's)
   }
-  function fmtMoneyShort(v) {
-    if (v == null || isNaN(v) || v === 0) return '£0';
+  function fmtMoneyShort(v, cur) {
+    const cs = cur ? curSymOf(cur) : curSym();   // cur: a currency of its own (27 Oct 2026)
+    if (v == null || isNaN(v) || v === 0) return cs + '0';
     const sign = v > 0 ? '+' : '−';
     const abs = Math.abs(v);
-    if (abs >= 1000) return `${sign}${curSym()}${(abs/1000).toFixed(1).replace(/\.0$/, '')}k`;
-    return `${sign}${curSym()}${Math.round(abs)}`;
+    if (abs >= 1000) return `${sign}${cs}${(abs/1000).toFixed(1).replace(/\.0$/, '')}k`;
+    return `${sign}${cs}${Math.round(abs)}`;
   }
   // --- Animated count-up for KPI stat numbers (v109) ---
   function _parseStatNum(str) {
@@ -21928,10 +21960,12 @@ try {
     if (Math.abs(end) < minStep) { el.textContent = finalStr; return; }
     const dur = 650, t0 = performance.now();
     const ease = t => 1 - Math.pow(1 - t, 3);
+    let wrote = null;   // what this count-up last put there: anything else means the figure was redrawn meanwhile - it stands (27 Oct 2026)
     const tick = now => {
+      if (wrote !== null && el.textContent !== wrote) { el._statAnim = null; return; }
       let p = (now - t0) / dur; if (p > 1) p = 1;
       if (p >= 1) { el.textContent = finalStr; el._statAnim = null; return; }
-      el.textContent = _fmtStatNum(end * ease(p), meta);
+      el.textContent = wrote = _fmtStatNum(end * ease(p), meta);
       el._statAnim = requestAnimationFrame(tick);
     };
     el._statAnim = requestAnimationFrame(tick);
@@ -28901,10 +28935,14 @@ try {
     // has to drop with it or it stops matching the broker. Not a loss: nothing else here sees it.
     const netAllTime = allTime.reduce((s,t) => s + (tradeGross(t) - tradeCosts(t)) * tradeCopies(t), 0);   // the balance is the whole history's, whatever the period
     const balance = getScopedBaseline() + netAllTime - ((typeof getScopedPaidOut === 'function') ? getScopedPaidOut() : 0);
+    // Accounts in more than one currency (27 Oct 2026): each money figure per currency, never one sum of £ and $
+    const _curs = statsCurs(allTime), _multi = _curs.length > 1, _c1 = _curs[0];
+    const _fm = (fn, list, o) => _multi ? fmtMoneyBy(moneyBy(list, fn), o) : fmtMoney((list || []).reduce((acc, t) => acc + (Number(fn(t)) || 0), 0), Object.assign({}, o || {}, { cur: _c1 }));
     // Account Balance KPI — just the £ amount. The lifetime % change moved out of here
     // and into the equity chart subtitle below where it sits next to the curve it summarises.
     const balEl = document.getElementById('kpi-balance');
-    balEl.textContent = fmtMoney(balance, { noSign: true });
+    if (_multi) { const _bal = {}; _curs.forEach(c => { _bal[c] = baselineIn(c) - paidOutIn(c); }); allTime.forEach(t => { const c = tradeCur(t); _bal[c] = (_bal[c] || 0) + (tradeGross(t) - tradeCosts(t)) * tradeCopies(t); }); balEl.textContent = fmtMoneyBy(_bal, { noSign: true }); }
+    else balEl.textContent = fmtMoney(balance, { noSign: true, cur: _c1 });
     balEl.className = 'stat-value medium';
     // Equity chart subtitle now appends the lifetime % change (gain/loss vs starting balance).
     // Hidden when there's no starting balance set (would be undefined). Coloured good/bad
@@ -28930,14 +28968,14 @@ try {
         subEl.style.color = 'var(--text)';   // white — make the captured stat stand out
       }
     }
-    document.getElementById('kpi-costs').textContent = fmtMoney(costsSum, { noSign: true });
+    document.getElementById('kpi-costs').textContent = _fm(t => tradeCosts(t) * tradeCopies(t), all, { noSign: true });
 
     // Net / Gross P&L paired cell — toggle state from data.settings.pnlView
     function renderPnlCell() {
       const mode = data.settings.pnlView === 'gross' ? 'gross' : 'net';
       const val  = mode === 'gross' ? grossSum : netSum;
       const pnlEl = document.getElementById('kpi-pnl');
-      pnlEl.textContent = fmtMoney(val);
+      pnlEl.textContent = _fm(t => (mode === 'gross' ? tradeGross(t) : tradeGross(t) - tradeCosts(t)) * tradeCopies(t), all);
       pnlEl.className = 'stat-value' + (val > 0 ? ' good' : val < 0 ? ' bad' : '');
       // Highlight active toggle option
       document.querySelectorAll('#kpi-pnl-cell .pnl-toggle-opt').forEach(el => {
@@ -29132,18 +29170,18 @@ try {
     if (winDetailEl) {
       winDetailEl.innerHTML = winCopies > 0
         ? `${t('wvl.total')} +${totalWinR.toFixed(2)}R<br>`
-          + `${t('wvl.avg_per_win').replace(/\{R\}/g, '+' + (totalWinR/winCopies).toFixed(2) + 'R · ' + fmtMoney(totalWinCash/winCopies))}`
+          + `${t('wvl.avg_per_win').replace(/\{R\}/g, '+' + (totalWinR/winCopies).toFixed(2) + 'R · ' + (_multi ? fmtMoneyBy(avgBy(wins, x => (tradeNetPL(x) || 0) * tradeCopies(x), x => tradeCopies(x))) : fmtMoney(totalWinCash/winCopies, { cur: _c1 })))}`
         : t('wvl.no_wins');
     }
     if (lossDetailEl) {
       lossDetailEl.innerHTML = lossCopies > 0
         ? `${t('wvl.total')} ${totalLossRActual.toFixed(2)}R<br>`
-          + `${t('wvl.avg_per_loss').replace(/\{R\}/g, (totalLossRActual/lossCopies).toFixed(2) + 'R · ' + fmtMoney(totalLossCash/lossCopies))}`
+          + `${t('wvl.avg_per_loss').replace(/\{R\}/g, (totalLossRActual/lossCopies).toFixed(2) + 'R · ' + (_multi ? fmtMoneyBy(avgBy(losses, x => (tradeNetPL(x) || 0) * tradeCopies(x), x => tradeCopies(x))) : fmtMoney(totalLossCash/lossCopies, { cur: _c1 })))}`
         : t('wvl.no_losses');
     }
     if (beDetailEl) {
       beDetailEl.innerHTML = beCopies > 0
-        ? `${t('wvl.zerorcontrib')}<br>${t('wvl.costs_lbl')} -${curSym()}${beCosts.toFixed(2)}`
+        ? `${t('wvl.zerorcontrib')}<br>${t('wvl.costs_lbl')} -${_fm(x => (parseFloat(x.costs) || 0) * tradeCopies(x), bes, { noSign: true })}`
         : t('wvl.no_bes');
     }
     // (L/S and R/C pie-detail population removed — those .pie-detail elements were dropped when
@@ -29226,7 +29264,7 @@ try {
       const wlbeCell = `<span class="wlbe-w">${s.w}</span><span class="wlbe-sep">/</span><span class="wlbe-l">${s.l}</span><span class="wlbe-sep">/</span><span class="wlbe-be">${s.be}</span>`;
       const netPL  = dt.reduce((acc, tt) => acc + tradeNetPL(tt) * tradeCopies(tt), 0);
       const netAcc = dt.reduce((acc, tt) => { const sb = getTradeAccountSB(tt); if (sb <= 0) return acc; return acc + (tradeNetPL(tt) * tradeCopies(tt)) / sb * 100; }, 0);
-      const plStr  = s.count === 0 ? '—' : fmtMoney(netPL);
+      const plStr  = s.count === 0 ? '—' : _fm(tt => tradeNetPL(tt) * tradeCopies(tt), dt);
       const accStr = s.count === 0 ? '—' : (netAcc >= 0 ? '+' : '') + netAcc.toFixed(2) + '%';
       const plCls  = netPL > 0 ? 'pl-good' : netPL < 0 ? 'pl-bad' : 'pl-be';
       const accCls = netAcc > 0 ? 'pl-good' : netAcc < 0 ? 'pl-bad' : 'pl-be';
@@ -29774,7 +29812,7 @@ try {
           <div class="history-cell">${wr}</div>
           <div class="history-cell">${wlbeCell}</div>
           <div class="history-cell ${plCls(s.netR)}">${netR}</div>
-          <div class="history-cell ${plCls(netGbp)}">${fmtMoney(netGbp)}</div>
+          <div class="history-cell ${plCls(netGbp)}">${fmtMoneyBy(moneyBy(groups[sym], tr => (tradeNetPL(tr) || 0) * tradeCopies(tr)))}</div>
           <div class="history-cell ${plCls(netAcc)}">${accStr}</div>
         </div>`;
       });
@@ -29824,8 +29862,8 @@ try {
       if (!(limit > 0)) { sec.style.display = 'none'; return; }
       sec.style.display = '';
       // Net money per calendar day, copy-weighted like every other money figure.
-      const byDay = {};
-      all.forEach(t => {
+      const byDay = {}, _ccur = accCur(_scAcc);
+      (_multi ? all.filter(t => tradeCur(t) === _ccur) : all).forEach(t => {   // its own account's currency (27 Oct 2026)
         const k = t.date ? new Date(t.date).toDateString() : null;
         if (!k) return;
         byDay[k] = (byDay[k] || 0) + tradeNetPL(t) * tradeCopies(t);
@@ -29842,15 +29880,15 @@ try {
       const cell = (labelKey, value, cls) =>
         `<div class="stat-cell"><div class="stat-label">${t(labelKey)}</div><div class="stat-value${cls ? ' ' + cls : ''}">${value}</div></div>`;
       box.innerHTML = `<div class="stats-summary stats-summary-4col">
-        ${cell('consistency.best_day', total > 0 ? fmtMoney(bestDay) : '—')}
-        ${cell('consistency.total_profit', fmtMoney(total))}
+        ${cell('consistency.best_day', total > 0 ? fmtMoney(bestDay, { cur: _ccur }) : '—')}
+        ${cell('consistency.total_profit', fmtMoney(total, { cur: _ccur }))}
         ${cell('consistency.share', share > 0 ? share.toFixed(1) + '%' : '—', ok ? 'good' : 'bad')}
         ${cell('consistency.limit', limit + '%')}
       </div>`;
       if (verdictEl) {
         if (total <= 0) verdictEl.textContent = t('consistency.no_profit');
         else if (ok) verdictEl.textContent = t('consistency.pass').replace('{P}', share.toFixed(1)).replace('{L}', String(limit));
-        else verdictEl.textContent = t('consistency.fail').replace('{P}', share.toFixed(1)).replace('{L}', String(limit)).replace('{X}', fmtMoney(extra));
+        else verdictEl.textContent = t('consistency.fail').replace('{P}', share.toFixed(1)).replace('{L}', String(limit)).replace('{X}', fmtMoney(extra, { cur: _ccur }));
       }
     })();
 
@@ -29979,9 +30017,12 @@ try {
     const cp = t => tradeCopies(t), rOf = t => tradeRforMath(t) * cp(t), net = t => (tradeGross(t) - tradeCosts(t)) * cp(t);
     const set = (id, html) => { const el = document.getElementById(id); if (el && el.getAttribute('data-h') !== html) { el.innerHTML = html; el.setAttribute('data-h', html); } };
     const txt = (id, v) => { const el = document.getElementById(id); if (el && el.textContent !== v) el.textContent = v; };
-    const fm = v => (typeof fmtMoney === 'function' ? fmtMoney(Math.abs(v), { noSign: true }) : String(Math.round(Math.abs(v))));
-    const chron = all.slice().sort((a, b) => (Date.parse(a.date) || 0) - (Date.parse(b.date) || 0));
-    let cum = 0; const cumNet = chron.map(t => (cum += net(t))); cum = 0; const cumR = chron.map(t => (cum += rOf(t)));
+    // accounts in more than one currency (27 Oct 2026): the money charts in the equity curve's currency, the money words per currency
+    const zc = statsChartCur(all), zcur = zc || statsCurs(all)[0];
+    const fm = v => (typeof fmtMoney === 'function' ? fmtMoney(Math.abs(v), { noSign: true, cur: zcur }) : String(Math.round(Math.abs(v))));
+    const allM = zc ? all.filter(t => tradeCur(t) === zc) : all;
+    const chron = allM.slice().sort((a, b) => (Date.parse(a.date) || 0) - (Date.parse(b.date) || 0));
+    let cum = 0; const cumNet = chron.map(t => (cum += net(t))); cum = 0; const cumR = (zc ? all.slice().sort((a, b) => (Date.parse(a.date) || 0) - (Date.parse(b.date) || 0)) : chron).map(t => (cum += rOf(t)));   // R: every currency
     const gross = all.reduce((s, t) => s + tradeGross(t) * cp(t), 0), costs = all.reduce((s, t) => s + tradeCosts(t) * cp(t), 0);
     const n = all.reduce((s, t) => s + cp(t), 0);
     const w = wins.reduce((s, t) => s + cp(t), 0), l = losses.reduce((s, t) => s + cp(t), 0), b = bes.reduce((s, t) => s + cp(t), 0);
@@ -29994,10 +30035,11 @@ try {
     const daily = Object.keys(byDay).sort().slice(-30).map(k => { const dd = new Date(k + 'T12:00:00');
       return { lab: dd.toLocaleDateString(loc, { day: 'numeric', month: 'short' }), full: dd.toLocaleDateString(loc, { weekday: 'short', day: 'numeric', month: 'short' }), v: byDay[k], n: byDayN[k] }; });
     // the stat cards
-    let base = 0; try { base = getScopedBaseline(); } catch (e) {}
+    let base = 0; try { base = zc ? baselineIn(zc) : getScopedBaseline(); } catch (e) {}
     set('zk-v-balance', zSpark([0].concat(cumNet), Z_G)); txt('zk-s-balance', base > 0 ? zT('from ' + fm(base) + ' start', 'desde ' + fm(base) + ' inicial') : '');
     set('zk-v-pnl', zMiniBars(daily.slice(-12).map(d => d.v)));
-    txt('zk-s-pnl', n ? (data.settings && data.settings.pnlView === 'gross' ? zT('before ' + fm(costs) + ' costs', 'antes de ' + fm(costs) + ' de costes') : zT('after ' + fm(costs) + ' costs', 'tras ' + fm(costs) + ' de costes')) : '');
+    const fmC = zc ? fmtMoneyBy(moneyBy(all, t => tradeCosts(t) * cp(t)), { noSign: true }) : fm(costs);   // the costs, per currency
+    txt('zk-s-pnl', n ? (data.settings && data.settings.pnlView === 'gross' ? zT('before ' + fmC + ' costs', 'antes de ' + fmC + ' de costes') : zT('after ' + fmC + ' costs', 'tras ' + fmC + ' de costes')) : '');
     set('zk-v-wr', zGauge([[w, Z_G], [b, Z_B], [l, Z_R]])); txt('zk-s-wr', n ? w + ' W · ' + b + ' BE · ' + l + ' L' : '');
     const pf = lossR > 0 ? winR / lossR : (winR > 0 ? Infinity : 0);
     set('zk-v-pf', zRing(pf === Infinity ? 1 : pf / (pf + 1), pf >= 1 ? Z_G : Z_R)); const r1 = v => v.toFixed(v >= 10 ? 0 : 1);
@@ -30008,7 +30050,9 @@ try {
     const tracked = wins.filter(t => typeof t.potentialR === 'number' && !isNaN(t.potentialR));
     const capR = tracked.reduce((s, t) => s + (parseFloat(t.r) || 0) * cp(t), 0), potR = tracked.reduce((s, t) => s + (t.potentialR || 0) * cp(t), 0);
     set('zk-v-rleft', potR > 0 ? zRing(capR / potR, Z_A, Math.round(capR / potR * 100) + '%') : zRing(0, Z_A, ''));
-    set('zk-v-costs', zPair(Math.max(0, gross), costs, Z_G, Z_R)); txt('zk-s-costs', n ? zT(fm(costs / n) + ' a trade', fm(costs / n) + ' por operación') : '');
+    const fmCt = zc ? fmtMoneyBy(avgBy(all, t => tradeCosts(t) * cp(t), t => cp(t)), { noSign: true }) : fm(costs / n);
+    const grossM = zc ? allM.reduce((s, t) => s + tradeGross(t) * cp(t), 0) : gross, costsM = zc ? allM.reduce((s, t) => s + tradeCosts(t) * cp(t), 0) : costs;
+    set('zk-v-costs', zPair(Math.max(0, grossM), costsM, Z_G, Z_R)); txt('zk-s-costs', n ? zT(fmCt + ' a trade', fmCt + ' por operación') : '');
     // the timing charts: weekday, session, entry hour
     const dayName = d => new Date(2024, 0, 7 + d).toLocaleDateString(loc, { weekday: 'short' }).replace('.', '');
     const dowDays = [1, 2, 3, 4, 5].concat([6, 0].filter(d => all.some(t => t.dayOfWeek === d)));
@@ -30033,8 +30077,9 @@ try {
     const fm = v => (typeof fmtMoney === 'function' ? fmtMoney(Math.abs(v), { noSign: true }) : String(Math.round(Math.abs(v))));
     let cum = 0; const cumR = cs.map(t => (cum += rOf(t)));
     const costs = cs.reduce((s, t) => s + tradeCosts(t) * cp(t), 0);
+    const fmC = statsCurs(cs).length > 1 ? fmtMoneyBy(moneyBy(cs, t => tradeCosts(t) * cp(t)), { noSign: true }) : fm(costs);   // never £ + $ (27 Oct 2026)
     set('zs-v-pnl', zMiniBars(cs.map(net)));
-    txt('zs-s-pnl', cs.length ? (data.settings && data.settings.pnlView === 'gross' ? zT('before ' + fm(costs) + ' costs', 'antes de ' + fm(costs) + ' de costes') : zT('after ' + fm(costs) + ' costs', 'tras ' + fm(costs) + ' de costes')) : '');
+    txt('zs-s-pnl', cs.length ? (data.settings && data.settings.pnlView === 'gross' ? zT('before ' + fmC + ' costs', 'antes de ' + fmC + ' de costes') : zT('after ' + fmC + ' costs', 'tras ' + fmC + ' de costes')) : '');
     set('zs-v-netr', zSpark([0].concat(cumR), cumR.length && cumR[cumR.length - 1] < 0 ? Z_R : Z_G));
     const tracked = cs.filter(t => t.result === 'Win' && typeof t.potentialR === 'number' && !isNaN(t.potentialR));
     const capR = tracked.reduce((s, t) => s + (parseFloat(t.r) || 0), 0), potR = tracked.reduce((s, t) => s + (t.potentialR || 0), 0);
@@ -30065,9 +30110,11 @@ try {
     const o = { weekday: 'short', day: 'numeric', month: 'short' }; if (x.getFullYear() !== new Date().getFullYear()) o.year = 'numeric';
     try { return x.toLocaleDateString(ddLoc(), o); } catch (e) { return x.toDateString(); }
   }
+  let _ddCur = null;
   function ddData(allTime) {
-    const tr = (allTime || []).slice().sort(_tradeChronoCompare);
-    const base = (typeof getScopedBaseline === 'function') ? getScopedBaseline() : 0;
+    const dc = statsChartCur(allTime || []); _ddCur = dc || statsCurs(allTime || [])[0];   // several currencies: the equity curve's (27 Oct 2026)
+    const tr = (dc ? (allTime || []).filter(t => tradeCur(t) === dc) : (allTime || [])).slice().sort(_tradeChronoCompare);
+    const base = dc ? baselineIn(dc) : ((typeof getScopedBaseline === 'function') ? getScopedBaseline() : 0);
     const pts = [{ v: base, r: 0, d: null }];
     let pl = 0, rr = 0;
     tr.forEach(t => { pl += tradeNetPL(t) * tradeCopies(t); rr += tradeRforMath(t) * tradeCopies(t); pts.push({ v: base + pl, r: rr, d: t && t.date ? t.date : null }); });
@@ -30133,7 +30180,7 @@ try {
   function ddDraw() {
     const esc = x => String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const set = (id, v) => { const el = document.getElementById(id); if (el && el.textContent !== v) el.textContent = v; };
-    const money = v => (typeof fmtMoney === 'function' ? fmtMoney(Math.abs(v), { noSign: true }) : String(Math.round(Math.abs(v) * 100) / 100));
+    const money = v => (typeof fmtMoney === 'function' ? fmtMoney(Math.abs(v), { noSign: true, cur: _ddCur || undefined }) : String(Math.round(Math.abs(v) * 100) / 100));
     const nTr = c => c + ' ' + (c === 1 ? zT('trade', 'operación') : zT('trades', 'operaciones'));
     set('dd-title', zT('Drawdown recovery', 'Recuperación de caídas'));
     set('dd-tip', zT('How far your balance sat below its last high after each trade, net of costs. 0% means you were at a high.', 'Cuánto estuvo tu balance por debajo de su último máximo tras cada operación, neto de costes. 0% significa que estabas en un máximo.'));
@@ -30706,6 +30753,18 @@ try {
   // Net P&L is mathematically identical (just offset by starting balance) and Cumulative R tracks
   // the same story in different units for a fixed-risk trader, so they were redundant.
 
+  // the equity curve's currency switch (27 Oct 2026): shown only while the accounts in view are in more than one currency
+  let eqCur = null;
+  function eqCurSwitch(chartId, curs, on) {
+    if (chartId !== 'equity-chart') return;
+    const sub = document.getElementById('equity-chart-subtitle'); if (!sub) return;
+    let sw = document.getElementById('eq-cur');
+    if (!curs || curs.length < 2) { if (sw) sw.remove(); return; }
+    if (!sw) { sw = document.createElement('span'); sw.id = 'eq-cur'; sw.className = 'eq-cur'; sw.setAttribute('role', 'group'); sub.parentNode.appendChild(sw);
+      sw.addEventListener('click', function (e) { const b = e.target.closest && e.target.closest('[data-eqcur]'); if (!b) return; _statsCur = b.getAttribute('data-eqcur'); try { renderTradesStats(); } catch (er) {} }); }
+    const h = curs.map(c => '<button type="button" data-eqcur="' + c + '" aria-pressed="' + (c === on) + '" title="' + c + '">' + curSymOf(c).trim() + '</button>').join('');
+    if (sw.innerHTML !== h) sw.innerHTML = h;
+  }
   function drawEquityChart(trades, opts) {
     opts = opts || {};
     const wrapId = opts.wrapId || 'equity-chart-wrap';
@@ -30721,6 +30780,7 @@ try {
     let dates;          // dates[i] belongs to values[i]; dates[0] is the starting point, so null
     let offset;
     if (isR) {
+      eqCurSwitch(chartId, null);   // R adds up across currencies: no switch
       // R mode: cumulative R from 0. No baseline involved — just sum up tradeRforMath
       // in the order received (matches the chart's "Trade 1 → Trade N" X-axis labelling).
       offset = 0;
@@ -30745,7 +30805,12 @@ try {
       // convention); deleting an account still removes its capital everywhere. Scoped:
       // a single account's view uses just that account's capital, so another account
       // being created no longer steps a curve it has nothing to do with.
-      const totalBaseline = (typeof getScopedBaseline === 'function') ? getScopedBaseline() : 0;
+      // Accounts in more than one currency (27 Oct 2026): one currency at a time - the switch beside the curve picks it
+      const _ec = opts.noCur ? null : statsChartCur(trades), _ecs = _ec ? statsCurs(trades) : null;
+      if (_ec) trades = trades.filter(t => tradeCur(t) === _ec);
+      eqCurSwitch(chartId, _ecs, _ec);
+      eqCur = _ec || statsCurs(trades)[0];
+      const totalBaseline = _ec ? baselineIn(_ec) : ((typeof getScopedBaseline === 'function') ? getScopedBaseline() : 0);
       // Sort chronologically (day + intraday entry/exit time) so cumulative arithmetic
       // stays correct even when the caller hands us trades in a mixed order, AND so
       // multiple trades on the same day plot in the order they happened
@@ -30861,7 +30926,7 @@ try {
     ticks.forEach(tv => {
       const ty = y(tv);
       grid += `<line x1="${PAD.left}" x2="${W - PAD.right}" y1="${ty}" y2="${ty}" stroke="#1c1c1c" stroke-opacity="0.7" stroke-width="1"/>`;
-      const label = isR ? (tv >= 0 ? '+' : '') + tv.toFixed(1) + 'R' : fmtMoneyShort(tv);
+      const label = isR ? (tv >= 0 ? '+' : '') + tv.toFixed(1) + 'R' : fmtMoneyShort(tv, eqCur);
       // Brighter axis labels (white instead of dim grey) so the scale reads cleanly
       // against the dark chart background. Bumped from 9px → 11px for legibility.
       yLabels += `<text x="${PAD.left - 8}" y="${ty + 4}" font-size="11" fill="#ffffff" text-anchor="end" font-family="DM Mono, monospace">${label}</text>`;
@@ -30881,7 +30946,7 @@ try {
       ${yLabels}
       <text x="${W - PAD.right}" y="${H - 6}" font-size="13" font-weight="700" fill="#ffffff" text-anchor="end" font-family="DM Mono, monospace">${t('lbl.trade')} ${trades.length}</text>`;
     // --- Hover interaction: store latest geometry; wire listeners once ---
-    chart._eq = { values, dates, isR, x, y, PAD, W };
+    chart._eq = { values, dates, isR, x, y, PAD, W, cur: isR ? null : eqCur };
     if (!chart._eqWired) {
       chart._eqWired = true;
       const tip = document.createElement('div');
@@ -30903,7 +30968,7 @@ try {
         if (guide) { guide.setAttribute('x1', px); guide.setAttribute('x2', px); guide.style.display = ''; }
         if (dot) { dot.setAttribute('cx', px); dot.setAttribute('cy', py); dot.style.display = ''; }
         const val = g.values[i];
-        const valStr = g.isR ? ((val >= 0 ? '+' : '') + val.toFixed(2) + 'R') : fmtMoney(val, { noSign: true });
+        const valStr = g.isR ? ((val >= 0 ? '+' : '') + val.toFixed(2) + 'R') : fmtMoney(val, { noSign: true, cur: g.cur || undefined });
         // Date on the FIRST row: it says which trade this is before the numbers do, which is the
         // order it gets read in, and it keeps the widest row at the top where the box grows away
         // from the point instead of toward it. The opening point has no trade behind it, so "Start"
@@ -30923,7 +30988,7 @@ try {
         html += `<div class="et-val">${valStr}</div>`;
         if (i > 0) {
           const d = g.values[i] - g.values[i - 1];
-          const dStr = g.isR ? ((d >= 0 ? '+' : '') + d.toFixed(2) + 'R') : ((d >= 0 ? '+' : '−') + fmtMoney(Math.abs(d), { noSign: true }));
+          const dStr = g.isR ? ((d >= 0 ? '+' : '') + d.toFixed(2) + 'R') : ((d >= 0 ? '+' : '−') + fmtMoney(Math.abs(d), { noSign: true, cur: g.cur || undefined }));
           const cls = d >= 0 ? 'good' : 'bad';
           html += `<div class="et-delta" style="color:var(--${cls})">${dStr}</div>`;
         }
