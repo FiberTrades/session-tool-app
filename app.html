@@ -80997,7 +80997,7 @@ window.__stTM = (function () {
     else if (fresh && l.ok && /^(sl|tp|be|ts|pc)$/.test(l.a)) note = '<div class="stm-msg g">' + esc(T2(DONE[l.a][0], DONE[l.a][1]) + (l.p ? T2(' to ', ' a ') + l.p : '') + ' · ' + hmT(l.at)) + '</div>';
     else if (!on && st !== 'mv') note = '<div class="stm-msg">' + esc(whyTxt(st)) + '</div>';
     return '<div class="stm"><div class="stm-row"><span class="stm-st' + (on ? ' on' : (st === 'off' ? ' off' : '')) + '"><i></i>' + esc(dot) + '</span><span class="stm-sp"></span>'
-      + beBtn + btn('close', 'Close trade', 'Cerrar operación', 'x') + '</div>' + note + '</div>'; }
+      + (askOf(k) ? askHtml(k, { side: r.direction === 'short' ? 'SELL' : 'BUY', lots: r.lots, sym: r.symbol }) : beBtn + btn('close', 'Close trade', 'Cerrar operación', 'x')) + '</div>' + note + '</div>'; }
   // a trade by its ticket among the open ones (a copy's own ticket too)
   function tradeOf(k) { try { var L = (window.__stLive && window.__stLive.openIdeas) ? window.__stLive.openIdeas() : [];
       for (var i = 0; i < L.length; i++) { var rs = L[i].rows || [L[i].main || L[i]]; for (var j = 0; j < rs.length; j++) if (String(rs[j].ticket) === k) return String((L[i].main || {}).ticket) === k ? L[i].main : rs[j]; } } catch (e) {} return null; }
@@ -81012,8 +81012,19 @@ window.__stTM = (function () {
   function partNo(k) { var l = last[k]; return (l && l.a === 'part' && !l.ok && l.why && l.why !== 'busy' && Date.now() - l.at < 8000) ? l : null; }
   function minTxt(l) { return l.why === 'min' && +l.mn > 0 ? T2('Too small to split: ' + Number(l.mn).toFixed(2) + ' lots is the minimum.', 'Demasiado pequeña para dividir: el mínimo es ' + Number(l.mn).toFixed(2) + ' lotes.') : whyTxt(l.why); }
   var CHEV = '<svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+  // Move to BE and Close ask once too, in the same place and the same way as Close N% (Nestor, 26 Oct 2026: "when pressing any of
+  // these buttons i need a confirmation button so no accidents can happen"). The question goes after 8 s.
+  var ASK = {};
+  function askOf(k) { var q = ASK[String(k)]; return (q && Date.now() - q.at < 8000) ? q : null; }
+  function askHtml(k, o) { k = String(k); var q = askOf(k); if (!q) return ''; o = o || {}; var r = tradeOf(k), be = (q.a === 'tobe' && r) ? beOf(r) : null;
+    var who = [o.side || '', o.lots || '', o.sym || ''].join(' ').replace(/\s+/g, ' ').trim();
+    var qt = q.a === 'tobe' ? T2('Move the stop to break-even' + (be ? ' at ' + be.px.toFixed(dgOf(r)) : '') + '?', '¿Mover el stop a break-even' + (be ? ' en ' + be.px.toFixed(dgOf(r)) : '') + '?')
+      : T2('Close ' + (who || 'this trade') + '?', '¿Cerrar ' + (who || 'esta operación') + '?');
+    return '<span class="pl-conf"><span class="pl-cq">' + esc(qt) + '</span><button type="button" class="pl-ab x" data-tma="' + q.a + '!" data-tmk="' + esc(k) + '">' + esc(q.a === 'tobe' ? T2('Move to BE', 'Mover a BE') : T2('Close', 'Cerrar')) + '</button>'
+      + '<button type="button" class="pl-ab" data-tma="askno" data-tmk="' + esc(k) + '">' + esc(T2('Keep', 'Mantener')) + '</button></span>'; }
   function partHtml(k, o) {
-    o = o || {}; k = String(k); var b = busy[k], l = last[k], d = done[k + '|part'], dis = o.dis ? ' disabled' : '', c = CONF[k], p = partPct(), no = partNo(k);
+    o = o || {}; k = String(k); var aq = askHtml(k, o); if (aq) return aq;   // Move to BE / Close asking: the question has the cell
+    var b = busy[k], l = last[k], d = done[k + '|part'], dis = o.dis ? ' disabled' : '', c = CONF[k], p = partPct(), no = partNo(k);
     if (b && b.a === 'part') return '<button type="button" class="pl-ab" disabled>' + esc(T2('Closing ' + (+b.p || p) + '%…', 'Cerrando el ' + (+b.p || p) + '%…')) + '</button>';
     if (d && Date.now() - d < 60000 && l && l.a === 'part' && l.ok) return '<button type="button" class="pl-ab done" disabled>' + esc(T2('Closed ' + Number(l.vol || 0).toFixed(2) + ' lots', 'Cerrados ' + Number(l.vol || 0).toFixed(2) + ' lotes')) + '</button>';
     if (c && Date.now() - c.at < 8000) return '<span class="pl-conf"><span class="pl-cq">' + esc(T2('Close ' + c.p + '% of ', 'Cerrar el ' + c.p + '% de ') + (o.side || '') + ' ' + (o.lots || '') + ' ' + (o.sym || '') + '?') + '</span>'
@@ -81021,7 +81032,7 @@ window.__stTM = (function () {
     var split = '<span class="pl-split"><button type="button" class="pl-ab pl-sm" data-tma="part" data-tmk="' + esc(k) + '"' + dis + '>' + esc(T2('Close ' + p + '%', 'Cerrar ' + p + '%')) + '</button>'
       + '<button type="button" class="pl-ab pl-sd" data-tma="partmenu" data-tmk="' + esc(k) + '" aria-haspopup="menu" aria-expanded="' + (MENU === k) + '" aria-label="' + esc(T2('How much to close', 'Cuánto cerrar')) + '" title="' + esc(T2('How much to close', 'Cuánto cerrar')) + '">' + CHEV + '</button></span>';
     return no ? '<span class="pl-conf"><span class="pl-cq pl-no">' + esc(minTxt(no)) + '</span>' + split + '</span>' : split; }
-  function partAsking(k) { k = String(k); return !!((CONF[k] && Date.now() - CONF[k].at < 8000) || partNo(k)); }
+  function partAsking(k) { k = String(k); return !!((CONF[k] && Date.now() - CONF[k].at < 8000) || partNo(k) || askOf(k)); }
   // the menu: one at a time, beside its chevron inside the platform window (repaints of the rows don't touch it), above it when there
   // is no room below; a pick, a click elsewhere or Escape closes it
   function closePct() { if (PM) { try { PM.remove(); } catch (e) {} } PM = null; if (MENU !== null) { MENU = null; emit(); } }
@@ -81050,8 +81061,11 @@ window.__stTM = (function () {
   document.addEventListener('click', function (e) { var b = e.target && e.target.closest && e.target.closest('[data-tma]'); if (!b) return; e.preventDefault(); e.stopPropagation(); if (b.disabled) return;
     var a = b.getAttribute('data-tma'), k = String(b.getAttribute('data-tmk'));
     if (a === 'partmenu') { openPct(b, k); return; }
-    if (a === 'part') { CONF[k] = { at: Date.now(), p: partPct() }; delete done[k + '|part']; if (last[k] && last[k].a === 'part') delete last[k]; emit(); setTimeout(function () { if (CONF[k] && Date.now() - CONF[k].at >= 8000) { delete CONF[k]; emit(); } }, 8100); return; }
+    if (a === 'part') { delete ASK[k]; CONF[k] = { at: Date.now(), p: partPct() }; delete done[k + '|part']; if (last[k] && last[k].a === 'part') delete last[k]; emit(); setTimeout(function () { if (CONF[k] && Date.now() - CONF[k].at >= 8000) { delete CONF[k]; emit(); } }, 8100); return; }
     if (a === 'partno') { delete CONF[k]; emit(); return; }
+    if (a === 'tobe' || a === 'close') { ASK[k] = { a: a, at: Date.now() }; delete CONF[k]; emit(); setTimeout(function () { if (ASK[k] && Date.now() - ASK[k].at >= 8000) { delete ASK[k]; emit(); } }, 8100); return; }
+    if (a === 'askno') { delete ASK[k]; emit(); return; }
+    if (a === 'tobe!' || a === 'close!') { delete ASK[k]; a = a.slice(0, -1); }
     var pc = 50; if (a === 'part!') { pc = CONF[k] ? CONF[k].p : partPct(); delete CONF[k]; a = 'part'; }
     var r = tradeOf(k); if (r) send(r, a, a === 'part' ? pc : undefined); }, true);
   return { send: send, acct: acct, ack: ack, state: state, row: row, whyTxt: whyTxt, partHtml: partHtml, partAsking: partAsking, partPct: partPct, setPartPct: setPartPct, on: function (f) { subs.push(f); }, last: function (k) { return last[String(k)] || null; }, busy: function (k) { return busy[String(k)] || null; }, _hmac: hmac };
@@ -92410,14 +92424,14 @@ window.__stAZ = (function () {
   .pl-ab.done:disabled { opacity: 1; color: var(--pl-up, #22ab94); background: transparent; box-shadow: inset 0 0 0 1px currentColor; }   /* Close 50% done: "Closed 1.92 lots" */
   .pl-conf { display: inline-flex; align-items: center; gap: 4px; margin-left: 4px; } .pl-conf .pl-ab { margin-left: 0; }
   .pl-cq { font: 12px var(--pl-font); color: var(--pl-txt); white-space: nowrap; margin-right: 2px; }
-  .pl-t .pl-conf { display: inline-grid; grid-template-columns: auto auto; gap: 4px; justify-items: end; justify-content: end; vertical-align: middle; } .pl-t .pl-cq { grid-column: 1 / -1; margin: 0; }   /* the row: the question, then Close half / Keep under it */
+  .pl-t .pl-conf { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; vertical-align: middle; } .pl-t .pl-cq { flex: 1 0 100%; text-align: right; margin: 0; }   /* the row: the question, then its button and Keep under it, side by side at the right */
   .ph-pa .pl-conf { flex-wrap: wrap; justify-content: flex-end; } .ph-pa .pl-cq { flex: 1 0 100%; text-align: right; margin: 0 0 4px; }
   .pl-cq.pl-no { color: var(--pl-dn, #f23645); white-space: normal; max-width: 260px; text-align: right; }
   /* Close N% as a split button: the label closes, the chevron picks how much (25 Oct 2026) */
   .pl-split { display: inline-flex; margin-left: 4px; vertical-align: middle; } .pl-split .pl-ab { margin-left: 0; }
   .pl-split .pl-sm { border-radius: 4px 0 0 4px; } .pl-split .pl-sd { border-radius: 0 4px 4px 0; padding: 0 6px; margin-left: 1px; display: inline-flex; align-items: center; }
   .pl-split .pl-sd[aria-expanded="true"] { background: var(--pl-line2, #363a45); color: var(--pl-hi, #fff); }
-  .pl-t .pl-conf .pl-split { grid-column: 1 / -1; justify-self: end; margin-left: 0; }
+  .pl-t .pl-conf .pl-split { margin-left: 0; }
   .ph-pa .pl-split { margin: 0; } .ph-pa .pl-split .pl-sd { padding: 0 10px; }
   .pl-pm { position: absolute; z-index: 60; width: 214px; box-sizing: border-box; padding: 10px; border-radius: 6px; background: var(--pl-pane, #1e222d); border: 1px solid var(--pl-line2, #363a45); box-shadow: 0 8px 24px rgba(0,0,0,.45); font: 12px var(--pl-font, sans-serif); color: var(--pl-txt, #d1d4dc); }
   .pl-pmh { margin: 0 0 8px; color: var(--pl-dim, #787b86); }
@@ -98617,7 +98631,9 @@ window.__stAZ = (function () {
     all.forEach(function(r){ var idea = plIdea(r[0]), R = (idea && idea.tick && isFinite(+idea.tick.r)) ? +idea.tick.r : NaN, pr = +r[9] || 0, buy = /buy/i.test(String(r[3])), ok = !!(TM && idea && TM.state(idea) === 'on'), bz = TM && TM.busy(r[0]), dis = (ok && !bz) ? '' : ' disabled';
       ph += '<div class="ph-p"><div class="ph-pl"><b>' + esc(r[1]) + '</b> <span class="pl-side ' + (buy ? 'b' : 's') + '">' + (buy ? 'BUY' : 'SELL') + '</span> ' + esc(r[4]) + '<small>' + esc(r[5]) + ' → ' + esc(r[8]) + '</small></div>'
         + '<div class="ph-pr"><b class="' + (pr > 0 ? 'u' : (pr < 0 ? 'd' : '')) + '">' + plSg(pr, cur) + '</b>' + (isFinite(R) ? '<small class="' + (R > 0 ? 'u' : (R < 0 ? 'd' : '')) + '">' + plR(R) + '</small>' : '') + '</div>'
-        + '<div class="ph-pa"><button type="button" class="pl-ab" data-tma="tobe" data-tmk="' + esc(r[0]) + '"' + dis + '>' + esc(T('Move to BE', 'Mover a BE')) + '</button>' + (TM && TM.partHtml ? TM.partHtml(r[0], { dis: !!dis, side: buy ? 'BUY' : 'SELL', lots: r[4], sym: r[1] }) : '') + '<button type="button" class="pl-ab x" data-tma="close" data-tmk="' + esc(r[0]) + '"' + dis + '>' + esc(T('Close', 'Cerrar')) + '</button></div></div>'; });
+        + '<div class="ph-pa">' + ((TM && TM.partAsking && TM.partAsking(r[0])) ? TM.partHtml(r[0], { dis: !!dis, side: buy ? 'BUY' : 'SELL', lots: r[4], sym: r[1] })
+          : '<button type="button" class="pl-ab" data-tma="tobe" data-tmk="' + esc(r[0]) + '"' + dis + '>' + esc(bz && bz.a === 'tobe' ? T('Sending…', 'Enviando…') : T('Move to BE', 'Mover a BE')) + '</button>' + (TM && TM.partHtml ? TM.partHtml(r[0], { dis: !!dis, side: buy ? 'BUY' : 'SELL', lots: r[4], sym: r[1] }) : '')
+            + '<button type="button" class="pl-ab x" data-tma="close" data-tmk="' + esc(r[0]) + '"' + dis + '>' + esc(bz && bz.a === 'close' ? T('Closing…', 'Cerrando…') : T('Close', 'Cerrar')) + '</button>') + '</div></div>'; });
     plSet(E.pos, ph ? '<div class="ph-ph">' + esc(T('Open trades', 'Operaciones abiertas')) + '</div>' + ph : ''); }
   // Replay on a phone (27 Oct 2026): the phone platform as Live has it - REPLAY in the bottom toolbar (tap: back to Live, asking first), the
   // chart's Session Indicator line and the Practice pill, the day / playback / Go to bar over the progress bar with the sessions under it,

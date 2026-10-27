@@ -64,6 +64,13 @@
       var pm0 = $('.pl-pm'), pq = pm0 && pm0.getBoundingClientRect(), pat = pq && document.elementFromPoint(pq.left + pq.width / 2, pq.top + pq.height / 2);
       check('...its chevron: 25 / 33 / 50 / 75 / 80 and a box, on screen over the sheet', pm0 && pm0.querySelectorAll('[data-tmpct]').length === 5 && pm0.querySelector('input') && pat && pm0.contains(pat) && pq.left >= 0 && pq.right <= innerWidth && pq.top >= 0 && pq.bottom <= innerHeight, pq && [pq.left, pq.top, pq.right, pq.bottom]);
       pm0.querySelector('[data-tmpct="75"]').click(); await W(400);
+      // Move to BE / Close ask once in their place (Nestor, 26 Oct 2026: "i need a confirmation button so no accidents can happen")
+      var pc0 = $('.ph-pos [data-tma="close"]:not([disabled])') || $('.ph-pos [data-tma="close"]'), pcOff = pc0.disabled;   // the fill's trade may not be MT5-managed here (the desk checks that gate): the question is what's tested
+      pc0.disabled = false; pc0.click(); for (k = 0; k < 12 && !$('.ph-pos [data-tma="close!"]'); k++) await W(100);
+      var pp0 = $('.ph-pos [data-tma="close!"]') && $('.ph-pos [data-tma="close!"]').closest('.ph-p');
+      check('the sheet\'s Close asks first, in its trade\'s place: Close BUY/SELL ... ? Close / Keep, nothing sent', pp0 && pp0.querySelector('[data-tma="askno"]') && /Close (BUY|SELL) [\d.]+ EURUSD\?/.test(pp0.textContent) && !pp0.querySelector('[data-tma="tobe"]'), [pcOff, $('.ph-pos').textContent.slice(0, 160)]);
+      $('.ph-pos [data-tma="askno"]').click(); await W(300);
+      check('...Keep: Move to BE, Close % and Close back', $('.ph-pos [data-tma="tobe"]') && $('.ph-pos [data-tma="close"]') && !$('.ph-pos [data-tma="close!"]'));
       check('...75%: the sheet\'s button says Close 75%', !$('.pl-pm') && $('.ph-pos [data-tma="part"]') && /^Close 75%$/.test($('.ph-pos [data-tma="part"]').textContent.trim()), $('.ph-pos [data-tma="part"]') && $('.ph-pos [data-tma="part"]').textContent);
       $('.ph-dim').click(); await sheetAt(false);
       check('a tap outside closes it', !win.classList.contains('ph-open'));
@@ -245,6 +252,17 @@
     check('...Keep: nothing sent, the tag as it was', !document.querySelector('.pl-tag.ask') && P._plat().ask === null);
     var ab = Array.prototype.map.call(document.querySelectorAll('.pl-t [data-tma]'), function (b) { return b.getAttribute('data-tma') + (b.disabled ? ':off' : ':on'); });
     check('the position\'s row: Move to BE, Close 50% (and its chevron) and Close, on (MT5 manages it from here)', ab.join(',') === 'tobe:on,part:on,partmenu:on,close:on', ab);
+    // each asks once in its place (26 Oct 2026), Keep sends nothing
+    var cmd0 = (window.__stTM && window.__stTM.last(tkn || 7001)) || null;
+    $('.pl-t [data-tma="tobe"]').click(); for (k = 0; k < 12 && !$('.pl-t [data-tma="tobe!"]'); k++) await W(100);
+    check('Move to BE asks first: "Move the stop to break-even at 1.1xxxx?" Move to BE / Keep', $('.pl-t [data-tma="tobe!"]') && $('.pl-t [data-tma="askno"]') && /Move the stop to break-even at \d\.\d{5}\?/.test($('.pl-t .pl-act').textContent) && !$('.pl-t [data-tma="close"]'), $('.pl-t .pl-act').textContent);
+    $('.pl-t [data-tma="askno"]').click(); await W(300);
+    $('.pl-t [data-tma="close"]').click(); for (k = 0; k < 12 && !$('.pl-t [data-tma="close!"]'); k++) await W(100);
+    var cq1 = $('.pl-t .pl-conf'), cr1 = cq1 && cq1.getBoundingClientRect(), rr1 = $('.pl-t tr:last-child') && $('.pl-t tr:last-child').getBoundingClientRect();
+    check('Close asks first: "Close BUY 13.5 EURUSD?" Close / Keep, inside its row', $('.pl-t [data-tma="close!"]') && /Close BUY [\d.]+ EURUSD\?/.test(cq1.textContent) && cr1 && rr1 && cr1.bottom <= rr1.bottom + 1 && cr1.right <= rr1.right + 1, cq1 && cq1.textContent);
+    $('.pl-t [data-tma="askno"]').click(); await W(300);
+    var ab1 = Array.prototype.map.call(document.querySelectorAll('.pl-t [data-tma]'), function (b) { return b.getAttribute('data-tma') + (b.disabled ? ':off' : ':on'); });
+    check('...Keep twice: nothing sent, the row as it was', ab1.join(',') === 'tobe:on,part:on,partmenu:on,close:on' && ((window.__stTM && window.__stTM.last(tkn || 7001)) || null) === cmd0, ab1);
 
     // ---- the rail (one panel at a time, 26 Oct 2026), the fold, remembered ----
     $('[data-plr="wl"]').click(); await W(200);

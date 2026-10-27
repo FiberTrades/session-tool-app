@@ -71,7 +71,7 @@
     ok('refused for the minimum lot: "Too small to split: 0.01 lots is the minimum." in its place, the button under it', /Too small to split: 0\.01 lots is the minimum\./.test(host.textContent) && main() && TM.partAsking('125'), host.textContent);
     ok('an EA before 9.15 that does not know it: "update the EA"', /update the EA/.test(TM.whyTxt('unknown')));
     var src = await fetch('/app.html', { cache: 'no-store' }).then(function (r) { return r.text(); });
-    ok('Close N% sits in the platform\'s Positions rows and the phone sheet\'s open trades', (src.match(/TM\.partHtml\((tk|r\[0\]), \{ dis: !!dis/g) || []).length === 2);
+    ok('Close N% sits in the platform\'s Positions rows and the phone sheet\'s open trades (the sheet\'s twice: its row and its question, 26 Oct 2026)', (src.match(/TM\.partHtml\((tk|r\[0\]), \{ dis: !!dis/g) || []).length === 3);
     try { localStorage.removeItem('st_partPct'); } catch (e) {}
     window.__stLiveLine = realLL; host.remove();
   } catch (e) { out.push({ name: 'ran', ok: false, got: String(e && e.stack || e) }); }

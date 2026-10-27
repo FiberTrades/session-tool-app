@@ -212,7 +212,9 @@
     check('...pressed: MT5 moves the stop to 1.12428 (the EA\'s SL move, signed), the button says "Moved to BE HH:MM"', rBE && rBE.ok && lbe && lbe.a === 'tobe' && lbe.p === '1.12428' && /^Moved to BE \d\d:\d\d$/.test((tbOf(TM.row(mkR({ r: 1.5, sl: 0.11, lad: '' }))) || {}).textContent || ''), [rBE, lbe]);
     var rNo = await TM.send(mkR({ r: -0.3, sl: -1, lad: 'B:1.82:0.11:0' }), 'tobe');
     check('...and nothing is sent while the price is short of break-even', rNo && !rNo.ok && rNo.why === 'notbe', rNo);
-    tb('close').click();
+    tb('close').click(); for (k = 0; k < 20 && !bar.querySelector('[data-tma="close!"]'); k++) await W(100);
+    check('Close trade asks first, in its place (26 Oct 2026): Close SELL EURUSD? Close / Keep - nothing sent yet', !!bar.querySelector('[data-tma="close!"]') && !!bar.querySelector('[data-tma="askno"]') && /Close SELL ([\d.]+ )?EURUSD\?/.test(bar.textContent) && !(TM.last(990077) && TM.last(990077).a === 'close'), bar.textContent.slice(0, 200));
+    bar.querySelector('[data-tma="close!"]').click();
     var sending = /Sending/.test(tb('close').textContent);   // at once: MT5's answer can come within 50 ms
     for (k = 0; k < 40 && !(TM.last(990077) && TM.last(990077).a === 'close'); k++) await W(150);
     await W(200);
