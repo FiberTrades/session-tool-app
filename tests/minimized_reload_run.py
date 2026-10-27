@@ -21,7 +21,7 @@ def main():
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     dbg_port = bt.free_port()
     prof = tempfile.mkdtemp(prefix='edgeprof_mzr_')
-    proc = subprocess.Popen([edge, '--headless=new', '--remote-debugging-port=%d' % dbg_port, '--user-data-dir=' + prof,
+    proc = bt.edge_popen([edge, '--headless=new', '--remote-debugging-port=%d' % dbg_port, '--user-data-dir=' + prof,
                              '--no-first-run', '--no-default-browser-check', '--window-size=1400,950', 'about:blank'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     results = []
     def check(name, ok, got=None):

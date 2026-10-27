@@ -3,6 +3,7 @@
 # screen; then the same app on a phone's screen, where the platform stays off. Nothing live is touched.
 #   python tests/platform_run.py
 import calendar, json, os, socket, subprocess, sys, tempfile, time, urllib.request
+import lowprio  # noqa: F401  (below normal priority: Nestor trades on this PC)
 HERE = os.path.dirname(os.path.abspath(__file__))
 T0 = calendar.timegm((2026, 10, 14, 8, 30, 0))
 TOK = 'st-test-shot-plat-e2e'

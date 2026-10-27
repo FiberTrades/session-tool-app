@@ -28,7 +28,7 @@ MEASURE = r"""(function(){ var q = function(e){ if (!e || !e.offsetWidth) return
 
 def run(edge, wp, w, h, touch, col, rotate_from=None):
     dp = bt.free_port(); prof = tempfile.mkdtemp(prefix='edgeprof_landea_')
-    proc = subprocess.Popen([edge, '--headless=new', '--remote-debugging-port=%d' % dp, '--user-data-dir=' + prof, '--no-first-run', '--window-size=1400,1000', 'about:blank'],
+    proc = bt.edge_popen([edge, '--headless=new', '--remote-debugging-port=%d' % dp, '--user-data-dir=' + prof, '--no-first-run', '--window-size=1400,1000', 'about:blank'],
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         pages = []

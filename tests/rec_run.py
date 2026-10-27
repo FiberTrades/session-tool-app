@@ -94,7 +94,7 @@ dbg = bt.free_port()
 prof = tempfile.mkdtemp(prefix='edgeprof_rec_')
 dl = tempfile.mkdtemp(prefix='st_rec_dl_')
 camf = os.path.join(prof, 'camera.y4m'); write_y4m(camf)
-proc = subprocess.Popen([edge, '--headless=new', '--remote-debugging-port=%d' % dbg, '--user-data-dir=' + prof, '--no-first-run', '--no-default-browser-check', '--window-size=1920,1080', '--screen-info={1920x1080}',
+proc = bt.edge_popen([edge, '--headless=new', '--remote-debugging-port=%d' % dbg, '--user-data-dir=' + prof, '--no-first-run', '--no-default-browser-check', '--window-size=1920,1080', '--screen-info={1920x1080}',
                          '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', '--disable-features=CalculateNativeWinOcclusion',
                          '--disable-popup-blocking', '--autoplay-policy=no-user-gesture-required',
                          # the stand-in camera and microphone (a moving test picture, a beep), and this tab's capture accepted without its prompt

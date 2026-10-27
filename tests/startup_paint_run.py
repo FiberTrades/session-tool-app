@@ -27,7 +27,7 @@ def main():
     wp = bt.free_port(); httpd = http.server.ThreadingHTTPServer(('127.0.0.1', wp), functools.partial(bt.Quiet, directory=bt.ROOT))
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     dp = bt.free_port(); prof = tempfile.mkdtemp(prefix='edgeprof_paint_')
-    proc = subprocess.Popen([edge, '--headless=new', '--remote-debugging-port=%d' % dp, '--user-data-dir=' + prof, '--no-first-run', '--no-default-browser-check', '--disable-popup-blocking',
+    proc = bt.edge_popen([edge, '--headless=new', '--remote-debugging-port=%d' % dp, '--user-data-dir=' + prof, '--no-first-run', '--no-default-browser-check', '--disable-popup-blocking',
                              '--window-size=1500,950', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows',
                              '--disable-features=CalculateNativeWinOcclusion', 'about:blank'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     res = []

@@ -3,6 +3,7 @@
 # a weekday morning with stored candles; then the app in headless Edge (instant_e2e.js). Prints both sides and the timings.
 #   python tests/instant_run.py            E2E_APP=app_before.html: against an older copy; E2E_JS=instant_time.js: the timings alone
 import calendar, json, os, socket, subprocess, sys, tempfile, time
+import lowprio  # noqa: F401  (below normal priority: Nestor trades on this PC)
 HERE = os.path.dirname(os.path.abspath(__file__))
 T0 = calendar.timegm((2026, 10, 14, 8, 30, 0))
 s = socket.socket(); s.bind(('127.0.0.1', 0)); RPORT = s.getsockname()[1]; s.close()

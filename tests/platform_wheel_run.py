@@ -49,7 +49,7 @@ edge = next(p for p in bt.EDGE_PATHS if os.path.exists(p))
 wp = bt.free_port(); httpd = http.server.ThreadingHTTPServer(('127.0.0.1', wp), functools.partial(bt.Quiet, directory=ROOT))
 threading.Thread(target=httpd.serve_forever, daemon=True).start()
 dp = bt.free_port(); prof = tempfile.mkdtemp(prefix='edgeprof_wheel_')
-proc = subprocess.Popen([edge, '--headless=new', '--remote-debugging-port=%d' % dp, '--user-data-dir=' + prof, '--no-first-run', '--hide-scrollbars', '--window-size=1366,768',
+proc = bt.edge_popen([edge, '--headless=new', '--remote-debugging-port=%d' % dp, '--user-data-dir=' + prof, '--no-first-run', '--hide-scrollbars', '--window-size=1366,768',
                          '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', 'about:blank'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 try:
     pages = []

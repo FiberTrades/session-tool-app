@@ -3,6 +3,7 @@
 # close, then the app in headless Edge (livecharts_e2e.js) on the same channel; prints both sides.
 #   python tests/livecharts_run.py
 import calendar, json, os, socket, subprocess, sys, tempfile, time, urllib.request
+import lowprio  # noqa: F401  (below normal priority: Nestor trades on this PC)
 HERE = os.path.dirname(os.path.abspath(__file__))
 T0 = calendar.timegm((2026, 10, 14, 8, 30, 0))
 PID = os.getpid()   # this run's own channel and files: another session's run beside it never meets it

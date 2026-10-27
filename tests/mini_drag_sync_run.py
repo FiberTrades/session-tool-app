@@ -40,7 +40,7 @@ def main():
     # HEADED=1: a real browser (off screen), each window on its own frame clock as on a desk with several screens; headless paints
     # every window in step, so a window that draws on another's frames looks fine there
     mode = ['--window-position=-32000,-32000', '--disable-features=CalculateNativeWinOcclusion', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding'] if os.environ.get('HEADED') else ['--headless=new']
-    proc = subprocess.Popen([edge, *mode, '--remote-debugging-port=%d' % dbg_port, '--user-data-dir=' + prof, '--disable-popup-blocking',
+    proc = bt.edge_popen([edge, *mode, '--remote-debugging-port=%d' % dbg_port, '--user-data-dir=' + prof, '--disable-popup-blocking',
                              '--no-first-run', '--no-default-browser-check', '--window-size=1400,900', 'about:blank'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     results = []
     def check(name, ok, got=None):

@@ -4,6 +4,7 @@
 # (nothing is written to the database); prints both sides.
 #   python tests/livecmp_run.py
 import calendar, json, os, subprocess, sys, tempfile, time, urllib.request
+import lowprio  # noqa: F401  (below normal priority: Nestor trades on this PC)
 HERE = os.path.dirname(os.path.abspath(__file__))
 T0 = calendar.timegm((2026, 10, 14, 8, 30, 0))
 def stored_close(sym, dflt):

@@ -3,6 +3,7 @@
 # its clock on a weekday morning; then the app in headless Edge on a computer screen. Nothing live is touched.
 #   python tests/broker_compat_run.py
 import calendar, json, os, socket, subprocess, sys, tempfile, time
+import lowprio  # noqa: F401  (below normal priority: Nestor trades on this PC)
 HERE = os.path.dirname(os.path.abspath(__file__))
 T0 = calendar.timegm((2026, 10, 14, 8, 30, 0))
 TOK = 'st-test-broker-e2e'

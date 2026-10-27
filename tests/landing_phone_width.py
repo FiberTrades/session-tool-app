@@ -22,7 +22,7 @@ def main():
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     dp = bt.free_port()
     prof = tempfile.mkdtemp(prefix='edgeprof_lpw_')
-    proc = subprocess.Popen([edge, '--headless=new', '--remote-debugging-port=%d' % dp, '--user-data-dir=' + prof, '--no-first-run', '--no-default-browser-check',
+    proc = bt.edge_popen([edge, '--headless=new', '--remote-debugging-port=%d' % dp, '--user-data-dir=' + prof, '--no-first-run', '--no-default-browser-check',
                              '--window-size=375,812', 'about:blank'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     fails = 0
     try:

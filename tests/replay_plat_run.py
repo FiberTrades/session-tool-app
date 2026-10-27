@@ -2,6 +2,7 @@
 # the phone platform, dark then light. Signed out, over the shared candles; no relay, no EA, nothing live.
 #   python tests/replay_plat_run.py            (SHOTS=<folder> keeps a screenshot of each run there)
 import os, subprocess, sys, tempfile
+import lowprio  # noqa: F401  (below normal priority: Nestor trades on this PC)
 HERE = os.path.dirname(os.path.abspath(__file__))
 src = open(os.path.join(HERE, 'replay_plat_e2e.js'), encoding='utf-8').read()
 shots = os.environ.get('SHOTS', '')

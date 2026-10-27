@@ -16,7 +16,7 @@ threading.Thread(target=httpd.serve_forever, daemon=True).start()
 dp = bt.free_port(); prof = tempfile.mkdtemp(prefix='edgeprof_wst_')
 args = [edge, '--headless=new', '--remote-debugging-port=%d' % dp, '--user-data-dir=' + prof, '--no-first-run', '--no-default-browser-check', '--window-size=1500,950', 'about:blank']
 if mode == 'allowed': args.insert(2, '--disable-popup-blocking')
-proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+proc = bt.edge_popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 res = []
 def ok(name, cond, got=None):
     res.append(bool(cond)); print(('PASS ' if cond else 'FAIL ') + name + ('' if cond else '   got: ' + str(got)[:400]), flush=True)

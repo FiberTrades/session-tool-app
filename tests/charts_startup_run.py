@@ -15,7 +15,7 @@ httpd = http.server.ThreadingHTTPServer(('127.0.0.1', wp), functools.partial(bt.
 threading.Thread(target=httpd.serve_forever, daemon=True).start()
 dp = bt.free_port()
 prof = tempfile.mkdtemp(prefix='edgeprof_wsr_')
-proc = subprocess.Popen([edge, *([] if os.environ.get('HEADED') else ['--headless=new']), '--window-position=40,40', '--remote-debugging-port=%d' % dp, '--user-data-dir=' + prof, '--no-first-run', '--no-default-browser-check',
+proc = bt.edge_popen([edge, *([] if os.environ.get('HEADED') else ['--headless=new']), '--window-position=40,40', '--remote-debugging-port=%d' % dp, '--user-data-dir=' + prof, '--no-first-run', '--no-default-browser-check',
                          '--disable-popup-blocking', '--window-size=1500,950', 'about:blank'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 res = []
 def ok(name, cond, got=None):

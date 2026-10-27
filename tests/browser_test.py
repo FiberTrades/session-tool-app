@@ -36,6 +36,54 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EDGE_PATHS = [r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe',
               r'C:\Program Files\Microsoft\Edge\Application\msedge.exe']
 
+# Tests run while Nestor trades on this PC (27 Oct 2026: test Edges held the CPU at 93-100% and his charts loaded slowly). The runner
+# itself - with the relay and stand-in EAs it starts, which inherit its class - runs below normal, and every test Edge starts through
+# edge_popen(): at idle priority, in a job that holds its whole tree there (Edge raises its own renderers and GPU process to normal and
+# above otherwise) and closes it when the runner ends, even on a timeout's hard exit.
+import lowprio  # noqa: F401  (this runner below normal)
+EDGE_IDLE = 0x40 if os.name == 'nt' else 0   # IDLE_PRIORITY_CLASS
+_K32 = _NT = None
+_JOBS = []
+if os.name == 'nt':
+    try:
+        import ctypes
+        from ctypes import wintypes
+        _K32 = ctypes.WinDLL('kernel32', use_last_error=True); _NT = ctypes.WinDLL('ntdll')
+        _K32.CreateJobObjectW.restype = wintypes.HANDLE
+        _K32.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
+        _K32.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+        _K32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+        _NT.NtResumeProcess.argtypes = [wintypes.HANDLE]
+
+        class _JobBasic(ctypes.Structure):
+            _fields_ = [('PerProcessUserTimeLimit', ctypes.c_int64), ('PerJobUserTimeLimit', ctypes.c_int64), ('LimitFlags', wintypes.DWORD),
+                        ('MinimumWorkingSetSize', ctypes.c_size_t), ('MaximumWorkingSetSize', ctypes.c_size_t), ('ActiveProcessLimit', wintypes.DWORD),
+                        ('Affinity', ctypes.c_size_t), ('PriorityClass', wintypes.DWORD), ('SchedulingClass', wintypes.DWORD)]
+
+        class _JobExt(ctypes.Structure):
+            _fields_ = [('Basic', _JobBasic), ('Io', ctypes.c_uint64 * 6), ('ProcessMemoryLimit', ctypes.c_size_t), ('JobMemoryLimit', ctypes.c_size_t),
+                        ('PeakProcessMemoryUsed', ctypes.c_size_t), ('PeakJobMemoryUsed', ctypes.c_size_t)]
+    except Exception:
+        _K32 = None
+
+
+def edge_popen(args, **kw):
+    """subprocess.Popen for a test Edge: idle priority for it and everything it starts, gone when this runner ends."""
+    if not _K32:
+        return subprocess.Popen(args, **kw)
+    kw['creationflags'] = kw.get('creationflags', 0) | EDGE_IDLE | 0x4   # CREATE_SUSPENDED: in the job before it starts anything
+    proc = subprocess.Popen(args, **kw)
+    try:
+        job = _K32.CreateJobObjectW(None, None)
+        lim = _JobExt(); lim.Basic.LimitFlags = 0x20 | 0x2000; lim.Basic.PriorityClass = EDGE_IDLE   # PRIORITY_CLASS, KILL_ON_JOB_CLOSE
+        if job and _K32.SetInformationJobObject(job, 9, ctypes.byref(lim), ctypes.sizeof(lim)) and _K32.AssignProcessToJobObject(job, int(proc._handle)):
+            _JOBS.append(job)
+    except Exception:
+        pass
+    finally:
+        _NT.NtResumeProcess(int(proc._handle))
+    return proc
+
 
 def free_port():
     s = socket.socket()
@@ -168,7 +216,7 @@ def main():
 
     dbg_port = free_port()
     prof = tempfile.mkdtemp(prefix='edgeprof_e2e_')
-    proc = subprocess.Popen([edge, '--headless=new', '--remote-debugging-port=%d' % dbg_port, '--user-data-dir=' + prof,
+    proc = edge_popen([edge, '--headless=new', '--remote-debugging-port=%d' % dbg_port, '--user-data-dir=' + prof,
                              '--no-first-run', '--no-default-browser-check', '--window-size=1280,1000',
                              # a headless page counts as backgrounded and gets a few frames a second; the charts apply a new view only on a
                              # frame, so view checks failed at random (15 Oct 2026: 3 frames a second measured)

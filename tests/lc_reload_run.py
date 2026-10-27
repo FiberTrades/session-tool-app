@@ -25,7 +25,7 @@ def main():
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     dbg_port = bt.free_port()
     prof = tempfile.mkdtemp(prefix='edgeprof_lcr_')
-    proc = subprocess.Popen([edge, '--headless=new', '--remote-debugging-port=%d' % dbg_port, '--user-data-dir=' + prof,
+    proc = bt.edge_popen([edge, '--headless=new', '--remote-debugging-port=%d' % dbg_port, '--user-data-dir=' + prof,
                              '--no-first-run', '--no-default-browser-check', '--window-size=1400,950',
                              '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows',
                              '--disable-features=CalculateNativeWinOcclusion', 'about:blank'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

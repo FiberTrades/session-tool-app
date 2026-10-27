@@ -2,6 +2,7 @@
 # platform with a white chart, then a light platform with a dark chart. Signed out, over the shared candles; nothing live.
 #   python tests/themebars_run.py            (SHOTS=<folder> keeps a screenshot of each run there)
 import os, subprocess, sys, tempfile
+import lowprio  # noqa: F401  (below normal priority: Nestor trades on this PC)
 HERE = os.path.dirname(os.path.abspath(__file__))
 src = open(os.path.join(HERE, 'themebars_e2e.js'), encoding='utf-8').read()
 shots = os.environ.get('SHOTS', '')

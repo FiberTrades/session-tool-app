@@ -10,7 +10,7 @@ wp = bt.free_port()
 httpd = http.server.ThreadingHTTPServer(('127.0.0.1', wp), functools.partial(bt.Quiet, directory=REPO))
 threading.Thread(target=httpd.serve_forever, daemon=True).start()
 dp = bt.free_port(); prof = tempfile.mkdtemp(prefix='edgeprof_vc_')
-proc = subprocess.Popen([edge, '--headless=new', '--remote-debugging-port=%d' % dp, '--user-data-dir=' + prof, '--no-first-run', '--no-default-browser-check', '--window-size=1200,800', 'about:blank'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+proc = bt.edge_popen([edge, '--headless=new', '--remote-debugging-port=%d' % dp, '--user-data-dir=' + prof, '--no-first-run', '--no-default-browser-check', '--window-size=1200,800', 'about:blank'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 res = []
 def ok(name, cond, got=None):
     res.append(bool(cond)); print(('PASS ' if cond else 'FAIL ') + name + ('' if cond else '   got: ' + str(got)[:300]), flush=True)

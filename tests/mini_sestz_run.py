@@ -39,7 +39,7 @@ def main():
         results.append((name, bool(ok), got)); print(('ok ' if ok else 'NO ') + name, '' if ok else json.dumps(got)[:300], flush=True)
     def run(zone, day, body):
         dbg_port = bt.free_port(); prof = tempfile.mkdtemp(prefix='edgeprof_stz_')
-        proc = subprocess.Popen([edge, '--headless=new', '--remote-debugging-port=%d' % dbg_port, '--user-data-dir=' + prof, '--no-first-run', '--no-default-browser-check', '--window-size=1400,900', 'about:blank'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        proc = bt.edge_popen([edge, '--headless=new', '--remote-debugging-port=%d' % dbg_port, '--user-data-dir=' + prof, '--no-first-run', '--no-default-browser-check', '--window-size=1400,900', 'about:blank'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         try:
             pages = []
             for _ in range(80):

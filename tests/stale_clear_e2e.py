@@ -162,7 +162,7 @@ def main():
         ports.append(port)
     dbg = bt.free_port()
     prof = tempfile.mkdtemp(prefix='edgeprof_stale_')
-    proc = subprocess.Popen([edge, '--headless=new', '--remote-debugging-port=%d' % dbg, '--user-data-dir=' + prof,
+    proc = bt.edge_popen([edge, '--headless=new', '--remote-debugging-port=%d' % dbg, '--user-data-dir=' + prof,
                              '--no-first-run', '--no-default-browser-check', '--window-size=1280,1000',
                              '--disable-background-timer-throttling', '--disable-renderer-backgrounding', 'about:blank'],
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
