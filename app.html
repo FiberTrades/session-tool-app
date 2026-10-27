@@ -87814,6 +87814,64 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     handles: function(g, d, X, sq){ var b = kImgB(d, X); if (!b) return; sq(b.a.x, b.a.y); sq(b.b.x, b.b.y); sq(b.a.x, b.b.y); sq(b.b.x, b.a.y); },
     box: function(d, X){ var b = kImgB(d, X); return b ? { x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 } : null; } });
   TYN.image = ['image', 'images', 'imagen', 'imágenes'];
+  // FORECASTING (27 Oct 2026): a Position forecast (from a candle to a target: the move, the candles and the time; Success once a later
+  // candle reaches the target, Failure when its time passes first), a Bars pattern (the candles between two points copied, to move
+  // them where the member thinks they may repeat), a Ghost feed (a path clicked point by point, drawn as see-through candles), a Sector
+  // (a slice of a circle: its centre, then its two edges). The chart hands over its candles: L (a time's candle), bar (a candle), nb
+  // (how many there are so far), xl (a candle's x), yp (a price's y).
+  function kFc(d, X){ var a = X.P(d.a), b = X.P(d.b); if (!a || !b) return null; var o = { a: a, b: b, st: null };
+    if (X.L && X.bar) { var La = X.L(d.a.t), Lb = X.L(d.b.t), up = d.b.price >= d.a.price;
+      if (La != null && Lb != null && Math.round(Lb) > Math.round(La)) { La = Math.round(La); Lb = Math.round(Lb);
+        for (var L = La + 1; L <= Lb; L++) { var br = X.bar(L); if (!br) break; if (up ? br.high >= d.b.price : br.low <= d.b.price) { o.st = 'ok'; o.at = L; break; } }
+        if (!o.st && X.nb != null && X.nb - 1 >= Lb) o.st = 'no'; } }
+    var m = X.mz ? X.mz(d.a, d.b) : null; o.L = m ? [m.dist + '  (' + m.pct + ')', m.bars + ',  ' + m.dt] : []; if (o.st) o.L.push(o.st === 'ok' ? kTr('Success', 'Éxito') : kTr('Failure', 'Fallo'));
+    var bh = o.L.length * 16 + 8; o.tb = o.L.length ? kTagBox(b.x + 10, b.y < a.y ? b.y - 10 - bh : b.y + 10, o.L, X) : null; return o; }
+  k2('posfc', { keys: K2L, sty: { c: '#2962ff', w: 2 }, icon: kIco('<path d="M2.5 11.5l4.5-4.5"/><circle cx="2.5" cy="11.5" r="1.3"/><path d="M7 7l6.5-3.5" stroke-dasharray="1.6 1.6"/><circle cx="13.5" cy="3.5" r="1.3"/>'),
+    paint: function(g, d, X, C){ var o = kFc(d, X); if (!o) return; var a = o.a, b = o.b; g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke(); g.setLineDash([]);
+      g.beginPath(); g.arc(a.x, a.y, 3.5, 0, 2 * Math.PI); g.fill(); g.beginPath(); g.arc(b.x, b.y, 3.5, 0, 2 * Math.PI); g.fill();
+      if (o.st === 'ok' && X.xl) { var hx = X.xl(o.at); if (hx != null) { g.save(); g.fillStyle = '#089981'; g.beginPath(); g.arc(hx, b.y, 4, 0, 2 * Math.PI); g.fill(); g.restore(); } }   // where the target was reached
+      if (o.tb) kTag(g, o.tb, o.L, o.st === 'ok' ? '#089981' : (o.st === 'no' ? '#f23645' : C));
+      var sl = [X.pl ? X.pl(d.a.price) : String(d.a.price)]; kTag(g, kTagBox(a.x + 8, b.y < a.y ? a.y + 8 : a.y - 32, sl, X), sl, C); },
+    hit: function(d, X, px, py){ var h = k2ab(d, X, px, py); if (h) return h; var o = kFc(d, X); if (!o) return null; return (kSeg(px, py, o.a, o.b) < 6 || kInB(px, py, o.tb, 1)) ? 'body' : null; },
+    handles: function(g, d, X, sq){ var a = X.P(d.a), b = X.P(d.b); if (a) sq(a.x, a.y); if (b) sq(b.x, b.y); },
+    box: function(d, X){ var o = kFc(d, X); return o ? kSpan([o.a, o.b].concat(o.tb ? [{ x: o.tb.x0, y: o.tb.y0 }, { x: o.tb.x1, y: o.tb.y1 }] : [])) : null; } });
+  // Bars pattern: d.pat holds each candle against the first one's open; d.a is that first candle at its open
+  function kBP(d, X){ if (!d.pat || !d.pat.length || !X.L || !X.xl || !X.yp) return null; var La = X.L(d.a.t); if (La == null) return null; La = Math.round(La); var x0 = X.xl(La), x1 = X.xl(La + 1); if (x0 == null || x1 == null) return null;
+    var sp = x1 - x0, B = []; d.pat.forEach(function(r, i){ var q = { x: x0 + sp * i, o: X.yp(d.a.price + r[0]), h: X.yp(d.a.price + r[1]), l: X.yp(d.a.price + r[2]), c: X.yp(d.a.price + r[3]) }; if (q.o != null && q.h != null && q.l != null && q.c != null) B.push(q); });
+    if (!B.length) return null; return { B: B, hw: Math.max(1, sp * 0.35), x0: B[0].x - sp / 2, x1: B[B.length - 1].x + sp / 2, y0: Math.min.apply(null, B.map(function(q){ return q.h; })), y1: Math.max.apply(null, B.map(function(q){ return q.l; })) }; }
+  function kCandles(g, B, hw, up, dn){ g.setLineDash([]); g.lineWidth = 1; B.forEach(function(q){ var x = Math.round(q.x) + 0.5, top = Math.min(q.o, q.c), ht = Math.max(1, Math.abs(q.c - q.o)), isUp = q.c <= q.o, k = isUp ? up : dn;
+    g.strokeStyle = k.s; g.beginPath(); g.moveTo(x, q.h); g.lineTo(x, q.l); g.stroke(); g.fillStyle = k.f; g.fillRect(Math.round(q.x - hw), top, Math.max(1, Math.round(hw * 2)), ht); g.strokeRect(Math.round(q.x - hw) + 0.5, Math.round(top) + 0.5, Math.max(1, Math.round(hw * 2)) - 1, Math.max(0, Math.round(ht) - 1)); }); }
+  k2('barspat', { keys: ['color'], sty: { c: '#2962ff', w: 1 }, icon: kIco('<path d="M4 2.5v11M11 4v9"/><rect x="2.8" y="5" width="2.4" height="5" rx=".4"/><rect x="9.8" y="6" width="2.4" height="4" rx=".4" stroke-dasharray="1.2 1.2"/>'),
+    paint: function(g, d, X, C){ var P0 = kBP(d, X);
+      if (!P0) { var a = X.P(d.a), b = X.P(d.b); if (a && b) { var x0 = Math.min(a.x, b.x), w = Math.abs(b.x - a.x); g.fillStyle = withA(C, 0.08); g.fillRect(x0, 0, w, X.ph); g.lineWidth = 1; g.setLineDash([4, 3]); g.strokeRect(Math.round(x0) + 0.5, 0.5, Math.round(w), X.ph - 1); } return; }   // being drawn: the candles it will take
+      kCandles(g, P0.B, P0.hw, { s: C, f: withA(C, 0.15) }, { s: C, f: withA(C, 0.6) }); },
+    hit: function(d, X, px, py){ var P0 = kBP(d, X); return (P0 && kInB(px, py, P0, 3)) ? 'body' : null; },
+    handles: function(g, d, X, sq){ var P0 = kBP(d, X); if (!P0) return; var f = P0.B[0], l = P0.B[P0.B.length - 1]; sq(f.x, f.o); sq(l.x, l.c); },
+    box: function(d, X){ var P0 = kBP(d, X); return P0 ? { x0: P0.x0, y0: P0.y0, x1: P0.x1, y1: P0.y1 } : null; } });
+  // Ghost feed: its points joined candle by candle, each candle from the price one candle before to its own, with wicks a little longer
+  function kGF(d, X){ var P = d.pts || []; if (P.length < 2 || !X.L || !X.xl || !X.yp) return null; var K = [];
+    P.forEach(function(q){ var L = X.L(q.t); if (L != null) K.push({ L: Math.round(L), pr: q.price }); }); if (K.length < 2) return null;
+    var pr = {}, L0 = K[0].L, Ln = L0; pr[L0] = K[0].pr;
+    for (var i = 1; i < K.length; i++) { var A = K[i - 1], Bq = K[i], n = Bq.L - A.L; if (n <= 0) continue; for (var L = A.L + 1; L <= Bq.L; L++) pr[L] = A.pr + (Bq.pr - A.pr) * (L - A.L) / n; Ln = Math.max(Ln, Bq.L); }
+    var body = 0, cnt = 0; for (L = L0 + 1; L <= Ln; L++) if (pr[L] != null && pr[L - 1] != null) { body += Math.abs(pr[L] - pr[L - 1]); cnt++; } if (!cnt) return null; body /= cnt;
+    var x0 = X.xl(L0), x1 = X.xl(L0 + 1); if (x0 == null || x1 == null) return null; var sp = x1 - x0, B = [];
+    for (L = L0 + 1; L <= Ln; L++) { var o = pr[L - 1], c = pr[L]; if (o == null || c == null) continue; var wk = body * (0.35 + 0.3 * (((L * 37) % 7) / 6)), q = { x: x0 + sp * (L - L0), o: X.yp(o), c: X.yp(c), h: X.yp(Math.max(o, c) + wk), l: X.yp(Math.min(o, c) - wk) }; if (q.o != null && q.c != null && q.h != null && q.l != null) B.push(q); }
+    if (!B.length) return null; return { B: B, hw: Math.max(1, sp * 0.35), x0: B[0].x - sp / 2, x1: B[B.length - 1].x + sp / 2, y0: Math.min.apply(null, B.map(function(q){ return q.h; })), y1: Math.max.apply(null, B.map(function(q){ return q.l; })) }; }
+  k2('ghost', { keys: ['color'], sty: { c: '#787b86', w: 1 }, icon: kIco('<path d="M3 3.5v9M8 2v8M13 5v8"/><rect x="2" y="5.5" width="2" height="4" rx=".4" stroke-dasharray="1.4 1.1"/><rect x="7" y="4" width="2" height="4" rx=".4" stroke-dasharray="1.4 1.1"/><rect x="12" y="7" width="2" height="4" rx=".4" stroke-dasharray="1.4 1.1"/>'),
+    paint: function(g, d, X, C){ var q = kPts(d, X); if (q.length > 1) { g.save(); g.strokeStyle = withA(C, 0.6); g.lineWidth = 1; g.setLineDash([3, 3]); g.beginPath(); q.forEach(function(z, j){ if (j) g.lineTo(z.x, z.y); else g.moveTo(z.x, z.y); }); g.stroke(); g.restore(); }
+      var G0 = kGF(d, X); if (G0) kCandles(g, G0.B, G0.hw, { s: 'rgba(8,153,129,0.8)', f: 'rgba(8,153,129,0.35)' }, { s: 'rgba(242,54,69,0.8)', f: 'rgba(242,54,69,0.35)' }); },
+    hit: function(d, X, px, py){ var pp = kPP(d, X), k; for (k = pp.length - 1; k >= 0; k--) if (pp[k] && Math.hypot(px - pp[k].x, py - pp[k].y) < 8) return 'p' + k;
+      var G0 = kGF(d, X); if (G0 && G0.B.some(function(q){ return Math.abs(px - q.x) <= G0.hw + 2 && py >= q.h - 2 && py <= q.l + 2; })) return 'body';
+      var pz = pp.filter(Boolean); for (k = 1; k < pz.length; k++) if (kSeg(px, py, pz[k - 1], pz[k]) < 5) return 'body'; return null; },
+    handles: function(g, d, X, sq){ kPP(d, X).forEach(function(z){ if (z) sq(z.x, z.y); }); },
+    box: function(d, X){ var G0 = kGF(d, X), q = kPts(d, X); return kSpan(q.concat(G0 ? [{ x: G0.x0, y: G0.y0 }, { x: G0.x1, y: G0.y1 }] : [])); } });
+  kGeo('sector', { n: 3, fill: true, keys: KSF, sty: { c: '#9c27b0', w: 1.6 }, icon: kIco('<path d="M2.5 13.5L13 6.5a10.5 10.5 0 0 1 1 7z"/>'),
+    geom: function(d, X){ var a = X.P(d.a), b = X.P(d.b), c = d.c ? X.P(d.c) : null; if (!a || !b) return null; if (!c) return [{ k: 's', a: a, b: b }];
+      var r = Math.hypot(b.x - a.x, b.y - a.y), t1 = Math.atan2(b.y - a.y, b.x - a.x), t2 = Math.atan2(c.y - a.y, c.x - a.x), dt = t2 - t1; while (dt > Math.PI) dt -= 2 * Math.PI; while (dt < -Math.PI) dt += 2 * Math.PI;
+      var P = [a]; for (var i = 0; i <= 48; i++) { var th = t1 + dt * i / 48; P.push({ x: a.x + r * Math.cos(th), y: a.y + r * Math.sin(th) }); }
+      return [{ k: 'f', pts: P, c: kE(X, d, 'fill') }, { k: 'p', pts: P.concat([a]) }]; } });
+  Object.assign(TYN, { posfc: ['position forecast', 'position forecasts', 'previsión de posición', 'previsiones de posición'], barspat: ['bars pattern', 'bars patterns', 'patrón de barras', 'patrones de barras'],
+    ghost: ['ghost feed', 'ghost feeds', 'velas fantasma', 'velas fantasma'], sector: ['sector', 'sectors', 'sector', 'sectores'] });
   function kPaint(g, d, X){ var k2o = K2[d.type]; if (k2o) { var C2 = kE(X, d, 'color'), W2 = kW(X, d); g.save(); g.strokeStyle = C2; g.fillStyle = C2; g.lineWidth = W2; g.setLineDash(X.pv ? [4, 3] : dash(kE(X, d, 'dash'), W2));
       try { k2o.paint(g, d, X, C2, W2); } catch (e) {} g.restore(); return; }
     var C = kE(X, d, 'color'), W = kW(X, d), t = d.type, a, b; g.save(); g.strokeStyle = C; g.fillStyle = C; g.lineWidth = W; g.setLineDash(X.pv ? [4, 3] : dash(kE(X, d, 'dash'), W));
@@ -93447,7 +93505,7 @@ window.__stAZ = (function () {
     if (d.type === 'note') return String(d.text || '').replace(/\s+/g, ' ').slice(0, 24) || (d.a ? Number(d.a.price).toFixed(dg) : '');
     if (d.type === 'table') return (d.cells || []).map(function(r){ return r.filter(Boolean).join(' '); }).filter(Boolean).join(' / ').slice(0, 24);
     if (KIT && KIT.txt && KIT.txt(d.type) && String(d.text || '').trim()) return String(d.text).replace(/\s+/g, ' ').slice(0, 24);
-    var p0 = /^(pen|brush|path|polyline)$/.test(d.type) ? (d.pts || [])[0] : d.a; return p0 && p0.t ? at(p0.t) : ''; }
+    var p0 = /^(pen|brush|path|polyline|ghost)$/.test(d.type) ? (d.pts || [])[0] : d.a; return p0 && p0.t ? at(p0.t) : ''; }
   function treeMenu(anchor, refresh){ var h = treeHtml(true);
     if (refresh) { try { plOtPaint(); } catch (e) {} if (menuFor === 'tree') { var m = mEl(), ol = m.querySelector('.stpr-otl'), st = ol ? ol.scrollTop : 0; m.innerHTML = h; var ol2 = m.querySelector('.stpr-otl'); if (ol2) ol2.scrollTop = st; } return; }
     openMenu(anchor, h, 'tree'); }
@@ -93843,7 +93901,7 @@ window.__stAZ = (function () {
     ray: ['Ray', 'Rayo'], arrow: ['Arrow', 'Flecha'], path: ['Path', 'Trayectoria'], hray: ['Horizontal ray', 'Rayo horizontal'], vline: ['Vertical line', 'Línea vertical'], channel: ['Parallel channel', 'Canal paralelo'], circle: ['Ellipse', 'Elipse'], brush: ['Highlighter', 'Resaltador'], note: ['Price note', 'Nota de precio'],
     arrowmk: ['Arrow marker', 'Marcador de flecha'], arrowup: ['Arrow mark up', 'Marca de flecha arriba'], arrowdn: ['Arrow mark down', 'Marca de flecha abajo'], rotrect: ['Rotated rectangle', 'Rectángulo girado'], circ: ['Circle', 'Círculo'],
     anote: ['Note', 'Nota'], pin: ['Pin', 'Chincheta'], table: ['Table', 'Tabla'], callout: ['Callout', 'Bocadillo'], comment: ['Comment', 'Comentario'], plabel: ['Price label', 'Etiqueta de precio'], signpost: ['Signpost', 'Señal'], flag: ['Flag mark', 'Bandera'],
-    image: ['Image', 'Imagen'], polyline: ['Polyline', 'Polilínea'], triangle: ['Triangle', 'Triángulo'], arc: ['Arc', 'Arco'], curve: ['Curve', 'Curva'], dcurve: ['Double curve', 'Curva doble'],
+    image: ['Image', 'Imagen'], polyline: ['Polyline', 'Polilínea'], posfc: ['Position forecast', 'Previsión de posición'], barspat: ['Bars pattern', 'Patrón de barras'], ghost: ['Ghost feed', 'Velas fantasma'], sector: ['Sector', 'Sector'], triangle: ['Triangle', 'Triángulo'], arc: ['Arc', 'Arco'], curve: ['Curve', 'Curva'], dcurve: ['Double curve', 'Curva doble'],
     fibext: ['Trend-based fib extension', 'Extensión de Fibonacci por tendencia'], fibchan: ['Fib channel', 'Canal de Fibonacci'], fibtime: ['Fib time zone', 'Zona temporal de Fibonacci'],
     fibfan: ['Fib speed resistance fan', 'Abanico de Fibonacci'], fibcirc: ['Fib circles', 'Círculos de Fibonacci'], fibspiral: ['Fib spiral', 'Espiral de Fibonacci'], fibarc: ['Fib speed resistance arcs', 'Arcos de Fibonacci'],
     fibwedge: ['Fib wedge', 'Cuña de Fibonacci'], gannbox: ['Gann box', 'Caja de Gann'],
@@ -94456,7 +94514,8 @@ window.__stAZ = (function () {
   var KIT = window.__stDrawBar ? window.__stDrawBar.kit : null; (function(){ var nd = window.__stDrawBar && window.__stDrawBar.DSTY; if (nd) for (var k in nd) DSTY[k] = nd[k]; })();
   function KH(t){ return !!(KIT && KIT.has(t)); }
   // a chart, for the kit: its points in pixels, its plot (as last painted), its time and price as its crosshair and scale write them
-  function kx(p, pv, dm, d){ dm = dm || p._kdm || paneDims(p); return { P: function(q){ return Pt(p, q); }, pw: dm.pw, ph: dm.ph, dsty: DSTY, pv: !!pv, ted: !!(d && DW.ted && DW.ted.d === d), on: !!(d && ((DW.sel != null && DW.list[DW.sel] === d) || (DW.hov != null && DW.hovP === p && DW.list[DW.hov] === d))),
+  function kx(p, pv, dm, d){ dm = dm || p._kdm || paneDims(p); return { P: function(q){ return Pt(p, q); }, pw: dm.pw, ph: dm.ph, dsty: DSTY, L: function(t){ return lOfT(p, t); }, bar: function(L){ return p.bars ? p.bars[L] : null; }, nb: p.n,
+    xl: function(L){ return p.chart.timeScale().logicalToCoordinate(L); }, yp: function(pr){ return p.series.priceToCoordinate(pr); }, pv: !!pv, ted: !!(d && DW.ted && DW.ted.d === d), on: !!(d && ((DW.sel != null && DW.list[DW.sel] === d) || (DW.hov != null && DW.hovP === p && DW.list[DW.hov] === d))),
     tl: function(q){ return crossFmt(p.tf)(q.t); }, pl: function(pr){ return Number(pr).toFixed(PS(p).digits); },
     // between two points: the distance (pips, or points off forex) and per cent, the candles and the time - signed both ways
     mz: function(qa, qb){ var XR = PS(p), su = suFor(XR), dP = qb.price - qa.price, dist = dP / uFor(XR, su), La = lOfT(p, qa.t), Lb = lOfT(p, qb.t), db = (La == null || Lb == null) ? 0 : Math.round(Lb - La), mn = '\u2212';
@@ -94582,9 +94641,16 @@ window.__stAZ = (function () {
   function setTool(t){ hideCtx(); DW.noProps = false; DW.emoArm = false; DW.tool = (DW.tool === t ? 'none' : t); DW.pending = null; DW.snap = null; if (DW.tool !== 'none') dwUnhide(); if (DW.tool !== 'none' && (DW.sel != null || (DW.multi && DW.multi.length))) { DW.sel = null; DW.multi = null; updDel(); }   // picking a tool puts the selection down (TradingView's)
     SD.querySelectorAll('#stpr-tools [data-tool]').forEach(function(b){ b.classList.toggle('on', b.getAttribute('data-tool') === DW.tool); });
     if (DW.tool !== 'none') tgSet(DW.tool); DW.pdn = null; toolsPaint(); dwPanes(); renderProps(); dirty(); }
+  // a Bars pattern: the candles between its two points, kept as they were (each against the first one's open), so the copy moves
+  function barsCap(p, d){ var B = p && p.bars || [], La = lOfT(p, d.a.t), Lb = lOfT(p, d.b.t); if (La == null || Lb == null) return; La = Math.round(La); Lb = Math.round(Lb); if (Lb < La) { var t0 = La; La = Lb; Lb = t0; }
+    La = Math.max(0, La); Lb = Math.min(B.length - 1, Lb); if (Lb < La || !B[La]) return; var o0 = B[La].open, pat = [];
+    for (var L = La; L <= Lb && pat.length < 500; L++) { var b = B[L]; if (!b) break; pat.push([b.open - o0, b.high - o0, b.low - o0, b.close - o0].map(function(v){ return +v.toFixed(8); })); }
+    var bl = B[La + pat.length - 1]; d.pat = pat; d.a = { t: B[La].time, price: o0 }; d.b = { t: bl.time, price: bl.close }; }
   // a two-point drawing (or a channel's third point) placed: kept, selected, the tool put down
-  function pendDone(){ var d = DW.pending; if (!d) return; delete d.st; DW.list.push(d); DW.pending = null; DW.pdn = null; DW.sel = DW.list.length - 1; var tx = KIT && KIT.txt && KIT.txt(d.type); if (!tx) commit(); updDel(); setTool('none'); if (tx) txtEdit(DW.at || panes[0], d, true); }   // a callout: then its words
-  function pathDone(){ var d = DW.pending; DW.pxy = null; if (!d || !/^(path|polyline)$/.test(d.type)) return; d.pts.pop(); d.pts = d.pts.filter(function(z, k, A){ return !k || z.t !== A[k - 1].t || z.price !== A[k - 1].price; });
+  function pendDone(){ var d = DW.pending; if (!d) return; delete d.st;
+    if (d.type === 'barspat') { barsCap(DW.at || panes[0], d); if (!d.pat) { DW.pending = null; DW.pdn = null; setTool('none'); dirty(); return; } }   // a bars pattern over no candles: nothing to copy
+    DW.list.push(d); DW.pending = null; DW.pdn = null; DW.sel = DW.list.length - 1; var tx = KIT && KIT.txt && KIT.txt(d.type); if (!tx) commit(); updDel(); setTool('none'); if (tx) txtEdit(DW.at || panes[0], d, true); }   // a callout: then its words
+  function pathDone(){ var d = DW.pending; DW.pxy = null; if (!d || !/^(path|polyline|ghost)$/.test(d.type)) return; d.pts.pop(); d.pts = d.pts.filter(function(z, k, A){ return !k || z.t !== A[k - 1].t || z.price !== A[k - 1].price; });
     if (d.pts.length > 1) pendDone(); else { DW.pending = null; setTool('none'); dirty(); } }   // the point at the mouse goes; two points or more are kept
 
   // ---- a chart's geometry: time <-> logical position <-> pixels, between and beyond its candles ----
@@ -94818,7 +94884,7 @@ window.__stAZ = (function () {
     // TradingView's blue, the span between shaded on both (Nestor, 24 Oct 2026: TradingView's look; the Long / Short tool keeps its own)
     var dp = [], dt = [], BL = '#2962ff', SH = 'rgba(41,98,255,0.25)';
     if (sd && !d && sd.type !== 'long' && sd.type !== 'short') {
-      var pts = sd.type === 'hline' ? [{ price: sd.price }] : (/^(pen|brush|path|polyline)$/.test(sd.type) ? ((sd.pts && sd.pts.length) ? [sd.pts[0], sd.pts[sd.pts.length - 1]] : []) : [sd.a, (sd.type === 'text' || sd.type === 'emoji' || sd.type === 'note') ? null : sd.b]);
+      var pts = sd.type === 'hline' ? [{ price: sd.price }] : (/^(pen|brush|path|polyline|ghost)$/.test(sd.type) ? ((sd.pts && sd.pts.length) ? [sd.pts[0], sd.pts[sd.pts.length - 1]] : []) : [sd.a, (sd.type === 'text' || sd.type === 'emoji' || sd.type === 'note') ? null : sd.b]);
       pts.forEach(function(q){ if (!q) return; if (sd.type !== 'vline' && isFinite(q.price) && dp.indexOf(q.price) < 0) dp.push(q.price);
         if (q.t != null && sd.type !== 'hline') { var x = xOfT(p, q.t); if (x != null && isFinite(x) && !dt.some(function(z){ return z.t === q.t; })) dt.push({ t: q.t, x: x }); } }); }
     ax.set('da', dp[0] != null ? { p: dp[0], t: f(dp[0]), bg: BL } : null); ax.set('db', dp[1] != null ? { p: dp[1], t: f(dp[1]), bg: BL } : null);
@@ -95320,7 +95386,7 @@ window.__stAZ = (function () {
       onReset: function(){ V = visAll(); apply(); },
       onInput: function(el){ var k = el.getAttribute('data-k'); if (!k || !/^vis\./.test(k)) return false; visSet(V, k, el.type === 'checkbox' ? el.checked : el.value); apply(); return el.type !== 'range'; },
       onChange: function(el){ var k = el.getAttribute('data-k'); if (!k || !/^vis\./.test(k)) return false; visSet(V, k, el.type === 'checkbox' ? el.checked : el.value); apply(); return true; } }); }
-  function pathOk(p, dm){ var want = !!(DW.pending && /^(path|polyline)$/.test(DW.pending.type) && DW.ptouch && DW.pxy && DW.pxy.p === p), b = p._pok;
+  function pathOk(p, dm){ var want = !!(DW.pending && /^(path|polyline|ghost)$/.test(DW.pending.type) && DW.ptouch && DW.pxy && DW.pxy.p === p), b = p._pok;
     if (want && !b) { b = p._pok = p.el.ownerDocument.createElement('button'); b.type = 'button'; b.className = 'stpr-pathok'; p.el.appendChild(b); }
     if (!b) return; if (want) { var bt = T('Done', 'Listo'); if (b.textContent !== bt) b.textContent = bt; var bb = Math.round(dm.h - dm.ph + 12) + 'px'; if (b.style.bottom !== bb) b.style.bottom = bb; var bl = Math.round(dm.pw / 2) + 'px'; if (b.style.left !== bl) b.style.left = bl; }
     if (b.style.display !== (want ? '' : 'none')) b.style.display = want ? '' : 'none'; }
@@ -95542,7 +95608,7 @@ window.__stAZ = (function () {
   function lockSel(){ var o = DW.sel != null && DW.list[DW.sel]; if (!o) return; if (o.lock) delete o.lock; else o.lock = true; commit(); renderProps(); dirty();
     flash(o.lock ? T('Locked: it cannot be moved or deleted until unlocked.', 'Bloqueado: no se puede mover ni borrar hasta desbloquearlo.') : T('Unlocked.', 'Desbloqueado.')); }
   function nudge(c, p){ var mv = function(q){ var L = p && lOfT(p, q.t); if (L != null) q.t = tOfL(p, L + 3); };   // three candles along, on the chart it was cloned on
-    if (c.type === 'hline') c.price = c.price + U('pips') * 5; else if (/^(pen|brush|path|polyline)$/.test(c.type)) (c.pts || []).forEach(mv); else { if (c.a) mv(c.a); if (c.b) mv(c.b); if (c.c) mv(c.c); if (c.type === 'hray' && c.a) c.a.price = c.a.price + U('pips') * 5; } return c; }
+    if (c.type === 'hline') c.price = c.price + U('pips') * 5; else if (/^(pen|brush|path|polyline|ghost)$/.test(c.type)) (c.pts || []).forEach(mv); else { if (c.a) mv(c.a); if (c.b) mv(c.b); if (c.c) mv(c.c); if (c.type === 'hray' && c.a) c.a.price = c.a.price + U('pips') * 5; } return c; }
   var PAK = ['paId', 'paSig', 'paPx', 'paOn', 'paFired', 'paNote', 'hitAt', 'hitHow', 'hitPx'];   // an alert's own row and its moment: never a copy's
   function cloneSel(){ if (DW.sel == null || !DW.list[DW.sel]) return; var p = DW.at || panes[0], c = clone(DW.list[DW.sel]); delete c.lock; PAK.forEach(function(k){ delete c[k]; });   // a copy starts unlocked (its alert, if any, a new one)
     nudge(c, p); DW.list.push(c); DW.sel = DW.list.length - 1; DW.multi = null; commit(); updDel(); }
@@ -95772,7 +95838,7 @@ window.__stAZ = (function () {
       else if (DW.tool === 'text') { var td = styleNew({ type: 'text', a: toPf(p, e) || q, text: '' }); DW.list.push(td); DW.sel = DW.list.length - 1; setTool('none'); updDel(); txtEdit(p, td, true); }
       else if (DW.tool === 'image') { setTool('none'); imgPick(p, q); }   // a picture: the file picker, then it goes where the click was
       else if (DW.tool === 'pen' || DW.tool === 'brush') { DW.penning = styleNew({ type: DW.tool, pts: [toPf(p, e) || q] }); DW.penning.px = [xy]; DW.penP = p; }   // the highlighter is a wide, see-through pen
-      else if (DW.tool === 'path' || DW.tool === 'polyline') { var pd0 = (DW.pending && DW.pending.type === DW.tool) ? DW.pending : null;   // TradingView's Path: a point at each click; a click on the last one again (a double-click) ends it, as do Enter, Esc and a right-click
+      else if (DW.tool === 'path' || DW.tool === 'polyline' || DW.tool === 'ghost') { var pd0 = (DW.pending && DW.pending.type === DW.tool) ? DW.pending : null;   // TradingView's Path: a point at each click; a click on the last one again (a double-click) ends it, as do Enter, Esc and a right-click
         if (!pd0) { DW.pending = styleNew({ type: DW.tool, pts: [q, { t: q.t, price: q.price }] }); DW.pxy = { p: p, x: xy.x, y: xy.y }; DW.ptouch = touch; }
         else { var lf = pd0.pts[pd0.pts.length - 2], lfp = lf ? Pt(p, lf) : null, lx = DW.pxy;
           var ptol = (touch || DW.ptouch) ? 24 : 6;   // a fingertip on the last point: it ends from further away than a mouse click (Nestor, 22 Oct 2026: "i cant quite hit the arrow head with my finger")
@@ -95834,7 +95900,7 @@ window.__stAZ = (function () {
     if (DW.penning) { var pp = DW.penP, xy = evXY(pp, e); DW.penning.tip = xy; var lp = DW.penning.px[DW.penning.px.length - 1];
       if (!lp || Math.hypot(xy.x - lp.x, xy.y - lp.y) >= 2) { var pf = toPf(pp, e); if (pf) { DW.penning.pts.push(pf); DW.penning.px.push(xy); } } dirty(); return; }
     if (DW.tool !== 'none' && p && (!!e.ctrlKey !== !!(window.__stDrawBar.magnet && window.__stDrawBar.magnet.on()))) { var sp = toP(p, e); DW.snap = sp ? { p: p, q: sp } : null; dirty(); } else if (DW.snap) { DW.snap = null; dirty(); }
-    if (DW.pending) { if (p) { var q = toP(p, e); if (q) { if (/^(path|polyline)$/.test(DW.pending.type)) DW.pending.pts[DW.pending.pts.length - 1] = q; else if (DW.pending.st === 2) { if (DW.pending.type === 'channel') DW.pending.off = chanOff(p, DW.pending, q); else DW.pending.c = q; } else DW.pending.b = q; dirty(); } } return; }
+    if (DW.pending) { if (p) { var q = toP(p, e); if (q) { if (/^(path|polyline|ghost)$/.test(DW.pending.type)) DW.pending.pts[DW.pending.pts.length - 1] = q; else if (DW.pending.st === 2) { if (DW.pending.type === 'channel') DW.pending.off = chanOff(p, DW.pending, q); else DW.pending.c = q; } else DW.pending.b = q; dirty(); } } return; }
     if (DW.drag && DW.drag.group) { var gg = DW.drag, q3 = toP(gg.p, e); if (!q3) return;
       if (!gg.moved) { var gm3 = evXY(gg.p, e); if (Math.abs(gm3.x - gg.x0) < 3 && Math.abs(gm3.y - gg.y0) < 3) return; gg.moved = true; }
       if (gg.lock) { if (!gg.said) { gg.said = true; flash(T('One of them is locked: unlock it to move them together.', 'Uno de ellos está bloqueado: desbloquéalo para moverlos juntos.')); } return; }
@@ -95842,7 +95908,7 @@ window.__stAZ = (function () {
       var gsh = function(z){ var L = lOfT(g0, z.t); return { t: L == null ? z.t : tOfL(g0, L + gdL), price: z.price + gdp }; };
       gg.group.forEach(function(k, n){ var d = DW.list[k], o = gg.origs[n]; if (!d || !o) return;
         if (d.type === 'hline') { d.price = o.price + gdp; return; }
-        if (/^(pen|brush|path|polyline)$/.test(d.type)) d.pts = o.pts.map(gsh); else if (d.type === 'text' || d.type === 'emoji' || !o.b) d.a = gsh(o.a); else { d.a = gsh(o.a); d.b = gsh(o.b); if (o.c) d.c = gsh(o.c); }
+        if (/^(pen|brush|path|polyline|ghost)$/.test(d.type)) d.pts = o.pts.map(gsh); else if (d.type === 'text' || d.type === 'emoji' || !o.b) d.a = gsh(o.a); else { d.a = gsh(o.a); d.b = gsh(o.b); if (o.c) d.c = gsh(o.c); }
         if (o.sl != null && o.tp != null) { d.sl = o.sl + gdp; d.tp = o.tp + gdp; } });
       dirty(); return; }
     if (DW.drag) { var g = DW.drag, q2 = toP(g.p, e); if (!q2) return; var d = DW.list[g.i], o = g.orig;
@@ -95857,7 +95923,7 @@ window.__stAZ = (function () {
       else if (g.part === 'c1') { d.a.t = q2.t; d.b.price = q2.price; } else if (g.part === 'c2') { d.b.t = q2.t; d.a.price = q2.price; }
       else if (g.part === 'esz') { var eg3 = emoGeo(g.p, d), m3 = evXY(g.p, e); if (eg3) d.size = Math.max(12, Math.min(200, Math.round(2 * Math.max(Math.abs(m3.x - eg3.x), Math.abs(m3.y - eg3.y))))); }
       else if (g.part === 'psl') d.sl = q2.price; else if (g.part === 'ptp') d.tp = q2.price; else if (g.part === 'pr') d.b.t = q2.t;
-      else if ((d.type === 'path' || d.type === 'polyline') && g.part !== 'body') { var pk = +String(g.part).slice(1), opz = o.pts || [], ocl = d.type === 'polyline' && opz.length > 3 && opz[0].t === opz[opz.length - 1].t && opz[0].price === opz[opz.length - 1].price;
+      else if ((d.type === 'path' || d.type === 'polyline' || d.type === 'ghost') && g.part !== 'body') { var pk = +String(g.part).slice(1), opz = o.pts || [], ocl = d.type === 'polyline' && opz.length > 3 && opz[0].t === opz[opz.length - 1].t && opz[0].price === opz[opz.length - 1].price;
         if (d.pts && d.pts[pk]) { d.pts[pk] = { t: q2.t, price: q2.price }; if (ocl && pk === 0) d.pts[d.pts.length - 1] = { t: q2.t, price: q2.price }; } }   // a path's point (a closed polyline's first is its last too)
       else if (g.part === 'po') d.off = (+o.off || 0) + (q2.price - g.start.price);   // a channel's other line: how far it is
       else if (g.part === 'rx') d.b.t = q2.t; else if (g.part === 'ry') d.b.price = q2.price;   // a circle's sides
@@ -95868,7 +95934,7 @@ window.__stAZ = (function () {
       // it keeps making itself smaller then bigger").
       else { var p0 = g.p, dL = lOfT(p0, q2.t) - lOfT(p0, g.start.t), dp = q2.price - g.start.price;
         var sh = function(z){ var L = lOfT(p0, z.t); return { t: L == null ? z.t : tOfL(p0, L + dL), price: z.price + dp }; };
-        if (/^(pen|brush|path|polyline)$/.test(d.type)) d.pts = o.pts.map(sh); else if (d.type === 'text' || d.type === 'emoji' || !o.b) d.a = sh(o.a); else { d.a = sh(o.a); d.b = sh(o.b); if (o.c) d.c = sh(o.c); }
+        if (/^(pen|brush|path|polyline|ghost)$/.test(d.type)) d.pts = o.pts.map(sh); else if (d.type === 'text' || d.type === 'emoji' || !o.b) d.a = sh(o.a); else { d.a = sh(o.a); d.b = sh(o.b); if (o.c) d.c = sh(o.c); }
         if (o.sl != null && o.tp != null) { d.sl = o.sl + dp; d.tp = o.tp + dp; } }
       dirty(); return; }
     if (p && DW.tool === 'none' && !e.touches) { var xy2 = evXY(p, e), nh = newsAt(p, xy2.x, xy2.y); if (!DW.pin) newsCard(p, nh);
@@ -98220,7 +98286,7 @@ window.__stAZ = (function () {
     document.addEventListener('touchmove', WH.tmv = function(e){ if (!isOpen() || !DW.tin) return; if ((DW.penning || DW.pending || DW.drag || DW.marq || DW.lpOn || DW.tool !== 'none') && e.cancelable) e.preventDefault(); dwMove(e); }, { passive: false, capture: true });
     document.addEventListener('touchend', WH.tend = function(e){ if (!isOpen()) return; if ((DW.penning || DW.pending || DW.drag || DW.marq) && e.cancelable) e.preventDefault(); dwUp(e); }, { passive: false, capture: true });
     document.addEventListener('contextmenu', WH.ctx = function(e){ if (!isOpen()) return; var p = paneOf(e), box = e.target && e.target.closest && e.target.closest('.stdb-bar,.stdb-pop,.stpr-ctx'); if (!p && !box) return; e.preventDefault(); if (!p) return;
-      if (DW.pending && /^(path|polyline)$/.test(DW.pending.type)) { pathDone(); hideCtx(); return; }   // a path being drawn ends where it is
+      if (DW.pending && /^(path|polyline|ghost)$/.test(DW.pending.type)) { pathDone(); hideCtx(); return; }   // a path being drawn ends where it is
       if (DW.tool !== 'none') { DW.pending = null; DW.penning = null; setTool('none'); hideCtx(); return; }
       var xy = evXY(p, e), h = hit(p, xy.x, xy.y);
       if (!h) { hideCtx(); if (DW.sel != null || (DW.multi && DW.multi.length)) { DW.sel = null; DW.multi = null; updDel(); } DW.at = p;
@@ -98262,7 +98328,7 @@ window.__stAZ = (function () {
       if (LV.inl && !($('page-livecharts') && $('page-livecharts').classList.contains('active'))) return;
       if (e.key === 'Escape' && LV.max && !LV.solo && !LV.sat && !menuFor && DW.tool === 'none' && DW.sel == null) { inlineMax(false); e.preventDefault(); return; }
       var tg = e.target, typing = tg && (tg.tagName === 'INPUT' || tg.tagName === 'TEXTAREA' || tg.tagName === 'SELECT');
-      if ((e.key === 'Escape' || e.key === 'Enter') && !typing && DW.pending && /^(path|polyline)$/.test(DW.pending.type)) { e.preventDefault(); pathDone(); return; }   // a path being drawn ends where it is (before Enter's execution key)
+      if ((e.key === 'Escape' || e.key === 'Enter') && !typing && DW.pending && /^(path|polyline|ghost)$/.test(DW.pending.type)) { e.preventDefault(); pathDone(); return; }   // a path being drawn ends where it is (before Enter's execution key)
       // the panel's execution key being set, and Enter in execution mode
       if (MMK.wait && !typing) { if (e.key === 'Escape') { MMK.wait = false; paintMM(); e.preventDefault(); return; }
         if (/^[a-z0-9]$/i.test(e.key)) { CFG.mm.key = e.key.toUpperCase(); MMK.wait = false; save(); paintMM(); paintRow(); e.preventDefault(); return; } }
