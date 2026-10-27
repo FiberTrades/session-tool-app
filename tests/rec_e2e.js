@@ -80,6 +80,7 @@
         var v = bg.querySelector('.rs-cam video'); for (k = 0; k < 60 && !(v.videoWidth > 0 && window.__stRec._cfg().cam); k++) await W(100);
         await W(700);
         var lvl = bg.querySelector('.rs-mt i');
+        for (k = 0; k < 30 && !(parseFloat(lvl.style.width) > 0); k++) await W(100);   // the stand-in microphone beeps now and then
         check(fmt + ': the camera\'s live preview plays, mirrored', v.videoWidth > 0 && !bg.querySelector('.rs-cam').classList.contains('off') && /matrix\(-1/.test(getComputedStyle(v).transform), [v.videoWidth, getComputedStyle(v).transform]);
         check(fmt + ': the microphone\'s meter moves', parseFloat(lvl.style.width) > 0, lvl.style.width);
         check(fmt + ': both devices listed by name', bg.querySelector('[data-rdev="cam"]').options.length > 0 && bg.querySelector('[data-rdev="mic"]').options.length > 0 && !bg.querySelector('[data-rdev="cam"]').disabled,
