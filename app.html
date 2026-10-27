@@ -87893,6 +87893,51 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       return [{ k: 'f', pts: P, c: kE(X, d, 'fill') }, { k: 'p', pts: P.concat([a]) }]; } });
   Object.assign(TYN, { posfc: ['position forecast', 'position forecasts', 'previsión de posición', 'previsiones de posición'], barspat: ['bars pattern', 'bars patterns', 'patrón de barras', 'patrones de barras'],
     ghost: ['ghost feed', 'ghost feeds', 'velas fantasma', 'velas fantasma'], sector: ['sector', 'sectors', 'sector', 'sectores'] });
+  // VOLUME-BASED (27 Oct 2026): an Anchored VWAP (one click on a candle: the volume-weighted average price from it on), a Fixed range
+  // volume profile (two clicks: the candles between them), an Anchored volume profile (one click: from that candle to the last). The
+  // profile is the Session Indicator's (its rows and POC), on the candles' own volume: each row's volume, up candles' in blue and down
+  // candles' in yellow, the value area (70%) stronger, the POC in red across the range. With no volume yet they say why, as it does.
+  function kVolMsg(g, X, st, w, x, y){ var tx = X.vmsg ? X.vmsg(st, w) : ''; if (!tx) return; g.save(); g.setLineDash([]); g.font = "10px 'AppNum','DM Mono',monospace"; g.fillStyle = 'rgba(160,163,174,0.9)'; g.textAlign = 'left'; g.textBaseline = 'middle';
+    g.fillText(tx, Math.max(4, Math.min(x, X.pw - g.measureText(tx).width - 4)), y); g.restore(); }
+  function kVPr(d, X, one){ if (!X.L || !X.vp || !X.xl || !X.yp) return null; var La = X.L(d.a.t), Lb = one ? (X.nb || 0) - 1 : (d.b ? X.L(d.b.t) : null); if (La == null || Lb == null) return null;
+    La = Math.round(La); Lb = Math.round(Lb); if (Lb < La) { var t0 = La; La = Lb; Lb = t0; } var x0 = X.xl(La), x1 = X.xl(Lb); if (x0 == null || x1 == null) return null; var r = { La: La, Lb: Lb, x0: x0, x1: x1, vp: X.vp(La, Lb, 24) };
+    if (r.vp && r.vp.top != null) { r.y0 = X.yp(r.vp.top); r.y1 = X.yp(r.vp.bot); } return r; }
+  function kVPpaint(g, d, X, C, one, nm){ var r = kVPr(d, X, one), a = X.P(d.a);
+    if (!r || !r.vp || r.y0 == null) { var b = d.b ? X.P(d.b) : null; if (a && b) { g.lineWidth = 1; g.setLineDash([4, 3]); g.strokeRect(Math.round(Math.min(a.x, b.x)) + 0.5, Math.round(Math.min(a.y, b.y)) + 0.5, Math.round(Math.abs(b.x - a.x)), Math.round(Math.abs(b.y - a.y))); } return; }   // over no candles yet
+    var vp = r.vp, x0 = r.x0, x1 = Math.max(r.x1, x0 + 2); g.save(); g.setLineDash([]);
+    g.fillStyle = withA(C, 0.05); g.fillRect(x0, r.y0, x1 - x0, r.y1 - r.y0); if (X.on) { g.strokeStyle = withA(C, 0.6); g.lineWidth = 1; g.setLineDash([4, 3]); g.strokeRect(Math.round(x0) + 0.5, Math.round(r.y0) + 0.5, Math.round(x1 - x0), Math.round(r.y1 - r.y0)); g.setLineDash([]); }
+    if (vp.miss) { g.restore(); kVolMsg(g, X, vp.st, nm, x0 + 4, (r.y0 + r.y1) / 2); return; }
+    var mx = Math.max.apply(null, vp.v1) || 1, Wd = Math.max(40, Math.min(220, (x1 - x0) * 0.3));
+    for (var k = 0; k < vp.rows; k++) { var ya = X.yp(vp.bot + (k + 1) * vp.bs), yb = X.yp(vp.bot + k * vp.bs); if (ya == null || yb == null) continue; var top = Math.min(ya, yb), h = Math.max(1, Math.abs(yb - ya) - 1), va = k >= vp.vaLo && k <= vp.vaHi;
+      var wu = vp.up[k] / mx * Wd, wt = vp.v1[k] / mx * Wd; g.fillStyle = va ? 'rgba(41,98,255,0.55)' : 'rgba(41,98,255,0.25)'; g.fillRect(x0, top, wu, h); g.fillStyle = va ? 'rgba(251,192,45,0.55)' : 'rgba(251,192,45,0.25)'; g.fillRect(x0 + wu, top, Math.max(0, wt - wu), h); }
+    var yp = X.yp(vp.poc); if (yp != null) { g.strokeStyle = '#f23645'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(x0, Math.round(yp) + 0.5); g.lineTo(x1, Math.round(yp) + 0.5); g.stroke(); }
+    g.restore(); }
+  function kVPhit(d, X, px, py, one){ var h = k2ab(d, X, px, py); if (h && !(one && h === 'b')) return h; var r = kVPr(d, X, one); if (!r || r.y0 == null) return null; return kInB(px, py, { x0: Math.min(r.x0, r.x1), x1: Math.max(r.x0, r.x1), y0: r.y0, y1: r.y1 }, 2) ? 'body' : null; }
+  function kVPbox(d, X, one){ var r = kVPr(d, X, one), a = X.P(d.a); if (!r || r.y0 == null) { var b = d.b ? X.P(d.b) : null; return (a && b) ? kSpan([a, b]) : (a ? { x0: a.x - 4, y0: a.y - 4, x1: a.x + 4, y1: a.y + 4 } : null); } return { x0: Math.min(r.x0, r.x1), y0: r.y0, x1: Math.max(r.x0, r.x1), y1: r.y1 }; }
+  k2('avwap', { keys: K2L, one: true, sty: { c: '#2962ff', w: 1.6 }, icon: kIco('<path d="M2 12.5c2.5-.3 3.5-5.5 6-5.5s3 3.5 6 2"/><path d="M2.5 3v10" stroke-dasharray="1.5 1.5"/>'),
+    paint: function(g, d, X){ var a = X.P(d.a); if (!a || !X.vwap || !X.L) return; var La = X.L(d.a.t); if (La == null) return; var r = X.vwap(Math.round(La)); if (!r) return;
+      if (r.miss) { g.setLineDash([]); g.beginPath(); g.arc(a.x, a.y, 3, 0, 2 * Math.PI); g.fill(); kVolMsg(g, X, r.st, kTr('Anchored VWAP', 'VWAP anclado'), a.x + 8, a.y + 14); return; }
+      var P = []; r.w.forEach(function(v, j){ var x = X.xl(r.a + j), y = X.yp(v); if (x != null && y != null) P.push({ x: x, y: y }); }); if (!P.length) return;
+      g.beginPath(); P.forEach(function(q, j){ if (j) g.lineTo(q.x, q.y); else g.moveTo(q.x, q.y); }); g.stroke(); g.setLineDash([]); g.beginPath(); g.arc(P[0].x, P[0].y, 3, 0, 2 * Math.PI); g.fill();
+      var e = P[P.length - 1], lb = ['VWAP ' + (X.pl ? X.pl(r.w[r.w.length - 1]) : r.w[r.w.length - 1].toFixed(5))]; kTag(g, kTagBox(e.x + 8, e.y - 12, lb, X), lb, g.strokeStyle); },
+    hit: function(d, X, px, py){ var a = X.P(d.a); if (!a || !X.vwap || !X.L) return null; var La = X.L(d.a.t); if (La == null) return null; var r = X.vwap(Math.round(La)); if (!r || r.miss) return Math.hypot(px - a.x, py - a.y) < 8 ? 'a' : null;
+      var P = []; r.w.forEach(function(v, j){ var x = X.xl(r.a + j), y = X.yp(v); if (x != null && y != null) P.push({ x: x, y: y }); }); if (P.length && Math.hypot(px - P[0].x, py - P[0].y) < 8) return 'a';
+      for (var k = 1; k < P.length; k++) if (kSeg(px, py, P[k - 1], P[k]) < 5) return 'body'; return null; },
+    handles: function(g, d, X, sq){ var a = X.P(d.a), La = X.L ? X.L(d.a.t) : null, r = (La != null && X.vwap) ? X.vwap(Math.round(La)) : null, y = (r && !r.miss && r.w.length && X.yp) ? X.yp(r.w[0]) : null; if (a) sq(a.x, y != null ? y : a.y); },
+    box: function(d, X){ var a = X.P(d.a), La = X.L ? X.L(d.a.t) : null, r = (La != null && X.vwap) ? X.vwap(Math.round(La)) : null; if (!a) return null; if (!r || r.miss) return { x0: a.x - 4, y0: a.y - 4, x1: a.x + 4, y1: a.y + 4 };
+      var P = []; r.w.forEach(function(v, j){ var x = X.xl(r.a + j), y = X.yp(v); if (x != null && y != null) P.push({ x: x, y: y }); }); return kSpan(P.length ? P : [a]); } });
+  k2('frvp', { keys: ['color'], sty: { c: '#2962ff', w: 1 }, icon: kIco('<path d="M2 2.5v11M14 2.5v11" stroke-dasharray="1.5 1.5"/><path d="M2 4.5h4M2 7h8M2 9.5h6M2 12h3"/>'),
+    paint: function(g, d, X, C){ kVPpaint(g, d, X, C, false, kTr('Volume profile', 'Perfil de volumen')); },
+    hit: function(d, X, px, py){ return kVPhit(d, X, px, py, false); },
+    handles: function(g, d, X, sq){ var a = X.P(d.a), b = d.b ? X.P(d.b) : null; if (a) sq(a.x, a.y); if (b) sq(b.x, b.y); },
+    box: function(d, X){ return kVPbox(d, X, false); } });
+  k2('avp', { keys: ['color'], one: true, sty: { c: '#2962ff', w: 1 }, icon: kIco('<path d="M2 2.5v11"/><path d="M2 4.5h4M2 7h8M2 9.5h6M2 12h3"/><circle cx="2" cy="2.5" r="1.2"/>'),
+    paint: function(g, d, X, C){ kVPpaint(g, d, X, C, true, kTr('Volume profile', 'Perfil de volumen')); var a = X.P(d.a); if (a) { g.save(); g.setLineDash([]); g.beginPath(); g.arc(a.x, a.y, 3, 0, 2 * Math.PI); g.fill(); g.restore(); } },
+    hit: function(d, X, px, py){ return kVPhit(d, X, px, py, true); },
+    handles: function(g, d, X, sq){ var a = X.P(d.a); if (a) sq(a.x, a.y); },
+    box: function(d, X){ return kVPbox(d, X, true); } });
+  Object.assign(TYN, { avwap: ['anchored VWAP', 'anchored VWAPs', 'VWAP anclado', 'VWAP anclados'], frvp: ['fixed range volume profile', 'fixed range volume profiles', 'perfil de volumen de rango fijo', 'perfiles de volumen de rango fijo'],
+    avp: ['anchored volume profile', 'anchored volume profiles', 'perfil de volumen anclado', 'perfiles de volumen anclados'] });
   function kPaint(g, d, X){ var k2o = K2[d.type]; if (k2o) { var C2 = kE(X, d, 'color'), W2 = kW(X, d); g.save(); g.strokeStyle = C2; g.fillStyle = C2; g.lineWidth = W2; g.setLineDash(X.pv ? [4, 3] : dash(kE(X, d, 'dash'), W2));
       try { k2o.paint(g, d, X, C2, W2); } catch (e) {} g.restore(); return; }
     var C = kE(X, d, 'color'), W = kW(X, d), t = d.type, a, b; g.save(); g.strokeStyle = C; g.fillStyle = C; g.lineWidth = W; g.setLineDash(X.pv ? [4, 3] : dash(kE(X, d, 'dash'), W));
@@ -93939,7 +93984,8 @@ window.__stAZ = (function () {
     ray: ['Ray', 'Rayo'], arrow: ['Arrow', 'Flecha'], path: ['Path', 'Trayectoria'], hray: ['Horizontal ray', 'Rayo horizontal'], vline: ['Vertical line', 'Línea vertical'], channel: ['Parallel channel', 'Canal paralelo'], circle: ['Ellipse', 'Elipse'], brush: ['Highlighter', 'Resaltador'], note: ['Price note', 'Nota de precio'],
     arrowmk: ['Arrow marker', 'Marcador de flecha'], arrowup: ['Arrow mark up', 'Marca de flecha arriba'], arrowdn: ['Arrow mark down', 'Marca de flecha abajo'], rotrect: ['Rotated rectangle', 'Rectángulo girado'], circ: ['Circle', 'Círculo'],
     anote: ['Note', 'Nota'], pin: ['Pin', 'Chincheta'], table: ['Table', 'Tabla'], callout: ['Callout', 'Bocadillo'], comment: ['Comment', 'Comentario'], plabel: ['Price label', 'Etiqueta de precio'], signpost: ['Signpost', 'Señal'], flag: ['Flag mark', 'Bandera'],
-    image: ['Image', 'Imagen'], polyline: ['Polyline', 'Polilínea'], posfc: ['Position forecast', 'Previsión de posición'], barspat: ['Bars pattern', 'Patrón de barras'], ghost: ['Ghost feed', 'Velas fantasma'], sector: ['Sector', 'Sector'], triangle: ['Triangle', 'Triángulo'], arc: ['Arc', 'Arco'], curve: ['Curve', 'Curva'], dcurve: ['Double curve', 'Curva doble'],
+    image: ['Image', 'Imagen'], polyline: ['Polyline', 'Polilínea'], posfc: ['Position forecast', 'Previsión de posición'], barspat: ['Bars pattern', 'Patrón de barras'], ghost: ['Ghost feed', 'Velas fantasma'], sector: ['Sector', 'Sector'],
+    avwap: ['Anchored VWAP', 'VWAP anclado'], frvp: ['Fixed range volume profile', 'Perfil de volumen de rango fijo'], avp: ['Anchored volume profile', 'Perfil de volumen anclado'], triangle: ['Triangle', 'Triángulo'], arc: ['Arc', 'Arco'], curve: ['Curve', 'Curva'], dcurve: ['Double curve', 'Curva doble'],
     fibext: ['Trend-based fib extension', 'Extensión de Fibonacci por tendencia'], fibchan: ['Fib channel', 'Canal de Fibonacci'], fibtime: ['Fib time zone', 'Zona temporal de Fibonacci'],
     fibfan: ['Fib speed resistance fan', 'Abanico de Fibonacci'], fibcirc: ['Fib circles', 'Círculos de Fibonacci'], fibspiral: ['Fib spiral', 'Espiral de Fibonacci'], fibarc: ['Fib speed resistance arcs', 'Arcos de Fibonacci'],
     fibwedge: ['Fib wedge', 'Cuña de Fibonacci'], gannbox: ['Gann box', 'Caja de Gann'],
@@ -94553,7 +94599,8 @@ window.__stAZ = (function () {
   function KH(t){ return !!(KIT && KIT.has(t)); }
   // a chart, for the kit: its points in pixels, its plot (as last painted), its time and price as its crosshair and scale write them
   function kx(p, pv, dm, d){ dm = dm || p._kdm || paneDims(p); return { P: function(q){ return Pt(p, q); }, pw: dm.pw, ph: dm.ph, dsty: DSTY, L: function(t){ return lOfT(p, t); }, bar: function(L){ return p.bars ? p.bars[L] : null; }, nb: p.n,
-    xl: function(L){ return p.chart.timeScale().logicalToCoordinate(L); }, yp: function(pr){ return p.series.priceToCoordinate(pr); }, pv: !!pv, ted: !!(d && DW.ted && DW.ted.d === d), on: !!(d && ((DW.sel != null && DW.list[DW.sel] === d) || (DW.hov != null && DW.hovP === p && DW.list[DW.hov] === d))),
+    xl: function(L){ return p.chart.timeScale().logicalToCoordinate(L); }, yp: function(pr){ return p.series.priceToCoordinate(pr); },
+    vp: function(La, Lb, rows){ return vpFor(p, La, Lb, rows); }, vwap: function(La){ return vwapFor(p, La); }, vmsg: function(st, w){ return vpMiss(st, w); }, pv: !!pv, ted: !!(d && DW.ted && DW.ted.d === d), on: !!(d && ((DW.sel != null && DW.list[DW.sel] === d) || (DW.hov != null && DW.hovP === p && DW.list[DW.hov] === d))),
     tl: function(q){ return crossFmt(p.tf)(q.t); }, pl: function(pr){ return Number(pr).toFixed(PS(p).digits); },
     // between two points: the distance (pips, or points off forex) and per cent, the candles and the time - signed both ways
     mz: function(qa, qb){ var XR = PS(p), su = suFor(XR), dP = qb.price - qa.price, dist = dP / uFor(XR, su), La = lOfT(p, qa.t), Lb = lOfT(p, qb.t), db = (La == null || Lb == null) ? 0 : Math.round(Lb - La), mn = '\u2212';
@@ -94679,6 +94726,25 @@ window.__stAZ = (function () {
   function setTool(t){ hideCtx(); DW.noProps = false; DW.emoArm = false; DW.tool = (DW.tool === t ? 'none' : t); DW.pending = null; DW.snap = null; if (DW.tool !== 'none') dwUnhide(); if (DW.tool !== 'none' && (DW.sel != null || (DW.multi && DW.multi.length))) { DW.sel = null; DW.multi = null; updDel(); }   // picking a tool puts the selection down (TradingView's)
     SD.querySelectorAll('#stpr-tools [data-tool]').forEach(function(b){ b.classList.toggle('on', b.getAttribute('data-tool') === DW.tool); });
     if (DW.tool !== 'none') tgSet(DW.tool); DW.pdn = null; toolsPaint(); dwPanes(); renderProps(); dirty(); }
+  // ---- the Volume-based drawing tools (27 Oct 2026): their candles' volume (candles.v, as the Session Indicator's profile has it), or
+  //      why it is not here yet - asked of the member's EA once, as the profile asks ----
+  function volFor(p, La, Lb){ var B = p.bars || [], V = p.vols || [], a = Math.max(0, Math.round(La)), e = Math.min(B.length - 1, Math.round(Lb)); if (!(e >= a)) return null; var miss = 0;
+    for (var i = a; i <= e; i++) if (V[i] == null) miss++;
+    if (!miss) return { B: B, V: V, a: a, e: e };
+    var st = 'asked'; try { st = volAsk(volRanges(p, B, V, a, e + 1), PS(p).sym.raw); } catch (x) {} return { miss: miss, a: a, e: e, st: st, B: B }; }
+  // a volume profile over candles a..e: the Session Indicator's rows and POC vote (vpCalc), each row's volume split by the candles'
+  // direction, and the value area (70% of the volume, out from the POC, the busier side first)
+  function vpFor(p, La, Lb, rows){ var r = volFor(p, La, Lb), i; if (!r) return null;
+    if (r.miss) { var top = -Infinity, bot = Infinity; for (i = r.a; i <= r.e; i++) { top = Math.max(top, r.B[i].high); bot = Math.min(bot, r.B[i].low); } return { miss: r.miss, st: r.st, top: top, bot: bot }; }
+    var vp = vpCalc(r.B, r.V, r.a, r.e + 1, { vpRows: rows || 24, vpSig: 1 }); if (!vp || vp.miss) return vp;
+    var up = [], k; for (k = 0; k < vp.rows; k++) up.push(0);
+    for (i = r.a; i <= r.e; i++) { var b = r.B[i]; if (b.close >= b.open) up[Math.max(0, Math.min(vp.rows - 1, Math.floor(((b.high + b.low) / 2 - vp.bot) / vp.bs)))] += r.V[i]; }
+    var tot = 0; vp.v1.forEach(function(x){ tot += x; }); var pk = Math.max(0, Math.min(vp.rows - 1, Math.floor((vp.poc - vp.bot) / vp.bs))), lo = pk, hi = pk, acc = vp.v1[pk];
+    while (acc < tot * 0.7 && (lo > 0 || hi < vp.rows - 1)) { var dv = lo > 0 ? vp.v1[lo - 1] : -1, uv = hi < vp.rows - 1 ? vp.v1[hi + 1] : -1; if (uv >= dv) { hi++; acc += vp.v1[hi]; } else { lo--; acc += vp.v1[lo]; } }
+    vp.up = up; vp.vaLo = lo; vp.vaHi = hi; vp.a = r.a; vp.e = r.e; return vp; }
+  // the volume-weighted average price from candle a on: each candle's (H+L+C)/3 weighted by its volume
+  function vwapFor(p, La){ var r = volFor(p, La, (p.bars || []).length - 1); if (!r) return null; if (r.miss) return { miss: r.miss, st: r.st };
+    var pv = 0, vv = 0, w = []; for (var i = r.a; i <= r.e; i++) { var b = r.B[i], tp = (b.high + b.low + b.close) / 3; pv += tp * r.V[i]; vv += r.V[i]; w.push(vv > 0 ? pv / vv : tp); } return { a: r.a, w: w }; }
   // a Bars pattern: the candles between its two points, kept as they were (each against the first one's open), so the copy moves
   function barsCap(p, d){ var B = p && p.bars || [], La = lOfT(p, d.a.t), Lb = lOfT(p, d.b.t); if (La == null || Lb == null) return; La = Math.round(La); Lb = Math.round(Lb); if (Lb < La) { var t0 = La; La = Lb; Lb = t0; }
     La = Math.max(0, La); Lb = Math.min(B.length - 1, Lb); if (Lb < La || !B[La]) return; var o0 = B[La].open, pat = [];
@@ -95088,16 +95154,19 @@ window.__stAZ = (function () {
       e.rows.forEach(function(b){ if (m[b.time] != null) b.vol = m[b.time]; }); e.agg = aggStatic(e.rows, ptf); panes.forEach(function(p){ if (p.hist === e) p.static = e.agg; }); });
     if (tf === XF.baseTf) XF.base.forEach(function(b){ if (m[b.time] != null) b.vol = m[b.time]; });
     panes.forEach(function(p){ p._mini = null; try { paintPane(p, false, 0, getRange(p)); } catch (e) {} }); dirty(); }
+  // why a volume tool has no volume yet (its name first: the Session Indicator's profile, an anchored VWAP...)
+  function vpMiss(st, Lw){ Lw = Lw || T('Volume profile', 'Perfil de volumen');
+      var ev = eaNewest(), old = ev && parseFloat(ev) < 9;
+      return st === 'out' ? Lw + T(': sign in for the volume', ': inicia sesión para el volumen')
+        : (old ? Lw + T(': needs EA 9.00 or newer in MT5 (yours is ' + ev + ')', ': necesita el EA 9.00 o posterior en MT5 (el tuyo es ' + ev + ')')
+        : (!ev ? Lw + T(': needs the EA (9.00 or newer) running in MT5', ': necesita el EA (9.00 o posterior) abierto en MT5')
+        : (st === 'nohist' ? Lw + T(': your MT5 doesn\u2019t go back this far', ': tu MT5 no llega tan atr\u00e1s')
+        : (st === 'fail' ? Lw + T(': waiting for your EA - is MT5 open?', ': esperando a tu EA - ¿está MT5 abierto?') : Lw + T(': asking your EA for the volume…', ': pidiendo el volumen a tu EA…'))))); }
   // TradingView's label.style_label_left, empty, size tiny: a small tag pointing left at its price
   function vpDraw(g, vp, x, Y, o, pw, ink){
     if (x == null) return;
     if (vp.miss) { var ym = Y((vp.top + vp.bot) / 2); if (ym == null) return;
-      var ev = eaNewest(), old = ev && parseFloat(ev) < 9;
-      var tx = vp.st === 'out' ? T('Volume profile: sign in for the volume', 'Perfil de volumen: inicia sesión para el volumen')
-        : (old ? T('Volume profile: needs EA 9.00 or newer in MT5 (yours is ' + ev + ')', 'Perfil de volumen: necesita el EA 9.00 o posterior en MT5 (el tuyo es ' + ev + ')')
-        : (!ev ? T('Volume profile: needs the EA (9.00 or newer) running in MT5', 'Perfil de volumen: necesita el EA (9.00 o posterior) abierto en MT5')
-        : (vp.st === 'nohist' ? T('Volume profile: your MT5 doesn\u2019t go back this far', 'Perfil de volumen: tu MT5 no llega tan atr\u00e1s')
-        : (vp.st === 'fail' ? T('Volume profile: waiting for your EA - is MT5 open?', 'Perfil de volumen: esperando a tu EA - ¿está MT5 abierto?') : T('Volume profile: asking your EA for the volume…', 'Perfil de volumen: pidiendo el volumen a tu EA…')))));
+      var tx = vpMiss(vp.st);
       g.save(); g.font = "10px 'AppNum','DM Mono',monospace"; g.fillStyle = ink(0.55); g.textAlign = 'left'; g.textBaseline = 'middle';
       g.fillText(tx, Math.max(4, Math.min(x, pw - g.measureText(tx).width - 4)), ym + 14); g.restore(); return; }
     var tag = function(y, col){ if (y == null) return; var xx = Math.round(x); g.fillStyle = col; g.beginPath(); g.moveTo(xx, y); g.lineTo(xx + 5, y - 5); g.lineTo(xx + 14, y - 5); g.lineTo(xx + 14, y + 5); g.lineTo(xx + 5, y + 5); g.closePath(); g.fill(); };
