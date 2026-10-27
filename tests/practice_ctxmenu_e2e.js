@@ -1,6 +1,6 @@
 (async function () {
   // The chart's own right-click menu (Nestor, 26 Oct 2026, TradingView's in our premium look), in Back Testing (Live Charts has the
-  // same engine): Reset chart view, Copy price, Paste, Add alert at the price, Buy / Sell limit or stop there with a confirm, Lock
+  // same engine): Reset chart view, Copy price, Paste, Add alert at the price (no Buy / Sell orders: Nestor, 27 Oct 2026), Lock
   // vertical cursor line, Object tree, Remove N drawings (confirmed), Settings; a drawing's own menu in the same look; the object
   // tree for another host (window.__stObjTree); a finger's long press is the crosshair, not the menu.
   // Run: python tests/browser_test.py tests/practice_ctxmenu_e2e.js
@@ -28,8 +28,9 @@
     mev('contextmenu', X, Y); await W(60);
     var m = menu(), a0 = acts(), pr = pane.series.coordinateToPrice(Y), ps = Number(pr).toFixed(5);
     ok('a right-click on the bare chart opens the chart\'s menu', !!m && m.classList.contains('stpr-cm'), a0);
-    ok('Reset chart view, Copy price, Paste (nothing copied: off), Add alert, the orders at that price, Lock vertical cursor line, Object tree, Remove drawings (none: off), Settings',
-      /^reset,copy,paste-,alert,(sl,bs|bl,ss),vlock,tree,remove-,settings$/.test(a0), a0);
+    ok('Reset chart view, Copy price, Paste (nothing copied: off), Add alert, Lock vertical cursor line, Object tree, Remove drawings (none: off), Settings - no Buy / Sell orders',
+      /^reset,copy,paste-,alert,vlock,tree,remove-,settings$/.test(a0), a0);
+    ok('Settings has the top bar\'s gear (not a sun)', /M12\.22 2h/.test(m.querySelector('[data-act="settings"] svg').innerHTML));
     ok('each with its icon; its keys where it has one (Paste Ctrl+V, Add alert Alt+A)', m.querySelectorAll('[data-act] svg').length === m.querySelectorAll('[data-act]').length && /Ctrl\+V/.test(m.querySelector('[data-act="paste"]').textContent) && /Alt\+A/.test(m.querySelector('[data-act="alert"]').textContent));
     ok('the prices are the one under the mouse', Math.abs(parseFloat(m.querySelector('[data-act="copy"]').textContent.replace(/[^0-9.]/g, '')) - pr) < 0.00003 && Math.abs(parseFloat(m.querySelector('[data-act="alert"]').textContent.replace(/[^0-9.]/g, '')) - pr) < 0.00003, ps);
     var cs = getComputedStyle(m);
@@ -65,22 +66,9 @@
     sm.classList.remove('show');
     mev('contextmenu', X, Yb); await W(40); pick('settings'); await W(80);
     ok('Settings opens the chart\'s settings', sm.classList.contains('show') && /Chart basic styles|Estilos/.test(sm.textContent), sm.textContent.slice(0, 40));
+    var smr = sm.getBoundingClientRect(), pr2 = pane.el.getBoundingClientRect();
+    ok('opened from low on the chart, it sits inside the chart - near its top, no taller than it, scrolling inside', smr.top >= pr2.top - 1 && smr.top <= pr2.top + 20 && smr.bottom <= pr2.bottom + 1 && smr.left >= pr2.left - 1 && smr.right <= pr2.right + 1 && getComputedStyle(sm).overflowY === 'auto', [Math.round(smr.top), Math.round(smr.bottom), Math.round(pr2.top), Math.round(pr2.bottom)]);
     sm.classList.remove('show');
-
-    // an order at the price (a practice one here), with its confirm
-    mev('contextmenu', X, Yb); await W(40);
-    var prB = pane.series.coordinateToPrice(Yb), ordA = acts().split(',').filter(function (a) { return /^(bl|bs|sl|ss)$/.test(a); });
-    pick(ordA[0]); await W(120);
-    var D = dlg(), st = D && D.querySelector('[data-cmst]');
-    ok('Buy / Sell at a price opens a confirm: entry, stop to change, its price, target, lots and risk', D && st && D.querySelector('[data-cmsl]').textContent && D.querySelector('[data-cmlot]').textContent && D.querySelector('[data-cmrk]').textContent && /Place order/.test(D.textContent), D && D.textContent.replace(/\s+/g, ' ').slice(0, 160));
-    var sl0 = D.querySelector('[data-cmsl]').textContent; st.value = String(+st.value + 2); st.dispatchEvent(new Event('input', { bubbles: true })); await W(30);
-    ok('changing the stop moves its price and the lots', D.querySelector('[data-cmsl]').textContent !== sl0, [sl0, D.querySelector('[data-cmsl]').textContent]);
-    D.querySelector('[data-dok]').click(); await W(120);
-    S = P._s();
-    ok('Place: the order is placed at that price, the kind the menu said', S.pend && Math.abs(S.pend.entry - prB) < 0.00003 && S.pend.kind === (/l$/.test(ordA[0]) ? 'limit' : 'stop') && S.pend.dir === (/^b/.test(ordA[0]) ? 1 : -1), S.pend);
-    mev('contextmenu', X, Yb); await W(40);
-    ok('with an order waiting (one at a time in practice): no order rows', !/(bl|bs|sl|ss)/.test(acts()), acts());
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await W(20);
 
     // a drawing's own menu
     var hd = DW.list[0], hy = pane.series.priceToCoordinate(hd.price);

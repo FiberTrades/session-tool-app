@@ -55,6 +55,18 @@
     var dlg = $('.stpr-dlgbg .stpr-dlg');
     ok('the Table window: ' + TH, vis(dlg) && right(lum(dlg)), [vis(dlg), lum(dlg)]);
     var dx = $('.stpr-dlgbg [data-dx]'); if (dx) dx.click(); await W(60);
+    // the Session Indicator's settings (Nestor, 27 Oct 2026: "how come the indicator panel isnt themed dark or light?"): the platform's
+    // own ground and borders - #1e222d / #363a45 dark, #ffffff / #d1d4dc light - never the chart's
+    var bgc = function (el) { return el ? getComputedStyle(el).backgroundColor : ''; }, bdc = function (el) { return el ? getComputedStyle(el).borderTopColor : ''; };
+    try { P._miniDialog(null, pane); } catch (e) {} await W(250);
+    var sd = $('.stpr-dlgbg .stpr-dlg'), inp = sd && sd.querySelector('input.stpr-dn'), cbx = sd && sd.querySelector('.stpr-dck input');
+    ok('the Session Indicator\'s settings: ' + TH + ', the platform\'s ground and borders, its inputs too', vis(sd) && bgc(sd) === (LT ? 'rgb(255, 255, 255)' : 'rgb(30, 34, 45)') && inp && bdc(inp) === (LT ? 'rgb(209, 212, 220)' : 'rgb(54, 58, 69)') && cbx && getComputedStyle(cbx).accentColor === (LT ? 'rgb(19, 23, 34)' : 'rgb(209, 212, 220)'), [bgc(sd), bdc(inp), cbx && getComputedStyle(cbx).accentColor]);
+    var dx2 = $('.stpr-dlgbg [data-dx]'); if (dx2) dx2.click(); await W(60);
+    // the chart's settings, from the right-click menu low on the chart: the platform's ground, and inside the chart
+    mev('contextmenu', X(0.5), Y(0.85), { button: 2, buttons: 2 }); await W(120);
+    var sb2 = Array.prototype.filter.call(document.querySelectorAll('.stpr-cm [data-act="settings"]'), vis)[0]; if (sb2) sb2.click(); await W(250);
+    var lm = $('#stpr-menu'), lr = lm && lm.getBoundingClientRect(), cr = pane.el.getBoundingClientRect();
+    ok('the chart\'s settings (Settings on the right-click menu): ' + TH + ', the platform\'s ground, inside the chart', vis(lm) && bgc(lm) === (LT ? 'rgb(255, 255, 255)' : 'rgb(30, 34, 45)') && lr.top >= cr.top - 1 && lr.bottom <= cr.bottom + 1, [bgc(lm), lr && Math.round(lr.top), lr && Math.round(lr.bottom), Math.round(cr.top), Math.round(cr.bottom)]);
   } catch (e) { out.push({ name: 'ran', ok: false, got: String(e && e.stack || e) }); }
   return JSON.stringify(out);
 })()
