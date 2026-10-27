@@ -193,6 +193,14 @@ def main():
         ev(M, """(function(){ var t = document.querySelector('.tab[data-page="livecharts"]'); if (!t.classList.contains('active')) t.click(); return 1; })()"""); time.sleep(1.5)
         wm2 = where(M)
         check('...the reloaded app: no chart of its own, it says Live Charts is open in its own window', wm2.get('away') and wm2.get('panesInDoc') == 0, wm2)
+        # nothing of the app before the reload stays on top in its windows (27 Oct 2026, Nestor's screenshot: a frozen » square beside the live
+        # one): no leftover picture once the charts are drawn, one » per chart
+        time.sleep(9)
+        GH = "(function(){ return { ghosts: Array.prototype.filter.call(document.body.children, function (e) { return e.style && e.style.zIndex === '2147483000'; }).length, rt: document.querySelectorAll('.stpr-rt').length, panes: document.querySelectorAll('.stpr-pc').length }; })()"
+        gl = [ev(L, GH)]
+        for t in ids:
+            cw(t); gl.append(ev(CWC[t], GH))
+        check('...nothing of the app before the reload left on top in its windows: no leftover picture, one \u00bb per chart', all(g and g['ghosts'] == 0 and g['rt'] <= max(1, g['panes']) for g in gl), gl)
 
         # 3. "Show it here instead": back in the app at once; the chart windows do not move at all
         ev(M, "document.querySelector('#lc-away [data-lcback]').click(); 1", gesture=True)

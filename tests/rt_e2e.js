@@ -22,14 +22,14 @@
     ok('scrolled back: the latest candle is off the right edge, and with the mouse in the middle there is no button', P._rtOff(0) && !shown(), [P._rtOff(0), shown()]);
     mv(dims().pw - 40, dims().ph - 40); await W(50);
     var br = btn.getBoundingClientRect(), d = dims();
-    ok('the mouse near the bottom right corner: the button there, 60 px into the plot from the price scale (26 Oct 2026) and above the times', shown() && Math.abs(br.right - (r.left + d.pw - 60)) <= 2 && br.bottom <= r.top + d.ph && br.bottom > r.top + d.ph - 30, [shown(), br.right, r.left + d.pw, br.bottom, r.top + d.ph]);
+    ok('the mouse near the bottom right corner: the button there, where the Spread label goes (27 Oct 2026), above the times', shown() && Math.abs(br.right - (r.left + d.pw - 8)) <= 2 && Math.abs(br.bottom - (r.top + d.ph - 3)) <= 2, [shown(), br.right, r.left + d.pw, br.bottom, r.top + d.ph]);
     ok('...with its name and key: Scroll to the most recent bar (Alt+Shift+→)', /Scroll to the most recent bar/.test(btn.title) && /Alt\+Shift/.test(btn.title), btn.title);
-    // Live Charts puts its Spread label in that corner (lvBadges' p.cdb, made the same way here): the button sits above it (Nestor, 23 Oct 2026:
-    // "i need this button slightly higher out the way of the spread")
+    // Live Charts puts its Spread label in that corner (lvBadges' p.cdb, made the same way here): the button sits on its row, centred on it, just
+    // left of it (Nestor, 27 Oct 2026: "make the >> arrow at bottom of the chart align with the spread label")
     var cdb = document.createElement('div'); cdb.className = 'slx-info stpr-cdb'; cdb.textContent = 'Spread 0.1p'; cdb.style.right = (p.chart.priceScale('right').width() + 8) + 'px'; cdb.style.bottom = (ts.height() + 8) + 'px'; p.el.appendChild(cdb); p.cdb = cdb;
     mv(dims().pw / 2, dims().ph / 2); await W(50); mv(dims().pw - 40, dims().ph - 40); await W(50);
     var br2 = btn.getBoundingClientRect(), cr = cdb.getBoundingClientRect();
-    ok('with the Spread label in the corner: the button just above it, clear of it', shown() && br2.bottom <= cr.top - 3 && br2.bottom > cr.top - 14 && br2.right <= r.left + dims().pw, [shown(), br2.bottom, cr.top, cr.bottom]);
+    ok('with the Spread label in the corner: the button on its row, centred on it, just left of it', shown() && Math.abs((br2.top + br2.bottom) / 2 - (cr.top + cr.bottom) / 2) <= 1.5 && cr.left - br2.right >= 3 && cr.left - br2.right <= 9, [shown(), (br2.top + br2.bottom) / 2, (cr.top + cr.bottom) / 2, cr.left - br2.right]);
     cdb.remove(); p.cdb = null; mv(dims().pw / 2, dims().ph / 2); await W(50); mv(dims().pw - 40, dims().ph - 40); await W(50);
     btn.click(); await W(700);
     var r1 = ts.getVisibleLogicalRange();
