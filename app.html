@@ -87337,7 +87337,62 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     return { ax: a.x, ay: a.y, x0: x0, y0: y0, x1: x0 + bw, y1: y0 + bh, tx: Math.max(x0, Math.min(a.x, x0 + bw)), ty: Math.max(y0, Math.min(a.y, y0 + bh)), fs: fs, lh: lh, lines: lines, has: has }; }
   function kRR(g, x, y, w, h, r){ g.beginPath(); if (g.roundRect) g.roundRect(x, y, w, h, r); else g.rect(x, y, w, h); }
   function kCurve(g, q){ g.beginPath(); g.moveTo(q[0].x, q[0].y); for (var k = 1; k < q.length - 1; k++) g.quadraticCurveTo(q[k].x, q[k].y, (q[k].x + q[k + 1].x) / 2, (q[k].y + q[k + 1].y) / 2); g.lineTo(q[q.length - 1].x, q[q.length - 1].y); g.stroke(); }
-  function kPaint(g, d, X){ var C = kE(X, d, 'color'), W = kW(X, d), t = d.type, a, b; g.save(); g.strokeStyle = C; g.fillStyle = C; g.lineWidth = W; g.setLineDash(X.pv ? [4, 3] : dash(kE(X, d, 'dash'), W));
+  // ---- TradingView's other tools (Nestor, 26 Oct 2026: "i need all these"): each registered with its own paint, hit, handles and box,
+  //      and where it has them its time on the axis (axis), its price on the scale (px), a one-click placing (one). Its icon, looks and
+  //      default look come with it; the tools row lists it once its icon is here. ----
+  var K2 = {}, TICON = {};
+  function k2(t, o){ K2[t] = o; KT[t] = 1; if (o.icon) TICON[t] = o.icon; if (o.keys) KEYS[t] = o.keys; if (o.sty) NDSTY[t] = o.sty; if (o.fill) FILLT[t] = 1; }
+  function kIco(p){ return '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">' + p + '</svg>'; }
+  function kFg(C){ var c = parseC(C), n = parseInt(String(c.h || '#000000').slice(1), 16) || 0; return (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) > 150 ? '#131722' : '#ffffff'; }
+  function kAng(a, b){ return Math.atan2(a.y - b.y, b.x - a.x) * 180 / Math.PI; }   // on the screen, up positive (TradingView's)
+  function kSol(C){ var c = parseC(C); return c.h || C; }   // a colour without its opacity (a tag's ground)
+  // a tag of lines of words (an info line's figures, an angle): measured, kept inside the plot, its ground the drawing's colour
+  var KTF = "500 11.5px -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Trebuchet MS', Roboto, sans-serif";
+  function kTagBox(x, y, lines, X){ var g = KM || (KM = document.createElement('canvas').getContext('2d')); g.font = KTF; var w = 0; lines.forEach(function(l){ w = Math.max(w, g.measureText(l).width); });
+    var bw = Math.ceil(w) + 14, bh = lines.length * 16 + 8, x0 = x, y0 = y; if (x0 + bw > X.pw - 2) x0 = x - bw - 20; if (y0 + bh > X.ph - 2) y0 = y - bh - 20; x0 = Math.max(2, x0); y0 = Math.max(2, y0);
+    return { x0: Math.round(x0), y0: Math.round(y0), x1: Math.round(x0) + bw, y1: Math.round(y0) + bh }; }
+  function kTag(g, bx, lines, C){ g.save(); g.setLineDash([]); g.fillStyle = kSol(C); kRR(g, bx.x0, bx.y0, bx.x1 - bx.x0, bx.y1 - bx.y0, 4); g.fill();
+    g.font = KTF; g.fillStyle = kFg(C); g.textAlign = 'left'; g.textBaseline = 'middle'; lines.forEach(function(l, k){ g.fillText(l, bx.x0 + 7, bx.y0 + 4 + k * 16 + 8.5); }); g.restore(); }
+  function kInfo(d, X, a, b){ var L = [], m = X.mz ? X.mz(d.a, d.b) : null; if (m) { L.push(m.dist + '  (' + m.pct + ')'); L.push(m.bars + ',  ' + m.dt); } L.push('\u2220 ' + kAng(a, b).toFixed(1) + '\u00b0'); return L; }
+  function kAxisV(g, d, X, q){ q = q || d.a; var a = X.P(q); if (!a || a.x < -1 || a.x > X.pw + 1 || !X.tl) return; var tt = X.tl(q); if (!tt) return;
+    var C = parseC(kE(X, d, 'color')), n = parseInt(C.h.slice(1), 16) || 0, lum = 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+    g.save(); g.setLineDash([]); g.font = "11px 'AppNum','DM Mono',monospace"; var tw = g.measureText(tt).width, bh = 16, cy = X.ph + bh / 2 + 2, cx = Math.max(tw / 2 + 6, Math.min(X.pw - tw / 2 - 6, a.x));
+    g.fillStyle = C.h; g.fillRect(cx - tw / 2 - 5, cy - bh / 2, tw + 10, bh); g.fillStyle = lum > 150 ? '#0b0a0d' : '#ffffff'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(tt, cx, cy); g.restore(); }
+  function k2ab(d, X, px, py){ var a = X.P(d.a), b = d.b ? X.P(d.b) : null; if (a && Math.hypot(px - a.x, py - a.y) < 8) return 'a'; if (b && Math.hypot(px - b.x, py - b.y) < 8) return 'b'; return null; }
+  var K2L = ['color', 'width', 'dash'];
+  // LINES: an Info line (its figures in a tag at its end: the distance and per cent, the candles and the time, the angle), an Extended
+  // line (through both points, to both edges), a Trend angle (its angle against the level, an arc and the degrees), a Cross line (one
+  // click: a horizontal and a vertical line through the point, its price on the scale and its time on the axis)
+  k2('infoline', { keys: K2L, sty: { c: '#60a5fa', w: 1.6 }, icon: kIco('<path d="M2.5 12.5l7-7"/><circle cx="2.5" cy="12.5" r="1.3"/><circle cx="9.5" cy="5.5" r="1.3"/><rect x="9.5" y="9.5" width="5" height="4" rx=".9"/>'),
+    paint: function(g, d, X, C){ var a = X.P(d.a), b = X.P(d.b); if (!a || !b) return; g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke(); var L = kInfo(d, X, a, b); kTag(g, kTagBox(b.x + 12, b.y + 10, L, X), L, C); },
+    hit: function(d, X, px, py){ var h = k2ab(d, X, px, py); if (h) return h; var a = X.P(d.a), b = X.P(d.b); if (!a || !b) return null; if (kSeg(px, py, a, b) < 6) return 'body';
+      var bx = kTagBox(b.x + 12, b.y + 10, kInfo(d, X, a, b), X); return (px >= bx.x0 && px <= bx.x1 && py >= bx.y0 && py <= bx.y1) ? 'body' : null; },
+    handles: function(g, d, X, sq){ var a = X.P(d.a), b = X.P(d.b); if (a) sq(a.x, a.y); if (b) sq(b.x, b.y); },
+    box: function(d, X){ var a = X.P(d.a), b = X.P(d.b); if (!a || !b) return null; var bx = kTagBox(b.x + 12, b.y + 10, kInfo(d, X, a, b), X); return kSpan([a, b, { x: bx.x0, y: bx.y0 }, { x: bx.x1, y: bx.y1 }]); } });
+  k2('extline', { keys: K2L, sty: { c: '#60a5fa', w: 1.6 }, icon: kIco('<path d="M1.5 14.5l13-13"/><circle cx="5.5" cy="10.5" r="1.3"/><circle cx="10.5" cy="5.5" r="1.3"/>'),
+    paint: function(g, d, X){ var a = X.P(d.a), b = X.P(d.b); if (!a || !b) return; var e0 = kRay(b, a, X), e1 = kRay(a, b, X); g.beginPath(); g.moveTo(e0.x, e0.y); g.lineTo(e1.x, e1.y); g.stroke(); },
+    hit: function(d, X, px, py){ var h = k2ab(d, X, px, py); if (h) return h; var a = X.P(d.a), b = X.P(d.b); if (!a || !b) return null; return kSeg(px, py, kRay(b, a, X), kRay(a, b, X)) < 6 ? 'body' : null; },
+    handles: function(g, d, X, sq){ var a = X.P(d.a), b = X.P(d.b); if (a) sq(a.x, a.y); if (b) sq(b.x, b.y); },
+    box: function(d, X){ var a = X.P(d.a), b = X.P(d.b); return (a && b) ? kSpan([a, b]) : null; } });
+  k2('tangle', { keys: K2L, sty: { c: '#60a5fa', w: 1.6 }, icon: kIco('<path d="M2.5 13.5l10-8"/><path d="M2.5 13.5h11" stroke-dasharray="1.6 1.6"/><path d="M8.6 13.5a6 6 0 0 0-1.3-3.8"/>'),
+    paint: function(g, d, X, C, W){ var a = X.P(d.a), b = X.P(d.b); if (!a || !b) return; g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke();
+      var an = kAng(a, b), rad = an * Math.PI / 180, len = Math.hypot(b.x - a.x, b.y - a.y), r = Math.max(18, Math.min(44, len * 0.55)), ry = Math.round(a.y) + (W % 2 ? 0.5 : 0);
+      g.save(); g.lineWidth = 1; g.setLineDash([3, 3]); g.beginPath(); g.moveTo(a.x, ry); g.lineTo(a.x + Math.max(r + 16, Math.abs(b.x - a.x)), ry); g.stroke(); g.setLineDash([]);
+      g.beginPath(); g.arc(a.x, a.y, r, 0, -rad, rad > 0); g.stroke(); g.restore();
+      var lx = a.x + (r + 14) * Math.cos(rad / 2), ly = a.y - (r + 14) * Math.sin(rad / 2), tx = an.toFixed(1) + '\u00b0';
+      g.save(); g.setLineDash([]); g.font = KTF; g.fillStyle = C; g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillText(tx, lx, ly); g.restore(); },
+    hit: function(d, X, px, py){ var h = k2ab(d, X, px, py); if (h) return h; var a = X.P(d.a), b = X.P(d.b); if (!a || !b) return null; return kSeg(px, py, a, b) < 6 ? 'body' : null; },
+    handles: function(g, d, X, sq){ var a = X.P(d.a), b = X.P(d.b); if (a) sq(a.x, a.y); if (b) sq(b.x, b.y); },
+    box: function(d, X){ var a = X.P(d.a), b = X.P(d.b); return (a && b) ? kSpan([a, b]) : null; } });
+  k2('crossline', { keys: K2L, sty: { c: '#60a5fa', w: 1 }, one: true, px: true, icon: kIco('<path d="M8 1.5v13M1.5 8h13"/><circle cx="8" cy="8" r="1.6"/>'),
+    paint: function(g, d, X, C, W){ var a = X.P(d.a); if (!a) return; var hp = W % 2 ? 0.5 : 0, x = Math.round(a.x) + hp, y = Math.round(a.y) + hp; g.beginPath(); g.moveTo(0, y); g.lineTo(X.pw, y); g.moveTo(x, 0); g.lineTo(x, X.ph); g.stroke(); },
+    hit: function(d, X, px, py){ var a = X.P(d.a); if (!a) return null; if (Math.hypot(px - a.x, py - a.y) < 8) return 'a'; return (Math.abs(py - a.y) < 5 || Math.abs(px - a.x) < 5) ? 'body' : null; },
+    handles: function(g, d, X, sq){ var a = X.P(d.a); if (a) sq(a.x, a.y); },
+    box: function(d, X){ var a = X.P(d.a); return a ? { x0: a.x - 6, y0: a.y - 6, x1: a.x + 6, y1: a.y + 6 } : null; },
+    axis: function(g, d, X){ kAxisV(g, d, X); } });
+  function kPaint(g, d, X){ var k2o = K2[d.type]; if (k2o) { var C2 = kE(X, d, 'color'), W2 = kW(X, d); g.save(); g.strokeStyle = C2; g.fillStyle = C2; g.lineWidth = W2; g.setLineDash(X.pv ? [4, 3] : dash(kE(X, d, 'dash'), W2));
+      try { k2o.paint(g, d, X, C2, W2); } catch (e) {} g.restore(); return; }
+    var C = kE(X, d, 'color'), W = kW(X, d), t = d.type, a, b; g.save(); g.strokeStyle = C; g.fillStyle = C; g.lineWidth = W; g.setLineDash(X.pv ? [4, 3] : dash(kE(X, d, 'dash'), W));
     var hp = W % 2 ? 0.5 : 0;   // a crisp one-pixel line
     if (t === 'vline') { a = X.P(d.a); if (a) { var vx = Math.round(a.x) + hp; g.beginPath(); g.moveTo(vx, 0); g.lineTo(vx, X.ph); g.stroke(); } }
     else if (t === 'hray') { a = X.P(d.a); if (a) { var hy = Math.round(a.y) + hp; g.beginPath(); g.moveTo(a.x, hy); g.lineTo(X.pw + 4, hy); g.stroke(); } }
@@ -87361,7 +87416,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         if (!X.ted) { g.font = '600 ' + nb.fs + "px 'DM Mono',monospace"; g.fillStyle = kE(X, d, 'tcol'); g.textAlign = 'left'; g.textBaseline = 'middle'; nb.lines.forEach(function(l, k){ g.fillText(l, nb.x0 + 8, nb.y0 + 5 + k * nb.lh + nb.lh / 2); }); } } }
     g.restore(); }
   // a vertical line's time on the time axis, in its colour (painted outside the plot, before the crosshair's own)
-  function kAxis(g, d, X){ if (d.type !== 'vline' || !X.tl) return; var a = X.P(d.a); if (!a || a.x < -1 || a.x > X.pw + 1) return; var tt = X.tl(d.a); if (!tt) return;
+  function kAxis(g, d, X){ if (K2[d.type]) { if (K2[d.type].axis) K2[d.type].axis(g, d, X); return; } if (d.type !== 'vline' || !X.tl) return; var a = X.P(d.a); if (!a || a.x < -1 || a.x > X.pw + 1) return; var tt = X.tl(d.a); if (!tt) return;
     var C = parseC(kE(X, d, 'color')), n = parseInt(C.h.slice(1), 16) || 0, lum = 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
     g.save(); g.setLineDash([]); g.font = "11px 'AppNum','DM Mono',monospace"; var tw = g.measureText(tt).width, bh = 16, cy = X.ph + bh / 2 + 2, cx = Math.max(tw / 2 + 6, Math.min(X.pw - tw / 2 - 6, a.x));
     g.fillStyle = C.h; g.fillRect(cx - tw / 2 - 5, cy - bh / 2, tw + 10, bh); g.fillStyle = lum > 150 ? '#0b0a0d' : '#ffffff'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(tt, cx, cy); g.restore(); }
@@ -87377,7 +87432,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if (ang) { g.translate(x, y + 5); g.rotate(ang); g.fillText(s, 0, -5); } else g.fillText(s, x, y); g.restore(); }
   // what is under the mouse: 'a' / 'b' (an end), 'po' (a channel's other line: its offset), 'rx' / 'ry' (a circle's sides),
   // 'box' (a note's box), 'body' (the whole of it)
-  function kHit(d, X, px, py){ var t = d.type, a, b;
+  function kHit(d, X, px, py){ if (K2[d.type]) return K2[d.type].hit(d, X, px, py); var t = d.type, a, b;
     if (t === 'vline') { a = X.P(d.a); return (a && Math.abs(px - a.x) < 6 && py >= -2 && py <= X.ph + 2) ? 'body' : null; }
     if (t === 'hray') { a = X.P(d.a); if (!a) return null; if (Math.hypot(px - a.x, py - a.y) < 8) return 'a'; return (Math.abs(py - a.y) < 6 && px >= a.x - 4) ? 'body' : null; }
     if (t === 'ray' || t === 'arrow') { a = X.P(d.a); b = X.P(d.b); if (!a || !b) return null; if (Math.hypot(px - a.x, py - a.y) < 8) return 'a'; if (Math.hypot(px - b.x, py - b.y) < 8) return 'b';
@@ -87396,7 +87451,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if (Math.hypot(px - nb.ax, py - nb.ay) < 8) return 'a'; return kSeg(px, py, { x: nb.ax, y: nb.ay }, { x: nb.tx, y: nb.ty }) < 5 ? 'body' : null; }
     return null; }
   // the selected one's handles (sq: the chart's own square), a note's box outlined
-  function kHandles(g, d, X, sq){ var t = d.type, a, b;
+  function kHandles(g, d, X, sq){ if (K2[d.type]) { K2[d.type].handles(g, d, X, sq); return; } var t = d.type, a, b;
     if (t === 'vline') { a = X.P(d.a); if (a) sq(a.x, X.ph / 2); }
     else if (t === 'hray') { a = X.P(d.a); if (a) sq(a.x, a.y); }
     else if (t === 'ray' || t === 'arrow') { a = X.P(d.a); b = X.P(d.b); if (a) sq(a.x, a.y); if (b) sq(b.x, b.y); }
@@ -87404,7 +87459,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     else if (t === 'channel') { var ch = kChan(d, X); if (ch) { sq(ch.a.x, ch.a.y); sq(ch.b.x, ch.b.y); sq(ch.c.x, ch.c.y); sq(ch.e.x, ch.e.y); } }
     else if (t === 'circle') { var el = kEll(d, X); if (el) { sq(el.x + el.rx, el.y); sq(el.x - el.rx, el.y); sq(el.x, el.y - el.ry); sq(el.x, el.y + el.ry); } }
     else if (t === 'note') { var nb = kNote(d, X); if (nb) { g.save(); g.strokeStyle = '#f472b6'; g.lineWidth = 1; g.setLineDash([3, 3]); g.strokeRect(Math.round(nb.x0) - 3.5, Math.round(nb.y0) - 3.5, Math.round(nb.x1 - nb.x0) + 7, Math.round(nb.y1 - nb.y0) + 7); g.restore(); sq(nb.ax, nb.ay); } } }
-  function kBox(d, X){ var t = d.type, a, b;
+  function kBox(d, X){ if (K2[d.type]) return K2[d.type].box(d, X); var t = d.type, a, b;
     if (t === 'vline') { a = X.P(d.a); return a ? { x0: a.x - 3, y0: 0, x1: a.x + 3, y1: X.ph } : null; }
     if (t === 'hray') { a = X.P(d.a); return a ? { x0: a.x, y0: a.y - 3, x1: X.pw, y1: a.y + 3 } : null; }
     if (t === 'ray') { a = X.P(d.a); b = X.P(d.b); return (a && b) ? kSpan([a, kRay(a, b, X)]) : null; }
@@ -87665,9 +87720,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     return { render: render, hide: hide, closePop: closePop, open: function(k){ render(); if (B.el && B.el.style.display !== 'none') openPop(k); }, el: function(){ return B.el; }, pop: function(){ return B.pop; }, dlg: function(){ return B.dlg; }, popK: function(){ return B.popK; },
       moveTo: function(x, y){ if (!B.el) return; B.el.style.left = x + 'px'; B.el.style.top = y + 'px'; clampBar(); B.pos = { wrap: B.wrap, x: parseFloat(B.el.style.left), y: parseFloat(B.el.style.top) }; }, unpin: function(){ B.pos = null; } };
   }
-  var TICON = {};   // tools added after 26 Oct 2026 bring their icon here (the tools row is built from TSPEC with these)
   window.__stDrawBar = { make: make, KEYS: KEYS, durTxt: durTxt, icons: TICON, PAL: PAL, anchor: anchor, groundOf: groundOf, magnet: MAG, snapOHLC: snapOHLC, MAGI: MAGI, FIBS: FIBS, lookOf: lookOf, applyLook: applyLook, eff: eff, same: same, parseC: parseC, mkC: mkC, withA: withA, dash: dash,
-    DSTY: NDSTY, keysHtml: keysHtml, keyRows: keyRows, kit: { has: function(t){ return !!KT[t]; }, paint: kPaint, axis: kAxis, text: kText, hit: kHit, handles: kHandles, box: kBox, note: kNote, NOFF: NOFF } };
+    DSTY: NDSTY, keysHtml: keysHtml, keyRows: keyRows, kit: { has: function(t){ return !!KT[t]; }, paint: kPaint, axis: kAxis, text: kText, hit: kHit, handles: kHandles, box: kBox, note: kNote, NOFF: NOFF,
+      one: function(t){ return !!(K2[t] && K2[t].one); }, hasAxis: function(t){ return !!(K2[t] && K2[t].axis); }, hasPx: function(t){ return !!(K2[t] && K2[t].px); } } };
 })();
 </script>
 <script>
@@ -93187,7 +93242,8 @@ window.__stAZ = (function () {
     ['stpr-speed', 'title', 'Speed', 'Velocidad'], ['stpr-lvrp', 'title', 'Replay', 'Repetición'], ['stpr-lvback', 'title', 'Back to live', 'Volver a en vivo'], ['stpr-cmx', 'title', 'Show the toolbars', 'Mostrar las barras'], ['stpr-play', 'title', 'Play / pause', 'Reproducir / pausa']
   ];
   var TOOLN = { hline: ['Horizontal line', 'Línea horizontal'], trend: ['Trend line', 'Línea de tendencia'], rect: ['Rectangle', 'Rectángulo'], fib: ['Fib', 'Fib'], text: ['Text', 'Texto'], emoji: ['Emoji', 'Emoji'], long: ['Long position', 'Posición larga'], short: ['Short position', 'Posición corta'], pen: ['Draw', 'Dibujar'], range: ['Measure', 'Medir'],
-    ray: ['Ray', 'Rayo'], arrow: ['Arrow', 'Flecha'], path: ['Path', 'Trayectoria'], hray: ['Horizontal ray', 'Rayo horizontal'], vline: ['Vertical line', 'Línea vertical'], channel: ['Parallel channel', 'Canal paralelo'], circle: ['Circle', 'Círculo'], brush: ['Highlighter', 'Resaltador'], note: ['Price note', 'Nota de precio'] };
+    ray: ['Ray', 'Rayo'], arrow: ['Arrow', 'Flecha'], path: ['Path', 'Trayectoria'], hray: ['Horizontal ray', 'Rayo horizontal'], vline: ['Vertical line', 'Línea vertical'], channel: ['Parallel channel', 'Canal paralelo'], circle: ['Circle', 'Círculo'], brush: ['Highlighter', 'Resaltador'], note: ['Price note', 'Nota de precio'],
+    infoline: ['Info line', 'Línea de información'], extline: ['Extended line', 'Línea extendida'], tangle: ['Trend angle', 'Ángulo de tendencia'], crossline: ['Cross line', 'Línea cruzada'] };
   var relangAt = null;
   function relang(force){ var l = L(); if (!force && relangAt === l) return; relangAt = l;
     I18N.forEach(function(r){ var e = $(r[0]); if (!e) return; var v = T(r[2], r[3]); e.setAttribute(r[1], v); if (r[1] === 'title' && e.hasAttribute('aria-label')) e.setAttribute('aria-label', v); });
@@ -93796,7 +93852,10 @@ window.__stAZ = (function () {
   function KH(t){ return !!(KIT && KIT.has(t)); }
   // a chart, for the kit: its points in pixels, its plot (as last painted), its time and price as its crosshair and scale write them
   function kx(p, pv, dm, d){ dm = dm || p._kdm || paneDims(p); return { P: function(q){ return Pt(p, q); }, pw: dm.pw, ph: dm.ph, dsty: DSTY, pv: !!pv, ted: !!(d && DW.ted && DW.ted.d === d),
-    tl: function(q){ return crossFmt(p.tf)(q.t); }, pl: function(pr){ return Number(pr).toFixed(PS(p).digits); } }; }
+    tl: function(q){ return crossFmt(p.tf)(q.t); }, pl: function(pr){ return Number(pr).toFixed(PS(p).digits); },
+    // between two points: the distance (pips, or points off forex) and per cent, the candles and the time - signed both ways
+    mz: function(qa, qb){ var XR = PS(p), su = suFor(XR), dP = qb.price - qa.price, dist = dP / uFor(XR, su), La = lOfT(p, qa.t), Lb = lOfT(p, qb.t), db = (La == null || Lb == null) ? 0 : Math.round(Lb - La), mn = '\u2212';
+      return { dist: (dist >= 0 ? '+' : mn) + Math.abs(dist).toFixed(1) + ' ' + uLbl(su), pct: (dP >= 0 ? '+' : mn) + Math.abs(dP / (qa.price || 1) * 100).toFixed(2) + '%', bars: (db < 0 ? mn : '') + Math.abs(db) + T(' bars', ' barras'), dt: window.__stDrawBar.durTxt(qb.t - qa.t, T('', 'es') === 'es') }; } }; }
   // a parallel channel's other line goes through this point: how far it is from the base line there, in price
   function chanOff(p, d, q){ var La = lOfT(p, d.a.t), Lb = lOfT(p, d.b.t), Lq = lOfT(p, q.t); if (La == null || Lb == null || Lq == null) return d.off || 0;
     return q.price - (Math.abs(Lb - La) < 1e-6 ? d.a.price : d.a.price + (d.b.price - d.a.price) * (Lq - La) / (Lb - La)); }
@@ -94168,7 +94227,7 @@ window.__stAZ = (function () {
   function syncHL(p){ var want = [], ov = []; dwListFor(p).forEach(function(d){ if (d && d.type === 'hline' && isFinite(d.price) && visibleOn(d, p.tf)) { var tx = alertTitle(d), tg = tx ? hlTagW(p, d.price) : 0;
         if (tx) ov.push({ p: d.price, t: tx, c: dC(d), x: tg });   // every line's note drawn here (hlNoteAt), left of a trade's tag if one is there
         want.push({ p: d.price, c: dC(d), w: Math.max(1, Math.min(4, Math.round(dW(d)))), t: '', s: hlStyle(d) }); }
-      else if (d && d.type === 'hray' && d.a && isFinite(d.a.price) && visibleOn(d, p.tf)) want.push({ p: d.a.price, c: dC(d), w: 1, t: '', s: 0, nl: 1 }); });   // a horizontal ray: its price on the scale (its line is its own: it starts where it was put)
+      else if (d && (d.type === 'hray' || (KIT && KIT.hasPx && KIT.hasPx(d.type))) && d.a && isFinite(d.a.price) && visibleOn(d, p.tf)) want.push({ p: d.a.price, c: dC(d), w: 1, t: '', s: 0, nl: 1 }); });   // a horizontal ray: its price on the scale (its line is its own: it starts where it was put)
     var os = JSON.stringify(ov); if (os !== p._hlOvSig) { p._hlOvSig = os; p._hlOv = ov; dirty(); }
     var sig = JSON.stringify(want); if (sig === p._hlSig) return; p._hlSig = sig;
     (p.hl || []).forEach(function(l){ try { p.series.removePriceLine(l); } catch (e) {} });
@@ -94695,7 +94754,7 @@ window.__stAZ = (function () {
     if (DW.marq && DW.marq.p === p) { var mm = marqNorm(DW.marq); g.save(); g.fillStyle = 'rgba(41,98,255,0.10)'; g.fillRect(mm.x0, mm.y0, mm.x1 - mm.x0, mm.y1 - mm.y0);
       g.strokeStyle = 'rgba(41,98,255,0.85)'; g.lineWidth = 1; g.setLineDash([4, 3]); g.strokeRect(mm.x0 + .5, mm.y0 + .5, mm.x1 - mm.x0 - 1, mm.y1 - mm.y0 - 1); g.restore(); }
     g.restore();
-    if (KIT) LST.forEach(function(d){ if (d && d.type === 'vline' && visibleOn(d, p.tf)) try { KIT.axis(g, d, kx(p, false, dm)); } catch (e) {} });   // a vertical line's time on the time axis
+    if (KIT) LST.forEach(function(d){ if (d && (d.type === 'vline' || (KIT.hasAxis && KIT.hasAxis(d.type))) && visibleOn(d, p.tf)) try { KIT.axis(g, d, kx(p, false, dm)); } catch (e) {} });   // a vertical line's time on the time axis
     p._news = []; if (CFG.news !== false) drawNews(p, g, dm.pw, dm.ph);
     var cx = cxFor(p); if (cx) paintCx(p, g, cx, dm); else { try { window.__stAxisLbl(p.series).set('cx', null); } catch (e) {} }
     try { paintOhlc(p); } catch (e) {}
@@ -95040,7 +95099,7 @@ window.__stAZ = (function () {
     if (DW.tool === 'none' && e.shiftKey && !touch) { e.stopPropagation(); e.preventDefault(); var hs = hit(p, xy.x, xy.y); DW.meas = { p: p, live: true, hi: hs ? hs.i : null, d: styleNew({ type: 'range', a: q, b: { t: q.t, price: q.price } }) }; dirty(); return; }
     if (DW.tool !== 'none') { e.stopPropagation(); e.preventDefault();
       if (DW.tool === 'hline') { DW.list.push(styleNew({ type: 'hline', price: q.price })); DW.sel = DW.list.length - 1; commit(); updDel(); setTool('none'); }
-      else if (DW.tool === 'vline' || DW.tool === 'hray') { DW.list.push(styleNew({ type: DW.tool, a: q })); DW.sel = DW.list.length - 1; commit(); updDel(); setTool('none'); }   // one click
+      else if (DW.tool === 'vline' || DW.tool === 'hray' || (KIT && KIT.one && KIT.one(DW.tool))) { DW.list.push(styleNew({ type: DW.tool, a: q })); DW.sel = DW.list.length - 1; commit(); updDel(); setTool('none'); }   // one click
       else if (DW.tool === 'note') { var nd = styleNew({ type: 'note', a: q, off: { x: KIT.NOFF.x, y: KIT.NOFF.y } }); DW.list.push(nd); DW.sel = DW.list.length - 1; setTool('none'); updDel(); txtEdit(p, nd, true); }   // one click, then its words
       else if (DW.tool === 'long' || DW.tool === 'short') { var pdir = DW.tool === 'long' ? 1 : -1, XF = PS(p), prd = XF === S ? stopPx() : defStopFor(XF.sym, q.price), ptd = XF === S ? (tgtDist(prd) || 2 * prd) : 2 * prd, pLa = lOfT(p, q.t);
         DW.list.push({ type: DW.tool, a: { t: q.t, price: q.price }, b: { t: tOfL(p, (pLa == null ? 0 : pLa) + 20), price: q.price }, sl: q.price - pdir * prd, tp: q.price + pdir * ptd });
