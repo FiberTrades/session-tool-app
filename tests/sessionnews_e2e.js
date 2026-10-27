@@ -115,16 +115,10 @@
   ok('the review reads the same bias, pick included', rb && rb.news === 'Impact News', rb && rb.news);
   ok('and a saved trade takes the whole bias with it', /const biasSnap = \{ \.\.\._rb,/.test(html));
 
-  // ---- 9) Session Live: this morning's bias ----
+  // ---- 9) Session Review: no "This morning's bias" box any more (Nestor, 27 Oct 2026); the bias is in Check my bias on Charts ----
   data.bias.copiedAt = new Date().toISOString(); data.bias.date = data.bias.copiedAt;
-  go('review'); await W(500); renderSavedBias(); await W(200);
-  var rows = [].slice.call(document.querySelectorAll('#saved-bias-card .saved-bias-row'));
-  ok('the bias card leads with the news pick', rows.length === 5 && txt(rows[0]) === 'NEWS Impact News' && /^MODE/.test(txt(rows[1])), rows.map(txt));
-  var rw = rows.map(function (x) { return Math.round(x.getBoundingClientRect().width); }), rh = rows.map(function (x) { return Math.round(x.getBoundingClientRect().height); });
-  ok('five equal cards', new Set(rw).size === 1 && new Set(rh).size === 1, [rw, rh]);
-  data.bias.news = null; renderSavedBias(); await W(150);
-  ok('a bias with no pick shows its four cards as before', document.querySelectorAll('#saved-bias-card .saved-bias-row').length === 4);
-  data.bias.news = 'Impact News';
+  go('review'); await W(500); var sbErr = null; try { renderSavedBias(); } catch (e) { sbErr = String(e); } await W(200);
+  ok('Session Review shows no "This morning\'s bias" box, and drawing it is a quiet no-op', !document.getElementById('saved-bias-card') && !sbErr, sbErr);
   ok('the Session Review post carries it with the mode', /News:\s+Impact News[\s\S]*Mode:\s+Execution/.test(window.__stBuildInLang('en', buildReviewMessage).replace(/\u001b\[[0-9;]*m/g, '')), window.__stBuildInLang('en', buildReviewMessage).replace(/\u001b\[[0-9;]*m/g, '').slice(0, 200));
 
   // ---- 10) Spanish ----
