@@ -36,10 +36,10 @@
     document.getElementById('stpr-drawbtn').click(); await W(40);
     var tools = document.getElementById('stpr-tools'), cells = Array.prototype.filter.call(tools.children, function (e) { return e.offsetWidth > 0; });
     var all = Array.prototype.map.call(tools.querySelectorAll('[data-tool]'), function (b) { return b.getAttribute('data-tool'); });
-    ok('the tools row: 8 cells (lines, fib, shapes, measure, text, emoji, long, short); every tool once, 19 of them', cells.length === 8 && tools.querySelectorAll('.stpr-tg').length === 3 && all.length === 19 && ['vline', 'ray', 'hray', 'arrow', 'path', 'channel', 'brush', 'note', 'circle', 'hline', 'trend', 'rect', 'fib', 'pen', 'range', 'text', 'emoji', 'long', 'short'].every(function (t) { return all.indexOf(t) >= 0; }), [cells.length, all.join(',')]);
+    ok('the tools row in TradingView\'s groups (26 Oct 2026): lines, fib and gann, forecasting and measuring, shapes, text and notes, emoji; every tool once', cells.length === 6 && tools.querySelectorAll('.stpr-tg').length === 5 && all.length === 19 && ['vline', 'ray', 'hray', 'arrow', 'path', 'channel', 'brush', 'note', 'circle', 'hline', 'trend', 'rect', 'fib', 'pen', 'range', 'text', 'emoji', 'long', 'short'].every(function (t) { return all.indexOf(t) >= 0; }), [cells.length, all.join(',')]);
     tools.querySelector('[data-tgrp="lines"]').click(); await W(40);
     var fl = tools.querySelector('.stpr-tg[data-grp="lines"] .stpr-tfl'), names = Array.prototype.map.call(fl.querySelectorAll('[data-tool]'), function (b) { return b.textContent; });
-    ok('the lines group\'s arrow opens its tools with their keys: Trend line Alt+T, Ray, Arrow, Path, Horizontal line Alt+H, Horizontal ray Alt+J, Vertical line Alt+V, Parallel channel', fl.offsetWidth > 150 && names.join('|') === 'Trend lineAlt+T|Ray|Arrow|Path|Horizontal lineAlt+H|Horizontal rayAlt+J|Vertical lineAlt+V|Parallel channel' && tools.querySelector('[data-tgrp="lines"]').getAttribute('aria-expanded') === 'true', names);
+    ok('the lines group\'s arrow opens its tools in sections, with their keys: Lines - Trend line Alt+T, Ray, Horizontal line Alt+H, Horizontal ray Alt+J, Vertical line Alt+V; Channels - Parallel channel', fl.offsetWidth > 150 && names.join('|') === 'Trend lineAlt+T|Ray|Horizontal lineAlt+H|Horizontal rayAlt+J|Vertical lineAlt+V|Parallel channel' && Array.prototype.map.call(fl.querySelectorAll('.stpr-tfh'), function (h) { return h.textContent; }).join('|') === 'Lines|Channels' && tools.querySelector('[data-tgrp="lines"]').getAttribute('aria-expanded') === 'true', names);
     fl.querySelector('[data-tool="ray"]').click(); await W(40);
     var gm = tools.querySelector('[data-gtool="lines"]');
     ok('picking Ray: the tool is on, the list closes, the group\'s button shows the ray now (and is lit)', DW.tool === 'ray' && fl.offsetWidth === 0 && /^Ray/.test(gm.title) && gm.classList.contains('on') && gm.innerHTML === fl.querySelector('[data-tool="ray"] svg').outerHTML, [DW.tool, gm.title]);
@@ -192,7 +192,7 @@
     if (typeof setLanguage === 'function') { setLanguage('es'); await W(200); P._render();
       tools.querySelector('[data-tgrp="shapes"]').click(); await W(30);
       var es = Array.prototype.map.call(tools.querySelectorAll('.stpr-tg[data-grp="shapes"] [data-tool] span'), function (e) { return e.textContent; });
-      ok('in Spanish: Rectángulo, Círculo, Dibujar, Resaltador, and the arrow says Formas y pinceles', es.join(',') === 'Rectángulo,Círculo,Dibujar,Resaltador' && tools.querySelector('[data-tgrp="shapes"]').title === 'Formas y pinceles', [es, tools.querySelector('[data-tgrp="shapes"]').title]);
+      ok('in Spanish: Dibujar, Resaltador, Flecha, Rectángulo, Trayectoria, Círculo, and the arrow says Formas', es.join(',') === 'Dibujar,Resaltador,Flecha,Rectángulo,Trayectoria,Círculo' && tools.querySelector('[data-tgrp="shapes"]').title === 'Formas', [es, tools.querySelector('[data-tgrp="shapes"]').title]);
       P._flyShut(); setLanguage('en'); await W(200); }
     P._flyShut();
     try { Object.keys(localStorage).filter(function (k) { return /^st_practice/.test(k); }).forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
