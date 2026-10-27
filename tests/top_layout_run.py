@@ -30,7 +30,8 @@ SIZE_JS = """(async function(){var W=function(ms){return new Promise(function(r)
   var geo=function(){var b=f.getBoundingClientRect(),t=document.querySelector('.tabs').getBoundingClientRect(),h=document.querySelector('.header h1').getBoundingClientRect();
     var cs=[].slice.call(document.querySelectorAll('.header .meta .meta-cell')).map(function(c){return Math.round(c.getBoundingClientRect().top);});
     var mc=[].slice.call(document.querySelectorAll('.header .meta .meta-cell')).map(function(c){return c.getBoundingClientRect();});var gap=mc.length>1?Math.round(mc[1].left-mc[0].right):0;
-    return {gap:gap,w:Math.round(b.width),bottom:Math.round(b.bottom),tabsTop:Math.round(t.top),h1h:Math.round(h.height),rows:cs.filter(function(v,i,a){return a.indexOf(v)===i;}).length,smD:sm.disabled,bgD:bg.disabled,vis:getComputedStyle(sm).display!=='none'&&getComputedStyle(bg).display!=='none'};};
+    var hm=document.querySelector('.header .meta'),need=mc.reduce(function(a,r){return a+r.width;},0),free=hm?Math.round(hm.clientWidth-need):0,toTv=mc.length?Math.round(b.left-mc[mc.length-1].right):0;
+    return {gap:gap,free:free,toTv:toTv,w:Math.round(b.width),bottom:Math.round(b.bottom),tabsTop:Math.round(t.top),h1h:Math.round(h.height),rows:cs.filter(function(v,i,a){return a.indexOf(v)===i;}).length,smD:sm.disabled,bgD:bg.disabled,vis:getComputedStyle(sm).display!=='none'&&getComputedStyle(bg).display!=='none'};};
   var out={down:null,up:[]};
   for(var i=0;i<6&&!sm.disabled;i++){sm.click();await W(150);} out.down=geo();
   for(var j=0;j<6&&!bg.disabled;j++){bg.click();await W(150);out.up.push(geo());}
@@ -105,6 +106,9 @@ def desk(W, H):
     if W >= 1100:
         gs = [sz['down']['gap']] + [u['gap'] for u in sz['up']]
         check(tag + 'TV size: the bigger the TV, the tighter the info ("these move left"), the smaller, the wider', all(b <= a for a, b in zip(gs, gs[1:])) and (len(gs) < 2 or gs[0] > gs[-1]), {'widths': ws, 'gaps': gs})
+    if W >= 1100:
+        sm = sz['down']   # the smallest TV: the info uses most of the free width, still ending well short of it ("move more to the right when the tv is so small")
+        check(tag + 'TV size: with the smallest TV the info spreads nearly to it, still well short', sm['w'] == 320 and 60 <= sm['toTv'] <= 0.25 * sm['free'] + 40 + 6, {'toTv': sm['toTv'], 'free': sm['free'], 'gap': sm['gap']})
     check(tag + 'TV size: remembered on this device after a reload', g['kept']['tv'] and g['kept']['tv']['w'] == ws[-1], [g['kept']['tv'], ws[-1]])
     check(tag + 'no sideways scroll', on['sx'] <= on['vw'] and off['sx'] <= off['vw'], [on['sx'], off['sx'], on['vw']])
     # "the name of tab should be a little bigger" (26 Oct 2026): 88px from ~1160px wide, 80-88 on a small laptop, always one line
@@ -129,7 +133,8 @@ def desk(W, H):
         cs = on['cells']
         gaps = [cs[i + 1]['c']['l'] - cs[i]['c']['r'] for i in range(len(cs) - 1)]
         free = on['meta']['w'] - sum(x['c']['w'] for x in cs)
-        want = max(28, min(140, free * 0.48 / 3))   # "the bigger the TV is these move left and the smaller they spread right" (25 Oct 2026)
+        f = max(0.48, min(0.82, 0.48 + (400 - tv['w']) / 80 * 0.34)) if tv else 0.48   # 48% of the free width at 400+, up to 82% with a 320px TV (26 Oct 2026)
+        want = max(28, min(260, free * f / 3))   # "the bigger the TV is these move left and the smaller they spread right" (25 Oct 2026)
         check(tag + 'TV on: from the title, gaps from the room left of the TV, ending well short of it',
               tv and abs(cs[0]['c']['l'] - on['h1']['l']) <= 3 and all(abs(g - want) <= 2 for g in gaps) and tv['l'] - cs[-1]['c']['r'] >= 60,
               {'gaps': gaps, 'want': round(want, 1), 'to_tv': tv and tv['l'] - cs[-1]['c']['r'], 'first': cs[0]['c'], 'h1': on['h1']})
