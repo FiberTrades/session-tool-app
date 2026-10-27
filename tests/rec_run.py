@@ -127,7 +127,7 @@ def page(c, mobile=False):
     if mobile:
         c.call('Emulation.setDeviceMetricsOverride', width=390, height=844, deviceScaleFactor=2, mobile=True)
         c.call('Emulation.setTouchEmulationEnabled', enabled=True, maxTouchPoints=5)
-    c.call('Page.navigate', url='http://127.0.0.1:%d/app.html?e2e=%d' % (web_port, random.randint(1, 10 ** 9)))
+    c.call('Page.navigate', url='http://127.0.0.1:%d/app.html?e2e=%d%s' % (web_port, random.randint(1, 10 ** 9), os.environ.get('REC_Q', '')))
     time.sleep(2)
     if not ev(c, bt.PRELUDE): raise RuntimeError('The app did not load')
     ev(c, src)

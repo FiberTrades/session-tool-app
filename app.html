@@ -100088,18 +100088,35 @@ window.__stAZ = (function () {
   // ---- the camera's picture (27 Oct 2026, Nestor: "zoom in or out with the webcam ... crop my body so its just my face", backgrounds, blur) ----
   // camFx: its own loop, at the camera's frame rate: the framed square (zoom 1-3x, panned; kept per camera on this computer), then, for
   // Blur or Image, the person cut out with MediaPipe's selfie segmenter (the model is this site's own file; the library from jsDelivr;
-  // nothing leaves the computer) over a blurred copy or the chosen picture, the mask's edge softened. When the segmenter is slow it
-  // runs on every 2nd or 3rd camera frame and the mask is reused: the camera's processing slows, never the recording's.
-  var MP = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14', SEG = { p: null, seg: null, dg: '', err: '' };
-  function segLoad() { if (SEG.p) return SEG.p;
-    SEG.p = (async function () { var v = await import(MP + '/vision_bundle.mjs'), fs = await v.FilesetResolver.forVisionTasks(MP + '/wasm'), mdl = new URL('models/selfie_segmenter.tflite', location.href).href;
-      var opt = function (d) { return { baseOptions: { modelAssetPath: mdl, delegate: d }, runningMode: 'VIDEO', outputCategoryMask: false, outputConfidenceMasks: true }; };
-      try { SEG.seg = await v.ImageSegmenter.createFromOptions(fs, opt('GPU')); SEG.dg = 'GPU'; } catch (e) { SEG.seg = await v.ImageSegmenter.createFromOptions(fs, opt('CPU')); SEG.dg = 'CPU'; }
-      return SEG.seg; })();
+  // nothing leaves the computer) over a blurred copy or the chosen picture, the mask's edge softened. The segmenter runs in a worker of
+  // its own, one picture at a time; between its answers the last mask is reused, so a slow computer updates the cut-out less often and
+  // the recording never waits (measured 27 Oct 2026 on this PC under load: on the page itself it cost the video a third of its frames).
+  // Where the worker cannot start, it runs on the page, on every 2nd or 3rd camera frame when slow.
+  var MP = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14', SEG = { p: null, seg: null, w: null, dg: '', err: '', on: null };
+  var SEG_WK = ["let seg = null, dg = '';",
+    "const make = async (m) => { const v = await import(m.mp + '/vision_bundle.mjs'), fs = await v.FilesetResolver.forVisionTasks(m.mp + '/wasm');",
+    "  const opt = (d) => ({ baseOptions: { modelAssetPath: m.model, delegate: d }, runningMode: 'VIDEO', outputCategoryMask: false, outputConfidenceMasks: true });",
+    "  if (!m.sw) { try { seg = await v.ImageSegmenter.createFromOptions(fs, opt('GPU')); dg = 'GPU'; } catch (e) {} }",
+    "  if (!seg) { seg = await v.ImageSegmenter.createFromOptions(fs, opt('CPU')); dg = 'CPU'; } };",
+    "onmessage = async (e) => { const m = e.data;",
+    "  if (m.t === 'init') { try { await make(m); postMessage({ t: 'ready', dg }); } catch (x) { postMessage({ t: 'err', e: String((x && x.message) || x) }); } return; }",
+    "  if (m.t === 'seg') { const t0 = performance.now(); let a = null;",
+    "    try { const r = seg.segmentForVideo(m.bmp, m.ts), ms = r.confidenceMasks, mm = ms[ms.length > 1 ? 1 : 0]; a = mm.getAsFloat32Array().slice(); if (r.close) r.close(); } catch (x) {}",
+    "    try { m.bmp.close(); } catch (x) {} postMessage({ t: 'mask', a, ms: performance.now() - t0 }, a ? [a.buffer] : []); } };"].join('\n');
+  function softGL() { try { var gl = document.createElement('canvas').getContext('webgl'), di = gl && gl.getExtension('WEBGL_debug_renderer_info'); return !gl || /swiftshader|llvmpipe|software|basic render/i.test(String(di ? gl.getParameter(di.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER))); } catch (e) { return false; } }   // no graphics card: the CPU, not a software GPU
+  function segMain(mdl, sw) { return (async function () { var v = await import(MP + '/vision_bundle.mjs'), fs = await v.FilesetResolver.forVisionTasks(MP + '/wasm');
+    var opt = function (d) { return { baseOptions: { modelAssetPath: mdl, delegate: d }, runningMode: 'VIDEO', outputCategoryMask: false, outputConfidenceMasks: true }; };
+    if (!sw) { try { SEG.seg = await v.ImageSegmenter.createFromOptions(fs, opt('GPU')); SEG.dg = 'GPU'; } catch (e) {} }
+    if (!SEG.seg) { SEG.seg = await v.ImageSegmenter.createFromOptions(fs, opt('CPU')); SEG.dg = 'CPU'; } return SEG.seg; })(); }
+  function segLoad() { if (SEG.p) return SEG.p; var mdl = new URL('models/selfie_segmenter.tflite', location.href).href, sw = softGL();
+    var wk = new Promise(function (ok, no) { try { var u = URL.createObjectURL(new Blob([SEG_WK], { type: 'text/javascript' })), w = new Worker(u);   // a classic worker: MediaPipe loads its wasm with importScripts
+        w.onmessage = function (e) { var m = e.data || {}; if (m.t === 'ready') { SEG.w = w; SEG.dg = m.dg + ' worker'; ok(w); } else if (m.t === 'err') { try { w.terminate(); } catch (x) {} no(new Error(m.e)); } else if (m.t === 'mask' && SEG.on) SEG.on(m); };
+        w.onerror = function (e) { try { w.terminate(); } catch (x) {} no(new Error((e && e.message) || 'worker')); }; w.postMessage({ t: 'init', mp: MP, model: mdl, sw: sw }); } catch (e) { no(e); } });
+    SEG.p = wk.catch(function () { return segMain(mdl, sw); });   // no worker here: on the page
     SEG.p.catch(function (e) { SEG.err = String((e && e.message) || e); SEG.p = null; });
     return SEG.p; }
   function fxNote(m) { var n = q('.rs-fxn'); if (n) n.textContent = m || ''; }
-  function fxLoad() { if (SEG.seg) { fxNote(''); return; } fxNote(T('Getting the background effect ready…', 'Preparando el efecto de fondo…'));
+  function fxLoad() { if (SEG.seg || SEG.w) { fxNote(''); return; } fxNote(T('Getting the background effect ready…', 'Preparando el efecto de fondo…'));
     segLoad().then(function () { fxNote(''); }, function () { if (CFG.bg !== 'none') { CFG.bg = 'none'; save(); paint(); } fxNote(T('The background effect could not load (is the internet on?). The camera works without it.', 'El efecto de fondo no pudo cargar (¿hay internet?). La cámara funciona sin él.')); }); }
   function camKey() { try { var t = SH && SH.cam && SH.cam.getVideoTracks()[0], d = t && t.getSettings ? t.getSettings().deviceId : ''; return String(d || CFG.camId || 'default').slice(0, 80); } catch (e) { return 'default'; } }
   function frameOf(k) { var f = CFG.frames[k] || {}; return { z: Math.max(1, Math.min(3, +f.z || 1)), x: isFinite(+f.x) ? Math.max(0, Math.min(1, +f.x)) : 0.5, y: isFinite(+f.y) ? Math.max(0, Math.min(1, +f.y)) : 0.5 }; }
@@ -100115,26 +100132,37 @@ window.__stAZ = (function () {
       try { localStorage.setItem('st_rec_bgimg', u); } catch (e) { fxNote(T('Kept until you reload: this browser had no room to remember it.', 'Se guarda hasta que recargues: este navegador no tenía espacio para recordarla.')); }
       CFG.bg = 'image'; save(); paint(); fxLoad(); }; im.onerror = function () { fxNote(T('That file is not a picture this browser can open.', 'Ese archivo no es una imagen que este navegador pueda abrir.')); }; im.src = rd.result; }; rd.readAsDataURL(file); }
   function camFx(stream) { var S = 512, mk = function (n) { var c = document.createElement('canvas'); c.width = c.height = n; return c; };
-    var fx = { v: vid(stream), out: mk(S), per: mk(S), sin: mk(256), msk: mk(256), n: 0, k: 0, every: 1, segN: 0, segMs: 0, key: camKey(), t0: performance.now(), stopped: false, has: false };
-    var mg = fx.msk.getContext('2d'), mi = mg.createImageData(256, 256), og = fx.out.getContext('2d'), pg = fx.per.getContext('2d'), sg = fx.sin.getContext('2d', { willReadFrequently: false });
+    var fx = { v: vid(stream), out: mk(S), per: mk(S), sin: mk(256), msk: mk(256), mskS: mk(256), bgs: mk(96), img: mk(S), n: 0, k: 0, tick: 0, skip: 0, every: 1, segN: 0, segMs: 0, key: camKey(), t0: performance.now(), stopped: false, has: false };
+    var mg = fx.msk.getContext('2d'), mi = mg.createImageData(256, 256), msg = fx.mskS.getContext('2d'), og = fx.out.getContext('2d'), pg = fx.per.getContext('2d'), sg = fx.sin.getContext('2d'), bg2 = fx.bgs.getContext('2d'), ig = fx.img.getContext('2d');
     for (var i = 0; i < mi.data.length; i += 4) { mi.data[i] = mi.data[i + 1] = mi.data[i + 2] = 255; }
     var crop = function () { var v = fx.v, vw = v.videoWidth, vh = v.videoHeight, f = frameOf(fx.key), cs = Math.min(vw, vh) / f.z;
       return { x: Math.max(0, Math.min(vw - cs, f.x * vw - cs / 2)), y: Math.max(0, Math.min(vh - cs, f.y * vh - cs / 2)), s: cs }; };
-    var step = function () { if (fx.stopped) return; sched(); var v = fx.v; if (!(v.videoWidth > 16)) return; var c = crop(), mode = CFG.bg, im = mode === 'image' ? bgImg() : null;
-      if (mode === 'none' || !SEG.seg || (mode === 'image' && !im)) { og.drawImage(v, c.x, c.y, c.s, c.s, 0, 0, S, S); fx.n++; return; }
-      if (fx.k++ % fx.every === 0 || !fx.has) { var t = performance.now(); try { sg.drawImage(v, c.x, c.y, c.s, c.s, 0, 0, 256, 256);
+    // the chosen picture, scaled once to the square (covering it), not on every frame
+    var imgSq = function (im) { if (fx.imgFor === im) return fx.img; var iw = im.naturalWidth, ih = im.naturalHeight, kk = Math.max(S / iw, S / ih); ig.clearRect(0, 0, S, S); ig.drawImage(im, (S - iw * kk) / 2, (S - ih * kk) / 2, iw * kk, ih * kk); fx.imgFor = im; return fx.img; };
+    var step = function () { if (fx.stopped) return; sched(); var v = fx.v; if (!(v.videoWidth > 16)) return;
+      if (fx.skip && (fx.tick++ % (fx.skip + 1))) return;   // the recording is short of frames: the camera gives way (see loop)
+      var c = crop(), mode = CFG.bg, im = mode === 'image' ? bgImg() : null;
+      if (mode === 'none' || !(SEG.w || SEG.seg) || (mode === 'image' && !im)) { og.drawImage(v, c.x, c.y, c.s, c.s, 0, 0, S, S); fx.n++; return; }
+      if (SEG.w) { if (!fx.busy) { fx.busy = true; sg.drawImage(v, c.x, c.y, c.s, c.s, 0, 0, 256, 256);   // one picture at a time to the worker; the last mask meanwhile
+          createImageBitmap(fx.sin).then(function (bmp) { if (fx.stopped || !SEG.w) { bmp.close(); fx.busy = false; return; }
+            SEG.on = function (m) { fx.busy = false; if (m.a && m.a.length === 65536) { for (var j2 = 0; j2 < 65536; j2++) mi.data[j2 * 4 + 3] = Math.round(m.a[j2] * 255); mg.putImageData(mi, 0, 0);
+                msg.clearRect(0, 0, 256, 256); msg.filter = 'blur(1.5px)'; msg.drawImage(fx.msk, 0, 0); msg.filter = 'none'; fx.has = true; } fx.segMs = fx.segMs ? fx.segMs * 0.85 + m.ms * 0.15 : m.ms; fx.segN++; };
+            SEG.w.postMessage({ t: 'seg', bmp: bmp, ts: performance.now() }, [bmp]); }, function () { fx.busy = false; }); }
+        if (!fx.has) { og.drawImage(v, c.x, c.y, c.s, c.s, 0, 0, S, S); fx.n++; return; } }
+      else if (fx.k++ % fx.every === 0 || !fx.has) { var t = performance.now(); try { sg.drawImage(v, c.x, c.y, c.s, c.s, 0, 0, 256, 256);
           var res = SEG.seg.segmentForVideo(fx.sin, t), ms = res && res.confidenceMasks, mm = ms && ms[ms.length > 1 ? 1 : 0], a = mm && mm.getAsFloat32Array();
-          if (a && a.length === 65536) { for (var j = 0; j < 65536; j++) mi.data[j * 4 + 3] = Math.round(a[j] * 255); mg.putImageData(mi, 0, 0); fx.has = true; }
+          if (a && a.length === 65536) { for (var j = 0; j < 65536; j++) mi.data[j * 4 + 3] = Math.round(a[j] * 255); mg.putImageData(mi, 0, 0);
+            msg.clearRect(0, 0, 256, 256); msg.filter = 'blur(1.5px)'; msg.drawImage(fx.msk, 0, 0); msg.filter = 'none'; fx.has = true; }   // the mask's edge softened once, at its own size
           try { if (res && res.close) res.close(); else if (ms) ms.forEach(function (x) { x.close(); }); } catch (e) {} } catch (e) { fx.err = String((e && e.message) || e); }
         var dt = performance.now() - t; fx.segMs = fx.segMs ? fx.segMs * 0.85 + dt * 0.15 : dt; fx.every = fx.segMs > 40 ? 3 : (fx.segMs > 22 ? 2 : 1); fx.segN++; }
-      pg.globalCompositeOperation = 'source-over'; pg.clearRect(0, 0, S, S); pg.drawImage(v, c.x, c.y, c.s, c.s, 0, 0, S, S);   // the person: the picture, kept where the mask says person, its edge softened
-      pg.globalCompositeOperation = 'destination-in'; pg.filter = 'blur(3px)'; pg.drawImage(fx.msk, 0, 0, S, S); pg.filter = 'none'; pg.globalCompositeOperation = 'source-over';
-      if (mode === 'blur') { og.filter = 'blur(' + Math.round(S / 34) + 'px)'; og.drawImage(v, c.x, c.y, c.s, c.s, -S * 0.06, -S * 0.06, S * 1.12, S * 1.12); og.filter = 'none'; }
-      else { var iw = im.naturalWidth, ih = im.naturalHeight, kk = Math.max(S / iw, S / ih); og.drawImage(im, (S - iw * kk) / 2, (S - ih * kk) / 2, iw * kk, ih * kk); }
+      pg.globalCompositeOperation = 'source-over'; pg.clearRect(0, 0, S, S); pg.drawImage(v, c.x, c.y, c.s, c.s, 0, 0, S, S);   // the person: the picture, kept where the mask says person
+      pg.globalCompositeOperation = 'destination-in'; pg.drawImage(fx.mskS, 0, 0, S, S); pg.globalCompositeOperation = 'source-over';
+      if (mode === 'blur') { bg2.filter = 'blur(2px)'; bg2.drawImage(v, c.x, c.y, c.s, c.s, -6, -6, 108, 108); bg2.filter = 'none'; og.imageSmoothingEnabled = true; og.drawImage(fx.bgs, 0, 0, S, S); }   // blurred small, then enlarged: soft and cheap
+      else og.drawImage(imgSq(im), 0, 0);
       og.drawImage(fx.per, 0, 0); fx.n++; };
     var sched = function () { if (fx.stopped) return; if (fx.v.requestVideoFrameCallback) fx.cb = fx.v.requestVideoFrameCallback(step); else fx.tm = setTimeout(step, 33); };
     fx.v.addEventListener('loadeddata', function () { fx.key = fx.key || camKey(); }, { once: true }); sched();
-    fx.stats = function () { var s2 = (performance.now() - fx.t0) / 1000; return { fps: Math.round(fx.n / s2 * 10) / 10, segFps: Math.round(fx.segN / s2 * 10) / 10, segMs: Math.round(fx.segMs * 10) / 10, every: fx.every, dg: SEG.dg, err: fx.err || SEG.err || '' }; };
+    fx.stats = function () { var s2 = (performance.now() - fx.t0) / 1000; return { fps: Math.round(fx.n / s2 * 10) / 10, segFps: Math.round(fx.segN / s2 * 10) / 10, segMs: Math.round(fx.segMs * 10) / 10, every: fx.every, skip: fx.skip, dg: SEG.dg, err: fx.err || SEG.err || '' }; };
     fx.reset = function () { fx.t0 = performance.now(); fx.n = 0; fx.segN = 0; };
     fx.stop = function () { fx.stopped = true; clearTimeout(fx.tm); try { if (fx.cb != null && fx.v.cancelVideoFrameCallback) fx.v.cancelVideoFrameCallback(fx.cb); } catch (e) {} try { fx.v.srcObject = null; fx.v.remove(); } catch (e) {} };
     return fx; }
@@ -100193,9 +100221,13 @@ window.__stAZ = (function () {
     loop(r);
     countdown(r, function () { if (R !== r) return; try { r.rec.start(1000); } catch (e) { fail(r, T('The recording did not start.', 'La grabación no arrancó.')); return; } r.t0 = performance.now(); r.n0 = r.n || 0; r.st = 'rec'; ctl(r); tallView(r); azRefresh(); if (r.fx) r.fx.reset(); }); }
   function loop(r) { var gap = 1000 / r.fps - 4, last = 0;
-    var tick = function (ts) { if (R !== r) return; r.raf = requestAnimationFrame(tick); if (ts - last < gap) return; last = ts; draw(r); };
+    var tick = function (ts) { if (R !== r) return; r.raf = requestAnimationFrame(tick); if (ts - last < gap) return; last = ts; draw(r); pace(r, ts); };
     r.raf = requestAnimationFrame(tick);
     r.iv = setInterval(function () { if (R === r && document.hidden) draw(r); }, 1000 / r.fps); }   // a hidden tab draws no frames: the clock and the camera keep moving
+  // the video's own rate, measured each second: under 90% of it, the camera processes every 2nd, 3rd... of its frames; back up when there is room
+  function pace(r, ts) { if (!r.fx || r.st !== 'rec') return; if (!r.pc) { r.pc = { t: ts, n: r.n, ok: 0, bad: 0 }; return; } if (ts - r.pc.t < 1000) return; var f = (r.n - r.pc.n) * 1000 / (ts - r.pc.t);
+    if (f < r.fps * 0.85) { r.pc.ok = 0; if (++r.pc.bad >= 2 && r.fx.skip < 4) { r.fx.skip++; r.pc.bad = 0; } } else { r.pc.bad = 0; if (f >= r.fps * 0.93 && r.fx.skip > 0 && ++r.pc.ok >= 2) { r.fx.skip--; r.pc.ok = 0; } }   // two seconds short: give way; two good: back
+    r.pc.t = ts; r.pc.n = r.n; r.vfps = Math.round(f); }
   function rr(g, x, y, w, h, rad) { g.beginPath(); g.moveTo(x + rad, y); g.arcTo(x + w, y, x + w, y + h, rad); g.arcTo(x + w, y + h, x, y + h, rad); g.arcTo(x, y + h, x, y, rad); g.arcTo(x, y, x + w, y, rad); g.closePath(); }
   function src(r, vw, vh) { if (r.mode !== 'canvas') return { x: 0, y: 0, w: vw, h: vh }; var w = win(); if (!w) return { x: 0, y: 0, w: vw, h: vh };
     var b = w.getBoundingClientRect(), kx = vw / innerWidth, ky = vh / innerHeight, x = Math.max(0, b.left * kx), y = Math.max(0, b.top * ky);
