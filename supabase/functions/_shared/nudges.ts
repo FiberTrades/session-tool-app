@@ -224,10 +224,13 @@ const T: Record<string, [string, string]> = {
   daily_left: ["{LEFT} left before your daily loss limit ({LIM}) — less than one full trade ({RISK}). One more loss breaks it.", "Te quedan {LEFT} antes de tu límite de pérdida diaria ({LIM}), menos que una operación completa ({RISK}). Una pérdida más lo rompe."],
   // Trade alerts (EA 8.86)
   tr_be: ["Stop moved to break-even on your {SYM} {SIDE}.", "Stop movido a break-even en tu operación {SIDEF} de {SYM}."],
-  tr_tp: ["Take profit hit on your {SYM} {SIDE}: {PNL}.", "Take profit alcanzado en tu operación {SIDEF} de {SYM}: {PNL}."],
-  tr_sl: ["Stop loss hit on your {SYM} {SIDE}: {PNL}.", "Stop loss alcanzado en tu operación {SIDEF} de {SYM}: {PNL}."],
-  tr_beout: ["Taken out at break-even on your {SYM} {SIDE}: {PNL}.", "Tu operación {SIDEF} de {SYM} se cerró en break-even: {PNL}."],
-  tr_slp: ["Stopped out in profit on your {SYM} {SIDE}: {PNL}.", "Tu operación {SIDEF} de {SYM} tocó el stop con beneficio: {PNL}."],
+  // the close alerts (27 Oct 2026, Nestor: "can the TP and SL lines when hit also be a nudge/alarm sent to the PC and phone?"): the result
+  // plainly - money, R, and for a target the pips banked ({X}: " · +5.0R · 20.0 pips")
+  tr_tp: ["Target hit on your {SYM} {SIDE}: {PNL}{X}.", "Objetivo alcanzado en tu operación {SIDEF} de {SYM}: {PNL}{X}."],
+  tr_sl: ["Stop hit on your {SYM} {SIDE}: {PNL}{X}.", "Stop alcanzado en tu operación {SIDEF} de {SYM}: {PNL}{X}."],
+  tr_beout: ["Out at break-even on your {SYM} {SIDE}: {PNL}.", "Fuera en break-even en tu operación {SIDEF} de {SYM}: {PNL}."],
+  tr_slp: ["Stopped out in profit on your {SYM} {SIDE}: {PNL}{X}.", "Tu operación {SIDEF} de {SYM} tocó el stop con beneficio: {PNL}{X}."],
+  w_pips: ["pips", "pips"], w_points: ["points", "puntos"],
   tr_trail: ["Stop trailed to +{R}R on your {SYM} {SIDE} — {M} locked in.", "Stop movido a +{R}R en tu operación {SIDEF} de {SYM}: {M} asegurados."],
   tr_trail_nr: ["Stop trailed on your {SYM} {SIDE} — {M} locked in.", "Stop movido en tu operación {SIDEF} de {SYM}: {M} asegurados."],
   tr_part: ["Partial close on your {SYM} {SIDE}: {P}% closed at {R} — {PNL} banked.", "Cierre parcial en tu operación {SIDEF} de {SYM}: {P}% cerrado a {R}, {PNL} realizados."],
@@ -689,11 +692,31 @@ export async function afterEaChange(admin: Any, userId: string, logId: number, b
 }
 
 // ---------- trade alerts (EA 8.86) ----------
-function tradeWords(ctx: Ctx, me: Row, key: string, pnl?: number) {
-  const es = esOf(ctx.j), long = me.direction !== "short";
+function tradeWords(ctx: Ctx, me: Row, key: string, pnl?: number, x = "") {
+  const es = esOf(ctx.j), long = me.direction !== "short", cur = accCurOf(ctx, me);
   return tr(key, es).replace("{SYM}", symCore(me.symbol) || String(me.symbol || ""))
     .replace("{SIDE}", tr(long ? "w_long" : "w_short", es)).replace("{SIDEF}", tr(long ? "w_long_f" : "w_short_f", es))
-    .replace("{PNL}", pnl == null ? "" : signed(ctx.j, pnl));
+    .replace("{PNL}", pnl == null ? "" : (pnl > 0 ? "+" : pnl < 0 ? "−" : "") + (cur ? (SYM[cur] || cur + " ") + Math.abs(pnl).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : money(ctx.j, pnl)))
+    .replace("{X}", x);
+}
+// the account's own currency (27 Oct 2026: OneFunded in $ beside the 70K in £), else the member's
+function accCurOf(ctx: Ctx, me: Row): string { try { const a = accountFor(ctx, me.login); return (a && a.currency) || ""; } catch (_e) { return ""; } }
+// " · +5.0R · 20.0 pips" for a close: R from the money over the risk it was taken with; the pips from its MT5 deal (trades_inbox, which
+// lands a moment after the close), only for a target or a stop in profit
+async function closeExtra(admin: Any, ctx: Ctx, me: Row, rule: string, pnl: number): Promise<string> {
+  const es = esOf(ctx.j), r0 = Number(me.risk0) || 0, bits: string[] = [];
+  if (r0 > 0 && rule !== "tr_beout") { const r = pnl / r0; bits.push((r >= 0 ? "+" : "−") + Math.abs(r).toFixed(1) + "R"); }
+  if (rule === "tr_tp" || rule === "tr_slp") {
+    let row: Any = null;
+    for (let i = 0; i < 2 && !row; i++) {
+      try { const r = await admin.from("trades_inbox").select("entry_price, exit_price, unit_size, dist_unit, direction").eq("token", ctx.userId).eq("ticket", me.ticket).maybeSingle(); row = r && r.data; } catch (_e) { row = null; }
+      if (!row && i === 0) await sleep(6000);
+    }
+    const e = row ? Number(row.entry_price) : 0, xp = row ? Number(row.exit_price) : 0, u = row ? Number(row.unit_size) : 0;
+    if (e > 0 && xp > 0 && u > 0) { const d = /^(sell|short)/i.test(String(row.direction || me.direction || "")) ? -1 : 1, pips = d * (xp - e) / u;
+      bits.push(Math.abs(pips).toFixed(1) + " " + tr(row.dist_unit === "points" ? "w_points" : "w_pips", es)); }
+  }
+  return bits.length ? " · " + bits.join(" · ") : "";
 }
 // Which alert a close is: the broker's take profit, or its stop - at a loss, at break-even, or locked in profit.
 export function closeAlert(ctx: Ctx, me: Row): string | null {
@@ -754,7 +777,8 @@ export async function afterCloseTrade(admin: Any, userId: string, ticket: number
   const ctx = await loadCtx(admin, userId); if (!ctx || !cfgOf(ctx.j).trades) return;
   const me = ctx.rows.find((r) => r.ticket === ticket); if (!me || me.pnl == null || isCopy(ctx, me)) return;
   const rule = closeAlert(ctx, me); if (!rule) return;
-  return await deliver(admin, userId, "trade", [item(rule, String(ticket), tradeWords(ctx, me, rule, Number(me.pnl)), mates(ctx, me))], esOf(ctx.j), 0);
+  const x = await closeExtra(admin, ctx, me, rule, Number(me.pnl));
+  return await deliver(admin, userId, "trade", [item(rule, String(ticket), tradeWords(ctx, me, rule, Number(me.pnl), x), mates(ctx, me))], esOf(ctx.j), 0);
 }
 
 // Open now: the server's open rows that the EA is still announcing (seen in the last 2 minutes).

@@ -9601,10 +9601,10 @@ try {
       'nudge.no_bias_say': 'No bias logged today.',
       'nudge.widen': 'Your risk on this trade grew from {OLD} to {NEW}. Did you move your stop away?',
       'nudge.tr_be': 'Stop moved to break-even on your {SYM} {SIDE}.',
-      'nudge.tr_tp': 'Take profit hit on your {SYM} {SIDE}: {PNL}.',
-      'nudge.tr_sl': 'Stop loss hit on your {SYM} {SIDE}: {PNL}.',
-      'nudge.tr_beout': 'Taken out at break-even on your {SYM} {SIDE}: {PNL}.',
-      'nudge.tr_slp': 'Stopped out in profit on your {SYM} {SIDE}: {PNL}.',
+      'nudge.tr_tp': 'Target hit on your {SYM} {SIDE}: {PNL}{X}.',
+      'nudge.tr_sl': 'Stop hit on your {SYM} {SIDE}: {PNL}{X}.',
+      'nudge.tr_beout': 'Out at break-even on your {SYM} {SIDE}: {PNL}.',
+      'nudge.tr_slp': 'Stopped out in profit on your {SYM} {SIDE}: {PNL}{X}.',
       'nudge.tr_trail': 'Stop trailed to +{R}R on your {SYM} {SIDE} — {M} locked in.',
       'nudge.tr_trail_nr': 'Stop trailed on your {SYM} {SIDE} — {M} locked in.',
       'nudge.tr_part': 'Partial close on your {SYM} {SIDE}: {P}% closed at {R} — {PNL} banked.',
@@ -9612,6 +9612,7 @@ try {
       'nudge.tr_pcend': 'Last partial close on your {SYM} {SIDE}: the trade is closed, {PNL} in total.',
       'nudge.w_long_f': 'long',
       'nudge.w_short_f': 'short',
+      'nudge.w_points': 'points',
       'settings.nudges_trades_label': 'Trade alerts',
       'settings.nudges_trades_toggle': 'Alert me about my trades',
       'settings.nudges_trades_hint': 'A card and a chime when your stop moves to break-even, and when your take profit or stop loss is hit, including a stop taken out at break-even. Needs the EA (8.86 or newer).',
@@ -11565,10 +11566,10 @@ try {
       'nudge.no_bias_say': 'No has registrado sesgo hoy.',
       'nudge.widen': 'El riesgo de esta operación ha pasado de {OLD} a {NEW}. ¿Has alejado el stop?',
       'nudge.tr_be': 'Stop movido a break-even en tu operación {SIDEF} de {SYM}.',
-      'nudge.tr_tp': 'Take profit alcanzado en tu operación {SIDEF} de {SYM}: {PNL}.',
-      'nudge.tr_sl': 'Stop loss alcanzado en tu operación {SIDEF} de {SYM}: {PNL}.',
-      'nudge.tr_beout': 'Tu operación {SIDEF} de {SYM} se cerró en break-even: {PNL}.',
-      'nudge.tr_slp': 'Tu operación {SIDEF} de {SYM} tocó el stop con beneficio: {PNL}.',
+      'nudge.tr_tp': 'Objetivo alcanzado en tu operación {SIDEF} de {SYM}: {PNL}{X}.',
+      'nudge.tr_sl': 'Stop alcanzado en tu operación {SIDEF} de {SYM}: {PNL}{X}.',
+      'nudge.tr_beout': 'Fuera en break-even en tu operación {SIDEF} de {SYM}: {PNL}.',
+      'nudge.tr_slp': 'Tu operación {SIDEF} de {SYM} tocó el stop con beneficio: {PNL}{X}.',
       'nudge.tr_trail': 'Stop movido a +{R}R en tu operación {SIDEF} de {SYM}: {M} asegurados.',
       'nudge.tr_trail_nr': 'Stop movido en tu operación {SIDEF} de {SYM}: {M} asegurados.',
       'nudge.tr_part': 'Cierre parcial en tu operación {SIDEF} de {SYM}: {P}% cerrado a {R}, {PNL} realizados.',
@@ -11576,6 +11577,7 @@ try {
       'nudge.tr_pcend': 'Último cierre parcial en tu operación {SIDEF} de {SYM}: operación cerrada, {PNL} en total.',
       'nudge.w_long_f': 'larga',
       'nudge.w_short_f': 'corta',
+      'nudge.w_points': 'puntos',
       'settings.nudges_trades_label': 'Avisos de operación',
       'settings.nudges_trades_toggle': 'Avísame de mis operaciones',
       'settings.nudges_trades_hint': 'Una tarjeta y un sonido cuando tu stop pasa a break-even y cuando se alcanza tu take profit o tu stop loss, también un stop cerrado en break-even. Necesita el EA (8.86 o posterior).',
@@ -19989,7 +19991,25 @@ try {
       var long = cur.direction !== 'short';
       return t(key).replace('{SYM}', trSym(cur.symbol)).replace('{SIDE}', t(long ? 'nudge.w_long' : 'nudge.w_short'))
         .replace('{SIDEF}', t(long ? 'nudge.w_long_f' : 'nudge.w_short_f'))
-        .replace('{PNL}', (pnl == null) ? '' : ((pnl > 0 ? '+' : pnl < 0 ? '\u2212' : '') + M0(pnl)));
+        .replace('{PNL}', (pnl == null) ? '' : ((pnl > 0 ? '+' : pnl < 0 ? '\u2212' : '') + (cur.login != null && window.__stAccCur ? fmtMoney(pnl, { noSign: true, cur: window.__stAccCur(trAccount(cur.login)) }) : M0(pnl))))
+        .replace('{X}', '');
+    }
+    /* A close's result in plain words (27 Oct 2026, Nestor: "can the TP and SL lines when hit also be a nudge/alarm sent to the PC and
+       phone?"): " · +5.0R · 20.0 pips" - R from the money over the risk it was taken with; the pips from its MT5 deal (trades_inbox,
+       which lands a moment after the close: looked for at once, after 4 s and after 10 s), for a target or a stop in profit. */
+    function trCloseX(k, raw, cur, rule, cb) {
+      var pnl = Number(cur.pnl) || 0, r0 = 0, bits = [];
+      try { r0 = Number(dayState().size0[k]) || Number(raw.risk) || 0; } catch (e) {}
+      if (r0 > 0 && rule !== 'tr_beout') { var r = pnl / r0; bits.push((r >= 0 ? '+' : '\u2212') + Math.abs(r).toFixed(1) + 'R'); }
+      var done = function (row) { if (row && +row.entry_price > 0 && +row.exit_price > 0 && +row.unit_size > 0) { var d = /^(sell|short)/i.test(String(row.direction || '')) ? -1 : 1;
+          bits.push(Math.abs(d * (+row.exit_price - +row.entry_price) / +row.unit_size).toFixed(1) + ' ' + (row.dist_unit === 'points' ? t('nudge.w_points') : 'pips')); }
+        cb(bits.length ? ' \u00b7 ' + bits.join(' \u00b7 ') : ''); };
+      if (!(rule === 'tr_tp' || rule === 'tr_slp')) { done(null); return; }
+      var sb = window.__stSB, uid = window.currentUser && window.currentUser.id, tries = [0, 4000, 10000], i = 0;
+      if (!sb || !uid) { done(null); return; }
+      var look = function () { try { sb.from('trades_inbox').select('entry_price,exit_price,unit_size,dist_unit,direction').eq('token', uid).eq('ticket', Number(k)).maybeSingle()
+          .then(function (r) { var row = r && r.data; if (row || i >= tries.length) done(row || null); else setTimeout(look, tries[i++]); }, function () { done(null); }); } catch (e) { done(null); } };
+      i = 1; look();
     }
     /* A trade on an account kept separate (11 Oct 2026). Nestor tests gold on a demo whose EA allows ten trades a day
        while his main account allows one, both EAs on the same sync token: "will i get nudges that i have breached my day
@@ -20073,7 +20093,9 @@ try {
         if (cur.closed && raw.close_reason && isFinite(cAt) && fresh(cAt) && !handled['t' + k]) {
           handled['t' + k] = 1;
           var rule = trCloseRule(raw, cur, k);
-          if (rule && !other('t')) raise([{ rule: rule, text: trText('nudge.' + rule, cur, Number(cur.pnl) || 0) }], k);
+          if (rule && !other('t')) { var c2 = Object.assign({}, cur, { login: raw.login });
+            if (/^tr_(tp|sl|slp|beout)$/.test(rule)) trCloseX(k, raw, cur, rule, function (x) { raise([{ rule: rule, text: trText('nudge.' + rule, c2, Number(cur.pnl) || 0).replace(/\.$/, '') + x + '.' }], k); });
+            else raise([{ rule: rule, text: trText('nudge.' + rule, c2, Number(cur.pnl) || 0) }], k); }
         }
       } catch (e) {}
     }
@@ -20157,7 +20179,8 @@ try {
       showCard(list);
       /* Phone nudges (2 Oct 2026): the server pushes a nudge to the phone a few seconds after the event unless a window
          SHOWED it - this window, if you are looking at it, says so (seen:<key>, the same cross-device claim table). */
-      if (document.visibilityState === 'visible') list.forEach(function (x) { try { _claimSessionAlertCloud('seen:' + x.key, 0); } catch (e) {} });
+      // ...except a trade's target or stop hit, which goes to the phone as well (27 Oct 2026, Nestor: "a nudge/alarm sent to the PC and phone")
+      if (document.visibilityState === 'visible') list.forEach(function (x) { if (/^tr_(tp|sl|slp|beout)$/.test(x.rule)) return; try { _claimSessionAlertCloud('seen:' + x.key, 0); } catch (e) {} });
       // A visible window claims first, so the sound comes from the screen you are looking at.
       setTimeout(function () { own(list); }, (document.visibilityState === 'visible') ? 0 : 1500);
     }
@@ -95006,7 +95029,10 @@ window.__stAZ = (function () {
       if (!x.open && x.exit > 0) grid.push([T('Exit', 'Salida'), x.exit.toFixed(dg) + (tc ? ' \u00b7 TP' : ''), '']);
       var res = []; if (isFinite(dist)) res.push(sg(dist) + fmtU(Math.abs(dist), su) + ' ' + uLbl(su)); if (isFinite(Rv)) res.push(sg(Rv) + Math.abs(Rv).toFixed(2) + 'R');
       if (res.length) grid.push([x.open ? T('Now', 'Ahora') : T('Result', 'Resultado'), res.join(' · '), cl(isFinite(Rv) ? Rv : dist)]);
-      if (tc && Math.abs(tc.slip) >= (u0.pips || u0.pts || 0) * 0.05) grid.push([T('TP fill', 'Ejecución TP'), sg(tc.slip) + fmtU(Math.abs(tc.slip), su) + ' ' + uLbl(su) + ' (' + tc.tp.toFixed(dg) + ' \u2192 ' + x.exit.toFixed(dg) + ')', '']);
+      // how its target filled, in words (26 Oct 2026, Nestor did not understand "TP fill 0.5"): at, short of or past it
+      if (tc) { var u1 = u0.pips || u0.pts || 0, gap = fmtU(Math.abs(tc.slip), su) + ' ' + uLbl(su);
+        var tw = Math.abs(tc.slip) < u1 * 0.05 ? T('Filled at the target', 'Ejecutado en el objetivo') : (tc.slip < 0 ? T('Filled ' + gap + ' short of the target', 'Ejecutado ' + gap + ' antes del objetivo') : T('Filled ' + gap + ' past the target', 'Ejecutado ' + gap + ' más allá del objetivo'));
+        grid.push(['TP', tw + ' (' + tc.tp.toFixed(dg) + ' \u2192 ' + x.exit.toFixed(dg) + ')', '']); }
       if (x.pnl != null && isFinite(x.pnl)) grid.push(['P&L', sg(x.pnl) + money(x.pnl), cl(x.pnl)]);
       return '<div class="strp-nc-item"><div class="strp-nc-title">' + esc(title) + '</div><div class="strp-nc-when">' + esc(when) + '</div><div class="strp-nc-grid">'
         + grid.map(function(r){ return '<div class="strp-nc-k">' + esc(r[0]) + '</div><div class="strp-nc-v' + r[2] + '">' + esc(r[1]) + '</div>'; }).join('') + '</div></div>'; };
@@ -96540,7 +96566,8 @@ window.__stAZ = (function () {
     var TM = window.__stTM, st = TM ? TM.state(x.r) : 'line';
     if (st !== 'on') { LT.k = null; linesAll(); eaMsg(TM ? TM.whyTxt(st) : '', { k: 'cmd', head: T('Not sent to MT5', 'No enviado a MT5'), red: true }); return; }
     var dg = PS(p).digits, nm = { sl: 'SL', tp: 'TP', be: 'BE', ts: 'T' + (ix + 1), pc: 'P' + (ix + 1) }[kind], pr = LT.price;
-    ltAsk(p, T('Move ' + nm + ' to ', 'Mover ' + nm + ' a ') + pr.toFixed(dg) + T(' in MT5?', ' en MT5?'), function(yes){
+    var mAt = (kind === 'sl' || kind === 'tp') ? plMoneyAt(x, pr) : NaN;   // the same money as its tag
+    ltAsk(p, T('Move ' + nm + ' to ', 'Mover ' + nm + ' a ') + pr.toFixed(dg) + (isFinite(mAt) ? ' (' + plSg(mAt, plCur()) + ')' : '') + T(' in MT5?', ' en MT5?'), function(yes){
       if (!yes || LT.k !== k) { if (LT.k === k) LT.k = null; linesAll(); return; }
       LT.wait = true; linesAll();
       TM.send(x.r, kind, pr, ix).then(function(out){
@@ -97761,13 +97788,24 @@ window.__stAZ = (function () {
   function plLineC(o){ var t = String(o.title || ''); if (t === 'Entry' || t === 'Entrada') return '#2962ff'; if (/^SL/.test(t)) return '#f23645'; if (t === 'TP') return '#089981'; return o.color; }
   // a tag: TradingView's - BUY 13.5 · +1.54R, TP 2.0R, SL −1R; the mouse over one opens it to the money and its close button; the
   // other lines (BE, the steps) a word in their colour, stepped left of a tag on their row
+  // An open trade's money at a price level (26 Oct 2026, Nestor: his 5R target at £500 risk read £2,800 - it is about £2,500): lots x the
+  // distance from the entry x what a price move of 1.0 makes on one lot in the account's money - EA 9.16's "vpu"; before it, MT5's own
+  // profit on the trade over the distance it has moved (once it has moved 3 pips); else R x the risk at its stop now. The tags, their
+  // hover and a drag's question all come from here (it was R x the largest risk seen, taken before the stop was anchored at the fill).
+  function plVpu(x){ var r = x.r, tk = x.tk, st = (LV.set || {})[String(r.symbol) + '|' + String(r.login)] || null; if (st && +st.vpu > 0) return +st.vpu;
+    var lots = +r.lots || 0, mv = (x.long ? 1 : -1) * ((+tk.px || 0) - (+tk.op || 0)), pip = lvPip();
+    return (lots > 0 && Math.abs(mv) >= 3 * pip && isFinite(+tk.pnl) && +tk.pnl !== 0) ? Math.abs(+tk.pnl / (mv * lots)) : 0; }
+  function plMoneyAt(x, price){ var lots = +x.r.lots || 0, op = +x.tk.op, v = plVpu(x), d = x.long ? 1 : -1; if (!(price > 0) || !(op > 0)) return NaN;
+    if (v > 0 && lots > 0) return d * (price - op) * lots * v;
+    var rk = +x.r.risk > 0 ? +x.r.risk : (+x.r.risk0 || 0); return (rk > 0 && +x.tk.rpx > 0) ? d * (price - op) / +x.tk.rpx * rk : NaN; }
+  window.__stPlMoneyAt = plMoneyAt;
   function plTags(p, dm){ var box = p._plt, L = p._plLv || [];
     if (!PL.on || !S || !S.live || !L.length || p._plHide) { if (box && box.firstChild) box.innerHTML = ''; p._plR = []; return; }
     var D = p.el.ownerDocument; if (!box || !box.isConnected) { box = p._plt = D.createElement('div'); box.className = 'pl-tags'; p.el.appendChild(box); box.addEventListener('click', plTagClick); box.addEventListener('pointerdown', function(e){ e.stopPropagation(); }); }
     var cur = plCur(), want = [], byT = {};
     L.forEach(function(l){ var tk = l.x.tk, t = String(l.o.title || ''), k = String(l.x.r.ticket); (byT[k] = byT[k] || { x: l.x, ls: [] }).ls.push({ l: l, t: t }); });
     Object.keys(byT).forEach(function(k){ var g = byT[k], x = g.x, tk = x.tk, r = x.r, d = x.long ? 1 : -1, risk = +(r.risk0 || r.risk) || 0, lots = +r.lots || 0, R = isFinite(+tk.r) ? +tk.r : NaN, pnl = isFinite(+tk.pnl) ? +tk.pnl : null;
-      var at = function(pr){ return tk.rpx > 0 ? d * (pr - tk.op) / tk.rpx : NaN; }, mon = function(v){ return (risk > 0 && isFinite(v)) ? plSg(v * risk, cur) + '  ·  ' : ''; };
+      var at = function(pr){ return tk.rpx > 0 ? d * (pr - tk.op) / tk.rpx : NaN; }, mon = function(pr){ var m = plMoneyAt(x, pr); return isFinite(m) ? plSg(m, cur) + '  ·  ' : ''; };
       var be = false; g.ls.forEach(function(q){ if (/^SL/.test(q.t) && /BE/.test(q.t)) be = true; });
       var side = (x.long ? 'BUY ' : 'SELL ') + (Math.round(lots * 100) / 100);
       want.push({ key: k + '|e', tag: 1, y: yOf(p, tk.op), c: '#2962ff', tk: k,
@@ -97775,7 +97813,7 @@ window.__stAZ = (function () {
       g.ls.forEach(function(q){ var l = q.l, t = q.t, rr = at(l.price), wait = l.k && LT.k === l.k && LT.wait;
         if (t === 'Entry' || t === 'Entrada' || (/^SL/.test(t) && be)) return;
         if (/^SL/.test(t) || t === 'TP') { var kk = /^SL/.test(t) ? 'SL' : 'TP', v = wait ? T('sending…', 'enviando…') : (kk === 'TP' && isFinite(rr) ? (rr < 0 ? '−' : '') + Math.abs(rr).toFixed(1) + 'R' : plR1(rr));
-          want.push({ key: k + '|' + kk, tag: 1, y: yOf(p, l.price), c: kk === 'SL' ? '#f23645' : '#089981', html: '<span class="k">' + kk + '</span><span class="v">' + esc(v) + '</span><span class="k2">' + kk + '</span><span class="v2">' + esc(mon(rr) + plR(rr, 1)) + '</span>' }); return; }
+          want.push({ key: k + '|' + kk, tag: 1, y: yOf(p, l.price), c: kk === 'SL' ? '#f23645' : '#089981', html: '<span class="k">' + kk + '</span><span class="v">' + esc(v) + '</span><span class="k2">' + kk + '</span><span class="v2">' + esc(mon(l.price) + plR(rr, 1)) + '</span>' }); return; }
         var w = t === 'BE' ? T('Break-even', 'Break-even') + (isFinite(rr) ? T(' at ', ' en ') + plR1(rr) : '') : t;
         want.push({ key: k + '|' + t, tag: 0, y: yOf(p, l.price), c: l.c, html: '<span>' + esc(w + (wait ? ' · ' + T('sending…', 'enviando…') : '')) + '</span>' }); }); });
     var have = {}, used = {}; Array.prototype.forEach.call(box.children, function(c){ have[c._k] = c; });

@@ -50,8 +50,8 @@
     await W(300);
     var c1 = P._tmCardText(0, 8801), c2 = P._tmCardText(0, 8802);
     ok('Live Charts card, closed at its TP: the real +19.5 pips · +4.72R (money over risk), the exit marked TP', c1 && /Result\+19\.5 pips · \+4\.72R/.test(c1) && /TP/.test(c1), c1);
-    ok('...MT5\'s fill beside it (−0.5 pips, TP price → fill price) and the real money', c1 && /TP fill−0\.5 pips/.test(c1) && /2,?359\.81/.test(c1), c1);
-    ok('a trade closed before its TP: its own result (+12 pips, 3.00R from the money), no TP fill line', c2 && /Result\+12(\.0)? pips · \+3\.00R/.test(c2) && !/TP fill/.test(c2), c2);
+    ok('...how its target filled, in words (27 Oct 2026): "Filled 0.5 pips short of the target" (TP price → fill price), and the real money', c1 && /TPFilled 0\.5 pips short of the target \(/.test(c1) && /2,?359\.81/.test(c1), c1);
+    ok('a trade closed before its TP: its own result (+12 pips, 3.00R from the money), no line about its target', c2 && /Result\+12(\.0)? pips · \+3\.00R/.test(c2) && !/short of the target|at the target|past the target/.test(c2), c2);
     P._lvTr([]);
   } catch (e) { ok('test ran', false, String(e && e.stack || e)); }
   window.__stLcForce = false;
