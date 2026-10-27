@@ -79630,7 +79630,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
    - Closing and managing an open trade is never blocked. While locked, the EA closes a trade opened elsewhere (MT5's phone app) when
      "Close trades opened elsewhere while locked" is on - on unless switched off (Nestor: yes, 24 Oct 2026).
    window.__stRules: check({ acct | login, symbol, riskMoney, riskR }) -> { ok } or { ok: false, kind: 'lock' | 'order', rule, why,
-   until, code }; state(acct); breakFor(acct, '1h' | '2h' | '4h' | 'session' | 'tomorrow'); the st-rules-change event on window. ---- */
+   until, code }; state(acct); breakFor(acct, '1h' | '2h' | '4h' | 'session' | 'tomorrow' | { until: ms } (up to a day)); the st-rules-change event on window. ---- */
 (function () {
   'use strict';
   var T = function (en, es) { try { return window._stT ? window._stT(en, es) : en; } catch (e) { return en; } };
@@ -79861,6 +79861,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     if (kind === '1h' || kind === '2h' || kind === '4h') u = now + parseInt(kind, 10) * 3600000;
     else if (kind === 'session') u = segAt(now).next;
     else if (kind === 'tomorrow') u = nextMidnight();
+    else if (kind && typeof kind === 'object' && +kind.until > now) { u = Math.min(Math.round(+kind.until), now + 86400000); kind = 'custom'; }   // a length of the member's own (the chart's Take a break), up to a day
     if (!(u > now)) return null;
     var b = acc.ruleBreak;
     if (b && b.until > now && b.until >= u) return b;   // a break is never cut short
@@ -91378,6 +91379,14 @@ window.__stAZ = (function () {
   .pl-bk > button { display: block; width: 100%; height: 36px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--text); font: 13px var(--pl-font); text-align: left; cursor: pointer; }
   @media (hover: hover) { .pl-bk > button:hover { background: rgba(255,255,255,.06); } }
   .pl-bkb { display: flex; justify-content: flex-end; gap: 6px; padding: 2px 0 2px; }
+  .pl-bkc { margin: 6px 0 0; padding: 8px 4px 2px; border-top: 1px solid var(--border-2); display: flex; flex-direction: column; gap: 6px; }
+  .pl-bkr { display: flex; align-items: center; gap: 5px; } .pl-bkr > span { width: 40px; flex: none; color: var(--text-dim); font: 12px var(--pl-font); } .pl-bkr em { font-style: normal; color: var(--text-dim); font: 12px var(--pl-font); }
+  .pl-bki { width: 44px; height: 30px; padding: 0 6px; border: 1px solid var(--border-2); border-radius: 4px; background: var(--bg); color: var(--text); font: 13px var(--pl-font); font-variant-numeric: tabular-nums; text-align: right; -moz-appearance: textfield; }
+  .pl-bki::-webkit-outer-spin-button, .pl-bki::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; } .pl-bki.t { width: 96px; text-align: left; color-scheme: dark; }
+  .pl-bki:focus { outline: none; border-color: var(--st-action-pink, #cc3d8a); }
+  .pl-bkn { margin-left: auto; height: 30px; padding: 0 12px; border: 1px solid var(--border-2); border-radius: 4px; background: transparent; color: var(--text); font: 600 12px var(--pl-font); cursor: pointer; }
+  @media (hover: hover) { .pl-bkn:hover { background: rgba(255,255,255,.06); } }
+  .pl-bke { padding: 0 2px; color: #f7525f; font: 11.5px var(--pl-font); }
   .pl-bkb button { height: 32px; padding: 0 14px; border: 1px solid var(--border-2); border-radius: 4px; background: transparent; color: var(--text); font: 600 12px var(--pl-font); cursor: pointer; }
   .pl-bkb button.go { border-color: #f472b6; background: #f472b6; color: #14121a; }
   .ph-go.lock { display: inline-flex; align-items: center; gap: 7px; padding: 0 14px; background: var(--pl-pane2); color: var(--pl-txt); letter-spacing: .04em; } .ph-go.lock svg { width: 15px; height: 15px; flex: none; color: #f7525f; }
@@ -97345,24 +97354,41 @@ window.__stAZ = (function () {
   setInterval(function(){ if (!PL.on) return; var due = false;
     Array.prototype.forEach.call(SD.querySelectorAll('.pl-cd[data-u]'), function(b){ var u = +b.getAttribute('data-u'), t = plCd(u); if (b.textContent !== t) b.textContent = t; if (u <= Date.now() && !PL.cdDone[u]) { PL.cdDone[u] = true; due = true; } });
     if (due) { PL.rcAt = 0; try { paintMM(); platPaint(); } catch (e) {} } }, 1000);   // at 0:00 the lock goes (once for each end)
+  try { document.addEventListener('keydown', function(ev){ var t = ev.target; if (ev.key !== 'Enter' || !t || !t.closest || !t.closest('.pl-bkc')) return; ev.preventDefault(); ev.stopPropagation(); plBkCustom(t.hasAttribute('data-plbku') ? 'until' : 'for'); }, true); } catch (e) {}
   try { window.addEventListener('st-rules-change', function(){ PL.rcAt = 0; try { if (PL.on && S) { paintMM(); platPaint(); } } catch (e) {} }); } catch (e) {}
   // Take a break: how long, then once more to be sure (nothing lifts it early)
   function plBrkMenu(anchor, pick){ var e = lvOwnEA(); if (!e) return; var nm = String(lvAcctName()).split(' · ')[0], h = '';
     var lbl = { '1h': T('1 hour', '1 hora'), '2h': T('2 hours', '2 horas'), '4h': T('4 hours', '4 horas'), session: T('Until the next session', 'Hasta la próxima sesión'), tomorrow: T('Until tomorrow', 'Hasta mañana') };
+    var cu = /^u\d+$/.test(String(pick || '')) ? +String(pick).slice(1) : 0;   // a custom end (ms)
     if (!pick) h = '<div class="pl-bk"><h6>' + esc(T('Take a break', 'Tómate un descanso')) + '</h6><p>' + esc(T('No new entries until it ends. Open trades can still be managed and closed.', 'Sin entradas nuevas hasta que acabe. Las operaciones abiertas se pueden seguir gestionando y cerrando.')) + '</p>'
-      + ['1h', '2h', '4h', 'session', 'tomorrow'].map(function(k){ return '<button type="button" data-plbrkv="' + k + '">' + esc(lbl[k]) + '</button>'; }).join('') + '</div>';
-    else { var n = parseInt(pick, 10), end = n ? T('until ', 'hasta las ') + hm(Math.floor((Date.now() + n * 3600000) / 1000)) : (pick === 'session' ? T('until the next session opens', 'hasta que abra la próxima sesión') : T('until midnight', 'hasta medianoche'));
-      h = '<div class="pl-bk"><h6>' + esc(T('Take a break', 'Tómate un descanso') + ' · ' + lbl[pick]) + '</h6><p>' + esc(T('No new entries on ' + nm + ' ' + end + '. It can’t be lifted early.', 'Sin entradas nuevas en ' + nm + ' ' + end + '. No se puede levantar antes.')) + '</p>'
-        + '<div class="pl-bkb"><button type="button" data-plbrkno="1">' + esc(T('Cancel', 'Cancelar')) + '</button><button type="button" class="go" data-plbrkgo="' + pick + '">' + esc(T('Start the break', 'Empezar el descanso')) + '</button></div></div>'; }
-    if (anchor) { openMenu(anchor, h, 'plbrk'); var mw = $('stpr-win'), w = mw.getBoundingClientRect(), a = anchor.getBoundingClientRect(); PL.bkB = a.top - w.top + mw.scrollTop - 6; }
+      + ['1h', '2h', '4h', 'session', 'tomorrow'].map(function(k){ return '<button type="button" data-plbrkv="' + k + '">' + esc(lbl[k]) + '</button>'; }).join('')
+      + '<div class="pl-bkc"><div class="pl-bkr"><span>' + esc(T('For', 'Durante')) + '</span><input class="pl-bki" data-plbkh="1" type="number" inputmode="numeric" min="0" max="24" step="1" placeholder="0" aria-label="' + esc(T('Hours', 'Horas')) + '"><em>h</em>'
+      + '<input class="pl-bki" data-plbkm="1" type="number" inputmode="numeric" min="0" max="59" step="5" placeholder="30" aria-label="' + esc(T('Minutes', 'Minutos')) + '"><em>min</em><button type="button" class="pl-bkn" data-plbkfor="1">' + esc(T('Next', 'Siguiente')) + '</button></div>'
+      + '<div class="pl-bkr"><span>' + esc(T('Until', 'Hasta')) + '</span><input class="pl-bki t" data-plbku="1" type="time" aria-label="' + esc(T('Until', 'Hasta')) + '"><button type="button" class="pl-bkn" data-plbkuntil="1">' + esc(T('Next', 'Siguiente')) + '</button></div>'
+      + '<div class="pl-bke" hidden></div></div></div>';
+    else { var n = cu ? 0 : parseInt(pick, 10), end = cu ? T('until ', 'hasta las ') + hm(Math.floor(cu / 1000)) + (new Date(cu).getDate() !== new Date().getDate() ? T(' tomorrow', ' de mañana') : '') : (n ? T('until ', 'hasta las ') + hm(Math.floor((Date.now() + n * 3600000) / 1000)) : (pick === 'session' ? T('until the next session opens', 'hasta que abra la próxima sesión') : T('until midnight', 'hasta medianoche')));
+      var ttl = cu ? plBkLen(cu - Date.now()) : lbl[pick];
+      h = '<div class="pl-bk"><h6>' + esc(T('Take a break', 'Tómate un descanso') + ' · ' + ttl) + '</h6><p>' + esc(T('No new entries on ' + nm + ' ' + end + '. It can’t be lifted early.', 'Sin entradas nuevas en ' + nm + ' ' + end + '. No se puede levantar antes.')) + '</p>'
+        + '<div class="pl-bkb"><button type="button" data-plbrkno="1">' + esc(T('Cancel', 'Cancelar')) + '</button><button type="button" class="go" data-plbrkgo="' + esc(pick) + '">' + esc(T('Start the break', 'Empezar el descanso')) + '</button></div></div>'; }
+    if (anchor) { openMenu(anchor, h, 'plbrk'); PL.bkA = anchor; var mw = $('stpr-win'), w = mw.getBoundingClientRect(), a = anchor.getBoundingClientRect(); PL.bkB = a.top - w.top + mw.scrollTop - 6;
+      setTimeout(function(){ if (menuFor !== 'plbrk' || !PL.bkA || !PL.bkA.isConnected) return; var w2 = mw.getBoundingClientRect(), a2 = PL.bkA.getBoundingClientRect(), m2 = mEl(); PL.bkB = a2.top - w2.top + mw.scrollTop - 6; if (m2) m2.style.top = Math.max(8, PL.bkB - m2.offsetHeight) + 'px'; }, 400); }   // the phone's sheet still sliding up: placed again where the button ends up
     else if (menuFor === 'plbrk') mEl().innerHTML = h; else return;
     var m = mEl(); if (m && PL.bkB != null) m.style.top = Math.max(8, PL.bkB - m.offsetHeight) + 'px'; }   // above the button: it sits at the panel's foot
+  function plBkLen(ms){ var m = Math.max(1, Math.round(ms / 60000)), h = Math.floor(m / 60); m = m % 60; return (h ? h + ' h' : '') + (h && m ? ' ' : '') + (m ? m + ' min' : ''); }
+  // the custom end: For h + min, or Until a time (today, or tomorrow when that time has passed) - a minute to a day ahead
+  function plBkCustom(how){ var m = mEl(), er = m && m.querySelector('.pl-bke'), now = Date.now(), u = 0; if (!m) return;
+    if (how === 'for') { var hh = Math.max(0, Math.floor(+(m.querySelector('[data-plbkh]') || {}).value || 0)), mm = Math.max(0, Math.floor(+(m.querySelector('[data-plbkm]') || {}).value || 0)); u = now + (hh * 60 + mm) * 60000; }
+    else { var v = String((m.querySelector('[data-plbku]') || {}).value || ''), mt = /^(\d{1,2}):(\d{2})/.exec(v); if (mt) { var d = new Date(); d.setHours(+mt[1], +mt[2], 0, 0); if (d.getTime() <= now + 30000) d.setDate(d.getDate() + 1); u = d.getTime(); } }
+    if (!(u > now + 59000) || u > now + 86400000) { if (er) { er.textContent = how === 'for' ? T('Type a length from 1 minute to 24 hours.', 'Escribe una duración de 1 minuto a 24 horas.') : T('Pick a time.', 'Elige una hora.'); er.hidden = false; } return; }
+    plBrkMenu(null, 'u' + Math.round(u)); }
   // the platform's own clicks for the rules and Check my plan (a computer's and a phone's alike)
   function plRulesClick(t){ var b;
+    if (t.closest('[data-plbkfor]')) { plBkCustom('for'); return true; }
+    if (t.closest('[data-plbkuntil]')) { plBkCustom('until'); return true; }
     if ((b = t.closest('[data-plbrk]'))) { plBrkMenu(b, null); return true; }
     if ((b = t.closest('[data-plbrkv]'))) { plBrkMenu(null, b.getAttribute('data-plbrkv')); return true; }
     if (t.closest('[data-plbrkno]')) { closeMenu(); return true; }
-    if ((b = t.closest('[data-plbrkgo]'))) { var e = lvOwnEA(), r = null; closeMenu(); try { r = e && window.__stRules ? window.__stRules.breakFor({ login: e.lg }, b.getAttribute('data-plbrkgo')) : null; } catch (er) {}
+    if ((b = t.closest('[data-plbrkgo]'))) { var e = lvOwnEA(), r = null; closeMenu(); var gv = b.getAttribute('data-plbrkgo'); try { r = e && window.__stRules ? window.__stRules.breakFor({ login: e.lg }, /^u\d+$/.test(gv) ? { until: +gv.slice(1) } : gv) : null; } catch (er) {}
       if (r && r.until) flash(T('On a break until ', 'En descanso hasta ') + hm(Math.floor(r.until / 1000))); PL.rcAt = 0; try { paintMM(); platPaint(); } catch (er) {} return true; }
     if (t.closest('[data-plplan]')) { if (window.__stPlanCheck) { try { snapPlan(); } catch (er) {} } return true; }
     return false; }

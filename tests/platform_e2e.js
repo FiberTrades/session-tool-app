@@ -239,6 +239,24 @@
     check('locked, the open trade is still managed: Move to BE, Close 50% and Close on', ab2.join(',') === 'tobe:on,part:on,partmenu:on,close:on', ab2);
     delete acP.ruleBreak; window.dispatchEvent(new CustomEvent('st-rules-change')); await W(600);
     check('the break over: Execute back, the lock gone', $('#stpr-mm .pl-x').textContent === 'Execute' && !$('#stpr-mm .pl-x').disabled && !$('#stpr-mm .pl-lks'), [$('#stpr-mm .pl-x').textContent, !!$('#stpr-mm .pl-lks')]);
+    // a break of his own length (Nestor, 26 Oct 2026: "a user can type in how long for"): For h + min, or Until a time; the same confirm
+    var setv = function (sel, v) { var i0 = $('#stpr-menu ' + sel); i0.value = v; i0.dispatchEvent(new Event('input', { bubbles: true })); };
+    $('#stpr-mm [data-plbrk]').click(); await W(300);
+    check('Take a break: the presets, then For [h] [min] and Until [time]', $('#stpr-menu [data-plbkh]') && $('#stpr-menu [data-plbkm]') && $('#stpr-menu [data-plbku]') && $('#stpr-menu [data-plbkfor]') && $('#stpr-menu [data-plbkuntil]') && document.querySelectorAll('#stpr-menu [data-plbrkv]').length === 5, $('#stpr-menu').textContent.slice(0, 160));
+    $('#stpr-menu [data-plbkfor]').click(); await W(200);
+    check('...nothing typed: it says what to type, no break', $('#stpr-menu .pl-bke') && !$('#stpr-menu .pl-bke').hidden && /1 minute to 24 hours/.test($('#stpr-menu .pl-bke').textContent) && !acP.ruleBreak);
+    setv('[data-plbkh]', '1'); setv('[data-plbkm]', '30'); $('#stpr-menu [data-plbkfor]').click(); await W(250);
+    var t90 = new Date(Date.now() + 90 * 60000), hm90 = String(t90.getHours()).padStart(2, '0') + ':' + String(t90.getMinutes()).padStart(2, '0');
+    check('...1 h 30: asks once more, until that time, can\'t be lifted early', /Take a break · 1 h 30 min/.test($('#stpr-menu').textContent) && $('#stpr-menu').textContent.indexOf('until ' + hm90) >= 0 && /can’t be lifted early/.test($('#stpr-menu').textContent), $('#stpr-menu').textContent);
+    $('#stpr-menu [data-plbrkgo]').click(); await W(600);
+    check('...Start the break: an hour and a half on this account, Execute locked', acP.ruleBreak && Math.abs(acP.ruleBreak.until - Date.now() - 90 * 60000) < 5000 && acP.ruleBreak.kind === 'custom' && $('#stpr-mm .pl-x.lock'), acP.ruleBreak);
+    delete acP.ruleBreak; window.dispatchEvent(new CustomEvent('st-rules-change')); await W(400);
+    $('#stpr-mm [data-plbrk]').click(); await W(300);
+    var t2 = new Date(Date.now() + 2 * 3600000 + 5 * 60000), hm2 = String(t2.getHours()).padStart(2, '0') + ':' + String(t2.getMinutes()).padStart(2, '0');
+    setv('[data-plbku]', hm2); $('#stpr-menu [data-plbkuntil]').click(); await W(250);
+    check('...Until a time: the confirm names it', $('#stpr-menu').textContent.indexOf('until ' + hm2) >= 0 && $('#stpr-menu [data-plbrkgo]'), $('#stpr-menu').textContent);
+    $('#stpr-menu [data-plbrkno]').click(); await W(200);
+    check('...Cancel: no break', !acP.ruleBreak && !$('#stpr-menu.show') && !$('#stpr-mm .pl-x.lock'));
 
     // ---- Session Indicator once, the theme, the range buttons ----
     var si0 = P._cfg().mini; $('[data-plsi]').click(); await W(300);
