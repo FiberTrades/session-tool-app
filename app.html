@@ -19775,7 +19775,9 @@ try {
         if (seenT[sig]) return; seenT[sig] = 1;
         net += outOf(tr).net; if (tk) inJ[String(tk)] = 1;
       });
-      Object.keys(st.closes).forEach(function (tk) { var c = st.closes[tk]; if (!inJ[tk] && typeof c.pnl === 'number') { net += c.pnl; un += c.pnl; } });
+      Object.keys(st.closes).forEach(function (tk) { var c = st.closes[tk]; if (inJ[tk] || typeof c.pnl !== 'number') return;
+        if (acc) { var ca = trAccount(c.lg || loginOf[tk]); if (ca && ca.id !== acc.id) return; }   // another account's trade (27 Oct 2026: the 70K's +£2,357 on OneFunded's Today)
+        net += c.pnl; un += c.pnl; });
       return { net: net, unimported: un };
     }
     // One full trade's money at risk right now: the EA's own setting, else the plan's max, else the last trade.
@@ -20092,7 +20094,7 @@ try {
         var st = dayState(), changed = false, found = [];
         var oAt = msOf(raw.opened_at), cAt = msOf(raw.closed_at);
         if (isFinite(oAt) && !(k in st.opens)) { st.opens[k] = oAt; changed = true; }
-        if (cur.closed && isFinite(cAt) && !(k in st.closes)) { st.closes[k] = { at: cAt, res: (window.__stLive && window.__stLive.resultFor) ? (window.__stLive.resultFor(k, cur.pnl) || resultOf(cur.pnl)) : resultOf(cur.pnl), pnl: (cur.pnl != null && isFinite(Number(cur.pnl))) ? Number(cur.pnl) : null }; changed = true; }
+        if (cur.closed && isFinite(cAt) && !(k in st.closes)) { st.closes[k] = { at: cAt, res: (window.__stLive && window.__stLive.resultFor) ? (window.__stLive.resultFor(k, cur.pnl) || resultOf(cur.pnl)) : resultOf(cur.pnl), pnl: (cur.pnl != null && isFinite(Number(cur.pnl))) ? Number(cur.pnl) : null, lg: raw.login != null ? String(raw.login) : null }; changed = true; }
         var rk = Number(raw.risk);                            // EA 8.6+; the first seen, and the largest
         /* The first 30 s are the trade SETTLING (Nestor, 19 Oct 2026: "this nudge is wrong, risk is still the same, i havent moved
            anything"): MT5 fills, then the EA moves the stop onto the real fill 50 ms later, and a risk announced in between (£587.50 for a
@@ -55774,6 +55776,8 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
         if (sc && sc.kind === 'account' && sc.account) want = sc.account.id;
       } catch (e) {}
       if (!want || !list.some(a => a.id === want)) want = data.activeAccountId;
+      const _card = _riskFormAccountId();   // the form inside an opened account: that account, always
+      if (_card && list.some(a => a.id === _card)) want = _card;
       if (want && list.some(a => a.id === want)) sel.value = want;
     }
     // Returns the rules object for the account currently selected in the
@@ -55781,9 +55785,18 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
     // doesn't have one yet. Returns null if no account is selectable
     // (which shouldn't happen given the picker is populated on open, but
     // guards against the empty-accounts edge case).
-    function getEditingRiskRules() {
+    /* The account the Risk rules form edits. Since 23 Oct 2026 the form sits inside an opened account in Settings -> Accounts, and it
+       edits THAT account, whatever the picker or the view scope say (27 Oct 2026: Nestor's edits to a second account, OneFunded 10K,
+       went into his 70K's rules and reached its EA - a redraw re-pointed the picker at the view scope's account after the card had
+       been filled). Outside a card (the old Risk rules section), the picker. */
+    function _riskFormAccountId() {
+      try { const inp = document.getElementById('settings-risk-max-trades'), it = inp && inp.closest('#settings-accounts-list .sacc-item[data-account-id]'); if (it) return it.getAttribute('data-account-id'); } catch (e) {}
       const sel = document.getElementById('settings-risk-account-select');
-      const id = sel && sel.value;
+      return sel ? sel.value : null;
+    }
+    window.__stRiskFormAcc = _riskFormAccountId;
+    function getEditingRiskRules() {
+      const id = _riskFormAccountId();
       if (!id) return null;
       const acc = (data.accounts || []).find(a => a.id === id);
       if (!acc) return null;
@@ -56324,6 +56337,8 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
     const _rAccSel = document.getElementById('settings-risk-account-select');
     if (_rAccSel) {
       _rAccSel.addEventListener('change', loadRiskRulesIntoSettingsInputs);
+      // the picker follows the opened account the form sits in (the old Risk rules link sets it, then the account opens)
+      _rAccSel.addEventListener('change', () => { const c = _riskFormAccountId(); if (c && _rAccSel.value !== c && [].some.call(_rAccSel.options, o => o.value === c)) _rAccSel.value = c; });
     }
     // Mapping table — one row per loss/risk rule. Centralises everything
     // about a rule (DOM ids, storage keys, default placeholders) so the
