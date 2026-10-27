@@ -17,7 +17,7 @@ GEO = """(function(){
   var r=function(e){if(!e)return null;var b=e.getBoundingClientRect();return {l:Math.round(b.left),t:Math.round(b.top+scrollY),r:Math.round(b.right),b:Math.round(b.bottom+scrollY),w:Math.round(b.width),h:Math.round(b.height)};};
   var f=document.getElementById('bloomberg-floater'), hd=document.querySelector('.header'), meta=document.querySelector('.meta');
   var cells=[].slice.call(document.querySelectorAll('.meta .meta-cell')).map(function(c){var v=c.querySelector('.meta-value'),l=c.querySelector('.meta-label');return {c:r(c),v:r(v),lab:r(l)};});
-  return {h1:r(document.querySelector('.header h1')), tabs:r(document.querySelector('.tabs')), meta:r(meta), metaInHeader: !!(meta&&hd&&hd.contains(meta)),
+  return {h1fs:parseFloat(getComputedStyle(document.querySelector('.header h1')).fontSize),h1:r(document.querySelector('.header h1')), tabs:r(document.querySelector('.tabs')), meta:r(meta), metaInHeader: !!(meta&&hd&&hd.contains(meta)),
           tv: f&&!f.hidden&&f.offsetParent ? r(f) : null, tvIn: f&&hd&&hd.contains(f)?'header':(f&&f.parentNode&&f.parentNode.className||''), tvOn: hd.classList.contains('tv-on'),
           news: r(document.getElementById('bias-news-sec')), cells: cells, sx: document.documentElement.scrollWidth, vw: innerWidth,
           tabsI: (function(){var ts=[].slice.call(document.querySelectorAll('.tabs .tab')).filter(function(t){return t.offsetWidth>0;});var a=document.querySelector('.tabs .tab.active');
@@ -83,6 +83,12 @@ def desk(W, H):
         c.eval(OPEN_TV); time.sleep(3); res['on'] = c.eval(GEO); snap(c, '%d_on' % W)
         c.eval(CLOSE_TV); time.sleep(1); res['off'] = c.eval(GEO); snap(c, '%d_off' % W)
         c.eval(OPEN_TV); time.sleep(2); res['on2'] = c.eval(GEO)
+        # Spanish on Session Review, the longest title, with the TV on and off
+        c.eval("(function(){setLanguage('es');document.querySelector('.tab[data-page=review]').click();window.scrollTo(0,0);return 1;})()"); time.sleep(1.2)
+        es_on = c.eval(GEO); c.eval(CLOSE_TV); time.sleep(0.8); es_off = c.eval(GEO)
+        c.eval("(function(){setLanguage('en');document.querySelector('.tab[data-page=bias]').click();window.scrollTo(0,0);return 1;})()"); time.sleep(1)
+        c.eval(OPEN_TV); time.sleep(1.5)
+        res['es'] = {'on': es_on, 'off': es_off}
         res['size'] = c.eval(SIZE_JS)   # − to the smallest, then + to the biggest this screen allows
         c.call('Page.reload'); time.sleep(2); c.eval(bt.PRELUDE); time.sleep(3); c.eval(bt.PRELUDE); c.eval(OPEN_TV); time.sleep(2)
         res['kept'] = c.eval(GEO); snap(c, '%d_big' % W)
@@ -101,7 +107,14 @@ def desk(W, H):
         check(tag + 'TV size: the bigger the TV, the tighter the info ("these move left"), the smaller, the wider', all(b <= a for a, b in zip(gs, gs[1:])) and (len(gs) < 2 or gs[0] > gs[-1]), {'widths': ws, 'gaps': gs})
     check(tag + 'TV size: remembered on this device after a reload', g['kept']['tv'] and g['kept']['tv']['w'] == ws[-1], [g['kept']['tv'], ws[-1]])
     check(tag + 'no sideways scroll', on['sx'] <= on['vw'] and off['sx'] <= off['vw'], [on['sx'], off['sx'], on['vw']])
-    check(tag + 'title 76px tall line', on['h1'] and 60 <= on['h1']['h'] <= 100, on['h1'])
+    # "the name of tab should be a little bigger" (26 Oct 2026): 88px from ~1160px wide, 80-88 on a small laptop, always one line
+    fs_ok = (on['h1fs'] == 88) if W >= 1160 else (80 <= on['h1fs'] <= 88)
+    check(tag + 'title %.1fpx, one line with the TV on and off' % on['h1fs'], fs_ok and on['h1']['h'] <= on['h1fs'] * 1.1 and off['h1']['h'] <= off['h1fs'] * 1.1, [on['h1fs'], on['h1'], off['h1']])
+    if W >= 1100:
+        es = g['es']
+        check(tag + 'Spanish, the longest title ("Revisión de Sesión"): one line, clear of the info and the TV, TV on and off',
+              all(x['h1']['h'] <= x['h1fs'] * 1.1 and x['meta']['l'] >= x['h1']['l'] and (x['tv'] is None or x['tv']['l'] > x['h1']['r']) and (x['tvOn'] or x['meta']['l'] > x['h1']['r']) for x in (es['on'], es['off'])),
+              {'on': [es['on']['h1fs'], es['on']['h1'], es['on']['tv']], 'off': [es['off']['h1'], es['off']['meta']]})
     ti = on['tabsI']   # slimmer, more readable tabs (24 Oct 2026): 12.5px labels, every tab the same size, nothing cut off, the active one pink
     check(tag + 'tabs: 12.5px labels, all the same size, nothing cut off', ti['fs'] == '12.5px' and max(ti['ws']) - min(ti['ws']) <= 1 and max(ti['hs']) - min(ti['hs']) <= 1 and ti['over'] == 0, ti)
     check(tag + 'tabs: shorter boxes, the active one outlined pink', max(ti['hs']) <= 46 and ti['act'].replace(' ', '') in ('rgb(244,114,182)',), ti)
@@ -130,7 +143,7 @@ def desk(W, H):
         mid = abs((off['meta']['t'] + off['meta']['b']) / 2 - (off['h1']['t'] + off['h1']['b']) / 2)
         check(tag + 'TV off: the info centred on the title', mid <= 16, [off['meta'], off['h1']])
         check(tag + 'TV off: the cells end inside the page', off['meta']['r'] <= off['tabs']['r'] + 1, [off['meta'], off['tabs']])
-        check(tag + 'TV off: the page below moves up by the header only', off['tabs']['t'] < on['tabs']['t'] and (on['news']['t'] - off['news']['t']) == (on['tabs']['t'] - off['tabs']['t']), [on['tabs'], off['tabs'], on['news'], off['news']])
+        check(tag + 'TV off: the page below moves up by the header only', off['tabs']['t'] < on['tabs']['t'] and abs((on['news']['t'] - off['news']['t']) - (on['tabs']['t'] - off['tabs']['t'])) <= 1, [on['tabs'], off['tabs'], on['news'], off['news']])
         check(tag + 'TV on again: back in its slot', g['on2']['tv'] and g['on2']['tvOn'] and g['on2']['tabs']['t'] == on['tabs']['t'], [g['on2']['tv'], g['on2']['tabs']])
         if W == 1500:
             check('1500: Session News about 613px with the TV on', abs(on['news']['t'] - 613) <= 24, on['news'])
