@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "9.16"
+#property version   "9.17"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -364,6 +364,10 @@ bool   g_anchorPending=false;   // set at order time; cleared once the on-fill r
 string AimKey(ulong tk){ return "STAIM_"+IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN))+"_"+IntegerToString((long)tk); }
 double AimOf(ulong tk){ string k=AimKey(tk); return GlobalVariableCheck(k) ? GlobalVariableGet(k) : 0.0; }
 double ShownTP(ulong tk,double brokerTP){ double a=AimOf(tk); return (a>0 && brokerTP>0) ? a : brokerTP; }   // what everything shows
+// v9.17: the TP this EA put on MT5 for the trade. MT5's TP anywhere else means it was moved in MT5 itself (its chart, the phone app): the
+// target is then aimed exactly there.
+string AimBKey(ulong tk){ return "STAIMB_"+IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN))+"_"+IntegerToString((long)tk); }
+void   AimSetB(ulong tk,double btp){ GlobalVariableSet(AimBKey(tk),btp); }
 string AimGKey(string sym,string s){ return "STAIMG_"+IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN))+"_"+sym+"_"+s; }
 double AimSlip(string sym)
   {
@@ -428,7 +432,7 @@ void AimSeed(bool now=false)
                  n>0 ? ", with "+IntegerToString(n)+" learnt already" : "",") - next trigger ",DoubleToString(AimSlip(_Symbol),1)," pips past the aim");
    else Print("Session Terminal: no take profit on ",_Symbol," in this account's history - the target slippage starts at ",DoubleToString(AimSlip(_Symbol),1)," pips");
   }
-double AimNetPx(){ AimSeed(true); return (AimSlip(_Symbol)+1.0)*g_pip; }   // the broker's TP: this far past the aim
+double AimNetPx(){ AimSeed(true); return AimSlip(_Symbol)*g_pip; }   // v9.17: MT5's TP at the EA's trigger - this far past the aim (was + 1 pip)
 ulong  g_aimTk=0, g_aimClosing=0; uint g_aimAt=0;
 double g_aimPx=0.0; int g_aimDir=0;   // the price a close at the aim was sent at, and its side: learnt from the fill when it lands
 // v9.16: an open trade's aimed target reached by the price it closes at: closed at market, once a second at most; how far short the fill
@@ -442,7 +446,14 @@ void AimTick()
       ulong tk=PositionGetTicket(i); if(!PositionSelectByTicket(tk)) continue;
       if(PositionGetString(POSITION_SYMBOL)!=_Symbol || PositionGetInteger(POSITION_MAGIC)!=InpMagic) continue;
       double aim=AimOf(tk); if(aim<=0) continue;
-      if(PositionGetDouble(POSITION_TP)<=0){ GlobalVariableDel(AimKey(tk)); continue; }
+      double btp=PositionGetDouble(POSITION_TP);
+      if(btp<=0){ GlobalVariableDel(AimKey(tk)); GlobalVariableDel(AimBKey(tk)); continue; }
+      if(!GlobalVariableCheck(AimBKey(tk))) AimSetB(tk,btp);   // placed before 9.17, or the EA's own change didn't go through: taken as it is
+      else if(MathAbs(btp-GlobalVariableGet(AimBKey(tk)))>g_point*0.5)
+        {
+         aim=btp; GlobalVariableSet(AimKey(tk),aim); AimSetB(tk,btp);
+         Print("Session Terminal: TP on #",tk," moved in MT5 to ",DoubleToString(btp,g_digits)," - aimed there");
+        }
       int d=(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY) ? 1 : -1;
       double px=(d>0) ? SymbolInfoDouble(_Symbol,SYMBOL_BID) : SymbolInfoDouble(_Symbol,SYMBOL_ASK);
       if(px<=0) continue;
@@ -450,7 +461,10 @@ void AimTick()
       if(d*(px-trig)<-g_point*0.5) continue;                         // not there yet
       if(tk==g_aimTk && GetTickCount()-g_aimAt<1000) continue;        // one try a second
       g_aimTk=tk; g_aimAt=GetTickCount(); g_aimClosing=tk; g_aimPx=px; g_aimDir=d;
-      bool ok=trade.PositionClose(tk);
+      trade.LogLevel(LOG_LEVEL_NO); bool ok=trade.PositionClose(tk); trade.LogLevel(LOG_LEVEL_ERRORS);
+      // v9.17: MT5's TP sits at the same trigger - if it is closing the trade (the position frozen while it fills, 10029) or closed it
+      // first (10036, or gone), there is nothing to say; the TP's fill is learnt when it lands
+      if(!ok && (trade.ResultRetcode()==TRADE_RETCODE_POSITION_CLOSED || trade.ResultRetcode()==TRADE_RETCODE_FROZEN || !PositionSelectByTicket(tk))){ g_aimClosing=0; g_aimPx=0.0; continue; }
       // the fill: the result's price, else its deal's (a demo on 27 Oct 2026 answered 0.00000 for a close that filled at the aim);
       // still unknown, it is learnt when the close itself comes in (OnTradeTransaction)
       double fill=ok ? trade.ResultPrice() : 0.0;
@@ -992,7 +1006,18 @@ bool ResolveForOrder(int &dir,double &entry,double &slPrice,double &slPips,strin
 #define SLIP_PCT_OF_SL 20.0
 
 bool g_sendTried=false;   // v9.02: SendOne was reached (an order from the app tells a refusal by the EA from the broker's)
+// v9.17: the send's own result, kept - the fill's re-anchor (a modify) runs straight after and overwrote trade's, so an order from
+// the app was acknowledged with ticket 0 and a guessed price whenever MT5 already showed the position inside PlaceTrade
+uint g_sendRc=0; ulong g_sendOrder=0; double g_sendPx=0.0, g_sendVol=0.0;
+bool SendOneX(int dir,double volume,double entry,double slPrice,double tpPrice);
 bool SendOne(int dir,double volume,double entry,double slPrice,double tpPrice)
+  {
+   g_sendRc=0; g_sendOrder=0; g_sendPx=0.0; g_sendVol=0.0;
+   bool r=SendOneX(dir,volume,entry,slPrice,tpPrice);
+   if(volume>0){ g_sendRc=trade.ResultRetcode(); g_sendOrder=trade.ResultOrder(); g_sendPx=trade.ResultPrice(); g_sendVol=trade.ResultVolume(); }
+   return r;
+  }
+bool SendOneX(int dir,double volume,double entry,double slPrice,double tpPrice)
   {
    g_sendTried=true;
    if(volume<=0) return false;
@@ -1581,7 +1606,7 @@ void PlaceTrade()
         {                                          // pips: exact distance from entry (no spread)
          dist=g_tpVal[0]*g_pip;
         }
-      tpPrice=entry+dir*(dist+AimNetPx());         // v9.16: the broker's TP a safety net past the aim; the EA closes at the aim
+      tpPrice=entry+dir*(dist+AimNetPx());         // v9.17: MT5's TP at the EA's trigger (the aim + the slippage learnt)
      }
    if(!SendOne(dir,NormalizeVolume(total),entry,slPrice,tpPrice)){ Warn("Order failed."); return; }
 
@@ -1647,7 +1672,7 @@ void PlaceTrade()
             double d2=(g_tpMode==TP_BY_RR) ? g_tpVal[0]*slNow : g_tpVal[0]*g_pip;
             double aim=NormalizeDouble(realOpen+dir*d2,g_digits);   // v9.16: the aimed target, from the real fill
             GlobalVariableSet(AimKey(fixTk),aim);
-            wantTP=NormalizeDouble(aim+dir*AimNetPx(),g_digits);    // ...the broker's a safety net past it
+            wantTP=NormalizeDouble(aim+dir*AimNetPx(),g_digits);    // ...MT5's at the trigger (v9.17)
            }
          // Only talk to the broker if the fill actually moved something, and never set a
          // stop the broker will reject for sitting inside its minimum stop distance.
@@ -1667,6 +1692,7 @@ void PlaceTrade()
                // the exact SL/TP distances applied. If SL/TP still read 0.2 off after this,
                // these lines say whether the modify ran, and whether the broker accepted it.
                bool okMod=trade.PositionModify(fixTk,wantSL,g_tpOn[0]?wantTP:curTP);
+               if(okMod && g_tpOn[0]) AimSetB(fixTk,wantTP);   // v9.17: the TP the EA set
                double appTP=g_tpOn[0]?wantTP:curTP;
                Print("MTM re-anchor: fill=",DoubleToString(realOpen,g_digits),
                      "  SL ",DoubleToString(curSL,g_digits),"->",DoubleToString(wantSL,g_digits),
@@ -2607,10 +2633,10 @@ bool ModifyPositionsTP(double newTP)
       found=true;
       double slv=PositionGetDouble(POSITION_SL);
       int td=(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY) ? 1 : -1;
-      double btp=NormalizeDouble(newTP+td*AimNetPx(),g_digits);   // v9.16: aimed where it was let go; the broker's a net past it
+      double btp=newTP;   // v9.17: MT5's TP exactly where it was let go, and aimed there
       if(!trade.PositionModify(tk,slv,btp))
          Warn(StringFormat("Could not move TP on #%I64u (broker rejected - too close to price?).",tk));
-      else GlobalVariableSet(AimKey(tk),newTP);
+      else { GlobalVariableSet(AimKey(tk),newTP); AimSetB(tk,btp); }
      }
    return found;
   }
@@ -4043,7 +4069,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.16\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\",\"cloud\":%s,\"company\":\"%s\",\"server\":\"%s\",\"start_bal\":%s}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.17\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\",\"cloud\":%s,\"company\":\"%s\",\"server\":\"%s\",\"start_bal\":%s}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY),g_inCloud?"true":"false",
                             JsonSafe(AccountInfoString(ACCOUNT_COMPANY)),JsonSafe(AccountInfoString(ACCOUNT_SERVER)),DoubleToString(CpAccountSize(),2)));   // v9.12: the Accounts tab's "Read from MT5" line
   }
@@ -4438,7 +4464,7 @@ void LwOpen()
 // v9.06: MT5's Algo Trading button (and this EA's own "Allow Algo Trading") - off, no order can be placed, from here or from the app
 bool AlgoOn(){ return TerminalInfoInteger(TERMINAL_TRADE_ALLOWED)!=0 && MQLInfoInteger(MQL_TRADE_ALLOWED)!=0; }
 int  g_lwAl=-1;                       // v9.06: Algo Trading as last told to the app
-string LwHi(){ return StringFormat("{\"v\":\"9.16\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d,\"cl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0,g_inCloud?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
+string LwHi(){ return StringFormat("{\"v\":\"9.17\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d,\"cl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0,g_inCloud?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
 // v9.06 (Nestor, 19 Oct 2026: "whatever messages appear in MT5 i need to also see them in the app"): every message this EA writes on its
 // chart (Flash) goes to Session Terminal too, which shows it on Live Charts. Only while the line is up; nothing is queued.
 void LwMsg(string m)
@@ -4689,9 +4715,9 @@ void LwOpenCmd(string id,string p,string ix)
    bool ok=false; string why=""; double px=0, vol=0; ulong tk=0;
    if(g_sendTried)
      {
-      uint rc=trade.ResultRetcode();
+      uint rc=g_sendRc;   // v9.17: the send's own result (the re-anchor's modify comes after it)
       ok=(rc==TRADE_RETCODE_DONE || rc==TRADE_RETCODE_PLACED || rc==TRADE_RETCODE_DONE_PARTIAL);
-      if(ok){ px=trade.ResultPrice(); if(px<=0) px=(kind==OK_MARKET)?((side<0)?ask:bid):ent; vol=trade.ResultVolume(); tk=trade.ResultOrder(); }
+      if(ok){ px=g_sendPx; if(px<=0) px=(kind==OK_MARKET)?((side<0)?ask:bid):ent; vol=g_sendVol; tk=g_sendOrder; }
       else why=LwWhy();
      }
    else { why=g_flashMsg; StringReplace(why,"CANNOT TRADE: ",""); if(why=="") why="not placed"; if(StringLen(g_ruCode)>0) why=g_ruCode; }   // v9.15: a rule's code, the app words it
@@ -5009,8 +5035,8 @@ void LwCmd(string s)
      }
    else if(a=="tp")    // the TP line dragged
      {
-      int td=(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY) ? 1 : -1;   // v9.16: aimed where it was let go; the broker's a net past it
-      ok=trade.PositionModify(t,sl,NormalizeDouble(px+td*AimNetPx(),_Digits)); if(!ok) why=LwWhy(); else { GlobalVariableSet(AimKey(t),px); LwMoveLine(LN_TP+"0",px,TX_TP,"TP",COL_LINE_TP); }
+      // v9.17: MT5's TP exactly where it was let go, and aimed there
+      ok=trade.PositionModify(t,sl,NormalizeDouble(px,_Digits)); if(!ok) why=LwWhy(); else { GlobalVariableSet(AimKey(t),px); AimSetB(t,NormalizeDouble(px,_Digits)); LwMoveLine(LN_TP+"0",px,TX_TP,"TP",COL_LINE_TP); }
      }
    else if(a=="be")    // the BE trigger line dragged
      {
@@ -8239,7 +8265,7 @@ int OnInit()
    RulesLoad(true);   // v9.15: the account's order rules, before any order
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v9.16 loaded (a typed target banks its distance from the real fill: the EA closes at market when the closing price reaches it, the broker's TP a safety net further out; order rules from Session Terminal: locks for the day, the session and a break, the time between entries, the money at risk, the allowed symbols; BE halfway between the entry and the TP, the trailing / partial steps parked clear of the TP on every unit; MT5's messages and Algo Trading on or off, to Session Terminal; alerts on drawings from Session Terminal: a trend line or ray followed tick by tick, a rectangle or channel rings when price enters or leaves it; Live Charts: this chart's prices streamed to Session Terminal while its Live Charts tab shows them - 2 a second in your session, every 2 s with a trade open, every 5 s otherwise - and today's 1-minute candles when it asks; tick volume with every candle sent, and the older candles a volume profile in Practice Replay asks for; price alerts from Session Terminal, sent to your phone; 1-minute candles for the live chart; a live line to Session Terminal: the live chart updates every second, 3 hours a day; the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
+   Print("=== MinimalistManager v9.17 loaded (a typed target banks its distance from the real fill: MT5's TP and the EA's close both sit at the target plus the slippage this account has shown, whichever fires first; order rules from Session Terminal: locks for the day, the session and a break, the time between entries, the money at risk, the allowed symbols; BE halfway between the entry and the TP, the trailing / partial steps parked clear of the TP on every unit; MT5's messages and Algo Trading on or off, to Session Terminal; alerts on drawings from Session Terminal: a trend line or ray followed tick by tick, a rectangle or channel rings when price enters or leaves it; Live Charts: this chart's prices streamed to Session Terminal while its Live Charts tab shows them - 2 a second in your session, every 2 s with a trade open, every 5 s otherwise - and today's 1-minute candles when it asks; tick volume with every candle sent, and the older candles a volume profile in Practice Replay asks for; price alerts from Session Terminal, sent to your phone; 1-minute candles for the live chart; a live line to Session Terminal: the live chart updates every second, 3 hours a day; the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
    Print("=== MinimalistManager v5.7 notes (BE-offset ladder now sweeps EVERY level from +0R to +1R in 0.05R steps, arms itself off the price path so it runs on EVERY trade instead of only ones moved to BE, and reports a stop-never-moved baseline so locking in can be judged against doing nothing. v5.6 kept: the sweep freeze fix and the heartbeat) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)
@@ -8836,7 +8862,7 @@ void AnchorFillSLTP(ulong posId)
       double d2=(g_tpMode==TP_BY_RR) ? (g_tpVal[0]*slNow) : (g_reqTPpips*g_pip);
       aim=NormalizeDouble(realOpen+g_reqDir*d2,g_digits);         // v9.16: the aimed target, from the real fill - the EA closes there
       GlobalVariableSet(AimKey(posId),aim);
-      wantTP=NormalizeDouble(aim+g_reqDir*AimNetPx(),g_digits);    // ...the broker's TP a safety net past it
+      wantTP=NormalizeDouble(aim+g_reqDir*AimNetPx(),g_digits);    // ...MT5's TP at the trigger (v9.17)
      }
    bool needSL=(MathAbs(wantSL-curSL)>tol);
    bool needTP=(g_reqTPpips>0 && MathAbs(wantTP-curTP)>tol);
@@ -8853,6 +8879,7 @@ void AnchorFillSLTP(ulong posId)
    if(okSL && okTP)
      {
       bool okMod=trade.PositionModify(posId,wantSL,wantTP);
+      if(okMod && g_reqTPpips>0) AimSetB(posId,wantTP);   // v9.17: the TP the EA set
       Print("MTM re-anchor (on fill): open=",DoubleToString(realOpen,g_digits),
             "  SL ",DoubleToString(curSL,g_digits),"->",DoubleToString(wantSL,g_digits),
             " (",DoubleToString(MathAbs(realOpen-wantSL)/g_pip,1)," pips)  TP ",DoubleToString(curTP,g_digits),"->",DoubleToString(wantTP,g_digits),
@@ -8899,6 +8926,28 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
         {
          AnchorFillSLTP((ulong)HistoryDealGetInteger(_adk,DEAL_POSITION_ID));
          g_anchorPending=false;
+        }
+     }
+   // v9.17: a take profit MT5 filled (its TP sits at the EA's trigger): how far short of the TP it filled is learnt for this symbol, as
+   // the EA's own closes are - and an EA close that lost the race is forgotten
+   if(trans.type==TRADE_TRANSACTION_DEAL_ADD && trans.deal!=0 && g_pip>0 && HistoryDealSelect(trans.deal)
+      && HistoryDealGetString(trans.deal,DEAL_SYMBOL)==_Symbol && HistoryDealGetInteger(trans.deal,DEAL_REASON)==DEAL_REASON_TP)
+     {
+      long _te=HistoryDealGetInteger(trans.deal,DEAL_ENTRY);
+      ulong _tpid=(ulong)HistoryDealGetInteger(trans.deal,DEAL_POSITION_ID);
+      if(_te==DEAL_ENTRY_OUT || _te==DEAL_ENTRY_OUT_BY)
+        {
+         double _tpx=HistoryDealGetDouble(trans.deal,DEAL_PRICE), _ttp=HistoryDealGetDouble(trans.deal,DEAL_TP);
+         if(_ttp<=0 && GlobalVariableCheck(AimBKey(_tpid))) _ttp=GlobalVariableGet(AimBKey(_tpid));
+         if(_tpx>0 && _ttp>0)
+           {
+            double _tsh=((HistoryDealGetInteger(trans.deal,DEAL_TYPE)==DEAL_TYPE_SELL) ? _ttp-_tpx : _tpx-_ttp)/g_pip;
+            AimLearn(_Symbol,_tsh);
+            Print("Session Terminal: target closed by MT5's TP at ",DoubleToString(_tpx,g_digits)," (TP ",DoubleToString(_ttp,g_digits),", ",DoubleToString(_tsh,1),
+                  " pips short) - next trigger ",DoubleToString(AimSlip(_Symbol),1)," pips past the aim");
+           }
+         if(g_aimClosing==_tpid){ g_aimClosing=0; g_aimPx=0.0; }
+         GlobalVariableDel(AimBKey(_tpid));
         }
      }
    if(StringLen(g_syncTokenEff)==0) return;
@@ -8957,7 +9006,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
          if(g_aimPx>0 && _af>0 && g_pip>0){ AimLearn(_Symbol,g_aimDir*(g_aimPx-_af)/g_pip); Print("Session Terminal: target close filled at ",DoubleToString(_af,g_digits),", next trigger ",DoubleToString(AimSlip(_Symbol),1)," pips past the aim"); }
          g_aimPx=0.0;
         }
-      GlobalVariableDel(AimKey(posId));
+      GlobalVariableDel(AimKey(posId)); GlobalVariableDel(AimBKey(posId));
       LiveEnqueue(StringFormat("{\"event\":\"close\",\"token\":\"%s\",\"ticket\":%I64u,\"pnl\":%s,\"reason\":\"%s\",\"login\":\"%I64d\"}",
                                g_syncTokenEff,posId,DoubleToString(_lpnl,2),_why,AccountInfoInteger(ACCOUNT_LOGIN)));
      }
