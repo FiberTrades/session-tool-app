@@ -434,6 +434,48 @@ def journal_lines(ad):
     return out
 
 
+def ever_signed(acc, ad):
+    """This account's MT5 has signed in here at some time: any of its journals says so, not only today's and yesterday's."""
+    login = str(acc["login"])
+    for f in glob.glob(os.path.join(ad, "logs", "*.log")):
+        try:
+            text = open(f, "rb").read().decode("utf-16-le", "ignore")
+        except Exception:
+            continue
+        if any(("authorized on" in l) and login in l for l in text.splitlines()):
+            return True
+    return False
+
+
+def reseed(acc, ad, s):
+    """27 Oct 2026: Nestor's OneFunded account was made at 20:22 with the server list of that day, which didn't have
+    OneFunded-Trade; the firm was added to SEED_SERVERS later, and his MT5 only signed in once the new list was copied in by
+    hand and MT5 started again. Now the agent does that itself: an MT5 that has NEVER signed in here, still not reaching its
+    server, whose own servers.dat is older than SEED_SERVERS, gets the new list and is started again - once per list (the
+    copy is newer than the list after it, and reseeded_for remembers it). An account that has ever signed in is never touched."""
+    if s.get("ever_signed") or not os.path.exists(SEED_SERVERS):
+        return False
+    if ever_signed(acc, ad):
+        s["ever_signed"] = True
+        return False
+    sv = os.path.join(ad, "Config", "servers.dat")
+    listed = os.path.getmtime(SEED_SERVERS)
+    if s.get("reseeded_for") == listed or (os.path.exists(sv) and os.path.getmtime(sv) >= listed):
+        return False
+    s["reseeded_for"] = listed
+    try:
+        shutil.copyfile(SEED_SERVERS, sv)
+        subprocess.run(["chown", "st:st", sv], check=False)
+    except Exception as e:
+        log("server list not renewed", acc["login"], e)
+        return False
+    log("server list renewed", acc["login"], acc["server"])
+    report(acc, "starting", "MT5's server list was updated: starting MT5 again for %s" % acc["server"])
+    stop(acc)
+    s["next"], s["fails"] = 0, 0                 # started again at the next tick, with no back-off
+    return True
+
+
 def check(acc):
     s = state.get(acc["id"]) or {}
     ad = adir_of(acc)
@@ -465,6 +507,8 @@ def check(acc):
         # Never signed in and the broker said nothing (25 Oct 2026, other brokers than FTMO): most often a server this MT5
         # doesn't know (a broker missing from SEED_SERVERS - add it with cloud/seed-servers.sh) or a name typed differently.
         # Before, the account sat on "MT5 is starting" for good. MT5 keeps running and trying.
+        if reseed(acc, ad, s):                   # a newer server list than its own copy: in, and MT5 started again
+            return
         report(acc, "starting", "MT5 has not reached the server %s yet. Check it is written exactly as your broker shows it "
                                 "(in MT5: File > Login to Trade Account), then remove the account and add it again." % acc["server"])
         return
