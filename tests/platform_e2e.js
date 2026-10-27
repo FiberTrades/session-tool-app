@@ -129,7 +129,9 @@
     var wr = win.getBoundingClientRect();
     check('edge to edge: the whole width of the screen', Math.abs(wr.left) < 1 && Math.abs(wr.width - document.documentElement.clientWidth) < 2, [wr.left, wr.width, document.documentElement.clientWidth]);
     var tabs = $('.container > .tabs') || $('.tabs'), ta1 = tabs.querySelector('.tab.active'), tabsNow = { h: tabs.offsetHeight, th: ta1.offsetHeight, fs: getComputedStyle(ta1).fontSize, tb: getComputedStyle(ta1).backgroundColor, bg: getComputedStyle(tabs).backgroundColor, tk: $('.ticker-bar') ? getComputedStyle($('.ticker-bar')).backgroundColor : '' };
-    check('the app\'s tab row over it exactly as on every other tab: its height, the tabs\' height and font, its colours', JSON.stringify(tabsNow) === JSON.stringify(tabsBefore) && getComputedStyle(tabs).display !== 'none', [tabsBefore, tabsNow]);
+    var butBg = function(o){ var x = Object.assign({}, o); delete x.bg; return JSON.stringify(x); };   // the row's own background: the platform's blue-grey on Charts (27 Oct 2026)
+    check('the app\'s tab row over it as on every other tab: its height, the tabs\' height, font and colour, the ticker', butBg(tabsNow) === butBg(tabsBefore) && getComputedStyle(tabs).display !== 'none', [tabsBefore, tabsNow]);
+    check('...the row itself on the platform\'s blue-grey, not black (Nestor, 27 Oct 2026)', tabsNow.bg === 'rgb(19, 23, 34)' && tabsBefore.bg !== tabsNow.bg, [tabsBefore.bg, tabsNow.bg]);
     check('as tall as the screen under the tabs', wr.bottom <= innerHeight + 2 && wr.height > innerHeight - 200, [wr.top, wr.bottom, innerHeight]);
     var nm = $('#stpr-grid .pl-nm'), oh = $('#stpr-grid .stpr-ohlc');
     check('the chart\'s legend: Euro / U.S. Dollar · 15 · the account, and O H L C on the same line', nm && /^Euro \/ U\.S\. Dollar · 15 · FTMO 70K$/.test(nm.textContent) && oh && /O.*H.*L.*C/.test(oh.textContent) && Math.abs(nm.getBoundingClientRect().top - oh.getBoundingClientRect().top) < 6,
@@ -367,9 +369,9 @@
     $('[data-pltheme]').click(); await W(600);
     check('the sun: TradingView\'s light theme, the chart and the frame', P._cfg().look.bg === '#ffffff' && win.classList.contains('pl-lt') && getComputedStyle($('.plat-top')).backgroundColor === 'rgb(255, 255, 255)', [P._cfg().look.bg, win.className]);
     var mk0 = getComputedStyle($('.plat-top .pl-mark'));
-    check('...the logo on its small dark tile (Nestor: "hard to see with so much white around it")', mk0.backgroundColor === 'rgb(19, 23, 34)' && Math.round(parseFloat(mk0.width)) === 32 && parseFloat(mk0.borderRadius) === 6, [mk0.backgroundColor, mk0.width, mk0.borderRadius]);
+    check('...the logo on its small tile, the light grey of a picked timeframe (Nestor, 27 Oct 2026: the dark one was "too dark")', mk0.backgroundColor === 'rgb(224, 227, 235)' && mk0.backgroundColor === getComputedStyle($('.plat-top .pl-tfs button.on') || $('.plat-top .pl-tfs button')).backgroundColor && Math.round(parseFloat(mk0.width)) === 32 && parseFloat(mk0.borderRadius) === 6, [mk0.backgroundColor, mk0.width, mk0.borderRadius]);
     var ta2 = tabs.querySelector('.tab.active'), tabsLt = { h: tabs.offsetHeight, th: ta2.offsetHeight, fs: getComputedStyle(ta2).fontSize, tb: getComputedStyle(ta2).backgroundColor, bg: getComputedStyle(tabs).backgroundColor, tk: $('.ticker-bar') ? getComputedStyle($('.ticker-bar')).backgroundColor : '' };
-    check('...only the chart and the platform: the app\'s tab row and the market ticker stay dark, as they are', JSON.stringify(tabsLt) === JSON.stringify(tabsBefore) && !/\|lt/.test(($('#ticker-widget-host') || {})._tickerSig || ''), [tabsBefore, tabsLt]);
+    check('...only the chart and the platform: the app\'s tab row and the market ticker stay dark, as they are', JSON.stringify(tabsLt) === JSON.stringify(tabsNow) && !/\|lt/.test(($('#ticker-widget-host') || {})._tickerSig || ''), [tabsNow, tabsLt]);
     $('[data-pltheme]').click(); await W(600);
     check('the moon: back to the dark colours as they were', !P._cfg().look.bg && !P._cfg().lookDk && !win.classList.contains('pl-lt'), [P._cfg().look, P._cfg().lookDk]);
     // the frame's theme and the chart's colours apart (Nestor, 25 Oct 2026: "i like the dark theme but i want my charts to be able to be white")
