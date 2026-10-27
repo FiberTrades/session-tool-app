@@ -211,7 +211,9 @@ def main():
         if not mob:
             # the window's size set here, not left to the desktop: with the monitor off Windows shrank the headless window to 500 x 320
             # (23 Oct 2026, a night run) and every layout check failed
-            try: cdp.call('Emulation.setDeviceMetricsOverride', width=1280, height=1000, deviceScaleFactor=1, mobile=False)
+            try:
+                sw, sh = [int(v) for v in (os.environ.get('E2E_SIZE', '') or '1280x1000').lower().split('x')]   # e.g. 1600x900 (26 Oct 2026)
+                cdp.call('Emulation.setDeviceMetricsOverride', width=sw, height=sh, deviceScaleFactor=1, mobile=False)
             except Exception: pass
         if mob:
             try:

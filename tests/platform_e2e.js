@@ -374,12 +374,13 @@
     var askEl = document.getElementById('lc-ask-bg'); check('Replay in the top bar asks first, as the switch does', askEl && /Switch to Replay\?/.test(askEl.textContent));
     askEl.querySelector('[data-lca="1"]').click();
     for (k = 0; k < 80 && !(P._s() && !P._s().live && P._panes().length && P._panes()[0].n); k++) await W(150); await W(1200);
-    check('in Replay the window is as it was: the tools row and the header back in their places', !win.classList.contains('plat') && $('#stpr-tb2').parentNode === win && $('#stpr-tools').parentNode === $('#stpr-tb2') && $('#stpr-sym').closest('.stpr-hd') && !document.body.classList.contains('st-plat'),
-      [win.className, $('#stpr-tools').parentNode.id]);
+    // Replay on the platform since 26 Oct 2026 (replay_plat_e2e.js has the rest): its own look, Live's parts gone
+    check('in Replay: the platform, Replay\'s - its playback in the top bar, the tools down the left, no Watchlist', win.classList.contains('plat') && win.classList.contains('pl-replay') && !!$('.plat-top #stpr-play') && !!$('#stpr-tools').closest('.plat-left') && getComputedStyle($('.pl-wl')).display === 'none',
+      [win.className, $('#stpr-tools').parentNode.className]);
     // one Replay on a computer (Nestor, 25 Oct 2026: "why have 2 relay buttons now? i like the one on the chart better"): no switch above the
     // chart, Replay's own header has Live, asking first as the top bar's Replay does
     var lvb = $('#stpr-lvback');
-    check('in Replay: no Live | Replay switch above, a Live button in Replay\'s header', getComputedStyle($('#lc-mode')).display === 'none' && lvb && getComputedStyle(lvb).display !== 'none' && lvb.closest('.stpr-hd') && /Live/.test(lvb.textContent), [getComputedStyle($('#lc-mode')).display, lvb && getComputedStyle(lvb).display]);
+    check('in Replay: no Live | Replay switch above, a Live button in Replay\'s top bar', getComputedStyle($('#lc-mode')).display === 'none' && lvb && getComputedStyle(lvb).display !== 'none' && lvb.closest('.plat-top') && /Live/.test(lvb.textContent), [getComputedStyle($('#lc-mode')).display, lvb && getComputedStyle(lvb).display]);
     check('...and no prop firm progress under the chart (Statistics and Accounts have it)', getComputedStyle($('#lc-pfp')).display === 'none');
     lvb.click(); await W(200);
     check('...Live asks first: Switch to Live?', $('#lc-ask-bg') && /Switch to Live\?/.test($('#lc-ask-bg').textContent), $('#lc-ask-bg') && $('#lc-ask-bg').textContent.slice(0, 60));
