@@ -304,11 +304,12 @@
     // the strip keeps the figures; hovering it shows the account, its currency, balance and equity
     var tabsK = Array.prototype.map.call(document.querySelectorAll('.pl-tabs [data-pltab]'), function (b) { return b.getAttribute('data-pltab'); });
     check('the bottom panel: Positions, Orders, History - no Account tab; the strip along them stays', tabsK.join('|') === 'pos|ord|hist' && /Open P&L/.test($('.pl-sum').textContent) && /Free margin/.test($('.pl-sum').textContent), [tabsK, $('.pl-sum').textContent]);
-    var sumEl = $('.pl-sum'); sumEl.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); await W(150);
-    var card = $('.pl-sumc'), cr = card && card.getBoundingClientRect(), sr = sumEl.getBoundingClientRect();
+    var sumNow = function () { return $('.pl-sum'); }; sumNow().dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));   // the strip is drawn again when a figure changes: always the one on screen
+    var card = null; for (var kq = 0; kq < 40; kq++) { card = $('.pl-sumc'); if (card && !card.hidden && card.querySelector('h6')) break; await W(50); }
+    var cr = card && card.getBoundingClientRect(), sr = sumNow().getBoundingClientRect();
     check('hovering the strip: a card with the account (name, login, currency), Balance and Equity, just above the strip', card && !card.hidden && /FTMO 70K/.test(card.querySelector('h6').textContent) && /90001234/.test(card.textContent) && /Balance/.test(card.textContent) && /Equity/.test(card.textContent) && card.querySelector('h6 em') && cr.bottom <= sr.top && cr.bottom >= sr.top - 12 && cr.right <= sr.right + 1, card && [card.textContent, cr.top, cr.bottom, sr.top]);
     check('...in the platform\'s font, colours and a hairline border', card && getComputedStyle(card).fontFamily === getComputedStyle($('.plat-top')).fontFamily && getComputedStyle(card).borderTopWidth === '1px', card && [getComputedStyle(card).fontFamily, getComputedStyle(card).borderTopWidth]);
-    sumEl.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })); await W(100);
+    sumNow().dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })); for (kq = 0; kq < 20 && card && !card.hidden; kq++) await W(50);
     check('...gone when the mouse leaves the strip', card && card.hidden);
     $('[data-pltab="hist"]').click(); for (k = 0; k < 30 && !$('.lc-tb .lctb-t td.r'); k++) await W(200);
     var hr0 = Array.prototype.filter.call(document.querySelectorAll('.lc-tb .lctb-t tr'), function (r) { return /880001/.test(r.textContent); })[0], htd = hr0 ? hr0.querySelectorAll('td') : [];
