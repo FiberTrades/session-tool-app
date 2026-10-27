@@ -18,6 +18,8 @@
       if (ok) out.push(n.nodeValue.trim()); }
     return out.join(' | '); };
   var T0 = Date.UTC(2026, 9, 14, 8, 30) / 1000;
+  // the first chart's view: its visible bars and the width of one candle
+  var view0 = function () { var ts = window.__stPractice._panes()[0].chart.timeScale(), vr = ts.getVisibleLogicalRange(); return { from: vr.from, to: vr.to, sp: ts.width() / (vr.to - vr.from) }; };
   window.__recT = {
     errs: function () { return errs.slice(0, 5); },
     setup: async function () { var C = mk(), check = C.check;
@@ -57,7 +59,8 @@
       } catch (e) { check('setup ran', false, String(e && e.stack || e)); }
       return JSON.stringify(C.res); },
     // the set-up: this format, this framing, the camera and the microphone on
-    sheet: async function (fmt, fit, first) { var C = mk(), check = C.check;
+    // the set-up: this format, this framing, this camera corner, the camera and the microphone on
+    sheet: async function (fmt, fit, first, corner) { var C = mk(), check = C.check; window.__recW0 = $('#stpr-win').getBoundingClientRect().width; window.__recV0 = view0();
       try {
         $('.plat-top .pl-rec').click(); for (var k = 0; k < 20 && !$('#st-rec-bg'); k++) await W(100);
         var bg = $('#st-rec-bg'); check(fmt + ': the set-up opens', !!bg && vis(bg));
@@ -72,6 +75,7 @@
         bg.querySelector('[data-rf="' + fmt + '"]').click(); await W(60);
         if (fit) { bg.querySelector('[data-rfit="' + fit + '"]').click(); await W(60); }
         check(fmt + ': chosen', bg.querySelector('[data-rf="' + fmt + '"]').classList.contains('on') && (fmt === 'yt' ? bg.querySelector('[data-row="fit"]').hidden && !bg.querySelector('[data-row="hi"]').hidden : !bg.querySelector('[data-row="fit"]').hidden && bg.querySelector('[data-rfit="' + fit + '"]').classList.contains('on')));
+        if (first) check('the camera\'s corner: four to pick from, bottom left at first', bg.querySelectorAll('.rs-cn [data-rcn]').length === 4 && bg.querySelector('[data-rcn="bl"]').classList.contains('on'));
         ['cam', 'mic'].forEach(function (k2) { var i = bg.querySelector('[data-rsw="' + k2 + '"]'); if (!i.checked) { i.checked = true; i.dispatchEvent(new Event('change', { bubbles: true })); } });
         var v = bg.querySelector('.rs-cam video'); for (k = 0; k < 60 && !(v.videoWidth > 0 && window.__stRec._cfg().cam); k++) await W(100);
         await W(700);
@@ -81,14 +85,26 @@
         check(fmt + ': both devices listed by name', bg.querySelector('[data-rdev="cam"]').options.length > 0 && bg.querySelector('[data-rdev="mic"]').options.length > 0 && !bg.querySelector('[data-rdev="cam"]').disabled,
           [bg.querySelector('[data-rdev="cam"]').textContent, bg.querySelector('[data-rdev="mic"]').textContent]);
         check(fmt + ': no error line', bg.querySelector('.rs-err').hidden, bg.querySelector('.rs-err').textContent);
+        bg.querySelector('[data-rcn="' + corner + '"]').click(); await W(50);
+        check(fmt + ': the camera goes ' + corner, window.__stRec._cfg().corner === corner && bg.querySelector('[data-rcn="' + corner + '"]').classList.contains('on') && !bg.querySelector('[data-rcn="' + corner + '"]').disabled);
       } catch (e) { check(fmt + ': set-up ran', false, String(e && e.stack || e)); }
       return JSON.stringify(C.res); },
     // while it records: Streamer mode on the platform, the control on screen and outside the platform
-    during: async function (fmt) { var C = mk(), check = C.check;
+    during: async function (fmt, fit, corner) { var C = mk(), check = C.check;
       try {
         var st = window.__stRec.state(), win = $('#stpr-win');
         check(fmt + ': recording, the platform alone captured (Element Capture)', st.st === 'rec' && st.mode === 'el', st);
-        check(fmt + ': the platform fills the window while it records', st.maxed && Math.abs(win.getBoundingClientRect().width - innerWidth) < 2, [st.maxed, win.getBoundingClientRect().width, innerWidth]);
+        var wr = win.getBoundingClientRect(), EW = { yt: 1920, reel: 1080, ig: 1080, sq: 1080 }[fmt], EH = { yt: 1080, reel: 1920, ig: 1350, sq: 1080 }[fmt], tall = fmt !== 'yt' && fit === 'fill';
+        if (tall) check(fmt + ': Fill: the platform itself takes the ' + EW + ':' + EH + ' shape, the window\'s height, centred', st.tall && st.maxed && Math.abs(wr.height - innerHeight) < 2 && Math.abs(wr.width / wr.height - EW / EH) < 0.01 && Math.abs(wr.left + wr.width / 2 - innerWidth / 2) < 2, [st.tall, wr.width, wr.height, wr.left]);
+        else check(fmt + ': the platform fills the window while it records', !st.tall && st.maxed && Math.abs(wr.width - innerWidth) < 2, [st.tall, st.maxed, wr.width, innerWidth]);
+        for (var k0 = 0; k0 < 20 && !(window.__stRec.state().cam && window.__stRec.state().on); k0++) await W(100); st = window.__stRec.state();
+        var cm = st.cam, on = st.on, cx = cm ? cm.x + cm.s / 2 : 0, cy = cm ? cm.y + cm.s / 2 : 0;
+        check(fmt + ': the camera is inside the chart\'s plotting area: clear of the price scale, the time axis, the legend and the toolbars', !!cm && !!on && cm.x >= on.plot.l - 2 && cm.x + cm.s <= on.plot.r + 2 && cm.y >= on.plot.t - 2 && cm.y + cm.s <= on.plot.b + 2, [cm, on]);
+        check(fmt + ': ...in the ' + corner + ' corner', !!cm && !!on && (corner.charAt(1) === 'l' ? cx < (on.plot.l + on.plot.r) / 2 : cx > (on.plot.l + on.plot.r) / 2 - cm.s) && (corner.charAt(0) === 't' ? cy < (on.plot.t + on.plot.b) / 2 : cy > (on.plot.t + on.plot.b) / 2), [cm, on && on.plot]);
+        if (corner.charAt(1) === 'r') check(fmt + ': ...left of the trade\'s tags and the newest candle', !!cm && !!on && cm.x + cm.s <= on.plot.rx + 2 && (on.nx == null || cm.x + cm.s < on.nx), [cm, on]);
+        if (tall) { var v1 = view0(), top = $('.plat-top'); check(fmt + ': the candles keep their width (fewer of them, as on a phone)', Math.abs(v1.sp / window.__recV0.sp - 1) < 0.12, [v1, window.__recV0]);
+          check(fmt + ': no scrollbar, and a top bar that fits the tall shape', win.scrollWidth <= win.clientWidth + 1 && top.scrollWidth <= top.clientWidth + 1 && vis($('.plat-top #stpr-sym')) && vis($('.plat-top .pl-tfs')), [win.scrollWidth, win.clientWidth, top.scrollWidth, top.clientWidth]); }
+        if (tall) check(fmt + ': the whole platform on the video, the price scale entire, the newest candle in the right half', !!on && Math.abs(on.right - EW) <= 3 && on.plot.r < EW - 20 && on.nx != null && on.nx > EW * 0.5 && on.nx < on.plot.r, on);
         check(fmt + ': the canvas is the format\'s size', st.w === { yt: 1920, reel: 1080, ig: 1080, sq: 1080 }[fmt] && st.h === { yt: 1080, reel: 1920, ig: 1350, sq: 1080 }[fmt], [st.w, st.h]);
         check(fmt + ': MP4 (H.264 + AAC)', /^video\/mp4/.test(st.mime) && /avc1/.test(st.mime) && /mp4a/.test(st.mime), st.mime);
         check(fmt + ': Positions, the Watchlist and Trade Manager are off the platform', !vis($('#stpr-win > .lc-tb')) && !vis($('.plat-right')) && !vis($('.plat-rail')));
@@ -115,7 +131,7 @@
         ctl.style.background = '#ff00ff'; ctl.style.borderColor = '#ff00ff'; ctl.style.transform = 'none'; ctl.style.bottom = 'auto'; ctl.style.left = Math.round(cw.left + cw.width * 0.3) + 'px'; ctl.style.top = Math.round(cw.top + cw.height * 0.45) + 'px'; return true; },
     stop: function () { var b = $('#st-rec-ctl [data-rc="stop"]'); if (b) b.click(); return !!b; },
     // the file: its size, its length, one frame of it (handed back for the runner to keep), the control's magenta nowhere in it
-    after: async function (fmt) { var C = mk(), check = C.check, frame = null;
+    after: async function (fmt, fit) { var C = mk(), check = C.check, frame = null;
       try {
         for (var k = 0; k < 80 && !$('#st-rec-pv'); k++) await W(100);
         for (k = 0; k < 30 && document.fullscreenElement; k++) await W(100);   // leaving full screen takes a moment
@@ -124,6 +140,9 @@
         check(fmt + ': named for the symbol and the time it started', !!x && /^Session Terminal – EURUSD – \d{4}-\d\d-\d\d \d{4}\.mp4$/.test(x.name), x && x.name);
         check(fmt + ': Streamer mode, the control and full screen all undone', !document.body.classList.contains('st-rec-sm') && !document.body.classList.contains('st-rec-on') && !$('#st-rec-ctl') && !document.fullscreenElement && !window.__stPractice._lv().max,
           [document.body.className.match(/st-rec-\w+/g), !!$('#st-rec-ctl'), !!document.fullscreenElement, window.__stPractice._lv().max]);
+        await W(1600); var v2 = view0();   // the chart's own view is put back a moment after the platform
+        check(fmt + ': the chart\'s view back as it was', Math.abs(v2.to - window.__recV0.to) < 1.5 && Math.abs((v2.to - v2.from) - (window.__recV0.to - window.__recV0.from)) < 1.5, [v2, window.__recV0]);
+        check(fmt + ': the platform back exactly as it was', !document.body.classList.contains('st-rec-tall') && !document.body.style.getPropertyValue('--st-rec-w') && Math.abs($('#stpr-win').getBoundingClientRect().width - window.__recW0) < 2, [document.body.className.match(/st-rec-\w+/g), $('#stpr-win').getBoundingClientRect().width, window.__recW0]);
         check(fmt + ': the panels and the Record button are back', vis($('.plat-right')) && vis($('#stpr-win > .lc-tb')) && vis($('.plat-top .pl-rec')), [vis($('.plat-right')), vis($('#stpr-win > .lc-tb')), vis($('.plat-top .pl-rec'))]);
         var v = document.createElement('video'); v.muted = true; v.src = x.url; v.preload = 'auto'; document.body.appendChild(v);
         await new Promise(function (res) { v.onloadedmetadata = res; v.onerror = res; setTimeout(res, 5000); });
@@ -137,10 +156,10 @@
         for (var i = 0; i < d.length; i += 4) { var r = d[i], gg = d[i + 1], b = d[i + 2]; if (r > 200 && gg < 70 && b > 200) mag++; if (b > 180 && r < 110 && gg < 160 && b - r > 90) blue++; }
         check(fmt + ': the floating control is nowhere in the video (its magenta: 0 pixels)', mag < 20, mag);
         check(fmt + ': the platform is in it (the blue BUY tag and line)', blue > 150, blue);
-        // the camera's corner: the stand-in camera's picture, not the chart
-        var cw = Math.round(ew * (ew > eh ? 0.16 : 0.22)), m = Math.round(Math.min(ew, eh) * 0.025), cd = g.getImageData(ew - m - cw + 8, m + 8, cw - 16, cw - 16).data, cols = {};
-        for (i = 0; i < cd.length; i += 16) cols[(cd[i] >> 5) + ',' + (cd[i + 1] >> 5) + ',' + (cd[i + 2] >> 5)] = 1;
-        check(fmt + ': the camera sits in the top-right corner', Object.keys(cols).length > 6, Object.keys(cols).length);
+        // the camera where it was placed: the stand-in camera's picture (a blue backdrop, a peach face), not the dark chart
+        var q = x.cam, cd = q ? g.getImageData(q.x + 6, q.y + 6, q.s - 12, q.s - 12).data : [], camPx = 0, all = 0;
+        for (i = 0; i < cd.length; i += 16) { all++; if ((cd[i + 2] > 100 && cd[i + 2] - cd[i] > 25) || (cd[i] > 200 && cd[i + 1] > 150)) camPx++; }
+        check(fmt + ': the camera is in the video where it was placed', !!q && camPx / Math.max(1, all) > 0.8, [q, camPx, all]);
         frame = c.toDataURL('image/png'); v.remove();
         pv.querySelector('[data-p="x"]').click(); await W(100);
         check(fmt + ': Discard closes the preview', !$('#st-rec-pv'));

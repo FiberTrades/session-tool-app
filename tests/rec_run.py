@@ -15,7 +15,8 @@ T0 = calendar.timegm((2026, 10, 14, 8, 30, 0))
 TOK = 'st-test-rec-e2e-%d' % os.getpid()
 OUT = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 else tempfile.mkdtemp(prefix='st_rec_out_')
 os.makedirs(OUT, exist_ok=True)
-FORMATS = [('yt', None, 1920, 1080), ('reel', 'fill', 1080, 1920), ('ig', 'fit', 1080, 1350), ('sq', 'fit', 1080, 1080)]
+# (format, framing, width, height, the camera's corner): every corner once, Fill on the three tall and square formats, Fit once
+FORMATS = [('yt', None, 1920, 1080, 'bl'), ('reel', 'fill', 1080, 1920, 'bl'), ('ig', 'fill', 1080, 1350, 'br'), ('sq', 'fill', 1080, 1080, 'tr'), ('sq', 'fit', 1080, 1080, 'tl')]
 
 
 def stored_close(sym, dflt):
@@ -148,8 +149,9 @@ try:
     except Exception: c.call('Page.setDownloadBehavior', behavior='allow', downloadPath=dl)
     page(c)
     add(json.loads(ev(c, '__recT.setup()')))
-    for i, (fmt, fit, ew, eh) in enumerate(FORMATS):
-        add(json.loads(ev(c, '__recT.sheet(%s, %s, %s)' % (json.dumps(fmt), json.dumps(fit), 'true' if i == 0 else 'false'))))
+    for i, (fmt, fit, ew, eh, corner) in enumerate(FORMATS):
+        tag = fmt + ('_fit' if fit == 'fit' else '')
+        add(json.loads(ev(c, '__recT.sheet(%s, %s, %s, %s)' % (json.dumps(fmt), json.dumps(fit), 'true' if i == 0 else 'false', json.dumps(corner)))))
         if i == 0: print('set-up picture:', shot(c, 'rec_setup_sheet.png'))
         before = set(os.listdir(dl))
         ev(c, "document.querySelector('#st-rec-bg [data-r=\"go\"]').click(), 1", gesture=True)   # the Start click, as a person's
@@ -160,15 +162,15 @@ try:
             time.sleep(0.25)
         if st.get('st') != 'rec':
             add([{'name': fmt + ': the recording started', 'ok': False, 'got': [st, ev(c, "(document.querySelector('#st-rec-bg .rs-err')||{}).textContent || ''")]}]); continue
-        add(json.loads(ev(c, '__recT.during(%s)' % json.dumps(fmt))))
-        if i == 0: print('while recording:', shot(c, 'rec_recording_screen.png'))
+        add(json.loads(ev(c, '__recT.during(%s, %s, %s)' % (json.dumps(fmt), json.dumps(fit), json.dumps(corner)))))
+        if i in (0, 1): print('while recording:', shot(c, 'rec_recording_screen%s.png' % ('' if i == 0 else '_' + tag)))
         ev(c, '__recT.mark()')
         time.sleep(5)
         ev(c, '__recT.stop()')
-        a = json.loads(ev(c, '__recT.after(%s)' % json.dumps(fmt)))
+        a = json.loads(ev(c, '__recT.after(%s, %s)' % (json.dumps(fmt), json.dumps(fit))))
         add(a['res'])
         if a.get('frame'):
-            fp = os.path.join(OUT, 'rec_frame_%s.png' % fmt); open(fp, 'wb').write(base64.b64decode(a['frame'].split(',', 1)[1])); print('frame:', fp)
+            fp = os.path.join(OUT, 'rec_frame_%s.png' % tag); open(fp, 'wb').write(base64.b64decode(a['frame'].split(',', 1)[1])); print('frame:', fp)
         # the file the browser saved, read here
         f = None
         for _ in range(40):
@@ -181,7 +183,7 @@ try:
             vt = [t for t in info['tracks'] if t['w']]
             add([{'name': fmt + ': the file is an MP4 of %d x %d with a sound track' % (ew, eh), 'ok': bool(vt) and vt[0]['w'] == ew and vt[0]['h'] == eh and 'soun' in (info.get('handlers') or []) and 'vide' in (info.get('handlers') or []),
                   'got': info}])
-            shutil.move(os.path.join(dl, f), os.path.join(OUT, 'rec_%s%s' % (fmt, os.path.splitext(f)[1])))   # out of Downloads: the next one may share its minute, so its name
+            shutil.move(os.path.join(dl, f), os.path.join(OUT, 'rec_%s%s' % (tag, os.path.splitext(f)[1])))   # out of Downloads: the next one may share its minute, so its name
     add(json.loads(ev(c, '__recT.refused()')))
     add(json.loads(ev(c, '__recT.es()')))
     add([{'name': 'the set-up in the light theme', 'ok': bool(ev(c, '__recT.light(true)')), 'got': None}])

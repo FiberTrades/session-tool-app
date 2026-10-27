@@ -302,6 +302,7 @@
     for (k = 0; k < 30 && !(P._wl().q.XAUUSD && P._wl().q.BTCUSD); k++) await W(200);
     var xr = document.querySelector('#stpr-menu.show .stpr-wlr[data-sym="XAUUSD"]');
     check('the hub streams the list\'s prices: last, change and change % on each row', xr && /\d,\d{3}\.\d{2}/.test(xr.textContent) && /\d\.\d{2}%/.test(xr.textContent) && /[+−]/.test(xr.textContent), xr && xr.textContent);
+    P._cfg().wl = P._wl().list.filter(function (x) { return !/^USDJPY/i.test(x); });   // the list starts with every stored symbol now (USDJPY too), and the search leaves out what is on it
     document.querySelector('#stpr-menu.show [data-wladd]').click(); await W(100);
     var wq = document.getElementById('stpr-wlq'); wq.value = 'USDJ'; wq.dispatchEvent(new Event('input', { bubbles: true }));
     for (k = 0; k < 30 && !document.querySelector('#stpr-menu.show [data-wlpick="USDJPY"]'); k++) await W(150);
@@ -309,6 +310,8 @@
     check('+ searches the broker\'s symbols through the hub: USDJ finds USDJPY and USDJPY.r', sug.join(',') === 'USDJPY,USDJPY.r', sug);
     document.querySelector('#stpr-menu.show [data-wlpick="USDJPY"]').click(); await W(300);
     check('picked: USDJPY is on the list, and saved', P._wl().list.indexOf('USDJPY') >= 0 && (P._cfg().wl || []).indexOf('USDJPY') >= 0 && !!document.querySelector('#stpr-menu.show .stpr-wlr[data-sym="USDJPY"]'), P._cfg().wl);
+    var SB = window.__stSB, rpc0 = SB && SB.rpc;   // USDJPY is stored in the cloud now (27 Oct 2026): for this part it is not, so its history must come from the hub
+    if (rpc0) SB.rpc = function (nm, a) { if (/^st_candles/.test(nm) && a && /^USDJPY/i.test(String(a.p_symbol || ''))) { var none = Promise.resolve({ data: [], error: null }); none.range = function () { return Promise.resolve({ data: [], error: null }); }; return none; } return rpc0.apply(SB, arguments); };
     document.querySelector('#stpr-menu.show .stpr-wlr[data-sym="USDJPY"]').click();
     for (k = 0; k < 120; k++) { await W(250); st = LC.state(); if (st.live && st.sym === 'USDJPY' && st.fresh && st.px && st.gotHist && st.base > 100) break; }
     await pick2(/^USDJPY/, 'USDJPY,USDJPY');
@@ -317,6 +320,7 @@
     check('...in its own digits (3)', P._feeds()[0].digits === 3 || P._feeds()[0].dg === 3, [P._feeds()[0].digits, P._feeds()[0].dg]);
     for (k = 0; k < 40 && !(P._panes()[0].static.length > 1000); k++) await W(250);
     check('...with its history from the hub (15-minute candles, none stored)', P._panes()[0].static.length > 1000, P._panes()[0].static.length);
+    if (rpc0) SB.rpc = rpc0;
     document.getElementById('stpr-sym').click(); await W(200);
     document.querySelector('#stpr-menu.show .stpr-wlr[data-sym="EURUSD"]').click();
     for (k = 0; k < 120; k++) { await W(250); st = LC.state(); if (st.live && st.sym === 'EURUSD' && st.fresh) break; }
