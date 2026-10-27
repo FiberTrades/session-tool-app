@@ -317,12 +317,12 @@
     check('History: the commission (-8.75) red, the profit (200.00) green', cCom === 'rgb(242, 54, 69)' && cPro === 'rgb(8, 153, 129)', [cCom, cPro, hr0 && hr0.textContent.slice(0, 120)]);
     $('[data-pltab="pos"]').click(); await W(200);
 
-    // ---- Check my plan in the top bar (window.__stPlanCheck) ----
+    // ---- Check my bias in the top bar (window.__stPlanCheck; Check my plan until 27 Oct 2026) ----
     var pc0 = window.__stPlanCheck, pcGot = null; window.__stPlanCheck = { open: function (o) { pcGot = o || {}; } }; await W(1000);
     var plb = $('.plat-top .pl-plan');
-    check('Check my plan in the top bar, beside Replay', plb && !plb.hidden && plb.getBoundingClientRect().width > 0 && plb.title === 'Check this chart against your plan' && plb.previousElementSibling === $('.plat-top .pl-rp'), plb && [plb.hidden, plb.title]);
+    check('Check my bias in the top bar, beside Replay', plb && !plb.hidden && plb.getBoundingClientRect().width > 0 && /Check my bias/.test(plb.textContent) && plb.title === 'Your bias for today, with its charts and notes' && plb.previousElementSibling === $('.plat-top .pl-rp'), plb && [plb.hidden, plb.title, plb.textContent]);
     plb.click(); await W(400);
-    check('...it opens the plan check with the chart\'s picture', !!(pcGot && pcGot.canvas), pcGot && Object.keys(pcGot));
+    check('...it opens Check my bias in this window, for the chart\'s symbol (no picture of the chart)', !!(pcGot && pcGot.doc === document && /EUR/.test(pcGot.sym || '') && !pcGot.canvas), pcGot && Object.keys(pcGot));
     window.__stPlanCheck = pc0;
 
     // ---- the order rules (window.__stRules): Take a break, Execute locked with the time left, the open trade still managed ----

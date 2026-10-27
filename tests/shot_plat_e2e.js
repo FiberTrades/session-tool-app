@@ -42,7 +42,7 @@
     check('the camera sits in the top bar', !!sb && sb.offsetWidth > 0);
     sb.click(); await W(120);
     var mn = $('#stpr-menu'), mr = mn.getBoundingClientRect();
-    check('its menu: Copy image, Copy link, Download, Blur then share, Hide trade sizes and money, Check my plan - all on screen',
+    check('its menu: Copy image, Copy link, Download, Blur then share, Hide trade sizes and money, Check my bias - all on screen',
       mn.classList.contains('show') && ['img', 'link', 'dl', 'edit', 'hide', 'plan'].every(function (x) { return !!mn.querySelector('[data-snap="' + x + '"]'); }) && mr.left >= 0 && mr.right <= innerWidth + 1 && mr.bottom <= innerHeight + 1,
       [mr.left, mr.right, mr.bottom, innerWidth, innerHeight]);
     sb.click(); await W(80);
@@ -82,18 +82,17 @@
     $('[data-pltheme]').click(); await W(600);
     check('the money a hovered tag opens to is never in the picture', count(P._snap(), br.left - gr.left - 200, br.top - gr.top + 30, 200, br.height, white) < 30);
 
-    // ---- Blur then share and Check my plan open over the whole frame ----
+    // ---- Blur then share and Check my bias open over the whole frame ----
     sb.click(); await W(100); $('#stpr-menu [data-snap="edit"]').click(); await W(250);
     var ov = $('.stshot-ov'), xb = ov && ov.querySelector('[data-sh="close"]'), xr = xb && xb.getBoundingClientRect();
     check('Blur then share opens over the platform (nothing of the frame on top of it)', !!ov && document.elementFromPoint(xr.left + xr.width / 2, xr.top + xr.height / 2) === xb && ov.querySelector('.stshot-cv').width === cv.width);
     xb.click(); await W(120);
-    window.__stPlanCheck._token = function () { return Promise.resolve('t'); };
     sb.click(); await W(100); $('#stpr-menu [data-snap="plan"]').click(); await W(250);
     var po = $('.stpc-ov'), pxb = po && po.querySelector('[data-pc="close"]'), pxr = pxb && pxb.getBoundingClientRect();
-    check('Check my plan opens over the platform with the chart picture', !!po && document.elementFromPoint(pxr.left + pxr.width / 2, pxr.top + pxr.height / 2) === pxb && /^data:image\/jpeg/.test(po.querySelector('.stpc-img').getAttribute('src')));
+    check('Check my bias opens over the platform: the bias only, no chart picture and no setup check', !!po && document.elementFromPoint(pxr.left + pxr.width / 2, pxr.top + pxr.height / 2) === pxb && /Check my bias/.test(po.textContent) && !po.querySelector('.stpc-img') && !po.querySelector('[data-pc="go"]') && !po.querySelector('.stpc-setups'));
     pxb.click(); await W(100);
     check('no errors', errs.length === 0, errs.slice(0, 3));
   } catch (e) { check('test ran', false, String(e && e.stack || e)); }
-  finally { try { if (SH) SH.setHide(false); window.__stPlanCheck._token = null; } catch (e) {} }
+  finally { try { if (SH) SH.setHide(false); } catch (e) {} }
   return results;
 })()

@@ -21,8 +21,8 @@
     // ---- the snapshot menu ----
     var sb = document.getElementById('stpr-snapbtn'); sb.click(); await W(60);
     var mn = document.getElementById('stpr-menu'), it = function (k) { return mn.querySelector('[data-snap="' + k + '"]'); };
-    ok('the menu: Copy image, Copy link, Download image, Blur then share, Hide trade sizes and money, Check my plan',
-      it('img') && it('link') && /Download image/.test(it('dl').textContent) && /Blur, then share/.test(it('edit').textContent) && /Hide trade sizes and money/.test(it('hide').textContent) && /Check my plan/.test(it('plan').textContent),
+    ok('the menu: Copy image, Copy link, Download image, Blur then share, Hide trade sizes and money, Check my bias',
+      it('img') && it('link') && /Download image/.test(it('dl').textContent) && /Blur, then share/.test(it('edit').textContent) && /Hide trade sizes and money/.test(it('hide').textContent) && /Check my bias/.test(it('plan').textContent),
       mn.textContent);
     it('hide').click(); await W(40);
     ok('"Hide trade sizes and money" switches on, the menu stays open', mn.classList.contains('show') && it('hide').classList.contains('on') && SH.hideOn() && localStorage.getItem('st_shot_hide') === '1');
@@ -87,115 +87,66 @@
     HTMLAnchorElement.prototype.click = realAnchorClick;
     ok('Download image saves a PNG named session-terminal-<date>', dl.length === 1 && /^session-terminal-\d{8}-\d{4}\.png$/.test(dl[0].name) && /^blob:/.test(dl[0].href) && /Image saved/.test(fl.textContent), dl);
 
-    // ---- Check my plan ----
-    var sent = [], answer = { status: 200, body: { plan: { summary: 'Price location fits; look at the stop before acting.', items: [
-      { rule: 'Price location', verdict: 'fits', why: 'Price sits in the lower half of the drawn range.', lesson: '3.4' },
-      { rule: 'Stop loss', verdict: 'no', why: 'The stop sits about 5 pips below entry.', lesson: '5.2' }] }, model: 'x' }, ms: 3200 };
-    window.fetch = function (u, o) {
-      if (String(u).indexOf('/functions/v1/st-assistant') >= 0) { sent.push(JSON.parse(o.body)); var rb = new Response(JSON.stringify(answer.body), { status: answer.status, headers: { 'content-type': 'application/json' } }); return new Promise(function (r) { setTimeout(function () { r(rb); }, answer.ms || 400); }); }
-      return realFetch.apply(this, arguments);
-    };
-    window.__stPlanCheck._token = function () { return Promise.resolve('test-token'); };
-    var PB = [{ id: 'p1', name: 'Range Mitigation', desc: 'London takes a high, I buy the reaction.', rec: {} }, { id: 'p2', name: '50% Mitigation', rec: {} }];
-    window.__stPb = Object.assign({}, realPb || {}, { list: function () { return PB; }, byId: function () { return null; },
-      describe: function () { return [{ label: 'Price location', text: 'Discount half' }, { label: 'Stop loss', text: 'Below the swing low, 2-4 pips' }]; } });
-    try { localStorage.removeItem('st_plancheck_setup'); } catch (e) {}
-    var opened = []; var realOpenAt = window.STSCHOOL && window.STSCHOOL.openAt; if (window.STSCHOOL) window.STSCHOOL.openAt = function (id) { opened.push(id); };
-    // today's posted Session Bias: gold in New York (the active slot) and EUR/USD in London (Nestor, 25 Oct 2026: "maybe inside check
-    // my plan there can be my bias too as we are now removing session live tab")
+    // ---- Check my bias (Check my plan until 27 Oct 2026; Nestor: only his bias - its rows, its charts and notes; the setup check and
+    //      its "Check this chart" button gone, "feels like a gimmick and i hate it") ----
+    var sent = [];
+    window.fetch = function (u, o) { if (String(u).indexOf('/functions/v1/st-assistant') >= 0) sent.push(o && o.body); return realFetch.apply(this, arguments); };
+    // today's posted Session Bias: gold in New York (the active slot) and EUR/USD in London with its two charts
     bias0 = { slots: data.biasSlots, bias: data.bias, act: data.activeBiasSlot, rules: data.weeklyRules };
     var mkSlot = function (o) { var sl = Object.assign({ news: 'None', tvLinks: [], date: todayDateStr(), sessionDate: todayDateStr() }, o); sl.copiedAt = new Date(new Date().setHours(8, 12, 0, 0)).toISOString(); sl.postedSig = biasSig(sl); return sl; };
-    var slEU = mkSlot({ symbol: 'EUR/USD', sessionName: 'London', mode: 'Execution', structure: 'Trending', structureLtf: 'Initiating', location: 'Discount Edge', direction: 'Bullish', directionLtf: 'Bullish', notes: 'London took the Asia high; buying the 50%.' });
+    var slEU = mkSlot({ symbol: 'EUR/USD', sessionName: 'London', mode: 'Execution', structure: 'Trending', structureLtf: 'Initiating', location: 'Discount Edge', direction: 'Bullish', directionLtf: 'Bullish', notes: 'London took the Asia high; buying the 50%.',
+      tvLinks: [{ url: 'https://www.tradingview.com/x/AbCd1234/', notes: 'The range from Friday' }, { url: 'https://www.tradingview.com/x/EfGh5678/', notes: 'The sweep at 08:00' }] });
     var slXAU = mkSlot({ symbol: 'XAU/USD', sessionName: 'New York', mode: 'Observation', structure: 'Ranging', location: 'Premium Edge', direction: 'Bearish', news: 'Impact News', notes: 'CPI at 13:30.' });
     data.biasSlots = [slXAU, slEU]; data.activeBiasSlot = 0; data.bias = slXAU;
     data.weeklyRules = Object.assign({}, data.weeklyRules || {}); data.weeklyRules[getCalendarWeekKey(new Date())] = { rule: 'No entry before the London open' };
-    sb.click(); await W(40); it('plan').click(); await W(150);
+    sb.click(); await W(40);
+    ok('the snapshot menu says Check my bias', /^Check my bias$/.test(it('plan').textContent.trim()), it('plan').textContent);
+    it('plan').click(); await W(150);
     var po = document.querySelector('.stpc-ov'), q = function (s) { return po && po.querySelector(s); }, qa = function (s) { return po ? Array.prototype.slice.call(po.querySelectorAll(s)) : []; };
-    ok('Check my plan opens with the chart picture', !!po && /^data:image\/jpeg;base64,/.test(q('.stpc-img').getAttribute('src')));
+    ok('Check my bias opens: the bias only - no chart picture, no setups, no "Check this chart"', !!po && /Check my bias/.test(q('.stpc-hd').textContent) && !q('.stpc-img') && !q('.stpc-setups') && !q('[data-pc="go"]') && !/Check this chart|Your setup/.test(po.textContent),
+      po && po.textContent.slice(0, 200));
     var bb = q('.stpc-bias'), bsw = qa('.stpc-bsw button');
-    ok('Your bias today at the top: the chart\'s symbol picked (EUR/USD · London, not the active gold), a switch to the other posted one',
+    ok('Your bias today: the chart\'s symbol picked (EUR/USD · London, not the active gold), a switch to the other posted one',
       !!bb && q('.stpc-bd').firstElementChild === bb && /Your bias today/.test(bb.textContent) && bsw.length === 2 && bsw[1].classList.contains('on') && /EUR\/USD · London/.test(bsw[1].textContent) && /XAU\/USD · New York/.test(bsw[0].textContent),
       bb && bb.textContent.slice(0, 160));
     var bt2 = q('.stpc-bgrid').textContent;
     ok('...its mode, HTF/LTF structure, location, direction, the week\'s rule, notes, and when it was posted',
       /Mode\s*Execution/.test(bt2) && /HTF\s*Trending\s*·\s*LTF\s*Initiating/.test(bt2) && /Discount Edge/.test(bt2) && /↑ Bullish/.test(bt2) && !!q('.stpc-bgrid .up') && /No entry before the London open/.test(bt2) && /London took the Asia high/.test(bt2) && /Posted 08:12/.test(bb.textContent), bt2);
+    var chs = qa('.stpc-ch'), im = chs.map(function (c) { var g = c.querySelector('img'); return g ? g.getAttribute('src') : ''; });
+    ok('...and its own charts: HTF and LTF, each its TradingView picture (opening the chart) and its note',
+      chs.length === 2 && /^HTF/.test(chs[0].textContent) && /^LTF/.test(chs[1].textContent) && im[0] === 'https://s3.tradingview.com/snapshots/a/AbCd1234.png' && im[1] === 'https://s3.tradingview.com/snapshots/e/EfGh5678.png'
+      && chs[0].querySelector('a').getAttribute('href') === 'https://www.tradingview.com/x/AbCd1234/' && /The range from Friday/.test(chs[0].textContent) && /The sweep at 08:00/.test(chs[1].textContent), [chs.length, im]);
     bsw[0].click(); await W(40);
-    ok('the switch: gold in New York, its own read (Observation, Bearish with its down arrow, Impact News)', qa('.stpc-bsw button')[0].classList.contains('on') && /Observation/.test(q('.stpc-bgrid').textContent) && /↓ Bearish/.test(q('.stpc-bgrid').textContent) && /Impact News/.test(q('.stpc-bgrid').textContent) && !!q('.stpc-bgrid .dn'),
+    ok('the switch: gold in New York, its own read (Observation, Bearish with its down arrow, Impact News), no charts posted with it', qa('.stpc-bsw button')[0].classList.contains('on') && /Observation/.test(q('.stpc-bgrid').textContent) && /↓ Bearish/.test(q('.stpc-bgrid').textContent) && /Impact News/.test(q('.stpc-bgrid').textContent) && !!q('.stpc-bgrid .dn') && !q('.stpc-charts'),
       q('.stpc-bgrid').textContent);
-    ok('the member\'s setups to pick from (the first picked) and its rules', qa('.stpc-setups button').length === 2 && qa('.stpc-setups button')[0].classList.contains('on') && qa('.stpc-rules span').length === 2 && /Price location: Discount half/.test(q('.stpc-rules').textContent));
-    qa('.stpc-setups button')[1].click(); await W(30);
-    ok('picking another setup', qa('.stpc-setups button')[1].classList.contains('on') && !qa('.stpc-setups button')[0].classList.contains('on'));
-    var goSize = function () { var gb = q('[data-pc="go"]').getBoundingClientRect(), cb = qa('.stpc-setups button')[0].getBoundingClientRect(); return { w: Math.round(gb.width), dx: Math.round(gb.left - cb.left), c: getComputedStyle(q('[data-pc="go"]')).color, t: q('[data-pc="go"]').textContent }; };
-    var gs = goSize();
-    ok('the Check button: compact (160-230 px, Nestor: "too wide"), lined up with the setups, white on pink', gs.w >= 160 && gs.w <= 230 && Math.abs(gs.dx) <= 1 && gs.c === 'rgb(255, 255, 255)', gs);
-    q('[data-pc="go"]').click(); await W(20);
-    // every step the line shows, as it is set (a busy machine can hold the page past one, so it is recorded rather than caught)
-    var steps = [], stepEl = q('.stpc-step'); if (stepEl) { steps.push(stepEl.textContent); new MutationObserver(function () { steps.push(stepEl.textContent); }).observe(stepEl, { childList: true, characterData: true, subtree: true }); }
-    ok('while it reads: "Reading your chart…", the button held', /Reading your chart/.test(q('[data-pc="go"]').textContent) && q('[data-pc="go"]').disabled);
-    ok('...a progress bar and the step it is on, and a placeholder row for each of the setup\'s rules',
-      !!q('.stpc-prog .stpc-bar i') && /Reading the chart/.test(q('.stpc-step').textContent) && qa('.stpc-sk').length === 2 && /Price location/.test(qa('.stpc-sk')[0].textContent) && q('.stpc-prog').getAttribute('role') === 'status',
-      [q('.stpc-step') && q('.stpc-step').textContent, qa('.stpc-sk').length]);
-    await W(120);
-    ok('...the bar on its way', /scaleX\(0\.9\)/.test(q('.stpc-bar i').style.transform), q('.stpc-bar i').style.transform);
-    for (k = 0; k < 80 && !qa('.stpc-row:not(.stpc-sk)').length; k++) await W(100);
-    ok('...the step line moved on: Reading the chart, Checking your 2 rules, Writing it up', steps.length === 3 && /Reading the chart/.test(steps[0]) && /Checking your 2 rules/.test(steps[1]) && /Writing it up/.test(steps[2]), steps);
-    for (k = 0; k < 80 && !qa('.stpc-row:not(.stpc-sk)').length; k++) await W(100);
-    var rows = qa('.stpc-row:not(.stpc-sk)');
-    ok('the answer in: the bar and the placeholders gone', !q('.stpc-prog') && !qa('.stpc-sk').length);
-    ok('the answer: each rule with Fits / Doesn\'t fit and why', rows.length === 2 && rows[0].querySelector('.stpc-v.fits').textContent === 'Fits' && rows[1].querySelector('.stpc-v.no').textContent === "Doesn't fit" && /5 pips/.test(rows[1].textContent) && /look at the stop/.test(q('.stpc-sum').textContent), rows.map(function (r) { return r.textContent; }));
-    var gs2 = goSize();
-    ok('Check again: the same compact button', /Check again/.test(gs2.t) && gs2.w === gs.w && Math.abs(gs2.dx) <= 1, [gs, gs2]);
-    ok('with the Academy lesson that teaches it, by its real title', /Lesson 5\.2 · Stop placement/.test(rows[1].querySelector('.stpc-les').textContent), rows[1].querySelector('.stpc-les') && rows[1].querySelector('.stpc-les').textContent);
-    var s0 = sent[0] || {};
-    ok('what went to the assistant: mode plancheck, the picture (JPEG), the picked setup and its rules, the lessons, the language',
-      sent.length === 1 && s0.mode === 'plancheck' && s0.image && s0.image.media_type === 'image/jpeg' && s0.image.data.length > 2000 && s0.plan.name === '50% Mitigation' && s0.plan.rules.length === 2
-      && Array.isArray(s0.lessons) && s0.lessons.some(function (l) { return l.id === '5.2' && l.title === 'Stop placement'; }) && s0.context.lang === 'en' && s0.chart.sym === 'EURUSD' && Array.isArray(s0.bias),
-      { mode: s0.mode, plan: s0.plan, lessons: s0.lessons && s0.lessons.length, chart: s0.chart });
-    var sb0 = (s0.bias || [])[0] || {};
-    ok('what went along is exactly the bias the block showed: one, gold in New York, with its mode and the week\'s rule',
-      (s0.bias || []).length === 1 && sb0.sym === 'XAU/USD' && sb0.session === 'New York' && sb0.mode === 'Observation' && sb0.direction === 'Bearish' && sb0.sessionNews === 'Impact News' && sb0.rule === 'No entry before the London open', s0.bias);
-    ok('the setup picked is remembered for next time', localStorage.getItem('st_plancheck_setup') === '50% Mitigation');
+    ok('nothing goes to the assistant', sent.length === 0, sent.length);
     if (mob) {
-      var box = q('.stpc').getBoundingClientRect(), wide = qa('button, .stpc-row').filter(function (x) { return x.getBoundingClientRect().right > innerWidth + 1; });
+      var box = q('.stpc').getBoundingClientRect(), wide = qa('button, .stpc-ch').filter(function (x) { return x.getBoundingClientRect().right > innerWidth + 1; });
       ok('phone: a sheet from the bottom, nothing past the screen', box.left >= -1 && box.right <= innerWidth + 1 && Math.abs(box.bottom - innerHeight) < 2 && !wide.length, [box.left, box.right, box.bottom, innerHeight, wide.length]);
     }
-    rows[1].querySelector('.stpc-les').click(); await W(60);
-    ok('the lesson link closes it and opens that lesson in the Academy', !document.querySelector('.stpc-ov') && opened[0] === '5.2', opened);
-    window.__stPlanCheck.open({ canvas: P._snap() }); await W(80); po = document.querySelector('.stpc-ov');
-    q('[data-pc="go"]').click(); for (k = 0; k < 80 && !qa('.stpc-row:not(.stpc-sk)').length; k++) await W(100);
-    var hadRows = qa('.stpc-row:not(.stpc-sk)').length; qa('.stpc-bsw button')[0].click(); await W(40);
-    ok('switching the bias after an answer clears it (an answer is for the bias it was sent with)',
-      hadRows === 2 && !qa('.stpc-row:not(.stpc-sk)').length && /Check this chart/.test(q('[data-pc="go"]').textContent) && sent[sent.length - 1].bias[0].sym === 'EUR/USD', [hadRows, sent.length]);
     q('[data-pc="close"]').click(); await W(30);
     if (typeof setLanguage === 'function') {
       setLanguage('es'); await W(300);
-      window.__stPlanCheck.open({ canvas: P._snap() }); await W(80); po = document.querySelector('.stpc-ov');
+      window.__stPlanCheck.open({ sym: 'EURUSD' }); await W(80); po = document.querySelector('.stpc-ov');
       var esT = (q('.stpc-bias') || {}).textContent || '';
-      ok('in Spanish: Tu sesgo de hoy, Modo, the values translated, Publicado', /Tu sesgo de hoy/.test(esT) && /Modo/.test(esT) && /Publicado 08:12/.test(esT) && !/Execution/.test(esT), esT.slice(0, 220));
+      ok('in Spanish: Revisar mi sesgo, Tu sesgo de hoy, Modo, the values translated, Publicado', /Revisar mi sesgo/.test(q('.stpc-hd').textContent) && /Tu sesgo de hoy/.test(esT) && /Modo/.test(esT) && /Publicado 08:12/.test(esT) && !/Execution/.test(esT), esT.slice(0, 220));
       q('[data-pc="close"]').click(); await W(30); setLanguage('en'); await W(300);
     }
-    answer = { status: 429, body: { error: "That's 30 chart checks today. More tomorrow." } };
-    window.__stPlanCheck.open({ canvas: P._snap() }); await W(80); po = document.querySelector('.stpc-ov');
-    q('[data-pc="go"]').click(); for (k = 0; k < 30 && !q('.stpc-err'); k++) await W(100);
-    ok('a refusal from the assistant is shown in its own words', /30 chart checks today/.test((q('.stpc-err') || {}).textContent || ''));
+    window.__stPlanCheck.open({ sym: 'EURUSD' }); await W(60);
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); await W(40);
     ok('Escape closes it', !document.querySelector('.stpc-ov'));
-    window.__stPlanCheck.open({ canvas: P._snap() }); window.__stPlanCheck.open({ canvas: P._snap() }); await W(60);
-    ok('opened twice: still one Check my plan on screen', document.querySelectorAll('.stpc-ov').length === 1);
+    window.__stPlanCheck.open({ sym: 'EURUSD' }); window.__stPlanCheck.open({ sym: 'EURUSD' }); await W(60);
+    ok('opened twice: still one Check my bias on screen', document.querySelectorAll('.stpc-ov').length === 1);
     document.querySelector('.stpc-ov [data-pc="close"]').click(); await W(30);
     var e1 = SH.edit(mk()), e2 = SH.edit(mk()); await W(60);
     ok('and one blur editor (the first one closes with nothing shared)', document.querySelectorAll('.stshot-ov').length === 1 && (await e1) === null);
     document.querySelector('.stshot-ov [data-sh="close"]').click(); await e2;
-    PB = []; window.__stPlanCheck.open(); await W(80); po = document.querySelector('.stpc-ov');
-    ok('opened with no picture handed over it takes the chart itself; no setups yet: it says where to make one', !!q('.stpc-img') && /Save one in Session Review/.test(po.textContent) && !q('[data-pc="go"]'));
-    q('[data-pc="close"]').click(); await W(30);
     data.biasSlots.forEach(function (sl) { sl.copiedAt = null; });
-    window.__stPlanCheck.open({ canvas: P._snap() }); await W(80); po = document.querySelector('.stpc-ov');
-    ok('nothing posted today: "No bias posted today", a link to Session Bias, and no bias goes along', /No bias posted today/.test((q('.stpc-bnone') || {}).textContent || '') && !!q('[data-pc="openbias"]') && !q('.stpc-bgrid'));
+    window.__stPlanCheck.open({ sym: 'EURUSD' }); await W(80); po = document.querySelector('.stpc-ov');
+    ok('nothing posted today: "No bias posted today" and a link to Session Bias', /No bias posted today/.test((q('.stpc-bnone') || {}).textContent || '') && !!q('[data-pc="openbias"]') && !q('.stpc-bgrid'));
     q('[data-pc="openbias"]').click(); await W(400);
-    ok('...the link closes the sheet and opens Session Bias', !document.querySelector('.stpc-ov') && document.querySelector('.tab[data-page="bias"]').classList.contains('active'));
-    if (window.STSCHOOL) window.STSCHOOL.openAt = realOpenAt;
-    window.__stPb = realPb; window.fetch = realFetch; window.__stPlanCheck._token = null;
+    ok('...the link closes it and opens Session Bias', !document.querySelector('.stpc-ov') && document.querySelector('.tab[data-page="bias"]').classList.contains('active'));
+    window.fetch = realFetch;
     ok('the Academy hands over its written lessons with their titles', window.STSCHOOL && window.STSCHOOL.lessons().some(function (l) { return l.id === '0.1' && l.title === 'What forex trading actually is'; }));
 
     // ---- Trade Replay's snapshot menu too ----
