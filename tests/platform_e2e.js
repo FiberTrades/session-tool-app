@@ -276,6 +276,24 @@
     check('remembered on this device', saved.pn === '' && saved.fold === true, saved);
     $('[data-plfold]').click(); await W(200); $('[data-plr="tm"]').click(); await W(300);
     check('...all back', !win.classList.contains('pl-nor') && !win.classList.contains('pl-folded') && $('#lc-tb').getBoundingClientRect().height > 100);
+    // one width for every panel in the column (Nestor, 27 Oct 2026): dragging any one's left edge sets it for all; the chat never under 330
+    var stW0 = JSON.stringify(P._plat().st), colW = function(){ return Math.round($('.plat-right').getBoundingClientRect().width); }, rwSaved = function(){ var o = {}; try { o = JSON.parse(localStorage.getItem('st_plat') || '{}'); } catch (e) {} return o.rw; };
+    var edgeDrag = function(dx){ var hd = $('.plat-right > .pl-swd'), hr = hd.getBoundingClientRect(), x0 = hr.left + 3, y0 = hr.top + hr.height / 2;
+      hd.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: x0, clientY: y0, pointerId: 1 })); document.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: x0 + dx, clientY: y0, pointerId: 1 }));
+      document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: x0 + dx, clientY: y0, pointerId: 1 })); };
+    var rail = function(k){ $('[data-plr="' + k + '"]').click(); return W(250); }, wTm0 = colW(); edgeDrag(-80); await W(300); var wTm = colW();
+    check('the column: the Trade Manager\'s left edge widens it, kept on this device', wTm >= wTm0 + 70 && Math.abs(rwSaved() - wTm) <= 1, [wTm0, wTm, rwSaved()]);
+    var wAll = {}; for (var rk of ['wl', 'td', 'ot', 'ch']) { await rail(rk); wAll[rk] = colW(); }
+    check('...the Watchlist, Today, the Object tree and Chat open at that same width', Object.keys(wAll).every(function(k){ return Math.abs(wAll[k] - wTm) <= 1; }), [wTm, wAll]);
+    edgeDrag(200); await W(300); var wCh = colW(); await rail('wl'); var wWl = colW();
+    check('...Chat narrowed to its least (330, its text box and Send whole), the Watchlist follows it', Math.abs(wCh - 330) <= 1 && Math.abs(wWl - 330) <= 1 && rwSaved() === 330, [wCh, wWl, rwSaved()]);
+    edgeDrag(60); await W(300); var wWl2 = colW(); await rail('ch'); var wCh2 = colW(); await rail('td'); var wTd2 = colW();
+    check('...the Watchlist left at 270: Chat still opens at 330, and the others follow it back', wWl2 < 300 && Math.abs(wCh2 - 330) <= 1 && Math.abs(wTd2 - 330) <= 1 && rwSaved() === 330, [wWl2, wCh2, wTd2, rwSaved()]);
+    var mig = function(o){ localStorage.setItem('st_plat', JSON.stringify(o)); var st1 = P._plStRead(); return [st1.rw, 'pw' in st1]; };
+    var m1 = mig({ pn: 'wl', pw: { wl: 340, ch: 420 } }), m2 = mig({ pn: 'tm', pw: { ch: 410, wl: 280 } }), m3 = mig({ pn: 'tm', sw: 390 }), m4 = mig({ pn: 'tm', pw: { td: 290, wl: 350 } });
+    check('a device with the old per-panel widths: the open panel\'s width, else the chat\'s, else the widest', m1[0] === 340 && m2[0] === 410 && m3[0] === 390 && m4[0] === 350 && !m1[1] && !m2[1], [m1, m2, m3, m4]);
+    localStorage.setItem('st_plat', stW0); P._plStRead(); P._platSync(); await W(300);   // back as it was (the Trade Manager open, its width)
+    check('...and back: the Trade Manager open', !win.classList.contains('pl-notm') && $('.plat-rail [data-plr="tm"]').classList.contains('on') && Math.abs(colW() - wTm0) <= 1, [win.className, colW(), wTm0]);
     $('[data-pltab="acct"]').click(); await W(300);
     check('the Account tab: balance, equity, margin, free margin', /Balance/.test($('.pl-acg').textContent) && /Free margin/.test($('.pl-acg').textContent), $('.pl-acg') && $('.pl-acg').textContent.slice(0, 100));
     var acs = Array.prototype.slice.call(document.querySelectorAll('.pl-acc')), ac0 = acs[0], s0 = ac0 && ac0.querySelector('span').getBoundingClientRect(), b0 = ac0 && ac0.querySelector('b').getBoundingClientRect();
