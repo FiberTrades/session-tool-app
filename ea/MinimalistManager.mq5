@@ -5143,7 +5143,10 @@ void LwPump()
 // every 25 s, and stream while a window watches.
 void LwService()
   {
-   if(g_lwOff || g_aside || StringLen(g_syncTokenEff)==0 || g_copyRole==CR_FOLLOW || MQLInfoInteger(MQL_TESTER)!=0)   // v9.08: + standing aside
+   // v9.16 (27 Oct 2026, Nestor wants his Follow account in the Trade Manager - its risk, TP, BE): a Follow account keeps its line, so
+   // the app lists it and its settings ("cfg") apply; an order from the app is still refused ("follow" - trade on the Lead), and its
+   // trade rows stay off (LiveTick*). Same brake and watch rules as any account.
+   if(g_lwOff || g_aside || StringLen(g_syncTokenEff)==0 || MQLInfoInteger(MQL_TESTER)!=0)   // v9.08: + standing aside
      { if(g_lw!=INVALID_HANDLE) LwClose(); return; }
    if(!LwRelayWanted() && LwBraked())   // today's live updates on Supabase are used up: tell the app, close the line, 2-second updates until midnight UTC
      {
