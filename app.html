@@ -92375,7 +92375,8 @@ window.__stAZ = (function () {
   function mergeCfg(sc, at){ if (!sc || typeof sc !== 'object') return { took: false, newer: true };
     var kt = cfgKt(), skt = (sc._kt && typeof sc._kt === 'object') ? sc._kt : {}, sk0 = sc._kt0 || at || 0, lk0 = CFG._kt0 || 0, cur = cfgPractice(), took = false, lvk = false, newer = false;
     if (sc.tbMade && typeof sc.tbMade === 'object') { var tm = Object.assign({}, CFG.tbMade || {}); Object.keys(sc.tbMade).forEach(function(k){ if (!tm[k]) { tm[k] = 1; took = true; } }); CFG.tbMade = tm; }   // the trades' boxes made: both devices' (it only grows)
-    Object.keys(sc).forEach(function(k){ if (CFG_LOCAL[k] || k === 'tbMade') return; var sT = skt[k] || sk0, lT = kt[k] || lk0; if (!(sT > lT)) return; kt[k] = sT;
+    if (sc.tbDel && typeof sc.tbDel === 'object') { var tdl = Object.assign({}, CFG.tbDel || {}); Object.keys(sc.tbDel).forEach(function(k){ if (!tdl[k]) { tdl[k] = 1; took = true; } }); CFG.tbDel = tdl; }   // the trades' boxes deleted by hand: both devices' (it only grows)
+    Object.keys(sc).forEach(function(k){ if (CFG_LOCAL[k] || k === 'tbMade' || k === 'tbDel') return; var sT = skt[k] || sk0, lT = kt[k] || lk0; if (!(sT > lT)) return; kt[k] = sT;
       if (JSON.stringify(cur[k]) === JSON.stringify(sc[k])) return; var v = JSON.parse(JSON.stringify(sc[k])); took = true;
       if (LV.mmStash && LVK.indexOf(k) >= 0) { LV.mmStash[k] = v; lvk = true; } else CFG[k] = v; });   // Live Charts: the member's own values wait in the stash
     Object.keys(cur).forEach(function(k){ if (CFG_LOCAL[k]) return; var sT = Object.prototype.hasOwnProperty.call(sc, k) ? (skt[k] || sk0) : 0; if ((kt[k] || lk0) > sT) newer = true; });
@@ -93938,8 +93939,9 @@ window.__stAZ = (function () {
     try { var r = await sb.from('practice_drawings').upsert({ user_id: u, sym: String(raw).slice(0, 32), items: dwLocal(raw), updated_at: new Date(m.at).toISOString() }, { onConflict: 'user_id,sym' });
       if (r && !r.error) { var m2 = dwMeta(raw); m2.up = Math.max(m2.up || 0, m.at); dwMetaPut(raw, m2); } } catch (e) {} }
   function dwAdopt(key, list, at){ try { localStorage.setItem('st_practice_draw2:' + key, JSON.stringify(list)); } catch (e) {}
-    var lv = key.indexOf('L|') === 0; if (lv !== (DWM === 'L|')) return;   // the other mode's drawings: kept, not on screen
-    var raw = lv ? key.slice(2) : key;
+    var lv = key.indexOf('L|') === 0, raw0 = lv ? key.slice(2) : key; if (lv) { LV.tbAdopt = LV.tbAdopt || {}; LV.tbAdopt[raw0] = 1; }   // a list from the server: a trade's box missing from it was not deleted here (tbSync)
+    if (lv !== (DWM === 'L|')) return;   // the other mode's drawings: kept, not on screen
+    var raw = raw0;
     if (DW.raw === raw && !DW.drag && !DW.pending && !DW.penning) { DW.list = list; DW.hist = [JSON.stringify(list)]; DW.hpos = 0; DW.sel = null; DW.multi = null; updUR(); updDel(); hlAll(); }
     else if (DW.raw !== raw && DWO[raw]) { DWO[raw] = list; hlAll(); dirty(); } }
   async function dwPull(raw){ var u = uidNow(), sb = sbc(); if (!u || !sb || !raw) return;
@@ -96851,15 +96853,20 @@ window.__stAZ = (function () {
   function tbDayStart(t){ var o = zParts(t * 1000, LON); return t - ((+o.hour % 24) * 3600 + (+o.minute) * 60 + (+o.second)); }   // today's 00:00 London
   function tbSync(F){ if (!S || !S.live || !F || !F.sym || !lvData()) return; var raw = F.sym.raw, L = dwListOf(raw), now = nowS(), ch = false, mk = false;
     if (!CFG.tbMade || typeof CFG.tbMade !== 'object') CFG.tbMade = {}; if (!CFG.tbFrom) { CFG.tbFrom = tbDayStart(now); mk = true; }
-    var u = units(F.sym), pip = u.pips || u.pts || 0.0001, made = CFG.tbMade;
+    if (!CFG.tbDel || typeof CFG.tbDel !== 'object') { CFG.tbDel = {}; mk = true; } if (!CFG.tbSince) { CFG.tbSince = now; mk = true; }   // deleted by hand (synced); since when that rule holds
+    var u = units(F.sym), pip = u.pips || u.pts || 0.0001, made = CFG.tbMade, del = CFG.tbDel;
+    // a box this window saw and that is gone without a list from the server in between: the member deleted it - it stays deleted
+    var has = {}; L.forEach(function(q){ if (q && q.trade) has[q.trade] = 1; }); LV.tbSeen = LV.tbSeen || {}; LV.tbAdopt = LV.tbAdopt || {};
+    var was = LV.tbSeen[raw]; if (was && !LV.tbAdopt[raw]) Object.keys(was).forEach(function(k){ if (!has[k] && !del[k]) { del[k] = 1; mk = true; } }); LV.tbAdopt[raw] = 0;
     lvTrList(F).forEach(function(x){ if (!(x.entry > 0) || !(x.eTs > 0) || (!x.open && x.eTs < CFG.tbFrom)) return;
       var key = 'tb:' + x.ticket, d = L.filter(function(q){ return q && q.trade === key; })[0];
-      if (!d) { if (made[key]) return;   // made before: deleted since
+      if (!d) { if (del[key] || (made[key] && x.eTs < CFG.tbSince)) return;   // deleted by hand (or, from before 26 Oct 2026, made once and gone): not again
         var g = tbLevels(F, x, pip); if (!g) return;
         d = { type: x.dir > 0 ? 'long' : 'short', a: { t: x.eTs, price: x.entry }, b: { t: x.open ? Math.max(now, x.eTs + 60) : Math.max(x.xTs || 0, x.eTs + 60), price: x.entry }, sl: g.sl, tp: g.tp, trade: key };
-        if (x.open) d.live = 1; L.push(d); made[key] = 1; ch = true; mk = true; return; }
+        if (x.open) d.live = 1; L.push(d); made[key] = 1; has[key] = 1; ch = true; mk = true; return; }
       if (d.live && !x.open && x.xTs > 0) { delete d.live; d.b = { t: Math.max(x.xTs, d.a.t + 60), price: d.a.price }; ch = true; } });   // closed: it ends there
     var seen = {}; for (var i = 0; i < L.length; i++) { var q = L[i]; if (!q || !q.trade) continue; if (seen[q.trade]) { L.splice(i, 1); i--; ch = true; } else seen[q.trade] = 1; }   // one box a trade (two devices may both have made it)
+    LV.tbSeen[raw] = seen;
     if (mk) save(); if (ch) { dwSaveRaw(raw); dirty(); } }
   function liveRender(force){
     try { var tbF = []; panes.forEach(function(p){ var F = PS(p); if (tbF.indexOf(F) < 0) { tbF.push(F); tbSync(F); } }); } catch (e) {}   // your trades' boxes (tbSync)
@@ -98242,6 +98249,7 @@ window.__stAZ = (function () {
     ctfDel: function(n){ if ((CFG.ctf || []).indexOf(n) < 0) return; if (S) { tfDel(n); return; } CFG.ctf = CFG.ctf.filter(function(x){ return x !== n; }); (CFG.tfs || []).forEach(function(tf, k){ if (tf === n) CFG.tfs[k] = TF_STD.filter(function(x){ return x <= n; }).pop() || 1; }); tfUnreg(n); save(); }, _tfReg: tfReg, _tfDel: tfDel, _tfAddMenu: function(i){ var b = SD.querySelector('.stpr-tfadd[data-tfadd="' + (i || 0) + '"]'); if (b) tfAddMenu(i || 0, b); return !!b; }, _tfs: function(){ return { TFS: TFS.slice(0), TFL: TFL, SRC: SRC, LOOK: LOOK, SHOW: SHOW }; },
     _newsActuals: newsActuals, _newsState: function(){ return NEWS; }, _newsEvery: newsEvery, _newsTick: newsTick,
     _newsCard: function(i, k){ var p = panes[i || 0]; if (!p) return null; var h = k == null ? null : (p._news || [])[k]; newsCard(p, h || null); return h ? (p.card ? p.card.textContent : '') : null; },
+    _dwAdopt: function(raw, list){ dwAdopt('L|' + raw, list, Date.now()); },   // a list from the server (tbSync's test)
     _lvTr: function(rows){ LTR.rows = (rows || []).map(lvTrNorm).filter(Boolean); LTR.at = Date.now(); if (S && S.live) render(); }, _tmAt: function(i, x, y){ return tmAt(panes[i || 0], x, y); }, _rtGo: function(i){ rtGo(panes[i || 0]); }, _rtOff: function(i){ return rtOff(panes[i || 0]); }, _tmCardText: function(i, tk){ var p = panes[i || 0], x = p && lvTrList(PS(p)).filter(function(q){ return q.ticket === String(tk); })[0]; if (!x) return null; var c = document.createElement('div'); tmCard(p, { g: { list: [x] }, x: 100, top: 100, bot: 110, above: true }, c); return c.textContent; }, _tmk: function(i){ var p = panes[i || 0]; return p ? p._tmk : null; }, _arw: function(i){ var p = panes[i || 0]; return (p && p.series.__stArw) ? p.series.__stArw.items : []; } };
 })();
 </script>

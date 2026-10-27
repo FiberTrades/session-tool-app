@@ -323,6 +323,26 @@
     var h2 = P._plat().tb2;
     check('a chart window\'s toolbar: the tools row as it was (the tools, hide, lock, delete, object tree)', /id="stpr-tools"/.test(h2) && /id="stpr-hideall"/.test(h2) && /id="stpr-del"/.test(h2) && /id="stpr-treebtn"/.test(h2) && /id="stpr-undo"/.test(h2), h2.length);
 
+    // ---- a trade's box stays after the trade has closed, until deleted by hand (Nestor, 26 Oct 2026: "today it disappears") ----
+    var oi0 = window.__stLive.openIdeas, Bx = P._panes()[0].bars, lx = Bx[Bx.length - 1].close, tx0 = Bx[Bx.length - 30].time, rawx = P._s().sym.raw;
+    var bxr = { symbol: 'EURUSD', ticket: 88001, login: 90001234, direction: 'long', lots: 1, openedAt: tx0 * 1000, risk0: 100, risk: 100, tick: { op: lx - 0.0005, rpx: 0.0007, sl: -1, tp: 2, r: 0.5, pnl: 50, px: lx, at: Date.now(), dg: 5, lad: '' } };
+    var box = function () { return (P._dr().list || []).filter(function (d) { return d && d.trade === 'tb:88001'; })[0]; };
+    P._cfg().tbSince = tx0 - 3600;   // a trade opened after this rule came in (its own day starts at the chart's clock here)
+    window.__stLive.openIdeas = function () { bxr.tick.at = Date.now(); return [{ main: bxr, rows: [bxr] }]; };
+    for (k = 0; k < 30 && !box(); k++) await W(250);
+    check('an open trade: its box on the chart, running', box() && box().type === 'long' && box().live, box());
+    window.__stLive.openIdeas = function () { return []; };
+    P._lvTr([{ ticket: 88001, symbol: 'EURUSD', direction: 'buy', lots: 1, entry_price: bxr.tick.op, exit_price: lx, open_time: new Date(tx0 * 1000).toISOString(), close_time: new Date(Bx[Bx.length - 5].time * 1000).toISOString(), pnl: 50, risk_gbp: 100, login: '90001234', sl_pips: 7, tp_pips: 14 }]);
+    for (k = 0; k < 30 && box() && box().live; k++) await W(250);
+    check('...closed: the box stays, ending at the close', box() && !box().live && box().b.t === Bx[Bx.length - 5].time, box());
+    P._dwAdopt(rawx, (P._dr().list || []).filter(function (d) { return !(d && d.trade); }));
+    check('...(another window\'s older list adopted from the server, without it)', !box());
+    for (k = 0; k < 30 && !box(); k++) await W(250);
+    check('...it is made again: only the member deletes it', !!box() && !P._cfg().tbDel['tb:88001'], box());
+    var Lx = P._dr().list; Lx.splice(Lx.indexOf(box()), 1); await W(3500);
+    check('...deleted by hand: it stays deleted (remembered)', !box() && P._cfg().tbDel['tb:88001'] === 1, P._cfg().tbDel);
+    P._lvTr([]); window.__stLive.openIdeas = oi0; await W(400);
+
     // ---- Replay: the window as it was, and back ----
     $('[data-plrp]').click(); await W(200);
     var askEl = document.getElementById('lc-ask-bg'); check('Replay in the top bar asks first, as the switch does', askEl && /Switch to Replay\?/.test(askEl.textContent));
