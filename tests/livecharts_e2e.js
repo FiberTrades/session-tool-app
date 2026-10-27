@@ -191,7 +191,7 @@
     pev('pointerdown', ySL); pev('pointermove', ySL - 20); pev('pointermove', ySL - 40); pev('pointerup', ySL - 40);
     var want = pane0.series.coordinateToPrice(ySL - 40); await W(120);   // the price where it was let go (the scale may move after)
     var box = pane0.el.querySelector('.stpr-tmc');
-    check('let go: "Move SL to <price> in MT5?" with Move and Cancel; the line waits where it was let go', box && box.style.display === 'flex' && /Move SL to \d\.\d{5} in MT5\?/.test(box.textContent) && Math.abs(P._lines(0).filter(function (l) { return l.k === 'lt|990077|sl|'; })[0].p - want) < 0.00002, box && box.textContent);
+    check('let go: "Move SL to <price> · its money · risks/locks N.NNR" with Move and Cancel (26 Oct 2026); the line waits where it was let go', box && box.style.display === 'flex' && /Move SL to \d\.\d{5}· ([+−]£[\d,.]+ · )?(at break-even|locks \+\d+\.\d\dR|risks \d+\.\d\dR)MoveCancel/.test(box.textContent) && Math.abs(P._lines(0).filter(function (l) { return l.k === 'lt|990077|sl|'; })[0].p - want) < 0.00002, box && box.textContent);
     box.querySelector('[data-tmc="1"]').click();
     for (k = 0; k < 40 && !(TM.last(990077) && TM.last(990077).a === 'sl'); k++) await W(150);
     await W(150);
