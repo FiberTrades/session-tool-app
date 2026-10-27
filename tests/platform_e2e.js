@@ -32,9 +32,18 @@
       var wr0 = win.getBoundingClientRect();
       // the sheet's slide (.32 s) waited out rather than a fixed pause: up (open) or down (closed), its class and its place both
       var sheetAt = async function (open) { for (var q = 0; q < 40; q++) { var sr = $('.ph-sheet').getBoundingClientRect(); if (win.classList.contains('ph-open') === open && (open ? sr.bottom <= innerHeight + 1 : sr.top >= innerHeight - 1)) return true; await W(100); } return false; };
-      check('a phone: Live fills the screen', win.classList.contains('plph') && P._plat().on && Math.abs(wr0.top) < 1 && Math.abs(wr0.left) < 1 && Math.abs(wr0.width - innerWidth) < 2 && Math.abs(wr0.height - innerHeight) < 2, [win.className, wr0.top, wr0.height, innerHeight]);
+      // Charts as the Community tab (Nestor, 26 Oct 2026): a page first - the title, the tab icons, the platform under them - then scrolled
+      // to, full screen and locked; a button top-left leaves it, any tab a tap away; nothing remembered
+      try { window.scrollTo(0, 0); } catch (e) {} await W(400); wr0 = win.getBoundingClientRect();
+      var tabsP = $('.container > .tabs');
+      check('a phone: Charts opens as a page - the title and the tab icons, the platform under them, the screen\'s width and height', win.classList.contains('plph') && !win.classList.contains('ph-full') && P._plat().on && tabsP && getComputedStyle(tabsP).display !== 'none' && tabsP.getBoundingClientRect().bottom < wr0.top && wr0.top > 100 && Math.abs(wr0.left) < 1 && Math.abs(wr0.width - innerWidth) < 2 && Math.abs(wr0.height - innerHeight) < 2 && $('.ph-cover') && /Scroll down/.test($('.ph-cover').textContent),
+        [win.className, Math.round(wr0.top), Math.round(wr0.height), innerHeight, tabsP && getComputedStyle(tabsP).display]);
+      window.scrollTo(0, Math.round((window.scrollY + wr0.top) * 0.6)); for (k = 0; k < 30 && !win.classList.contains('ph-full'); k++) await W(100); await W(700);
+      wr0 = win.getBoundingClientRect();
+      check('...scrolled down: full screen, locked, the way out top-left', win.classList.contains('ph-full') && document.body.classList.contains('st-phfull') && getComputedStyle(document.body).overflow === 'hidden' && Math.abs(wr0.top) < 1 && Math.abs(wr0.height - innerHeight) < 2 && $('.ph-exit') && $('.ph-exit').getBoundingClientRect().left < 20 && $('.ph-exit').getBoundingClientRect().top < 20,
+        [win.className, Math.round(wr0.top), Math.round(wr0.height), getComputedStyle(document.body).overflow]);
       var nm0 = $('#stpr-grid .pl-nm'), oh0 = $('#stpr-grid .stpr-ohlc');
-      check('its legend: the name, then O H L C on the line under it, then the Session Indicator line and the account pill', nm0 && /^Euro \/ U\.S\. Dollar · 15 · /.test(nm0.textContent) && oh0 && oh0.getBoundingClientRect().top > nm0.getBoundingClientRect().top + 8 && $('.ph-ov [data-phsi]') && $('.ph-ov [data-phpill]') && /ON|OFF/.test($('[data-phpill]').textContent),
+      check('its legend: the name beside the way out, O H L C under it, then the account pill and the Session Indicator line under it', nm0 && /^Euro \/ U\.S\. Dollar · 15 · /.test(nm0.textContent) && nm0.getBoundingClientRect().left > $('.ph-exit').getBoundingClientRect().right && oh0 && oh0.getBoundingClientRect().top > nm0.getBoundingClientRect().top + 8 && $('.ph-ov [data-phsi]') && $('.ph-ov [data-phpill]') && $('.ph-ov [data-phpill]').getBoundingClientRect().top < $('.ph-ov [data-phsi]').getBoundingClientRect().top && /ON|OFF/.test($('[data-phpill]').textContent),
         [nm0 && nm0.textContent, $('.ph-ov') && $('.ph-ov').textContent]);
       var bar = $('.ph-bar'), kids = [$('.ph-logo'), $('.ph-live'), $('.ph-bar #stpr-sym'), $('.ph-tf'), $('.ph-icons #stpr-drawbtn'), $('.ph-icons #stpr-undo'), $('.ph-icons #stpr-layersbtn'), $('.ph-icons #stpr-alertsbtn')];
       check('the bottom toolbar: the logo first, Live, the symbol, the timeframe, drawing tools, undo, Show on chart, alerts - all on screen', kids.every(function (k) { return k && k.getBoundingClientRect().width > 0 && k.getBoundingClientRect().right <= innerWidth + 1; }) && !!$('.ph-logo svg'),
@@ -87,6 +96,14 @@
       if (!window.__stNav) { $('.ph-navs [data-phnavt="bias"]').click(); await W(600);
         check('...a tab from there: that page, the chart put away', document.getElementById('page-bias').classList.contains('active') && getComputedStyle(win).display === 'none' || !document.getElementById('page-livecharts').classList.contains('active'));
         document.querySelector('.tab[data-page="livecharts"]').click(); await W(1500); }
+      try { if (window.__stNav && window.__stNav.close) window.__stNav.close(); } catch (e) {} await W(300);
+      if (!win.classList.contains('ph-full')) { window.scrollTo(0, Math.round(window.scrollY + win.getBoundingClientRect().top)); for (k = 0; k < 30 && !win.classList.contains('ph-full'); k++) await W(100); await W(600); }
+      $('.ph-exit').click(); await W(800);
+      check('the way out: the page as it was (at its top), the tab icons a tap away', !win.classList.contains('ph-full') && !document.body.classList.contains('st-phfull') && window.scrollY === 0 && getComputedStyle($('.container > .tabs')).display !== 'none', [win.className, window.scrollY]);
+      document.querySelector('.tab[data-page="bias"]').click(); await W(800);
+      check('...another tab: that page', document.getElementById('page-bias').classList.contains('active'));
+      document.querySelector('.tab[data-page="livecharts"]').click(); for (k = 0; k < 30 && !P._plat().on; k++) await W(150); await W(1200);
+      check('...back to Charts: a page again, not full screen (nothing remembered)', document.getElementById('page-livecharts').classList.contains('active') && !win.classList.contains('ph-full') && !document.body.classList.contains('st-phfull'), win.className);
       check('no errors', errs.length === 0, errs.slice(0, 3));
       // for the picture: the sheet open, the chevron's menu showing
       try { if (window.__stNav && window.__stNav.isOpen()) window.__stNav.close(); } catch (e) {} await W(400);

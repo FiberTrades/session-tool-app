@@ -43,7 +43,7 @@ src = open(os.path.join(HERE, 'platform_e2e.js'), encoding='utf-8').read().repla
 tjs = os.path.join(tempfile.gettempdir(), 'st_platform_e2e_run_%d.js' % os.getpid()); open(tjs, 'w', encoding='utf-8').write(src)
 rc = subprocess.call([sys.executable, os.path.join(HERE, 'browser_test.py'), tjs], env=env)
 print('\n-- on a phone --')
-rc2 = subprocess.call([sys.executable, os.path.join(HERE, 'browser_test.py'), tjs], env=dict(env, E2E_MOBILE='390x844'))
+rc2 = subprocess.call([sys.executable, os.path.join(HERE, 'browser_test.py'), tjs], env=dict(env, E2E_MOBILE=os.environ.get('E2E_PHONE', '390x844')))   # E2E_PHONE=375x812: a smaller phone
 relay.terminate(); ea.terminate()
 try:
     log = json.load(open(out))

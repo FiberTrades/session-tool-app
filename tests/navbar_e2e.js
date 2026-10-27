@@ -75,7 +75,8 @@
     document.querySelector('.container > .tabs .tab[data-page="trades"]').click(); await W(600);
     ok('tapping the Statistics box opens Statistics', document.querySelector('.tab[data-page="trades"]').classList.contains('active') && document.getElementById('page-trades').classList.contains('active'), (document.querySelector('.page.active') || {}).id);
     all8(); document.querySelector('.tab[data-page="livecharts"]').click(); await W(800);
-    ok('on Charts the row is hidden', getComputedStyle(row).display === 'none', getComputedStyle(row).display);
+    // Charts opens as a page like the others since 26 Oct 2026 (Nestor: "like community chat"): the row stays; only the chart's full screen covers it
+    ok('on Charts the row stays (a page first; the chart\'s full screen covers it)', getComputedStyle(row).display !== 'none', getComputedStyle(row).display);
     ok('window.__stNav keeps its API', typeof __stNav.open === 'function' && typeof __stNav.close === 'function' && typeof __stNav.isOpen === 'function', Object.keys(__stNav));
     __stNav.open(); await W(400);
     ok('__stNav.open() opens it', __stNav.isOpen(), __stNav.isOpen());
