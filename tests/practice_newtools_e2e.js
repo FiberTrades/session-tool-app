@@ -173,7 +173,7 @@
     // 12. the object tree names them, with their icons
     document.getElementById('stpr-treebtn').click(); await W(60);
     var m = document.getElementById('stpr-menu'), rows = Array.prototype.map.call(m.querySelectorAll('.stpr-otn span'), function (e) { return e.textContent; });
-    ok('the object tree lists them by name, each with its tool\'s icon', ['Vertical line', 'Horizontal ray', 'Ray', 'Arrow', 'Parallel channel', 'Highlighter', 'Price note', 'Circle'].every(function (n) { return rows.indexOf(n) >= 0; }) && m.querySelectorAll('.stpr-otn svg').length === rows.length, rows);
+    ok('the object tree lists them by name, each with its tool\'s icon', ['Vertical line', 'Horizontal ray', 'Ray', 'Arrow', 'Parallel channel', 'Highlighter', 'Price note', 'Ellipse'].every(function (n) { return rows.indexOf(n) >= 0; }) && m.querySelectorAll('.stpr-otn svg').length === rows.length, rows);
     var noteRow = Array.prototype.filter.call(m.querySelectorAll('.stpr-otn'), function (b) { return /Price note/.test(b.textContent) && /Breakout/.test(b.textContent); })[0];
     ok('a note\'s row shows its words', !!noteRow);
     document.getElementById('stpr-treebtn').click(); await W(30);
@@ -192,7 +192,7 @@
     if (typeof setLanguage === 'function') { setLanguage('es'); await W(200); P._render();
       tools.querySelector('[data-tgrp="shapes"]').click(); await W(30);
       var es = Array.prototype.map.call(tools.querySelectorAll('.stpr-tg[data-grp="shapes"] [data-tool] span'), function (e) { return e.textContent; });
-      ok('in Spanish: Dibujar, Resaltador, Flecha, Rectángulo, Trayectoria, Círculo, and the arrow says Formas', es.filter(function (n) { return /^(Dibujar|Resaltador|Flecha|Rectángulo|Trayectoria|Círculo)$/.test(n); }).join(',') === 'Dibujar,Resaltador,Flecha,Rectángulo,Trayectoria,Círculo' && tools.querySelector('[data-tgrp="shapes"]').title === 'Formas', [es, tools.querySelector('[data-tgrp="shapes"]').title]);
+      ok('in Spanish: Pincel, Resaltador, Flecha, Rectángulo, Trayectoria, Círculo, Elipse, and the arrow says Formas', es.filter(function (n) { return /^(Pincel|Resaltador|Flecha|Rectángulo|Trayectoria|Círculo|Elipse)$/.test(n); }).join(',') === 'Pincel,Resaltador,Flecha,Rectángulo,Trayectoria,Círculo,Elipse' && tools.querySelector('[data-tgrp="shapes"]').title === 'Formas', [es, tools.querySelector('[data-tgrp="shapes"]').title]);
       P._flyShut(); setLanguage('en'); await W(200); }
     P._flyShut();
     try { Object.keys(localStorage).filter(function (k) { return /^st_practice/.test(k); }).forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
