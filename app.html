@@ -93115,9 +93115,26 @@ window.__stAZ = (function () {
 <script>
 (function(){
   var LWC_SRC = 'https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js';
+  var LWC_ALT = 'https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js';
   var lwcP = null;
+  // The chart library (27 Oct 2026, Nestor: charts loading slowly - traced: the Charts click waited 7.4 s on the CDN before the first
+  // candle was even asked for). The same script a module already added is waited on, not fetched again; the same version from a
+  // second CDN joins in when the first is slow (1.2 s; it is there in a few hundred ms when well) or fails, and whichever arrives first is used.
   function ensureLWC(){ if (window.LightweightCharts) return Promise.resolve(); if (lwcP) return lwcP;
-    lwcP = new Promise(function(res, rej){ var s = document.createElement('script'); s.src = LWC_SRC; s.onload = function(){ res(); }; s.onerror = function(){ lwcP = null; rej(new Error('lwc')); }; document.head.appendChild(s); }); return lwcP; }
+    lwcP = new Promise(function(res, rej){ var done = false, tried = 0, failed = 0, alt = false;
+      var ok = function(){ if (done || !window.LightweightCharts) return; done = true; clearInterval(iv); res(); };
+      var fail = function(){ failed++; if (done) return; if (!alt) { second(); return; } if (failed >= tried) { done = true; clearInterval(iv); lwcP = null; rej(new Error('lwc')); } };
+      var iv = setInterval(ok, 150);   // or another module's copy arrived first
+      var first = function(){ tried++; var ex = document.querySelector('script[src="' + LWC_SRC + '"]'), sc = ex || document.createElement('script');
+        sc.addEventListener('load', ok); sc.addEventListener('error', fail); if (!ex) { sc.src = LWC_SRC; document.head.appendChild(sc); } else ok(); };
+      // the second CDN's copy is fetched and run at once: added as a script it waited seconds for its turn behind the busy page
+      var second = function(){ if (alt || done) return; alt = true; tried++;
+        fetch(LWC_ALT).then(function(r){ if (!r.ok) throw new Error('lwc ' + r.status); return r.text(); }).then(function(tx){ if (!window.LightweightCharts) (new Function(tx))(); ok(); if (!done) fail(); }).catch(fail); };
+      first(); setTimeout(second, 1200); });
+    return lwcP; }
+  // ...and asked for once the app has started, so the first Charts click finds it here (the cache keeps it after that)
+  try { if (document.getElementById('page-livecharts')) window.addEventListener('load', function(){ var go = function(){ ensureLWC().catch(function(){}); };
+    if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(go, { timeout: 800 }); else setTimeout(go, 300); }); } catch (e) {}
   /* The stage: where Live Charts is - this window, or Live Charts' own window (livecharts.html), which this window draws as it draws a
      chart window (stageAttach, 23 Oct 2026). Its elements are looked up there first. */
   var SD = document, SW = window;
@@ -97840,12 +97857,13 @@ window.__stAZ = (function () {
     var win = $('stpr-win'); win.classList.add('lc'); win.classList.remove('lcp');
     if (!(S && S.live)) { var ch = $('stpr-chip'); ch.className = 'stpr-chip lvoff'; ch.innerHTML = '<i></i>' + esc(T('Live', 'En vivo')); $('stpr-when').textContent = T('Your MT5 prices', 'Precios de tu MT5'); $('stpr-score').innerHTML = ''; }   // LIVE from the first frame (18 Oct 2026: "for a split second the practice pink button"), grey until its prices come in
     if (S && !S.live) { if (S.pos) closeNow(); if (S) S.pend = null; resumeSave(); pushTrades(); popShutAll(); if (LOG.open) logOpen(false); }   // the replay that was here
+    var lwc = ensureLWC(); lwc.catch(function(){});   // the chart library loads while the symbols and the candles are asked for, not before them (27 Oct 2026)
     await loadSymbols(); var sym = symLive(raw) || symLive(canon(raw)) || symLive(CFG.sym) || (SYMS && SYMS[0]);
     if (!sym) { st.textContent = T('No candles stored yet.', 'Aún no hay velas guardadas.'); return false; }
-    try { await ensureLWC(); } catch (e) { st.textContent = T('The chart could not load (it needs internet).', 'No se pudo cargar el gráfico (necesita internet).'); return false; }
     lvPrefetch(sym.raw);   // every chart's history asked now, alongside the day's minutes (24 Oct 2026)
     try { var e0 = eaFor(sym); if (e0 && e0.hub) lvCloudSym(e0); } catch (e) {}   // a cloud account's own chart for it asked now, not after the candles
     var day = liveDay(sym), f = dayFrame(day), end = Math.min(nowS(), f.close), F0 = await liveFeed(sym, f);
+    try { await lwc; } catch (e) { st.textContent = T('The chart could not load (it needs internet).', 'No se pudo cargar el gráfico (necesita internet).'); return false; }
     if (F0.ea && F0.ea.raw && F0.ea.raw !== sym.name) F0.sym = Object.assign({}, sym, { name: F0.ea.raw });   // what this member's MT5 calls it
     if (!LV.inl && !LV.max) return false;   // the tab was left meanwhile
     lvMMOff(); clearInterval(LV.tdk); LV.tdk = 0;   // the panel's EA values, if any, set aside first; Back Testing's today stops
