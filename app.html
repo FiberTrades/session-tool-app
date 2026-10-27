@@ -88690,7 +88690,7 @@ window.__stAZ = (function () {
       var d=(r&&r.data)||[], out=[], lastT=-1e18;
       for(var i=0;i<d.length;i++){ var t=Number(d[i].t); if(t-lastT<30) continue;
         out.push({time:t,open:Number(d[i].o),high:Number(d[i].h),low:Number(d[i].l),close:Number(d[i].c),vol:d[i].v==null?null:+d[i].v}); lastT=t; }
-      return out; }catch(_){ return []; } }
+      return window.__stCandleGrid?window.__stCandleGrid(out,tf):out; }catch(_){ return []; } }
   async function fetchCandles(symbol,tf,from,to){ var sb=sbc(); if(!sb) return [];
     // Supabase caps an RPC response at ~1000 rows, so page through with .range() and
     // stitch — this way ANY-length trade (however many bars entry→exit spans) loads fully.
@@ -88705,7 +88705,7 @@ window.__stAZ = (function () {
     var out=[],lastT=-1e18;
     for(var i=0;i<rows.length;i++){ var t=Number(rows[i].t); if(t-lastT<30) continue;
       out.push({time:t,open:Number(rows[i].o),high:Number(rows[i].h),low:Number(rows[i].l),close:Number(rows[i].c),vol:rows[i].v==null?null:+rows[i].v}); lastT=t; }
-    return out; }
+    return window.__stCandleGrid?window.__stCandleGrid(out,tf):out; }   // 4h and 1D: only those on the New York-close grid (27 Oct 2026)
 
   // MAE / MFE for a closed trade, from the SAME stored candles the replay draws. That means it's
   // the TRUE excursion — the worst and best price actually reached while the position was open —
@@ -93156,6 +93156,14 @@ window.__stAZ = (function () {
     var o = zParts(t * 1000, NY), y = +o.year, m = +o.month - 1, d = +o.day, mins = (+o.hour % 24) * 60 + (+o.minute);
     var r = mins >= 17 * 60 ? zoned(y, m, d, 17, 0, NY) : zoned(y, m, d - 1, 17, 0, NY); openCache[k] = r; return r; }
   function tradeDate(t){ var o = zParts((dayOpenOf(t) + 8 * 3600) * 1000, NY); return { y: +o.year, m: +o.month - 1, d: +o.day, w: WD[o.weekday] }; }
+  // MT5 opens 4h and 1D candles from its server's midnight: 17:00 New York on FTMO and most brokers, the grid the charts' 4h, 12h and
+  // 1D are built on. A broker whose server keeps another clock sends its 4h and 1D an hour or more off it, and they were stored beside
+  // the others under the same symbol: EUR/USD's 4h had two series an hour apart since 2023, and every 4h bar on the chart mixed the
+  // two (Nestor, 27 Oct 2026: "the 4h bars look strange? whats wrong?"). Those are left out - unless nothing is on the grid (a symbol
+  // only such a broker sends), when they are all there is.
+  function onGridRows(rows, tf){ if (tf !== 240 && tf !== 1440) return rows; var s = tf * 60, on = function(b){ var t = b.time; return ((t - dayOpenOf(t)) % s + s) % s === 0; };
+    var keep = rows.filter(on); return keep.length ? keep : rows; }
+  window.__stCandleGrid = onGridRows;
   // Where a moment's candle starts on each timeframe: intraday on the clock, 4h/12h/1D from the day's open, 1W from the
   // week's Sunday open, 1Y by the trading day's year.
   function keyOf(tf, t){
@@ -93345,7 +93353,7 @@ window.__stAZ = (function () {
         var d = (r && r.data) || []; for (var k = 0; k < d.length; k++) rows.push(d[k]); if (d.length < PAGE) break; pg++; } } catch (e) {}
     var out = [], last = -1e18;
     for (var i = 0; i < rows.length; i++) { var t = Number(rows[i].t); if (t - last < 30) continue; out.push({ time: t, open: +rows[i].o, high: +rows[i].h, low: +rows[i].l, close: +rows[i].c, vol: rows[i].v == null ? null : +rows[i].v }); last = t; }
-    return out; }
+    return onGridRows(out, tf); }
 
   // ---- the trading day ----
   // "14:30", "1430", "9:05", "9" -> minutes after midnight

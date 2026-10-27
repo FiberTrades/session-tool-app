@@ -67,6 +67,33 @@ async function clockOff(symbol: string, tf: number, rows: Array<Record<string, n
   return "";
 }
 
+// 4h and 1D bars off the New York-close grid (27 Oct 2026). MT5 opens them from its server's midnight - 17:00 New York on FTMO and
+// most brokers - and the app builds its 4h, 12h and 1D on that grid. A broker whose server keeps another clock sends them an hour or
+// more off it, and they were stored beside the others under the same symbol: EUR/USD's 4h held two series an hour apart, and every
+// 4h bar on the chart mixed the two (Nestor: "the 4h bars look strange?"). Such bars are left out where the symbol has bars on the
+// grid (in the batch, or stored within a week of it); a symbol only such a broker sends keeps its own.
+const NYF = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+function onNyGrid(t: number, tf: number): boolean {
+  const p: Record<string, string> = {};
+  for (const x of NYF.formatToParts(new Date(t * 1000))) p[x.type] = x.value;
+  const ny = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second) / 1000;   // New York's wall clock at t
+  const s = tf * 60;
+  return (((ny - 17 * 3600) % s) + s) % s === 0;
+}
+async function offGrid(symbol: string, tf: number, rows: Array<Record<string, number | string>>): Promise<Array<Record<string, number | string>>> {
+  if (tf !== 240 && tf !== 1440) return rows;
+  const on = rows.filter((x) => onNyGrid(Number(x.t), tf));
+  if (on.length) return on;   // all on the grid, or the batch has the grid's own: those
+  const ts = rows.map((x) => Number(x.t)), lo = Math.min(...ts) - 7 * 86400, hi = Math.max(...ts) + 7 * 86400;
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/candles?select=t&symbol=eq.${encodeURIComponent(symbol)}&tf=eq.${tf}&t=gte.${lo}&t=lte.${hi}&limit=500`,
+      { headers: { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` } });
+    if (!r.ok) return rows;
+    const have: Array<{ t: number }> = await r.json();
+    return have.some((x) => onNyGrid(Number(x.t), tf)) ? [] : rows;
+  } catch { return rows; }
+}
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -127,6 +154,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
   // a batch that repeats the candles already stored a few minutes away.
   const bad = await clockOff(symbol, tf, rows);
   if (bad) return json({ ok: true, upserted: 0, rejected: rows.length, reason: bad });
+  const nOff = rows.length;
+  rows = await offGrid(symbol, tf, rows);
+  if (!rows.length) return json({ ok: true, upserted: 0, rejected: nOff, reason: "4h / 1D bars off the New York-close grid" });
   if (tf <= 5) {
     const edge = Date.now() / 1000 - DEEP_AGE, deep = rows.filter((x) => Number(x.t) < edge).length;
     if (deep && (await dbBytes()) > DEEP_CAP) {
