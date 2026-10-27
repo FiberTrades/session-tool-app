@@ -324,6 +324,8 @@
     document.body.click(); $('#stpr-cw').click(); await W(150);
     $('[data-pltheme]').click(); await W(600);
     check('the sun: TradingView\'s light theme, the chart and the frame', P._cfg().look.bg === '#ffffff' && win.classList.contains('pl-lt') && getComputedStyle($('.plat-top')).backgroundColor === 'rgb(255, 255, 255)', [P._cfg().look.bg, win.className]);
+    var mk0 = getComputedStyle($('.plat-top .pl-mark'));
+    check('...the logo on its small dark tile (Nestor: "hard to see with so much white around it")', mk0.backgroundColor === 'rgb(19, 23, 34)' && Math.round(parseFloat(mk0.width)) === 32 && parseFloat(mk0.borderRadius) === 6, [mk0.backgroundColor, mk0.width, mk0.borderRadius]);
     var ta2 = tabs.querySelector('.tab.active'), tabsLt = { h: tabs.offsetHeight, th: ta2.offsetHeight, fs: getComputedStyle(ta2).fontSize, tb: getComputedStyle(ta2).backgroundColor, bg: getComputedStyle(tabs).backgroundColor, tk: $('.ticker-bar') ? getComputedStyle($('.ticker-bar')).backgroundColor : '' };
     check('...only the chart and the platform: the app\'s tab row and the market ticker stay dark, as they are', JSON.stringify(tabsLt) === JSON.stringify(tabsBefore) && !/\|lt/.test(($('#ticker-widget-host') || {})._tickerSig || ''), [tabsBefore, tabsLt]);
     $('[data-pltheme]').click(); await W(600);
