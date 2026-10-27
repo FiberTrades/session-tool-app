@@ -244,6 +244,10 @@
     var si0 = P._cfg().mini; $('[data-plsi]').click(); await W(300);
     check('the Session Indicator chip switches it on the chart', !!(P._cfg().showPer && P._cfg().showPer[0] && P._cfg().showPer[0].mini === !si0) && !$('.pl-si').classList.contains('off') === !si0, P._cfg().showPer);
     $('[data-plsi]').click(); await W(200);
+    $('#stpr-layersbtn').click(); await W(250);
+    var lym = $('#stpr-menu.show');
+    check('Show on chart: no Session Indicator row (its chip is in the top bar), the trade lines and the rest still there', lym && !lym.querySelector('#stpr-mini') && lym.querySelector('#stpr-marks') && lym.querySelector('#stpr-pos'), lym && lym.textContent.slice(0, 120));
+    document.body.click(); $('#stpr-cw').click(); await W(150);
     $('[data-pltheme]').click(); await W(600);
     check('the sun: TradingView\'s light theme, the chart and the frame', P._cfg().look.bg === '#ffffff' && win.classList.contains('pl-lt') && getComputedStyle($('.plat-top')).backgroundColor === 'rgb(255, 255, 255)', [P._cfg().look.bg, win.className]);
     var ta2 = tabs.querySelector('.tab.active'), tabsLt = { h: tabs.offsetHeight, th: ta2.offsetHeight, fs: getComputedStyle(ta2).fontSize, tb: getComputedStyle(ta2).backgroundColor, bg: getComputedStyle(tabs).backgroundColor, tk: $('.ticker-bar') ? getComputedStyle($('.ticker-bar')).backgroundColor : '' };
