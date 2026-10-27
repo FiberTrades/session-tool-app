@@ -28,6 +28,19 @@
     if (item) { item.click(); await W(500); }
     var n1 = ((data.review && data.review.trades) || []).length;
     ok('...and it adds a trade', n1 === n0 + 1, [n0, n1, !!pop]);
+    // the session countdown's small h / m / s and "left": 1 px bigger than they were (.62em), at any size of the row (27 Oct 2026)
+    var ms = $('#meta-session'), un = document.createElement('span'); un.className = 'ms-u'; ms.appendChild(un);
+    var fu = parseFloat(getComputedStyle(un).fontSize), fb = parseFloat(getComputedStyle(ms).fontSize); un.remove();
+    ok('the countdown\'s h / m / s: 1 px bigger than .62 of the row', Math.abs(fu - (fb * 0.62 + 1)) < 0.05, [fu, fb]);
+    // Charts: the green "Session live" label as far from the tab row (a band of its own there) as from what follows it (a computer)
+    window.__stLcForce = true; window.__stPlatOff = false;
+    document.querySelector('.tab[data-page="livecharts"]').click(); for (var k = 0; k < 40 && !$('#page-livecharts.active'); k++) await W(150); window.scrollTo(0, 0); await W(800); updateSessionLiveBanner(); await W(200);
+    if (innerWidth >= 821) {
+      var pill = $('#session-live-pill'), tabs = $('.container > .tabs'), pr = pill.getBoundingClientRect(), tr = tabs.getBoundingClientRect(), nx = pill.nextElementSibling;
+      while (nx && !(nx.getBoundingClientRect().height > 0)) nx = nx.nextElementSibling;
+      var up = pr.top - tr.bottom, dn = nx ? nx.getBoundingClientRect().top - pr.bottom : -1;
+      ok('Charts: the "Session live" label has the same space above it as below it', vis(pill) && up >= 20 && Math.abs(up - dn) <= 1, [Math.round(up), Math.round(dn), $('#page-livecharts').className]);
+    }
   } catch (e) { ok('test ran', false, String(e && e.stack || e)); }
   return out;
 })()
