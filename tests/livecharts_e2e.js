@@ -382,13 +382,16 @@
     window.__stSB.rpc = function (fn, a) { calls1.push([fn, a]); return Promise.resolve({ data: 1792723362, error: null }); };
     LN._send = function (ev, p) { pokes1.push([ev, p]); return snd1.apply(this, arguments); };
     try {
-      check('EA 9.10: Role Off, a button', cpb() && cpb().textContent === 'Off', cpb() && cpb().textContent);
-      cpb().click(); await W(100);
-      check('pressed: Lead at once, "Sending..." - nothing sent yet (it waits a moment for another press)', cpb().textContent === 'Lead' && /Sending/.test(mmTxt()) && calls1.length === 0, [cpb().textContent, calls1.length]);
-      await W(1200);
-      check('...then saved for that account (st_copy_wish, lead) and its EAs poked on the live line; "Asked HH:MM"', calls1.length === 1 && calls1[0][0] === 'st_copy_wish' && calls1[0][1].p_role === 'lead' && calls1[0][1].p_login === String(ea3.lg) && pokes1.some(function (q) { return q[0] === 'role' && q[1].lg === +ea3.lg; }) && /Asked \d\d:\d\d/.test(mmTxt()), [calls1, pokes1.map(function (q) { return q[0]; })]);
+      // in words since 27 Oct 2026 (Nestor: "i dont know if i am asking to follow or for the account to be a follow account"; his Lead went off
+      // by one press): the action named, and asked once before it goes
+      var cpa = function (a) { return document.querySelector('#stpr-mm [data-cpact^="' + a + '|"]'); };
+      check('EA 9.10: not copied, "Make <account> the Lead" named', cpa('lead') && /^Make .+ the Lead$/.test(cpa('lead').textContent) && /Not copied/.test(mmTxt()), mmTxt().slice(-200));
+      cpa('lead').click(); await W(150);
+      check('pressed: it asks first ("... Make ... the Lead?") - nothing sent yet', /Make .+ the Lead\?/.test(mmTxt()) && document.querySelector('#stpr-mm [data-cpyes]') && calls1.length === 0, [mmTxt().slice(-200), calls1.length]);
+      document.querySelector('#stpr-mm [data-cpyes]').click(); await W(400);
+      check('...yes: saved for that account (st_copy_wish, lead), its EAs poked on the live line; "Making it the Lead… (asked HH:MM)"', calls1.length === 1 && calls1[0][0] === 'st_copy_wish' && calls1[0][1].p_role === 'lead' && calls1[0][1].p_login === String(ea3.lg) && pokes1.some(function (q) { return q[0] === 'role' && q[1].lg === +ea3.lg; }) && /Making it the Lead… \(asked \d\d:\d\d\)/.test(mmTxt()), [calls1, pokes1.map(function (q) { return q[0]; }), mmTxt().slice(-160)]);
       var st3 = LC._lvset()[k3]; LC.set({ s: ea3.raw, lg: ea3.lg, st: Object.assign({}, st3, { copy_role: 'lead', copy_followers: 1 }) }); await W(150);
-      check('the EA reports Lead: the card says Lead, "Set HH:MM" in green, and LEAD beside the account', cpb().textContent === 'Lead' && /Set \d\d:\d\d/.test(mmTxt()) && !!document.querySelector('#stpr-mm .stpr-mm-ok') && !!document.querySelector('#stpr-mm .stpr-mm-acc .stpr-mm-role.lead'), mmTxt().slice(-200));
+      check('the EA reports Lead: the card says so in words, "Stop being the Lead" (asking first), and LEAD beside the account', /Lead: /.test(mmTxt()) && cpa('off') && /Stop being the Lead/.test(cpa('off').textContent) && !!document.querySelector('#stpr-mm .stpr-mm-acc .stpr-mm-role.lead'), mmTxt().slice(-200));
       LC.set({ s: ea3.raw, lg: ea3.lg, st: Object.assign({}, st3, { copy_role: 'off', copy_followers: 0 }) }); await W(100);
     } finally { window.__stSB.rpc = rpc1; LN._send = snd1; window.currentUser = cu1; window.__stCopyWish._clear(); eks3.forEach(function (k, i) { eL[k].v = v3[i]; }); ea3.v = v3e; P._render(); await W(100); }
     var ch0 = LC._chimes();
@@ -477,17 +480,20 @@
     document.querySelector('#stpr-mm [data-mm="acct"]').click(); await W(1900);   // opening it asks every EA to say hi (and send its settings)
     LC.set({ s: eaF.raw, lg: eaF.lg, st: Object.assign({}, LC._lvset()[kF] || stF, { copy_role: 'lead', copy_followers: 0 }) }); await W(150);
     var amF = document.getElementById('stpr-menu'); amF.innerHTML = LC._accHtml(false); await W(50);
-    check('with 90001234 the Lead: a Follow button beside MT5 · 90007777 only (not the Lead, not the account on screen) - greyed with an EA before 9.10', amF.querySelectorAll('[data-lvfollow]').length === 1 && !!amF.querySelector('[data-lvfollow="90007777"][disabled]') && /9\.10/.test(amF.querySelector('[data-lvfollow]').title) && /Settings → Accounts/.test(amF.textContent), amF.innerHTML.slice(0, 400));
+    // in words since 27 Oct 2026 ("i dont know if i am asking to follow or for the account to be a follow account"): the action names the Lead
+    var cpF = function () { return amF.querySelector('[data-cpact="follow|90007777"]'); };
+    check('with 90001234 the Lead: "Copy <the Lead>\'s trades" beside MT5 · 90007777 only (not the Lead, not the account on screen) - greyed with an EA before 9.10', amF.querySelectorAll('[data-cpact^="follow|"]').length === 1 && cpF() && cpF().disabled && /^Copy .+’s trades$/.test(cpF().textContent) && /9\.10/.test(cpF().title) && /Lead · its trades are copied/.test(amF.textContent), amF.innerHTML.slice(0, 400));
     var rpcF = window.__stSB.rpc, sndF = LN._send, callsF = [], pokesF = [], cuF = window.currentUser;
     window.currentUser = cuF || { id: '00000000-0000-0000-0000-0000000c0de7' };
     window.__stSB.rpc = function (fn, a) { callsF.push([fn, a]); return Promise.resolve({ data: 1792723362, error: null }); };
     LN._send = function (ev, p) { pokesF.push([ev, p]); return sndF.apply(this, arguments); };
     try {
       ekF.forEach(function (k) { eLf[k].v = '9.10'; }); amF.innerHTML = LC._accHtml(false); await W(50);
-      var fbt = amF.querySelector('[data-lvfollow="90007777"]');
-      check('...EA 9.10: the button can be pressed', !!fbt && !fbt.disabled && fbt.textContent === 'Follow', fbt && fbt.outerHTML);
-      fbt.click(); await W(200);
-      check('...pressed: saved as Follow for 90007777 (st_copy_wish), its EAs poked, the button says "Asked HH:MM", and the chart stays on 90001234', callsF.length === 1 && callsF[0][1].p_login === '90007777' && callsF[0][1].p_role === 'follow' && pokesF.some(function (q) { return q[0] === 'role' && q[1].lg === 90007777; }) && /Asked \d\d:\d\d/.test((amF.querySelector('[data-lvfollow="90007777"]') || {}).textContent || '') && String(LC.state().ea.lg) === '90001234', [callsF, (amF.querySelector('[data-lvfollow]') || {}).textContent]);
+      var fbt = cpF();
+      check('...EA 9.10: the button can be pressed', !!fbt && !fbt.disabled, fbt && fbt.outerHTML);
+      fbt.click(); await W(200); amF = document.getElementById('stpr-menu');
+      var rF = amF.querySelector('[data-lvacc="90007777"]'); rF = rF && rF.closest('.stpr-accw2');
+      check('...pressed: saved as follow for 90007777 (st_copy_wish), its EAs poked, the row says "Setting up copy… (asked HH:MM)", and the chart stays on 90001234', callsF.length === 1 && callsF[0][1].p_login === '90007777' && callsF[0][1].p_role === 'follow' && pokesF.some(function (q) { return q[0] === 'role' && q[1].lg === 90007777; }) && rF && /Setting up copy… \(asked \d\d:\d\d\)/.test(rF.textContent) && String(LC.state().ea.lg) === '90001234', [callsF, rF && rF.textContent]);
     } finally { window.__stSB.rpc = rpcF; LN._send = sndF; window.currentUser = cuF; window.__stCopyWish._clear(); ekF.forEach(function (k, i) { eLf[k].v = vF[i]; }); }
     document.body.click(); await W(100);
     LC.set({ s: eaF.raw, lg: eaF.lg, st: Object.assign({}, stF, { copy_role: 'off', copy_followers: 0 }) }); await W(150);

@@ -92057,6 +92057,14 @@ window.__stAZ = (function () {
   .stpr-accf:disabled { cursor: default; opacity: .6; }
   @media (hover: hover) { .stpr-accf:not(:disabled):hover { color: var(--text); border-color: var(--accent); } }
   .stpr-acc small { flex: none; color: var(--text-dim); font-size: 11px; }
+  /* the picker's rows (27 Oct 2026): the account, its role in words under it, its one action named, a confirm in place */
+  .stpr-accm { min-width: 290px; max-width: 360px; } .stpr-accw2 { padding: 2px 0 6px; } .stpr-accw2 + .stpr-accw2 { border-top: 1px solid var(--border-2); padding-top: 6px; }
+  .stpr-accr { padding: 0 10px 4px; color: var(--text-dim); font-size: 11.5px; line-height: 1.35; } .stpr-accr.wait { color: #f5a524; }
+  .stpr-acca { padding: 0 10px; } .stpr-acca .stpr-accf { height: 28px; }
+  .stpr-cpq { margin: 2px 8px 2px; padding: 8px 10px; border: 1px solid var(--border-2); border-radius: 7px; background: rgba(255,255,255,.03); color: var(--text); font-size: 12px; line-height: 1.4; }
+  .stpr-cpqb { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; } .stpr-cpqb .stpr-accf { height: 28px; } .stpr-accf.go { border-color: var(--st-action-pink, #cc3d8a); background: var(--st-action-pink, #cc3d8a); color: #ffffff; }
+  .stpr-cpr .stpr-accf { height: 28px; }
+  .pl-folln { padding: 8px 12px 2px; color: var(--pl-dim); font-size: 12px; line-height: 1.4; } .pl-box.ro { color: var(--pl-txt); background: transparent; } .pl-folro { margin: 6px 12px 8px; color: var(--pl-dim); font-size: 11.5px; }
   .stpr-acc.on { color: var(--text); border-color: var(--border-2); background: var(--bg); }
   @media (hover: hover) { .stpr-acc:hover { color: var(--text); } }
   .stpr-mm-on { height: 20px; padding: 0 10px; border: 0; background: var(--mm-btn); color: var(--mm-acc); font-family: inherit; font-size: 10.5px; font-weight: 700; letter-spacing: .04em; border-radius: 3px; cursor: pointer; }
@@ -94136,7 +94144,7 @@ window.__stAZ = (function () {
     el.addEventListener('click', function(e){
       var b = e.target.closest && e.target.closest('[data-mm]'); if (!b || !S) return; var k = b.getAttribute('data-mm'), m = CFG.mm;
       if (k === 'acct') return;   // the account picker: the window's click handler opens it (so its menu is not shut as a click outside)
-      if (k === 'cprole') { if (S.live) lvCopyPress(); return; }   // EA 9.10: the copier's role (lvCopyCard), not a panel setting
+      if (k === 'cprole') return;   // (the old one-press role button: its card now asks in words - cpClick)
       if (k === 'exec') { toggleExec(); return; }
       if (k === 'place') { fire(); return; }
       if (k === 'plmore') { PL.more = !PL.more; paintMM(); return; }   // the platform's More settings
@@ -96899,6 +96907,7 @@ window.__stAZ = (function () {
   function lvCfgBack(){ LV.cfgAt = 0; LV.setLater = true; var ae = SD.activeElement, me = mmEl(); if (ae && ae.tagName === 'INPUT' && me && me.contains(ae)) return;
     LV.setLater = false; LV.setSig = ''; if (lvMMApply()) { if (S && S.pv) S.pv.rd = clampSL(S.pv.rd || stopPx()); render(); } }
   function lvTradeWhy(){ if (!S || !S.live) return ''; var e = lvOwnEA();
+    if (e) { var fc = cpOf(e.lg); if (fc.role === 'follow') return T('Trades come from ' + cpName(fc.lead) + ': this account copies it.', 'Las operaciones vienen de ' + cpName(fc.lead) + ': esta cuenta la copia.'); }
     if (!e) return lvHoldable() ? '' : T('To trade ' + S.sym.name + ' from here, open the EA on a ' + S.sym.name + ' chart in MT5.', 'Para operar ' + S.sym.name + ' desde aquí, abre el EA en un gráfico de ' + S.sym.name + ' en MT5.');
     if (vNum(e.v) < 9.02) return T('Placing orders from here needs EA 9.02 or newer in MT5.', 'Abrir órdenes desde aquí necesita el EA 9.02 o posterior en MT5.');
     var x = null; try { x = window.__stLiveLine.easL()[e.raw + '|' + e.lg]; } catch (er) {}
@@ -96982,6 +96991,45 @@ window.__stAZ = (function () {
   function lvAccOf(lg){ try { var id = (data.mt5LoginMap || {})[String(lg)]; return id ? (data.accounts || []).filter(function(x){ return x && x.id === id; })[0] || null : null; } catch (e) { return null; } }
   function lvAccName(lg){ var a = lvAccOf(lg); return (a && a.name ? a.name : 'MT5') + ' · ' + lg; }
   function lvAccs(){ if (!S || !S.sym) return []; return liveEAs().filter(function(o){ return o.lg && canon(o.raw) === S.sym.key; }).sort(function(a, b){ return String(a.lg) < String(b.lg) ? -1 : 1; }); }
+  /* The Trade Copier as the EAs report it (27 Oct 2026): an account's role from its live line's settings, else from its last report
+     (ea_settings, heard in the last 15 minutes - a Follow keeps no live line until EA 9.16); the accounts copying a Lead; names */
+  function cpOf(lg){ lg = String(lg); var out = null;
+    Object.keys(LV.set || {}).forEach(function(k){ if (k.slice(k.lastIndexOf('|') + 1) !== lg) return; var st = LV.set[k]; if (st && st.copy_role && (!out || st.copy_role !== 'off')) out = { role: st.copy_role, lead: String(st.copy_lead || ''), n: +st.copy_followers || 0, line: 1 }; });
+    if (out) return out;
+    try { var R = window.__stEA ? window.__stEA.rows() : {}, now = Date.now(); Object.keys(R).forEach(function(k){ var r = R[k], x = (r && r.settings) || {};
+      if (!r || String(r.login) !== lg || !x.copy_role || !(now - (Date.parse(r.updated_at) || 0) < 900000)) return; if (!out || x.copy_role !== 'off') out = { role: x.copy_role, lead: String(x.copy_lead || ''), n: +x.copy_followers || 0, row: r }; }); } catch (e) {}
+    return out || { role: 'off', lead: '', n: 0 }; }
+  function cpFollowers(lead){ var out = {}; lead = String(lead);
+    try { var R = window.__stEA ? window.__stEA.rows() : {}, now = Date.now(); Object.keys(R).forEach(function(k){ var r = R[k], x = (r && r.settings) || {}; if (r && x.copy_role === 'follow' && String(x.copy_lead) === lead && now - (Date.parse(r.updated_at) || 0) < 900000) out[String(r.login)] = 1; }); } catch (e) {}
+    Object.keys(LV.set || {}).forEach(function(k){ var st = LV.set[k]; if (st && st.copy_role === 'follow' && String(st.copy_lead) === lead) out[k.slice(k.lastIndexOf('|') + 1)] = 1; });
+    return Object.keys(out); }
+  function cpRow(lg){ var best = null; try { var R = window.__stEA ? window.__stEA.rows() : {}; Object.keys(R).forEach(function(k){ var r = R[k]; if (!r || String(r.login) !== String(lg)) return;   // its last report, this symbol's first
+      if (!best || (S && canon(r.symbol) === S.sym.key && canon(best.symbol) !== S.sym.key) || (Date.parse(r.updated_at) || 0) > (Date.parse(best.updated_at) || 0) && !(S && canon(best.symbol) === S.sym.key)) best = r; }); } catch (e) {} return best; }
+  function cpName(lg){ var a = lvAccOf(lg); return a && a.name ? a.name : 'MT5 ' + lg; }
+  function cpNames(L){ return L.length < 2 ? (L[0] || '') : L.slice(0, -1).join(', ') + T(' and ', ' y ') + L[L.length - 1]; }
+  // what was asked and whether its EA has done it: "Setting up copy... (asked 05:50)", or in plain words why not
+  function cpStatus(lg, c){ var cw = window.__stCopyWish && window.__stCopyWish.state(lg), hh = function(ms){ return new Date(ms).toTimeString().slice(0, 5); }; if (!cw) return '';
+    if (cw.err) return T('Not set: ', 'Sin cambiar: ') + (/signed out/.test(cw.err) ? T('you are signed out.', 'no has iniciado sesión.') : cw.err);
+    if (cw.role === c.role) return '';
+    if (Date.now() - cw.at < 180000) return (cw.role === 'follow' ? T('Setting up copy…', 'Preparando la copia…') : (cw.role === 'lead' ? T('Making it the Lead…', 'Haciéndola Líder…') : T('Stopping…', 'Parando…'))) + T(' (asked ', ' (pedido ') + hh(cw.at) + ')';
+    return T('Not set: its EA has not answered since ', 'Sin cambiar: su EA no ha respondido desde las ') + hh(cw.at) + T('. Is its MT5 open, the EA on a chart and Algo Trading on?', '. ¿Está abierto su MT5, con el EA en un gráfico y el trading algorítmico activado?'); }
+  // the action buttons and their confirm: nothing that stops a copy happens on one press
+  function cpBtn(act, lg, txt, dis){ return '<button type="button" class="stpr-accf" data-cpact="' + act + '|' + esc(String(lg)) + '"' + (dis ? ' disabled title="' + esc(dis) + '"' : '') + '>' + esc(txt) + '</button>'; }
+  function cpAskTxt(a){ var nm = cpName(a.lg);
+    if (a.act === 'lead') return T('Accounts set to copy ' + nm + ' start copying its trades. Make ' + nm + ' the Lead?', 'Las cuentas que copian a ' + nm + ' empezarán a copiar sus operaciones. ¿Hacer Líder a ' + nm + '?');
+    var c = cpOf(a.lg);
+    if (c.role === 'lead') { var fl = cpFollowers(a.lg).map(cpName); return fl.length ? T(cpNames(fl) + ' will stop copying ' + nm + '. Stop?', cpNames(fl) + ' dejará de copiar a ' + nm + '. ¿Parar?') : T(nm + ' stops being the Lead. Stop?', nm + ' deja de ser Líder. ¿Parar?'); }
+    return T(nm + ' will stop copying ' + cpName(c.lead) + '. Stop?', nm + ' dejará de copiar a ' + cpName(c.lead) + '. ¿Parar?'); }
+  function cpConf(){ var a = LV.cpAsk; if (!a || Date.now() - a.at > 20000) return ''; var yes = a.act === 'lead' ? T('Make it the Lead', 'Hacerla Líder') : T('Stop', 'Parar');
+    return '<div class="stpr-cpq"><span>' + esc(cpAskTxt(a)) + '</span><span class="stpr-cpqb"><button type="button" class="stpr-accf" data-cpno="1">' + esc(T('Keep', 'Mantener')) + '</button><button type="button" class="stpr-accf go" data-cpyes="1">' + esc(yes) + '</button></span></div>'; }
+  function cpDo(act, lg){ if (!window.__stCopyWish) return; window.__stCopyWish.set(lg, act).then(function(){ cpPaint(); }); cpPaint(); }
+  function cpPaint(){ var m = $('stpr-menu'); if (m && menuFor === 'acct') m.innerHTML = lvAccHtml(false); try { paintMM(); } catch (e) {} }
+  // the clicks: an action that stops or starts a copy asks first; copying an account into the Lead's does it at once
+  function cpClick(t){ var b;
+    if ((b = t.closest('[data-cpact]'))) { if (b.disabled) return true; var v = b.getAttribute('data-cpact').split('|'); if (v[0] === 'follow') { LV.cpAsk = null; cpDo('follow', v[1]); } else { LV.cpAsk = { act: v[0], lg: v[1], at: Date.now() }; cpPaint(); } return true; }
+    if (t.closest('[data-cpno]')) { LV.cpAsk = null; cpPaint(); return true; }
+    if (t.closest('[data-cpyes]')) { var a = LV.cpAsk; LV.cpAsk = null; if (a) cpDo(a.act, a.lg); else cpPaint(); return true; }
+    return false; }
   function lvRole(o){ var st = o && (LV.set || {})[o.raw + '|' + o.lg], r = st && st.copy_role, n = +(st && st.copy_followers) || 0;
     if (r === 'lead') return { c: 'lead', t: 'LEAD', x: n > 0 ? T('copies to ', 'copia a ') + n : '' }; if (r === 'follow') return { c: 'follow', t: 'FOLLOW', x: '' }; return null; }
   // EA 9.08: its "hi" says when it runs on MetaQuotes' VPS (a copy of it on a PC stands aside meanwhile) - VPS beside the account
@@ -96990,49 +97038,45 @@ window.__stAZ = (function () {
      the EA panel?"). Off or Lead here - the account traded from Live Charts is the Lead; a Follow account leaves Live Charts (it keeps
      no live line), so Follow is set in Settings > MT5. Sent a moment after the last press (window.__stCopyWish). */
   function lvCopyRole(e){ var st = e && (LV.set || {})[e.raw + '|' + e.lg]; return st && st.copy_role === 'lead' ? 'lead' : (st && st.copy_role === 'follow' ? 'follow' : 'off'); }
-  function lvCopyCard(){ var e = lvOwnEA(); if (!e) return '';
-    var cur = lvCopyRole(e), cw = window.__stCopyWish, w = cw && cw.state(e.lg), old = vNum(e.v) < 9.1;
-    var want = LV.cpPick || ((w && !w.err && w.role !== cur && Date.now() - w.at < 180000) ? w.role : ''), shown = want || cur;
-    var lbl = { off: T('Off', 'Apagado'), lead: T('Lead', 'L\u00edder'), follow: T('Follow', 'Seguidor') }[shown] || T('Off', 'Apagado');
-    var hh = function(ms){ return new Date(ms).toTimeString().slice(0, 5); };
-    var line = old ? T('Set from here with EA 9.10 or newer; until then on the EA\u2019s panel in MT5.', 'Se cambia desde aqu\u00ed con el EA 9.10 o posterior; mientras, en el panel del EA en MT5.')
-      : (w && w.err && !LV.cpPick) ? T('Not set: ', 'Sin cambiar: ') + w.err
-      : want ? (w && w.role === want && !LV.cpPick ? T('Asked ', 'Pedido ') + hh(w.at) + T(': your EA switches within a minute.', ': tu EA cambia en menos de un minuto.') : T('Sending\u2026', 'Enviando\u2026'))
-      : (w && w.role === cur && Date.now() - w.at < 60000) ? T('Set ', 'Puesto ') + hh(w.at)
-      : (cur === 'lead' ? T('Follow accounts in other MT5s on the same computer copy its trades. Set them in Settings \u2192 Accounts.', 'Las cuentas Seguidor en otros MT5 del mismo ordenador copian sus operaciones. Se ponen en Ajustes \u2192 Cuentas.')
-                        : T('Lead: Follow accounts in other MT5s on the same computer copy this account. Follow accounts: Settings \u2192 Accounts.', 'L\u00edder: las cuentas Seguidor en otros MT5 del mismo ordenador copian esta cuenta. Cuentas Seguidor: Ajustes \u2192 Cuentas.'));
-    var ok = !old && w && w.role === cur && !want && Date.now() - w.at < 60000;
-    return mmCard(T('Trade copier', 'Copiador de operaciones'), mmRow(T('Role', 'Rol'), old ? '<span class="stpr-mm-k" aria-disabled="true">' + esc(lbl) + '</span>' : mmBtn('cprole', lbl, shown === 'lead' ? 'on' : ''))
-      + '<div class="stpr-mm-r"><span class="stpr-mm-l' + (ok ? ' stpr-mm-ok' : '') + '">' + esc(line) + '</span></div>'); }
-  function lvCopyPress(){ var e = lvOwnEA(); if (!e || vNum(e.v) < 9.1 || !window.__stCopyWish) return;
-    var cw = window.__stCopyWish.state(e.lg), cur = LV.cpPick || ((cw && !cw.err && Date.now() - cw.at < 180000 && cw.role !== lvCopyRole(e)) ? cw.role : lvCopyRole(e));
-    LV.cpPick = cur === 'lead' ? 'off' : 'lead'; LV.cpLg = e.lg; clearTimeout(LV.cpT);
-    LV.cpT = setTimeout(function(){ var r = LV.cpPick, lg = LV.cpLg; LV.cpPick = ''; if (!r) return; window.__stCopyWish.set(lg, r).then(function(){ try { render(); } catch (x) {} }); try { render(); } catch (x) {} }, 900);   // a moment after the last press
-    render(); }
+  function lvCopyCard(){ var e = lvOwnEA(); if (!e) return ''; var old = vNum(e.v) < 9.1, c = cpOf(e.lg), nm = cpName(e.lg), fl = cpFollowers(e.lg).map(cpName), st = cpStatus(e.lg, c), ask = LV.cpAsk && LV.cpAsk.lg === String(e.lg), line, btn = '';
+    if (old) line = T('Set from here with EA 9.10 or newer; until then on the EA\u2019s panel in MT5.', 'Se cambia desde aqu\u00ed con el EA 9.10 o posterior; mientras, en el panel del EA en MT5.');
+    else if (c.role === 'lead') { line = fl.length ? T('Lead: ' + cpNames(fl) + (fl.length === 1 ? ' copies' : ' copy') + ' this account', 'Líder: ' + cpNames(fl) + (fl.length === 1 ? ' copia' : ' copian') + ' esta cuenta') : T('Lead: no account copies it yet. To copy it, pick that account in Trade with.', 'Líder: ninguna cuenta la copia aún. Para copiarla, elige esa cuenta en Operar con.'); btn = cpBtn('off', e.lg, T('Stop being the Lead', 'Dejar de ser Líder')); }
+    else if (c.role === 'follow') { var ln = cpName(c.lead), lon = cpOf(c.lead).role === 'lead'; line = lon ? T('Copies ' + ln, 'Copia a ' + ln) : T('Copies ' + ln + ', but ' + ln + ' isn\u2019t Lead, so nothing is copied', 'Copia a ' + ln + ', pero ' + ln + ' no es Líder, así que no se copia nada'); btn = lon ? cpBtn('off', e.lg, T('Stop copying', 'Dejar de copiar')) : cpBtn('lead', c.lead, T('Make ' + ln + ' the Lead', 'Hacer Líder a ' + ln)); }
+    else if (fl.length) { line = T(cpNames(fl) + (fl.length === 1 ? ' copies' : ' copy') + ' this account, but ' + nm + ' isn\u2019t Lead, so nothing is copied', cpNames(fl) + (fl.length === 1 ? ' copia' : ' copian') + ' esta cuenta, pero ' + nm + ' no es Líder, así que no se copia nada'); btn = cpBtn('lead', e.lg, T('Make ' + nm + ' the Lead', 'Hacer Líder a ' + nm)); }   // its Follows wait for it
+    else { line = T('Not copied. As the Lead, accounts you set to copy it take its trades, each at its own risk.', 'No se copia. Como Líder, las cuentas que pongas a copiarla toman sus operaciones, cada una con su propio riesgo.'); btn = cpBtn('lead', e.lg, T('Make ' + nm + ' the Lead', 'Hacer Líder a ' + nm)); }
+    return mmCard(T('Trade copier', 'Copiador de operaciones'), '<div class="stpr-mm-r"><span class="stpr-mm-l">' + esc(st || line) + '</span></div>' + (ask ? cpConf() : (btn && !st ? '<div class="stpr-mm-r stpr-cpr">' + btn + '</div>' : ''))); }
   function lvAccHead(){ var e = lvOwnEA(), r = lvRole(e), many = lvAccs().length > 1;
     return '<button type="button" class="stpr-mm-n stpr-mm-acc" data-mm="acct" title="' + esc(T('The account to trade with', 'La cuenta con la que operar')) + '" aria-haspopup="true"><span class="stpr-mm-an">' + esc(lvAcctName()) + '</span>'
       + (r ? '<b class="stpr-mm-role ' + r.c + '">' + r.t + '</b>' : '') + (lvVps(e) ? '<b class="stpr-mm-role vps" title="' + esc(T('Your EA runs on your MT5 VPS', 'Tu EA funciona en tu VPS de MT5')) + '">VPS</b>' : '') + (many ? '<svg viewBox="0 0 10 10" width="9" height="9" aria-hidden="true"><path d="M2 3.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>' : '') + '</button>'; }
-  function lvAccHtml(only){ var cur = lvOwnEA(), list = lvAccs().filter(function(o){ return !only || o.at >= LV.accT0 - 500 || (cur && String(o.lg) === String(cur.lg)); }), lead = false;
-    list.forEach(function(o){ var r = lvRole(o); if (r && r.c === 'lead') lead = true; });
-    // EA 9.10: beside each other account, Follow - it then copies the Lead (Nestor, 23 Oct 2026, pointing at this list: "how can i make
-    // this account the follow from the app?"). Not the account on screen, nor the Lead; it leaves this list once it follows.
-    var hh = function(ms){ return new Date(ms).toTimeString().slice(0, 5); };
-    var rows = list.map(function(o){ var r = lvRole(o), on = cur && String(o.lg) === String(cur.lg), cw = window.__stCopyWish && window.__stCopyWish.state(o.lg);
-      var asked = cw && !cw.err && cw.role === 'follow' && Date.now() - cw.at < 180000, can = lead && !on && !(r && r.c === 'lead'), v910 = vNum(o.v) >= 9.1;
-      var fb = !can ? '' : '<button type="button" class="stpr-accf" data-lvfollow="' + esc(String(o.lg)) + '"' + ((asked || !v910) ? ' disabled' : '') + ' title="' + esc(!v910 ? T('Set from here with EA 9.10 or newer; until then on the EA\u2019s panel in its MT5.', 'Se cambia desde aqu\u00ed con el EA 9.10 o posterior; mientras, en el panel del EA en su MT5.')
-          : T('This account copies the Lead\u2019s trades, at its own risk. Its MT5 must be on the same computer as the Lead\u2019s, with Algo Trading on.', 'Esta cuenta copia las operaciones del L\u00edder, con su propio riesgo. Su MT5 debe estar en el mismo ordenador que el del L\u00edder, con el trading algor\u00edtmico activado.')) + '">'
-        + (asked ? T('Asked ', 'Pedido ') + hh(cw.at) : T('Follow', 'Seguir')) + '</button>';
-      return '<div class="stpr-accw"><button type="button" class="stpr-acc' + (on ? ' on' : '') + '" data-lvacc="' + esc(String(o.lg)) + '"><span class="stpr-acc-n">' + esc(lvAccName(o.lg)) + '</span>'
-        + (r ? '<b class="stpr-mm-role ' + r.c + '">' + r.t + '</b>' + (r.x ? '<small>' + esc(r.x) + '</small>' : '') : '') + '</button>' + fb + '</div>'; }).join('');
+  function lvAccHtml(only){ var cur = lvOwnEA(), list = lvAccs().filter(function(o){ return !only || o.at >= LV.accT0 - 500 || (cur && String(o.lg) === String(cur.lg)); }), seen = {};
+    list.forEach(function(o){ seen[String(o.lg)] = 1; });
+    // the accounts copying, which keep no live line (EA 9.15 and older): from their own reports, any symbol (a Follow copies them all)
+    try { var R = window.__stEA ? window.__stEA.rows() : {}, now = Date.now(); Object.keys(R).forEach(function(k){ var r = R[k], x = (r && r.settings) || {}; if (!r || x.copy_role !== 'follow' || seen[String(r.login)] || !(now - (Date.parse(r.updated_at) || 0) < 900000)) return;
+      seen[String(r.login)] = 1; list.push({ lg: String(r.login), raw: S.sym.raw, v: r.ea_version || '', fol: 1 }); }); } catch (e) {}
+    var leadLg = ''; list.forEach(function(o){ if (!leadLg && cpOf(o.lg).role === 'lead') leadLg = String(o.lg); });
+    var on0 = LV.tmF ? String(LV.tmF) : (cur ? String(cur.lg) : '');
+    var rows = list.map(function(o){ var lg = String(o.lg), c = cpOf(lg), on = lg === on0, v910 = vNum(o.v) >= 9.1, st = cpStatus(lg, c), role = '', act = '';
+      if (c.role === 'lead') { var fl = cpFollowers(lg).map(cpName); role = fl.length ? T('Lead · ' + cpNames(fl) + (fl.length === 1 ? ' copies it' : ' copy it'), 'Líder · ' + cpNames(fl) + (fl.length === 1 ? ' la copia' : ' la copian')) : T('Lead · its trades are copied', 'Líder · sus operaciones se copian'); act = cpBtn('off', lg, T('Stop being the Lead', 'Dejar de ser Líder')); }
+      else if (c.role === 'follow') { var ln = cpName(c.lead), lon = cpOf(c.lead).role === 'lead'; role = lon ? T('Copies ' + ln, 'Copia a ' + ln) : T('Copies ' + ln + ', but ' + ln + ' isn\u2019t Lead, so nothing is copied', 'Copia a ' + ln + ', pero ' + ln + ' no es Líder, así que no se copia nada');
+        act = lon ? cpBtn('off', lg, T('Stop copying', 'Dejar de copiar')) : cpBtn('lead', c.lead, T('Make ' + ln + ' the Lead', 'Hacer Líder a ' + ln)); }
+      else if (cpFollowers(lg).length) { var fo = cpFollowers(lg).map(cpName), nm1 = cpName(lg); role = T(cpNames(fo) + (fo.length === 1 ? ' copies it' : ' copy it') + ', but ' + nm1 + ' isn\u2019t Lead, so nothing is copied', cpNames(fo) + (fo.length === 1 ? ' la copia' : ' la copian') + ', pero ' + nm1 + ' no es Líder, así que no se copia nada'); act = cpBtn('lead', lg, T('Make ' + nm1 + ' the Lead', 'Hacer Líder a ' + nm1)); }   // its Follows wait for it
+      else if (leadLg) act = cpBtn('follow', lg, T('Copy ' + cpName(leadLg) + '\u2019s trades', 'Copiar las operaciones de ' + cpName(leadLg)), v910 ? '' : T('Set from here with EA 9.10 or newer; until then on the EA\u2019s panel in its MT5.', 'Se cambia desde aquí con el EA 9.10 o posterior; mientras, en el panel del EA en su MT5.'));
+      var ask = LV.cpAsk && LV.cpAsk.lg === lg;
+      return '<div class="stpr-accw2"><button type="button" class="stpr-acc' + (on ? ' on' : '') + '" data-lvacc="' + esc(lg) + '"' + (o.fol ? ' data-lvfol="1"' : '') + '><span class="stpr-acc-n">' + esc(lvAccName(lg)) + '</span></button>'
+        + ((role || st) ? '<div class="stpr-accr' + (st ? ' wait' : '') + '">' + esc(st || role) + '</div>' : '')
+        + (ask ? cpConf() : (act && !st ? '<div class="stpr-acca">' + act + '</div>' : '')) + '</div>'; }).join('');
+    // an asked "Make X the Lead" on a row that is not X's (a Follow's): its confirm shows under that Follow
+    if (LV.cpAsk && LV.cpAsk.act === 'lead' && !list.some(function(o){ return String(o.lg) === LV.cpAsk.lg; })) rows += cpConf();
     return '<div class="stpr-accm"><h6>' + esc(T('Trade with', 'Operar con')) + '</h6>' + (rows || '<p class="stpr-wlf">' + esc(T('No account is live on this symbol.', 'Ninguna cuenta en vivo en este símbolo.')) + '</p>')
       + '<p class="stpr-wlf">' + esc(list.length < 2 ? T('Another account shows here when the EA runs on a ' + S.sym.name + ' chart in its MT5.', 'Otra cuenta aparece aquí cuando el EA corre en un gráfico de ' + S.sym.name + ' en su MT5.')
-        : T('The chart, this panel, the Toolbox and your orders follow the account you pick.', 'El gráfico, este panel, la Caja de herramientas y tus órdenes siguen a la cuenta que elijas.')) + '</p>'
-      + (lead ? '<p class="stpr-wlf">' + esc(T('Follow accounts copy the Lead, so you trade them from the Lead. Follow beside an account makes it one; to undo it: Settings \u2192 Accounts.', 'Las cuentas Follow copian a la Lead: se operan desde la Lead. Seguir junto a una cuenta la convierte en una; para deshacerlo: Ajustes \u2192 Cuentas.')) + '</p>' : '') + '</div>'; }
+        : T('The chart, this panel, the Toolbox and your orders follow the account you pick. An account that copies takes its trades from its Lead.', 'El gráfico, este panel, la Caja de herramientas y tus órdenes siguen a la cuenta que elijas. Una cuenta que copia toma sus operaciones de su Líder.')) + '</p></div>'; }
   // opening it asks every EA to say hi again: after 1.5 s the list keeps the ones that answered (an EA taken off a chart goes)
+  try { document.addEventListener('pointerdown', function(e){ if (menuFor !== 'acct') return; var t = e.target; if (t && t.closest && (t.closest('#stpr-menu') || t.closest('[data-mm="acct"]'))) return; closeMenu(); LV.cpAsk = null; }, true);
+    document.addEventListener('keydown', function(e){ if (menuFor === 'acct' && e.key === 'Escape') { closeMenu(); LV.cpAsk = null; e.stopPropagation(); } }, true); } catch (e) {}   // the picker: any click outside it, anywhere in the app, and Esc close it (27 Oct 2026)
   function lvAccMenu(anchor){ if (!S || !S.live) return; var L = window.__stLiveLine; LV.accT0 = Date.now(); try { if (L && L._send) L._send('who'); } catch (e) {}
     openMenu(anchor, lvAccHtml(false), 'acct'); clearTimeout(LV.accTm);
     LV.accTm = setTimeout(function(){ if (menuFor !== 'acct') return; var any = lvAccs().some(function(o){ return o.at >= LV.accT0 - 500; }); if (!any) return; var m = $('stpr-menu'); if (m) m.innerHTML = lvAccHtml(true); }, 1500); }
-  function lvAccPick(lg){ closeMenu(); if (!S || !S.live) return; var cur = lvOwnEA(); CFG.lvLg = String(lg); save();
+  function lvAccPick(lg){ closeMenu(); if (!S || !S.live) return; var cur = lvOwnEA(); LV.tmF = null; CFG.lvLg = String(lg); save();
     if (cur && String(cur.lg) === String(lg)) return; goLive(S.sym.raw); }
   try { localStorage.removeItem('st_fill_snd'); } catch (e) {}   // the sound once picked from a file (gone 18 Oct 2026): its copy in this browser goes too
   // ---- MT5's Toolbox under Live Charts (Nestor, 18 Oct 2026: "yes like you would have in MT5, look at the photo attached, maybe you
@@ -98172,8 +98216,9 @@ window.__stAZ = (function () {
       if (t.closest && t.closest('[data-wladd]')) { wlAddOpen(); return; }
       var wp = t.closest && t.closest('[data-wlpick]'); if (wp) { wlAdd(wp.getAttribute('data-wlpick')); return; }
       var acb = t.closest && t.closest('[data-mm="acct"]'); if (acb) { lvAccMenu(acb); return; }
+      if (t.closest && cpClick(t)) return;   // the copier's actions and their confirm (27 Oct 2026)
       var acf = t.closest && t.closest('[data-lvfollow]'); if (acf) { if (!acf.disabled && window.__stCopyWish) { var flg = acf.getAttribute('data-lvfollow'); window.__stCopyWish.set(flg, 'follow').then(function(){ var mm = $('stpr-menu'); if (mm && menuFor === 'acct') mm.innerHTML = lvAccHtml(false); }); var mm0 = $('stpr-menu'); if (mm0 && menuFor === 'acct') mm0.innerHTML = lvAccHtml(false); } return; }   // EA 9.10: make that account a Follow
-      var acp = t.closest && t.closest('[data-lvacc]'); if (acp) { lvAccPick(acp.getAttribute('data-lvacc')); return; }
+      var acp = t.closest && t.closest('[data-lvacc]'); if (acp) { if (acp.hasAttribute('data-lvfol')) { LV.tmF = acp.getAttribute('data-lvacc'); closeMenu(); paintMM(); return; } lvAccPick(acp.getAttribute('data-lvacc')); return; }   // a Follow with no line: its settings here, the chart stays the Lead's
       if (t.closest && t.closest('#stpr-wlin')) return;
       var sy = t.closest && t.closest('[data-sym]'); if (sy) { var raw = sy.getAttribute('data-sym'), one = sy.hasAttribute('data-si'), syi = +sy.getAttribute('data-si') || 0; closeMenu(); if (one && syi > 0) { setPaneSym(syi, raw); return; }
         if (!(S && S.live) && S && S.pos) { flash(T('Close the trade before switching symbol.', 'Cierra la operación antes de cambiar de símbolo.')); return; }
@@ -98663,7 +98708,21 @@ window.__stAZ = (function () {
     for (var m = 0; m < 4 && from && q.times[0] > from; m++) { var t0 = q.times[0]; try { await morePast(q); } catch (e) {} q = panes[i]; if (!q || !q.times || q.times[0] >= t0) break; }
     var a = from ? lOfT(q, from) : 0; if (a == null) a = 0; setRange(q, { from: Math.max(0, a), to: q.times.length - 1 + 4 }); dirty(); }
   // ---- the Trade Manager: the EA's panel in TradingView's order-ticket rows ----
-  function plMM(el, x){ var m = CFG.mm, su = stopUnit(), tu = tgtUnit(), rm = m.riskMode || 'amount', rp = !S.live, st = (rp ? null : lvSetOf()) || {}, cs = plCurSym();
+  function plFolMM(el){ var lg = String(LV.tmF), c = cpOf(lg), r = cpRow(lg), xs = (r && r.settings) || {}, ln = cpName(c.lead), nm = cpName(lg), n = function(v, d){ v = Number(v); return isFinite(v) ? v.toFixed(d) : '—'; };
+    if (lvAccs().some(function(o){ return String(o.lg) === lg; })) { LV.tmF = null; lvAccPick(lg); return; }   // its EA on the line (EA 9.16): the account itself
+    var u = xs.unit === 'points' ? T('pts', 'ptos') : 'pips', risk = xs.risk_mode === 'lots' ? n(xs.fixed_lot, 2) + ' ' + T('lots', 'lotes') : (xs.risk_mode === 'percent' ? n(xs.risk_percent, 2) + '%' : n(xs.risk_amount, 2));
+    var tp = (xs.tp_on === true || xs.tp_on === 'true' || +xs.tp_on === 1) ? (xs.tp_mode === 'rr' ? n(xs.tp_value, 1) + ' R' : n(xs.tp_value, 1) + ' ' + u) : T('Off', 'Apagado');
+    var be = (xs.be_on === true || xs.be_on === 'true' || +xs.be_on === 1) && +xs.be_trigger_r > 0 ? T('at ', 'a ') + n(xs.be_trigger_r, 1) + ' R' : T('Off', 'Apagado');
+    var row = function(lbl, v){ return '<div class="pl-r"><span>' + esc(lbl) + '</span><span class="pl-box ro">' + esc(v) + '</span></div>'; };
+    var head = '<div class="pl-mh"><b>Trade Manager</b><button type="button" class="stpr-mm-n stpr-mm-acc" data-mm="acct" aria-haspopup="true"><span class="stpr-mm-an">' + esc(nm + ' · ' + lg) + '</span><b class="stpr-mm-role follow">FOLLOW</b><svg viewBox="0 0 10 10" width="9" height="9" aria-hidden="true"><path d="M2 3.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>';
+    var body = '<div class="pl-folln">' + esc(c.role === 'follow' ? (cpOf(c.lead).role === 'lead' ? T('Copies ' + ln, 'Copia a ' + ln) : T('Copies ' + ln + ', but ' + ln + ' isn\u2019t Lead, so nothing is copied', 'Copia a ' + ln + ', pero ' + ln + ' no es Líder, así que no se copia nada')) : '') + '</div><div class="pl-rows">'
+      + row(T('Risk', 'Riesgo'), risk) + row(T('Stop', 'Stop') + ' (' + u + ')', n(xs.sl_min, 1) + ' – ' + n(xs.sl_max, 1)) + row(T('Take profit', 'Take profit'), tp) + row(T('Break-even', 'Break-even'), be)
+      + row(T('Partial close', 'Cierre parcial'), xs.partials ? String(xs.partials).split('/').map(function(v){ return v + '%'; }).join(', ') : T('None', 'Ninguno')) + row(T('Max trades a day', 'Máx. operaciones al día'), +xs.max_trades_day > 0 ? String(Math.floor(+xs.max_trades_day)) : T('Off', 'Apagado')) + '</div>'
+      + '<p class="pl-folro">' + esc(T('Change these on its MT5 panel for now.', 'Por ahora, cámbialos en su panel de MT5.')) + '</p>';
+    var foot = '<button type="button" class="pl-x lock" disabled>' + esc(T('Trades come from ' + ln, 'Las operaciones vienen de ' + ln)) + '</button>';
+    var html = head + '<div class="pl-mb">' + body + '</div><div class="pl-mf">' + foot + '</div>';
+    if (el._h !== html) { el.innerHTML = html; el._h = html; } }
+  function plMM(el, x){ if (LV.tmF) { plFolMM(el); return; } var m = CFG.mm, su = stopUnit(), tu = tgtUnit(), rm = m.riskMode || 'amount', rp = !S.live, st = (rp ? null : lvSetOf()) || {}, cs = plCurSym();
     var rv = rm === 'percent' ? numTxt(m.riskPct, 2) : (rm === 'lots' ? numTxt(m.lots, 2) : numTxt(m.riskAmt, 2));
     var tpv = !CFG.tgtOn ? '' : (tu === 'R' ? numTxt(CFG.tgtR, 1) : fmtU(tgtDist(stopPx()), tu));
     var seg = function(k, opts, cur){ return '<div class="pl-seg">' + opts.map(function(o){ return '<button type="button" data-mm="' + k + ':' + o[0] + '" class="' + (o[0] === cur ? 'on' : '') + '">' + esc(o[1]) + '</button>'; }).join('') + '</div>'; };

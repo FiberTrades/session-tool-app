@@ -373,6 +373,49 @@
     var h2 = P._plat().tb2;
     check('a chart window\'s toolbar: the tools row as it was (the tools, hide, lock, delete, object tree)', /id="stpr-tools"/.test(h2) && /id="stpr-hideall"/.test(h2) && /id="stpr-del"/.test(h2) && /id="stpr-treebtn"/.test(h2) && /id="stpr-undo"/.test(h2), h2.length);
 
+    // ---- Trade with and the Trade copier in words (Nestor, 27 Oct 2026: "i dont know if i am asking to follow or for the account to be a
+    //      follow account, also if an account is following my main account it doesnt appear here"); stand-ins only, nothing leaves the page ----
+    var cw0 = window.__stCopyWish, cwCalls = [], CWs = {}, rawc = P._s().sym.raw, LVc = P._lv(), Lc = window.__stLiveLine, leadR = 'lead';
+    window.__stCopyWish = { set: function (lg, role) { cwCalls.push(lg + ':' + role); CWs[String(lg)] = { role: role, at: Date.now(), err: '', ok: true }; return Promise.resolve(true); }, state: function (lg) { return CWs[String(lg)] || null; }, role: cw0 ? cw0.role : function () { return 'off'; }, _clear: function () { CWs = {}; } };
+    ['acc-demo|FTMO Demo', 'acc-one|OneFunded 10K'].forEach(function (s0) { var v = s0.split('|'); data.accounts.push(Object.assign(JSON.parse(JSON.stringify(data.accounts[0])), { id: v[0], name: v[1], kind: 'challenge', status: 'active' })); });
+    data.mt5LoginMap = Object.assign({}, data.mt5LoginMap, { '1515070952': 'acc-demo', '27007659': 'acc-one' });
+    var e0c = Lc.easL()[rawc + '|90001234'] || {}; Lc.easL()[rawc + '|1515070952'] = Object.assign({}, e0c, { at: Date.now(), lg: 1515070952, v: '9.16' });
+    LVc.set = LVc.set || {}; LVc.set[rawc + '|1515070952'] = Object.assign({}, LVc.set[rawc + '|90001234'] || {}, { copy_role: 'off', copy_followers: 0 });
+    window.__stEA.apply({ login: '27007659', symbol: rawc, ea_version: '9.15', updated_at: new Date().toISOString(), settings: { copy_role: 'follow', copy_lead: '90001234', copy_followers: 0, risk_mode: 'amount', risk_amount: 70, sl_min: 2, sl_max: 4, tp_on: true, tp_mode: 'rr', tp_value: 3, be_on: true, be_trigger_r: 1, max_trades_day: 3, partials: '50', unit: 'pips' } });
+    var keepc = setInterval(function () { var x = Lc.easL()[rawc + '|1515070952']; if (x) x.at = Date.now(); var s1 = LVc.set[rawc + '|90001234']; if (s1 && s1.copy_role !== leadR) s1.copy_role = leadR; }, 100);
+    P._cfg().lvLg = '90001234'; await W(600);
+    var accMenu = async function () { $('#stpr-mm [data-mm="acct"]').click(); for (k = 0; k < 30 && !$('#stpr-menu.show .stpr-accm'); k++) await W(100); await W(1700); return $('#stpr-menu'); };
+    var rowOf = function (lg) { var b0 = $('#stpr-menu [data-lvacc="' + lg + '"]'); return b0 && b0.closest('.stpr-accw2'); };
+    var pm = await accMenu(), r70 = rowOf('90001234'), rOne = rowOf('27007659'), rDemo = rowOf('1515070952');
+    check('Trade with: each account\'s role in words - FTMO 70K "Lead · OneFunded 10K copies it" with "Stop being the Lead"', r70 && /Lead · OneFunded 10K copies it/.test(r70.textContent) && r70.querySelector('[data-cpact="off|90001234"]') && /Stop being the Lead/.test(r70.textContent), r70 && r70.textContent);
+    check('...the account copying it is in the list (it keeps no live line): "Copies FTMO 70K" with "Stop copying"', rOne && /Copies FTMO 70K$/.test(rOne.querySelector('.stpr-accr').textContent) && /Stop copying/.test(rOne.textContent) && rOne.querySelector('[data-lvfol]'), rOne && rOne.textContent);
+    check('...another account: "Copy FTMO 70K\'s trades", no bare Follow', rDemo && /Copy FTMO 70K’s trades/.test(rDemo.textContent) && !/\bFollow\b/.test(pm.textContent), rDemo && rDemo.textContent);
+    r70.querySelector('[data-cpact="off|90001234"]').click(); await W(200);
+    check('Stop being the Lead asks first: "OneFunded 10K will stop copying FTMO 70K. Stop?" Keep / Stop - nothing sent yet', /OneFunded 10K will stop copying FTMO 70K\. Stop\?/.test($('#stpr-menu').textContent) && $('#stpr-menu [data-cpyes]') && !cwCalls.length, $('#stpr-menu').textContent);
+    $('#stpr-menu [data-cpno]').click(); await W(200);
+    check('...Keep: nothing sent, the row as it was', !cwCalls.length && !$('#stpr-menu [data-cpyes]') && /Stop being the Lead/.test(rowOf('90001234').textContent), cwCalls);
+    rowOf('1515070952').querySelector('[data-cpact^="follow"]').click(); await W(300);
+    check('Copy FTMO 70K\'s trades: asked at once, the row says "Setting up copy… (asked HH:MM)"', cwCalls.join() === '1515070952:follow' && /Setting up copy… \(asked \d\d:\d\d\)/.test(rowOf('1515070952').textContent), [cwCalls, rowOf('1515070952').textContent]);
+    document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); await W(200);
+    check('the picker closes on a click outside it, anywhere in the app', !$('#stpr-menu.show'));
+    pm = await accMenu(); document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await W(200);
+    check('...and on Esc', !$('#stpr-menu.show'));
+    pm = await accMenu(); rowOf('27007659').querySelector('[data-lvacc]').click(); await W(600);
+    var mmF = $('#stpr-mm');
+    check('OneFunded picked: the Trade Manager shows its own Risk, Stop, Take profit, Break-even (as its EA reported them), "Change these on its MT5 panel for now"', /OneFunded 10K · 27007659/.test(mmF.textContent) && /Risk70\.00/.test(mmF.textContent.replace(/\s+/g, '')) && /2\.0 – 4\.0/.test(mmF.textContent) && /3\.0 R/.test(mmF.textContent) && /Change these on its MT5 panel for now/.test(mmF.textContent), mmF.textContent.slice(0, 200));
+    var xf = mmF.querySelector('.pl-x');
+    check('...Execute off: "Trades come from FTMO 70K"', xf && xf.disabled && /Trades come from FTMO 70K/.test(xf.textContent), xf && xf.textContent);
+    pm = await accMenu(); rowOf('90001234').querySelector('[data-lvacc]').click(); await W(800);
+    check('...the 70K picked again: its own Trade Manager, Execute', /FTMO 70K/.test($('#stpr-mm .pl-mh').textContent) && $('#stpr-mm .pl-x').textContent === 'Execute', $('#stpr-mm .pl-mh').textContent);
+    leadR = 'off'; LVc.set[rawc + '|90001234'].copy_role = 'off'; window.__stCopyWish._clear(); cwCalls = []; await W(300);
+    pm = await accMenu(); r70 = rowOf('90001234'); rOne = rowOf('27007659');
+    check('the Lead off: both rows say it - "Copies FTMO 70K, but FTMO 70K isn\'t Lead, so nothing is copied" - with "Make FTMO 70K the Lead"', /OneFunded 10K copies it, but FTMO 70K isn’t Lead, so nothing is copied/.test(r70.textContent) && /Copies FTMO 70K, but FTMO 70K isn’t Lead, so nothing is copied/.test(rOne.textContent) && rOne.querySelector('[data-cpact="lead|90001234"]') && r70.querySelector('[data-cpact="lead|90001234"]'), [r70.textContent, rOne.textContent]);
+    rOne.querySelector('[data-cpact="lead|90001234"]').click(); await W(200);
+    check('...Make FTMO 70K the Lead asks first', /Make FTMO 70K the Lead\?/.test($('#stpr-menu').textContent) && !cwCalls.length, $('#stpr-menu').textContent);
+    $('#stpr-menu [data-cpyes]').click(); await W(300);
+    check('...yes: asked for FTMO 70K (Lead)', cwCalls.join() === '90001234:lead', cwCalls);
+    clearInterval(keepc); window.__stCopyWish = cw0; document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); delete Lc.easL()[rawc + '|1515070952']; delete LVc.set[rawc + '|1515070952']; LVc.set[rawc + '|90001234'].copy_role = 'off'; await W(400);
+
     // ---- a trade's box stays after the trade has closed, until deleted by hand (Nestor, 26 Oct 2026: "today it disappears") ----
     var oi0 = window.__stLive.openIdeas, Bx = P._panes()[0].bars, lx = Bx[Bx.length - 1].close, tx0 = Bx[Bx.length - 30].time, rawx = P._s().sym.raw;
     var bxr = { symbol: 'EURUSD', ticket: 88001, login: 90001234, direction: 'long', lots: 1, openedAt: tx0 * 1000, risk0: 100, risk: 100, tick: { op: lx - 0.0005, rpx: 0.0007, sl: -1, tp: 2, r: 0.5, pnl: 50, px: lx, at: Date.now(), dg: 5, lad: '' } };
