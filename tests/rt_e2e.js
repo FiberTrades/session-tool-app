@@ -22,7 +22,7 @@
     ok('scrolled back: the latest candle is off the right edge, and with the mouse in the middle there is no button', P._rtOff(0) && !shown(), [P._rtOff(0), shown()]);
     mv(dims().pw - 40, dims().ph - 40); await W(50);
     var br = btn.getBoundingClientRect(), d = dims();
-    ok('the mouse near the bottom right corner: the button there, left of the price scale and above the times', shown() && br.right <= r.left + d.pw && br.right > r.left + d.pw - 30 && br.bottom <= r.top + d.ph && br.bottom > r.top + d.ph - 30, [shown(), br.right, r.left + d.pw, br.bottom, r.top + d.ph]);
+    ok('the mouse near the bottom right corner: the button there, 60 px into the plot from the price scale (26 Oct 2026) and above the times', shown() && Math.abs(br.right - (r.left + d.pw - 60)) <= 2 && br.bottom <= r.top + d.ph && br.bottom > r.top + d.ph - 30, [shown(), br.right, r.left + d.pw, br.bottom, r.top + d.ph]);
     ok('...with its name and key: Scroll to the most recent bar (Alt+Shift+→)', /Scroll to the most recent bar/.test(btn.title) && /Alt\+Shift/.test(btn.title), btn.title);
     // Live Charts puts its Spread label in that corner (lvBadges' p.cdb, made the same way here): the button sits above it (Nestor, 23 Oct 2026:
     // "i need this button slightly higher out the way of the spread")
