@@ -382,7 +382,53 @@ void AimLearn(string sym,double gapPips)   // how far short of the price it was 
    GlobalVariableSet(AimGKey(sym,"i"),(i+1)%10);
    GlobalVariableSet(AimGKey(sym,"n"),MathMin(10,n+1));
   }
-double AimNetPx(){ return (AimSlip(_Symbol)+1.0)*g_pip; }   // the broker's TP: this far past the aim
+// The first target on an account+symbol is not aimed blind: once, the slippage is seeded from this account's own MT5 history - its
+// latest take profits on the symbol (DEAL_REASON_TP, up to 5, last 120 days), how far each filled short of the TP's price (a better
+// fill counts below 0, so it adds nothing). The 70K's FTMO TPs filled 0.5 pip short (22 + 26 Oct 2026). Closes at the aim then take
+// over (AimLearn): the seeds sit oldest in the ring of 10, anything already learnt stays newest. Logged once; marked done in "_s".
+bool g_aimSeeded=false; uint g_aimSeedAt=0; int g_aimSeedTries=0;
+void AimSeed(bool now=false)
+  {
+   if(g_aimSeeded || g_pip<=0) return;
+   if(GlobalVariableCheck(AimGKey(_Symbol,"s"))){ g_aimSeeded=true; return; }
+   if(!now && g_aimSeedAt>0 && GetTickCount()-g_aimSeedAt<10000) return;   // a try every 10 s until the history is there
+   g_aimSeedAt=GetTickCount();
+   if(!TerminalInfoInteger(TERMINAL_CONNECTED)) return;
+   datetime t=TimeCurrent(); if(t<=0) return;
+   if(!HistorySelect(t-120*86400,t+86400)) return;
+   int tot=HistoryDealsTotal();
+   if(tot==0 && ++g_aimSeedTries<30) return;                               // history still loading (or truly empty: given up after 5 min)
+   double v[]; int c=0; string seen="";
+   for(int k=tot-1;k>=0 && c<5;k--)
+     {
+      ulong dl=HistoryDealGetTicket(k); if(dl==0) continue;
+      if(HistoryDealGetString(dl,DEAL_SYMBOL)!=_Symbol) continue;
+      if(HistoryDealGetInteger(dl,DEAL_REASON)!=DEAL_REASON_TP) continue;
+      long en=HistoryDealGetInteger(dl,DEAL_ENTRY); if(en!=DEAL_ENTRY_OUT && en!=DEAL_ENTRY_OUT_BY) continue;
+      double px=HistoryDealGetDouble(dl,DEAL_PRICE), tp=HistoryDealGetDouble(dl,DEAL_TP);
+      if(tp<=0){ ulong od=(ulong)HistoryDealGetInteger(dl,DEAL_ORDER); if(od>0 && HistoryOrderSelect(od)) tp=HistoryOrderGetDouble(od,ORDER_PRICE_OPEN); }
+      if(px<=0 || tp<=0) continue;
+      // a buy is closed by a sell deal: short by tp - price; a sell by a buy deal: price - tp
+      double sh=((HistoryDealGetInteger(dl,DEAL_TYPE)==DEAL_TYPE_SELL) ? tp-px : px-tp)/g_pip;
+      if(sh<-3.0 || sh>3.0) continue;
+      ArrayResize(v,c+1); v[c++]=sh; seen+=(seen=="" ? "" : ", ")+DoubleToString(sh,1);
+     }
+   // the ring: the seeds (oldest first), then whatever was learnt already (oldest first), the newest 10 kept
+   int n=(int)GlobalVariableGet(AimGKey(_Symbol,"n")), i=(int)GlobalVariableGet(AimGKey(_Symbol,"i")); if(n>10) n=10;
+   double old[]; ArrayResize(old,n);
+   for(int j=0;j<n;j++) old[j]=GlobalVariableGet(AimGKey(_Symbol,IntegerToString((n<10 ? j : (i+j)%10))));
+   if(c>0)
+     {
+      GlobalVariableSet(AimGKey(_Symbol,"n"),0); GlobalVariableSet(AimGKey(_Symbol,"i"),0);
+      for(int j=c-1;j>=0;j--) AimLearn(_Symbol,v[j]);
+      for(int j=0;j<n;j++) AimLearn(_Symbol,old[j]);
+     }
+   GlobalVariableSet(AimGKey(_Symbol,"s"),1); g_aimSeeded=true;
+   if(c>0) Print("Session Terminal: target slippage on ",_Symbol," seeded from this account's last ",c," take profit",(c==1?"":"s")," (",seen," pips short",
+                 n>0 ? ", with "+IntegerToString(n)+" learnt already" : "",") - next trigger ",DoubleToString(AimSlip(_Symbol),1)," pips past the aim");
+   else Print("Session Terminal: no take profit on ",_Symbol," in this account's history - the target slippage starts at ",DoubleToString(AimSlip(_Symbol),1)," pips");
+  }
+double AimNetPx(){ AimSeed(true); return (AimSlip(_Symbol)+1.0)*g_pip; }   // the broker's TP: this far past the aim
 ulong  g_aimTk=0, g_aimClosing=0; uint g_aimAt=0;
 double g_aimPx=0.0; int g_aimDir=0;   // the price a close at the aim was sent at, and its side: learnt from the fill when it lands
 // v9.16: an open trade's aimed target reached by the price it closes at: closed at market, once a second at most; how far short the fill
@@ -390,6 +436,7 @@ double g_aimPx=0.0; int g_aimDir=0;   // the price a close at the aim was sent a
 void AimTick()
   {
    if(g_pip<=0) return;
+   AimSeed();   // once: the slippage from this account's own take profits
    for(int i=PositionsTotal()-1;i>=0;i--)
      {
       ulong tk=PositionGetTicket(i); if(!PositionSelectByTicket(tk)) continue;
