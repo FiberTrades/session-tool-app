@@ -28,8 +28,8 @@
     mev('contextmenu', X, Y); await W(60);
     var m = menu(), a0 = acts(), pr = pane.series.coordinateToPrice(Y), ps = Number(pr).toFixed(5);
     ok('a right-click on the bare chart opens the chart\'s menu', !!m && m.classList.contains('stpr-cm'), a0);
-    ok('Reset chart view, Copy price, Paste (nothing copied: off), Add alert, Lock vertical cursor line, Object tree, Remove drawings (none: off), Settings - no Buy / Sell orders',
-      /^reset,copy,paste-,alert,vlock,tree,remove-,settings$/.test(a0), a0);
+    ok('Reset chart view, Copy price, Paste (nothing copied: off), Paste image, Add alert, Lock vertical cursor line, Object tree, Remove drawings (none: off), Settings - no Buy / Sell orders',
+      /^reset,copy,paste-,pimg,alert,vlock,tree,remove-,settings$/.test(a0), a0);
     ok('Settings has the top bar\'s gear (not a sun)', /M12\.22 2h/.test(m.querySelector('[data-act="settings"] svg').innerHTML));
     ok('each with its icon; its keys where it has one (Paste Ctrl+V, Add alert Alt+A)', m.querySelectorAll('[data-act] svg').length === m.querySelectorAll('[data-act]').length && /Ctrl\+V/.test(m.querySelector('[data-act="paste"]').textContent) && /Alt\+A/.test(m.querySelector('[data-act="alert"]').textContent));
     ok('the prices are the one under the mouse', Math.abs(parseFloat(m.querySelector('[data-act="copy"]').textContent.replace(/[^0-9.]/g, '')) - pr) < 0.00003 && Math.abs(parseFloat(m.querySelector('[data-act="alert"]').textContent.replace(/[^0-9.]/g, '')) - pr) < 0.00003, ps);

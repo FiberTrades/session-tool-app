@@ -71,8 +71,31 @@
     DW.sel = DW.list.indexOf(im); document.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', code: 'KeyC', ctrlKey: true, bubbles: true })); await W(30); document.dispatchEvent(new KeyboardEvent('keydown', { key: 'v', code: 'KeyV', ctrlKey: true, bubbles: true })); await W(80);
     var cp = DW.list[DW.list.length - 1];
     ok('a copy is pasted three candles on, the same picture (no second upload)', cp !== im && cp.type === 'image' && cp.src === im.src && ups.length === 2 && P._lOfT(0, cp.a.t) - P._lOfT(0, im.a.t) === 3);
-    var raw = JSON.stringify(DW.list.filter(function (d) { return d.type === 'image'; }));
-    ok('kept with the symbol\'s drawings as its path and size only (no picture data)', raw.length < 600 && raw.indexOf('data:') < 0 && raw.indexOf('blob:') < 0, raw.length);
+    // Paste image (Nestor, 27 Oct 2026): the right-click menu's, reading the clipboard
+    var nu = ups.length, nl = DW.list.length, clipRead = navigator.clipboard && navigator.clipboard.read;
+    navigator.clipboard.read = function () { return Promise.resolve([{ types: ['image/png'], getType: function () { return Promise.resolve(png); } }]); };
+    mev('contextmenu', X(0.7), Y(0.55), { button: 2, buttons: 2 }); await W(80);
+    var pb = pane.el.querySelector('.stpr-cm [data-act="pimg"]'); if (pb) pb.click(); for (w = 0; w < 50 && ups.length === nu; w++) await W(100); await W(200);
+    var pi = DW.list[DW.list.length - 1];
+    ok('right-click > Paste image: the clipboard\'s picture on the chart where the right-click was, saved the Image tool\'s way', pb && DW.list.length === nl + 1 && pi.type === 'image' && ups.length === nu + 1 && Math.abs(at(pi.a).x - X(0.7)) < 12 && Math.abs(at(pi.a).y - Y(0.55)) < 4, [!!pb, DW.list.length - nl, pi && at(pi.a)]);
+    navigator.clipboard.read = function () { return Promise.resolve([{ types: ['text/plain'], getType: function () { return Promise.resolve(new Blob(['x'])); } }]); };
+    DW.sel = null; P._props(); mev('contextmenu', X(0.15), Y(0.9), { button: 2, buttons: 2 }); await W(80); pane.el.querySelector('.stpr-cm [data-act="pimg"]').click(); await W(150);   // a bare spot (the picture just pasted has its own menu)
+    ok('no picture on the clipboard: it says how', DW.list.length === nl + 1 && /No picture on the clipboard/.test((document.getElementById('stpr-flash') || {}).textContent || ''));
+    if (clipRead) navigator.clipboard.read = clipRead;
+    // Ctrl+V with a picture on the clipboard: the browser's paste - on the chart where the mouse is
+    var pst = function () { var dt = new DataTransfer(); dt.items.add(file); document.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); };
+    mev('mousemove', X(0.45), Y(0.3)); await W(40); nu = ups.length; nl = DW.list.length; pst(); for (w = 0; w < 50 && ups.length === nu; w++) await W(100); await W(200);
+    var pv = DW.list[DW.list.length - 1];
+    ok('Ctrl+V with a picture on the clipboard: on the chart where the mouse is', DW.list.length === nl + 1 && pv.type === 'image' && Math.abs(at(pv.a).x - X(0.45)) < 12 && Math.abs(at(pv.a).y - Y(0.3)) < 4, [DW.list.length - nl, pv && at(pv.a)]);
+    // a drawing copied, then a picture: the picture wins (the paste comes with Ctrl+V's key; the drawing's paste waits for it)
+    DW.sel = DW.list.indexOf(im); document.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', code: 'KeyC', ctrlKey: true, bubbles: true })); await W(30);
+    nu = ups.length; nl = DW.list.length; document.dispatchEvent(new KeyboardEvent('keydown', { key: 'v', code: 'KeyV', ctrlKey: true, bubbles: true })); pst();
+    for (w = 0; w < 50 && ups.length === nu; w++) await W(100); await W(200);
+    ok('Ctrl+V with both: only the picture goes on (not the copied drawing too)', DW.list.length === nl + 1 && ups.length === nu + 1, DW.list.length - nl);
+    nl = DW.list.length; document.dispatchEvent(new KeyboardEvent('keydown', { key: 'v', code: 'KeyV', ctrlKey: true, bubbles: true })); await W(60);
+    ok('Ctrl+V with no picture: the copied drawing pastes as before', DW.list.length === nl + 1 && DW.list[DW.list.length - 1].src === im.src);
+    var imgs = DW.list.filter(function (d) { return d.type === 'image'; }), raw = JSON.stringify(imgs);
+    ok('kept with the symbol\'s drawings as its path and size only (no picture data)', raw.length < imgs.length * 260 && raw.indexOf('data:') < 0 && raw.indexOf('blob:') < 0, [raw.length, imgs.length]);
   } catch (e) { out.push({ name: 'ran', ok: false, got: String(e && e.stack || e) }); }
   finally { HTMLInputElement.prototype.click = realClick; }
   return JSON.stringify(out);
