@@ -87390,6 +87390,76 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     handles: function(g, d, X, sq){ var a = X.P(d.a); if (a) sq(a.x, a.y); },
     box: function(d, X){ var a = X.P(d.a); return a ? { x0: a.x - 6, y0: a.y - 6, x1: a.x + 6, y1: a.y + 6 } : null; },
     axis: function(g, d, X){ kAxisV(g, d, X); } });
+  // tools drawn from a list of parts (geom): lines ('s'), boxes ('r'), polylines ('p'), arcs ('c'), fills ('f'), words ('t') - painted,
+  // hit and spanned the same way. A part with its own colour (a fib level's) is a solid 1 px line; the rest take the drawing's look.
+  function kDraw(g, G, C, W){ G.forEach(function(it){ g.save(); var c = it.c || C;
+      if (it.k === 'f') { g.fillStyle = c; g.beginPath(); it.pts.forEach(function(q, j){ if (j) g.lineTo(q.x, q.y); else g.moveTo(q.x, q.y); }); g.closePath(); g.fill(); }
+      else if (it.k === 't') { g.setLineDash([]); g.font = "11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"; g.fillStyle = c; g.textAlign = it.al || 'left'; g.textBaseline = it.bl || 'middle'; g.fillText(it.s, it.x, it.y); }
+      else { g.strokeStyle = c; g.lineWidth = it.w || (it.c ? 1 : W); if (it.dash) g.setLineDash(it.dash); else if (it.c) g.setLineDash([]); g.beginPath();
+        if (it.k === 's') { g.moveTo(it.a.x, it.a.y); g.lineTo(it.b.x, it.b.y); }
+        else if (it.k === 'r') g.rect(Math.min(it.a.x, it.b.x), Math.min(it.a.y, it.b.y), Math.abs(it.b.x - it.a.x), Math.abs(it.b.y - it.a.y));
+        else if (it.k === 'p') it.pts.forEach(function(q, j){ if (j) g.lineTo(q.x, q.y); else g.moveTo(q.x, q.y); });
+        else if (it.k === 'c') { if (it.r > 0.5) g.arc(it.x, it.y, it.r, it.s0, it.s1, !!it.ccw); }
+        g.stroke(); }
+      g.restore(); }); }
+  function kInArc(t, it){ if (Math.abs(it.s1 - it.s0) >= Math.PI * 2 - 1e-6) return true; var n = function(v){ v %= 2 * Math.PI; return v < 0 ? v + 2 * Math.PI : v; }, s0 = it.ccw ? it.s1 : it.s0, s1 = it.ccw ? it.s0 : it.s1; return n(t - s0) <= n(s1 - s0) + 1e-6; }
+  function kGHit(G, px, py){ for (var i = 0; i < G.length; i++) { var it = G[i];
+      if (it.k === 's' && kSeg(px, py, it.a, it.b) < 5) return true;
+      if (it.k === 'r') { var x0 = Math.min(it.a.x, it.b.x), x1 = Math.max(it.a.x, it.b.x), y0 = Math.min(it.a.y, it.b.y), y1 = Math.max(it.a.y, it.b.y); if (kSeg(px, py, { x: x0, y: y0 }, { x: x1, y: y0 }) < 5 || kSeg(px, py, { x: x0, y: y1 }, { x: x1, y: y1 }) < 5 || kSeg(px, py, { x: x0, y: y0 }, { x: x0, y: y1 }) < 5 || kSeg(px, py, { x: x1, y: y0 }, { x: x1, y: y1 }) < 5) return true; }
+      if (it.k === 'p') { for (var j = 1; j < it.pts.length; j++) if (kSeg(px, py, it.pts[j - 1], it.pts[j]) < 5) return true; }
+      if (it.k === 'c' && it.r > 0.5 && Math.abs(Math.hypot(px - it.x, py - it.y) - it.r) < 5 && kInArc(Math.atan2(py - it.y, px - it.x), it)) return true;
+      if (it.k === 'f' && kIn(px, py, it.pts)) return true; } return false; }
+  function k3hit(d, X, px, py){ var ks = ['c', 'b', 'a']; for (var i = 0; i < 3; i++) { var q = d[ks[i]] && X.P(d[ks[i]]); if (q && Math.hypot(px - q.x, py - q.y) < 8) return ks[i]; } return null; }
+  function kGeo(t, o){ k2(t, { keys: o.keys || K2L, sty: o.sty, icon: o.icon, n: o.n || 2,
+      paint: function(g, d, X, C, W){ var G = o.geom(d, X, C); if (G) kDraw(g, G, C, W); },
+      hit: function(d, X, px, py){ var h = k3hit(d, X, px, py); if (h) return h; var G = o.geom(d, X, null); return (G && kGHit(G, px, py)) ? 'body' : null; },
+      handles: function(g, d, X, sq){ ['a', 'b', 'c'].forEach(function(k){ var q = d[k] && X.P(d[k]); if (q) sq(q.x, q.y); }); },
+      box: function(d, X){ return kSpan([d.a && X.P(d.a), d.b && X.P(d.b), d.c && X.P(d.c)].filter(Boolean)); } }); }
+  // TradingView's fib levels and their colours; a level as it is written
+  var FIBX = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618, 2.618, 3.618, 4.236];
+  var FIBC = { '0': '#787b86', '0.236': '#f23645', '0.382': '#ff9800', '0.5': '#4caf50', '0.618': '#089981', '0.786': '#00bcd4', '1': '#787b86', '1.618': '#2962ff', '2.618': '#f23645', '3.618': '#9c27b0', '4.236': '#e91e63', '0.25': '#ff9800', '0.75': '#00bcd4' };
+  function fibC(lv){ return FIBC[String(lv)] || '#787b86'; }
+  var FTC = ['#787b86', '#2962ff', '#089981', '#ff9800', '#f23645', '#9c27b0', '#00bcd4', '#4caf50', '#e91e63', '#2962ff', '#ff9800'];
+  var GBF = ['rgba(242,54,69,.07)', 'rgba(255,152,0,.07)', 'rgba(76,175,80,.07)', 'rgba(8,153,129,.07)', 'rgba(0,188,212,.07)', 'rgba(41,98,255,.07)'];
+  var KF = { c: '#787b86', w: 1 };
+  // FIBONACCI + GANN (26 Oct 2026)
+  kGeo('fibext', { n: 3, sty: KF, icon: kIco('<path d="M1.5 13l3.5-7 3 4.5"/><path d="M9.5 3.5h5M9.5 7h5M9.5 10.5h5M9.5 14h5"/>'),
+    geom: function(d, X){ var a = X.P(d.a), b = X.P(d.b), c = d.c ? X.P(d.c) : null; if (!a || !b) return null; var G = [{ k: 's', a: a, b: b, dash: [4, 3] }]; if (!c) return G; G.push({ k: 's', a: b, b: c, dash: [4, 3] });
+      var dp = d.b.price - d.a.price, x0 = c.x, x1 = c.x + Math.max(Math.abs(b.x - a.x), 90);
+      FIBX.forEach(function(lv){ var pr = d.c.price + dp * lv, q = X.P(kAt(d.c, pr)); if (!q) return; var y = Math.round(q.y) + 0.5; G.push({ k: 's', a: { x: x0, y: y }, b: { x: x1, y: y }, c: fibC(lv) });
+        G.push({ k: 't', s: lv + ' (' + (X.pl ? X.pl(pr) : pr.toFixed(5)) + ')', x: x0 - 4, y: y, c: fibC(lv), al: 'right' }); }); return G; } });
+  kGeo('fibchan', { n: 3, sty: KF, icon: kIco('<path d="M1.5 9.5l8-8M3.5 12l9-9M6.5 14.5l8-8"/>'),
+    geom: function(d, X){ var a = X.P(d.a), b = X.P(d.b), c = d.c ? X.P(d.c) : null; if (!a || !b) return null; var G = [{ k: 's', a: a, b: b }]; if (!c) return G;
+      var dx = b.x - a.x, k = Math.abs(dx) < 0.5 ? 0 : (b.y - a.y) / dx, off = c.y - (a.y + k * (c.x - a.x));
+      [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618, 2.618].forEach(function(lv){ var A = { x: a.x, y: a.y + off * lv }, B = { x: b.x, y: b.y + off * lv }; G.push({ k: 's', a: A, b: kRay(A, B, X), c: fibC(lv) }); G.push({ k: 't', s: String(lv), x: A.x - 4, y: A.y, c: fibC(lv), al: 'right' }); }); return G; } });
+  kGeo('fibtime', { sty: KF, icon: kIco('<path d="M2 2.5v11M4.5 2.5v11M7 2.5v11M10.5 2.5v11M14.5 2.5v11"/>'),
+    geom: function(d, X){ var a = X.P(d.a), b = X.P(d.b); if (!a || !b) return null; var dx = b.x - a.x, G = [{ k: 's', a: a, b: b, dash: [4, 3] }]; if (Math.abs(dx) < 1) return G;
+      [0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89].forEach(function(n, i){ var x = Math.round(a.x + dx * n) + 0.5; if (x < -2 || x > X.pw + 2) return; G.push({ k: 's', a: { x: x, y: 0 }, b: { x: x, y: X.ph }, c: FTC[i] }); G.push({ k: 't', s: String(n), x: x + 4, y: 6, c: FTC[i], al: 'left', bl: 'top' }); }); return G; } });
+  kGeo('fibfan', { sty: KF, icon: kIco('<path d="M2 14L14 2M2 14l12-6M2 14l12-1.5M2 14L8 2"/>'),
+    geom: function(d, X){ var a = X.P(d.a), b = X.P(d.b); if (!a || !b) return null; var dx = b.x - a.x, dy = b.y - a.y, G = [{ k: 'r', a: a, b: b, dash: [2, 3], c: 'rgba(120,123,134,.55)' }];
+      [0, 0.25, 0.382, 0.5, 0.618, 0.75, 1].forEach(function(lv){ var q = { x: b.x, y: a.y + dy * lv }; if (Math.hypot(q.x - a.x, q.y - a.y) > 1) G.push({ k: 's', a: a, b: kRay(a, q, X), c: fibC(lv) }); G.push({ k: 't', s: String(lv), x: b.x + (dx >= 0 ? 4 : -4), y: q.y, c: fibC(lv), al: dx >= 0 ? 'left' : 'right' }); });
+      [0.25, 0.382, 0.5, 0.618, 0.75].forEach(function(lv){ var q = { x: a.x + dx * lv, y: b.y }; if (Math.hypot(q.x - a.x, q.y - a.y) > 1) G.push({ k: 's', a: a, b: kRay(a, q, X), c: fibC(lv) }); }); return G; } });
+  kGeo('fibcirc', { sty: KF, icon: kIco('<circle cx="8" cy="8" r="2"/><circle cx="8" cy="8" r="4"/><circle cx="8" cy="8" r="6.4"/>'),
+    geom: function(d, X){ var a = X.P(d.a), b = X.P(d.b); if (!a || !b) return null; var r = Math.hypot(b.x - a.x, b.y - a.y), G = [{ k: 's', a: a, b: b, dash: [4, 3] }];
+      [0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618, 2.618].forEach(function(lv){ G.push({ k: 'c', x: a.x, y: a.y, r: r * lv, s0: 0, s1: Math.PI * 2, c: fibC(lv) }); G.push({ k: 't', s: String(lv), x: a.x + r * lv + 3, y: a.y - 6, c: fibC(lv), al: 'left' }); }); return G; } });
+  kGeo('fibspiral', { sty: { c: '#2962ff', w: 1 }, icon: kIco('<path d="M8 8.6a.9.9 0 0 1-.9-.9A1.8 1.8 0 0 1 8.9 5.9a2.7 2.7 0 0 1 2.7 2.7 4.3 4.3 0 0 1-4.3 4.3A6 6 0 0 1 1.3 6.9"/>'),
+    geom: function(d, X, C){ var a = X.P(d.a), b = X.P(d.b); if (!a || !b) return null; var r0 = Math.hypot(b.x - a.x, b.y - a.y); if (r0 < 1) return [{ k: 's', a: a, b: b }];
+      var t0 = Math.atan2(b.y - a.y, b.x - a.x), kk = Math.log(1.6180339887) / (Math.PI / 2), pts = [];
+      for (var th = -5 * Math.PI; th <= 3 * Math.PI; th += Math.PI / 40) { var r = r0 * Math.exp(kk * th); if (r > 5000) break; pts.push({ x: a.x + r * Math.cos(t0 + th), y: a.y + r * Math.sin(t0 + th) }); }
+      return [{ k: 's', a: a, b: b, dash: [4, 3] }, { k: 'p', pts: pts }]; } });
+  kGeo('fibarc', { sty: KF, icon: kIco('<path d="M5 13.5a3 3 0 0 1 6 0M2 13.5a6 6 0 0 1 12 0"/>'),
+    geom: function(d, X){ var a = X.P(d.a), b = X.P(d.b); if (!a || !b) return null; var r = Math.hypot(b.x - a.x, b.y - a.y), up = b.y <= a.y, G = [{ k: 's', a: a, b: b, dash: [4, 3] }];
+      [0.236, 0.382, 0.5, 0.618, 0.786, 1].forEach(function(lv){ G.push({ k: 'c', x: a.x, y: a.y, r: r * lv, s0: up ? Math.PI : 0, s1: up ? Math.PI * 2 : Math.PI, c: fibC(lv) }); G.push({ k: 't', s: String(lv), x: a.x, y: a.y + (up ? -r * lv - 3 : r * lv + 3), c: fibC(lv), al: 'center', bl: up ? 'bottom' : 'top' }); }); return G; } });
+  kGeo('fibwedge', { n: 3, sty: KF, icon: kIco('<path d="M2 14L14 4M2 14h12"/><path d="M8 14a6 6 0 0 0-1.4-3.9M12 14a10 10 0 0 0-2.3-6.4"/>'),
+    geom: function(d, X){ var a = X.P(d.a), b = X.P(d.b), c = d.c ? X.P(d.c) : null; if (!a || !b) return null; var G = [{ k: 's', a: a, b: b }]; if (!c) return G; G.push({ k: 's', a: a, b: c });
+      var r = Math.hypot(b.x - a.x, b.y - a.y), t1 = Math.atan2(b.y - a.y, b.x - a.x), t2 = Math.atan2(c.y - a.y, c.x - a.x), dt = t2 - t1; while (dt > Math.PI) dt -= 2 * Math.PI; while (dt < -Math.PI) dt += 2 * Math.PI;
+      [0.236, 0.382, 0.5, 0.618, 0.786, 1].forEach(function(lv){ G.push({ k: 'c', x: a.x, y: a.y, r: r * lv, s0: t1, s1: t1 + dt, ccw: dt < 0, c: fibC(lv) }); var tm = t1 + dt / 2; G.push({ k: 't', s: String(lv), x: a.x + (r * lv + 5) * Math.cos(tm), y: a.y + (r * lv + 5) * Math.sin(tm), c: fibC(lv), al: 'left' }); }); return G; } });
+  kGeo('gannbox', { sty: KF, icon: kIco('<rect x="2" y="2" width="12" height="12" rx="1"/><path d="M2 6h12M2 10h12M6 2v12M10 2v12" stroke-width=".9"/>'),
+    geom: function(d, X, C){ var a = X.P(d.a), b = X.P(d.b); if (!a || !b) return null; var x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x), y0 = Math.min(a.y, b.y), y1 = Math.max(a.y, b.y), G = [], LV = [0, 0.25, 0.382, 0.5, 0.618, 0.75, 1];
+      for (var i = 0; i < LV.length - 1; i++) { var ya = y0 + (y1 - y0) * LV[i], yb = y0 + (y1 - y0) * LV[i + 1]; G.push({ k: 'f', pts: [{ x: x0, y: ya }, { x: x1, y: ya }, { x: x1, y: yb }, { x: x0, y: yb }], c: GBF[i % GBF.length] }); }
+      LV.forEach(function(lv){ var y = Math.round(y0 + (y1 - y0) * lv) + 0.5, x = Math.round(x0 + (x1 - x0) * lv) + 0.5; G.push({ k: 's', a: { x: x0, y: y }, b: { x: x1, y: y }, c: fibC(lv) }); G.push({ k: 's', a: { x: x, y: y0 }, b: { x: x, y: y1 }, c: fibC(lv) });
+        G.push({ k: 't', s: String(lv), x: x0 - 4, y: y, c: fibC(lv), al: 'right' }); G.push({ k: 't', s: String(lv), x: x, y: y0 - 3, c: fibC(lv), al: 'center', bl: 'bottom' }); });
+      G.push({ k: 's', a: { x: x0, y: y1 }, b: { x: x1, y: y0 }, dash: [4, 3] }); return G; } });
   function kPaint(g, d, X){ var k2o = K2[d.type]; if (k2o) { var C2 = kE(X, d, 'color'), W2 = kW(X, d); g.save(); g.strokeStyle = C2; g.fillStyle = C2; g.lineWidth = W2; g.setLineDash(X.pv ? [4, 3] : dash(kE(X, d, 'dash'), W2));
       try { k2o.paint(g, d, X, C2, W2); } catch (e) {} g.restore(); return; }
     var C = kE(X, d, 'color'), W = kW(X, d), t = d.type, a, b; g.save(); g.strokeStyle = C; g.fillStyle = C; g.lineWidth = W; g.setLineDash(X.pv ? [4, 3] : dash(kE(X, d, 'dash'), W));
@@ -87722,7 +87792,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   }
   window.__stDrawBar = { make: make, KEYS: KEYS, durTxt: durTxt, icons: TICON, PAL: PAL, anchor: anchor, groundOf: groundOf, magnet: MAG, snapOHLC: snapOHLC, MAGI: MAGI, FIBS: FIBS, lookOf: lookOf, applyLook: applyLook, eff: eff, same: same, parseC: parseC, mkC: mkC, withA: withA, dash: dash,
     DSTY: NDSTY, keysHtml: keysHtml, keyRows: keyRows, kit: { has: function(t){ return !!KT[t]; }, paint: kPaint, axis: kAxis, text: kText, hit: kHit, handles: kHandles, box: kBox, note: kNote, NOFF: NOFF,
-      one: function(t){ return !!(K2[t] && K2[t].one); }, hasAxis: function(t){ return !!(K2[t] && K2[t].axis); }, hasPx: function(t){ return !!(K2[t] && K2[t].px); } } };
+      one: function(t){ return !!(K2[t] && K2[t].one); }, npts: function(t){ return (K2[t] && K2[t].n) || 2; }, hasAxis: function(t){ return !!(K2[t] && K2[t].axis); }, hasPx: function(t){ return !!(K2[t] && K2[t].px); } } };
 })();
 </script>
 <script>
@@ -93244,6 +93314,9 @@ window.__stAZ = (function () {
   ];
   var TOOLN = { hline: ['Horizontal line', 'Línea horizontal'], trend: ['Trend line', 'Línea de tendencia'], rect: ['Rectangle', 'Rectángulo'], fib: ['Fib', 'Fib'], text: ['Text', 'Texto'], emoji: ['Emoji', 'Emoji'], long: ['Long position', 'Posición larga'], short: ['Short position', 'Posición corta'], pen: ['Draw', 'Dibujar'], range: ['Measure', 'Medir'],
     ray: ['Ray', 'Rayo'], arrow: ['Arrow', 'Flecha'], path: ['Path', 'Trayectoria'], hray: ['Horizontal ray', 'Rayo horizontal'], vline: ['Vertical line', 'Línea vertical'], channel: ['Parallel channel', 'Canal paralelo'], circle: ['Circle', 'Círculo'], brush: ['Highlighter', 'Resaltador'], note: ['Price note', 'Nota de precio'],
+    fibext: ['Trend-based fib extension', 'Extensión de Fibonacci por tendencia'], fibchan: ['Fib channel', 'Canal de Fibonacci'], fibtime: ['Fib time zone', 'Zona temporal de Fibonacci'],
+    fibfan: ['Fib speed resistance fan', 'Abanico de Fibonacci'], fibcirc: ['Fib circles', 'Círculos de Fibonacci'], fibspiral: ['Fib spiral', 'Espiral de Fibonacci'], fibarc: ['Fib speed resistance arcs', 'Arcos de Fibonacci'],
+    fibwedge: ['Fib wedge', 'Cuña de Fibonacci'], gannbox: ['Gann box', 'Caja de Gann'],
     infoline: ['Info line', 'Línea de información'], extline: ['Extended line', 'Línea extendida'], tangle: ['Trend angle', 'Ángulo de tendencia'], crossline: ['Cross line', 'Línea cruzada'] };
   var relangAt = null;
   function relang(force){ var l = L(); if (!force && relangAt === l) return; relangAt = l;
@@ -94882,7 +94955,7 @@ window.__stAZ = (function () {
   function lockSel(){ var o = DW.sel != null && DW.list[DW.sel]; if (!o) return; if (o.lock) delete o.lock; else o.lock = true; commit(); renderProps(); dirty();
     flash(o.lock ? T('Locked: it cannot be moved or deleted until unlocked.', 'Bloqueado: no se puede mover ni borrar hasta desbloquearlo.') : T('Unlocked.', 'Desbloqueado.')); }
   function nudge(c, p){ var mv = function(q){ var L = p && lOfT(p, q.t); if (L != null) q.t = tOfL(p, L + 3); };   // three candles along, on the chart it was cloned on
-    if (c.type === 'hline') c.price = c.price + U('pips') * 5; else if (c.type === 'pen' || c.type === 'brush' || c.type === 'path') (c.pts || []).forEach(mv); else { if (c.a) mv(c.a); if (c.b) mv(c.b); if (c.type === 'hray' && c.a) c.a.price = c.a.price + U('pips') * 5; } return c; }
+    if (c.type === 'hline') c.price = c.price + U('pips') * 5; else if (c.type === 'pen' || c.type === 'brush' || c.type === 'path') (c.pts || []).forEach(mv); else { if (c.a) mv(c.a); if (c.b) mv(c.b); if (c.c) mv(c.c); if (c.type === 'hray' && c.a) c.a.price = c.a.price + U('pips') * 5; } return c; }
   var PAK = ['paId', 'paSig', 'paPx', 'paOn', 'paFired', 'paNote', 'hitAt', 'hitHow', 'hitPx'];   // an alert's own row and its moment: never a copy's
   function cloneSel(){ if (DW.sel == null || !DW.list[DW.sel]) return; var p = DW.at || panes[0], c = clone(DW.list[DW.sel]); delete c.lock; PAK.forEach(function(k){ delete c[k]; });   // a copy starts unlocked (its alert, if any, a new one)
     nudge(c, p); DW.list.push(c); DW.sel = DW.list.length - 1; DW.multi = null; commit(); updDel(); }
@@ -95117,9 +95190,9 @@ window.__stAZ = (function () {
           if ((lx && lx.p === p && Math.hypot(xy.x - lx.x, xy.y - lx.y) < ptol) || (lf && lf.t === q.t && lfp && Math.abs(lfp.y - xy.y) < ptol)) pathDone();
           else { pd0.pts[pd0.pts.length - 1] = q; pd0.pts.push({ t: q.t, price: q.price }); DW.pxy = { p: p, x: xy.x, y: xy.y }; } } }
       // two points: press, move, press again - or press and drag (batch B); a parallel channel takes a third press for its other line
-      else if (!DW.pending) { DW.pending = styleNew({ type: DW.tool, a: q, b: { t: q.t, price: q.price } }); if (DW.tool === 'channel') { DW.pending.off = 0; DW.pending.st = 1; } DW.pdn = { p: p, x: xy.x, y: xy.y }; }
-      else if (DW.pending.st === 1) { DW.pending.b = q; DW.pending.st = 2; }
-      else { if (DW.pending.st === 2) DW.pending.off = chanOff(p, DW.pending, q); else DW.pending.b = q; pendDone(); }
+      else if (!DW.pending) { DW.pending = styleNew({ type: DW.tool, a: q, b: { t: q.t, price: q.price } }); if (DW.tool === 'channel') { DW.pending.off = 0; DW.pending.st = 1; } else if (KIT && KIT.npts && KIT.npts(DW.tool) === 3) DW.pending.st = 1; DW.pdn = { p: p, x: xy.x, y: xy.y }; }
+      else if (DW.pending.st === 1) { DW.pending.b = q; DW.pending.st = 2; if (DW.pending.type !== 'channel') DW.pending.c = { t: q.t, price: q.price }; }   // a three-point tool: its third point follows the mouse
+      else { if (DW.pending.st === 2) { if (DW.pending.type === 'channel') DW.pending.off = chanOff(p, DW.pending, q); else DW.pending.c = q; } else DW.pending.b = q; pendDone(); }
       dirty(); return; }
     var h = hit(p, xy.x, xy.y);
     // a press on one of several selected: they all move together
@@ -95170,7 +95243,7 @@ window.__stAZ = (function () {
     if (DW.penning) { var pp = DW.penP, xy = evXY(pp, e); DW.penning.tip = xy; var lp = DW.penning.px[DW.penning.px.length - 1];
       if (!lp || Math.hypot(xy.x - lp.x, xy.y - lp.y) >= 2) { var pf = toPf(pp, e); if (pf) { DW.penning.pts.push(pf); DW.penning.px.push(xy); } } dirty(); return; }
     if (DW.tool !== 'none' && p && (!!e.ctrlKey !== !!(window.__stDrawBar.magnet && window.__stDrawBar.magnet.on()))) { var sp = toP(p, e); DW.snap = sp ? { p: p, q: sp } : null; dirty(); } else if (DW.snap) { DW.snap = null; dirty(); }
-    if (DW.pending) { if (p) { var q = toP(p, e); if (q) { if (DW.pending.type === 'path') DW.pending.pts[DW.pending.pts.length - 1] = q; else if (DW.pending.st === 2) DW.pending.off = chanOff(p, DW.pending, q); else DW.pending.b = q; dirty(); } } return; }
+    if (DW.pending) { if (p) { var q = toP(p, e); if (q) { if (DW.pending.type === 'path') DW.pending.pts[DW.pending.pts.length - 1] = q; else if (DW.pending.st === 2) { if (DW.pending.type === 'channel') DW.pending.off = chanOff(p, DW.pending, q); else DW.pending.c = q; } else DW.pending.b = q; dirty(); } } return; }
     if (DW.drag && DW.drag.group) { var gg = DW.drag, q3 = toP(gg.p, e); if (!q3) return;
       if (!gg.moved) { var gm3 = evXY(gg.p, e); if (Math.abs(gm3.x - gg.x0) < 3 && Math.abs(gm3.y - gg.y0) < 3) return; gg.moved = true; }
       if (gg.lock) { if (!gg.said) { gg.said = true; flash(T('One of them is locked: unlock it to move them together.', 'Uno de ellos está bloqueado: desbloquéalo para moverlos juntos.')); } return; }
@@ -95178,7 +95251,7 @@ window.__stAZ = (function () {
       var gsh = function(z){ var L = lOfT(g0, z.t); return { t: L == null ? z.t : tOfL(g0, L + gdL), price: z.price + gdp }; };
       gg.group.forEach(function(k, n){ var d = DW.list[k], o = gg.origs[n]; if (!d || !o) return;
         if (d.type === 'hline') { d.price = o.price + gdp; return; }
-        if (d.type === 'pen' || d.type === 'brush' || d.type === 'path') d.pts = o.pts.map(gsh); else if (d.type === 'text' || d.type === 'emoji' || !o.b) d.a = gsh(o.a); else { d.a = gsh(o.a); d.b = gsh(o.b); }
+        if (d.type === 'pen' || d.type === 'brush' || d.type === 'path') d.pts = o.pts.map(gsh); else if (d.type === 'text' || d.type === 'emoji' || !o.b) d.a = gsh(o.a); else { d.a = gsh(o.a); d.b = gsh(o.b); if (o.c) d.c = gsh(o.c); }
         if (o.sl != null && o.tp != null) { d.sl = o.sl + gdp; d.tp = o.tp + gdp; } });
       dirty(); return; }
     if (DW.drag) { var g = DW.drag, q2 = toP(g.p, e); if (!q2) return; var d = DW.list[g.i], o = g.orig;
@@ -95187,6 +95260,7 @@ window.__stAZ = (function () {
       if (g.part === 'line') d.price = q2.price;
       else if (g.part === 'a') { d.a = { t: q2.t, price: q2.price }; if (d.type === 'note') { var A0 = Pt(g.p, o.a), A1 = Pt(g.p, d.a), ob = o.off || KIT.NOFF; if (A0 && A1) d.off = { x: ob.x - (A1.x - A0.x), y: ob.y - (A1.y - A0.y) }; } }   // a note's point: its box stays
       else if (g.part === 'b') d.b = { t: q2.t, price: q2.price };
+      else if (g.part === 'c') d.c = { t: q2.t, price: q2.price };   // a three-point tool's third
       else if (g.part === 'l' || g.part === 'r') { var tI = d[g.pt || 'a']; if (tI) tI.t = q2.t; }
       else if (g.part === 't' || g.part === 'bo') { var tP = d[g.pt || 'a']; if (tP) tP.price = q2.price; }
       else if (g.part === 'c1') { d.a.t = q2.t; d.b.price = q2.price; } else if (g.part === 'c2') { d.b.t = q2.t; d.a.price = q2.price; }
@@ -95201,7 +95275,7 @@ window.__stAZ = (function () {
       // it keeps making itself smaller then bigger").
       else { var p0 = g.p, dL = lOfT(p0, q2.t) - lOfT(p0, g.start.t), dp = q2.price - g.start.price;
         var sh = function(z){ var L = lOfT(p0, z.t); return { t: L == null ? z.t : tOfL(p0, L + dL), price: z.price + dp }; };
-        if (d.type === 'pen' || d.type === 'brush' || d.type === 'path') d.pts = o.pts.map(sh); else if (d.type === 'text' || d.type === 'emoji' || !o.b) d.a = sh(o.a); else { d.a = sh(o.a); d.b = sh(o.b); }
+        if (d.type === 'pen' || d.type === 'brush' || d.type === 'path') d.pts = o.pts.map(sh); else if (d.type === 'text' || d.type === 'emoji' || !o.b) d.a = sh(o.a); else { d.a = sh(o.a); d.b = sh(o.b); if (o.c) d.c = sh(o.c); }
         if (o.sl != null && o.tp != null) { d.sl = o.sl + dp; d.tp = o.tp + dp; } }
       dirty(); return; }
     if (p && DW.tool === 'none' && !e.touches) { var xy2 = evXY(p, e), nh = newsAt(p, xy2.x, xy2.y); if (!DW.pin) newsCard(p, nh);
@@ -95218,7 +95292,7 @@ window.__stAZ = (function () {
     if (DW.mz) { DW.mz = null; save(); dirty(); return; }
     if (DW.asTemp) { var a = DW.asTemp; DW.asTemp = null; if (a.dy < 5) try { a.p.chart.priceScale('right').applyOptions({ autoScale: true }); } catch (x) {} }
     if (!S) return;
-    if (DW.pdn) { var pd = DW.pdn; DW.pdn = null; if (pd.far && DW.pending) { if (DW.pending.st === 1) DW.pending.st = 2; else pendDone(); dirty(); return; } }   // dragged out: let go, it is drawn
+    if (DW.pdn) { var pd = DW.pdn; DW.pdn = null; if (pd.far && DW.pending) { if (DW.pending.st === 1) { DW.pending.st = 2; if (DW.pending.type !== 'channel') DW.pending.c = { t: DW.pending.b.t, price: DW.pending.b.price }; } else pendDone(); dirty(); return; } }   // dragged out: let go, it is drawn
     if (DW.marq) { var mp = DW.marq.p, mr = marqNorm(DW.marq); DW.marq = null; DW.noProps = false;
       if (Math.abs(mr.x1 - mr.x0) < 4 && Math.abs(mr.y1 - mr.y0) < 4) { DW.multi = null; updDel(); return; }
       var pw = paneDims(mp).pw, picked = []; DW.list.forEach(function(d, i){ var bb = visibleOn(d, mp.tf) && bboxOf(mp, d, pw); if (bb && !(bb.x1 < mr.x0 || bb.x0 > mr.x1 || bb.y1 < mr.y0 || bb.y0 > mr.y1)) picked.push(i); });
