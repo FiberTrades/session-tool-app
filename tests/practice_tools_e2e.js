@@ -135,7 +135,7 @@
     var mid = { x: (P._xOfT(1, d0.a.t) + P._xOfT(1, d0.b.t)) / 2, y: (P._yOf(1, d0.a.price) + P._yOf(1, d0.b.price)) / 2 };
     mev(1, 'contextmenu', mid.x, mid.y, { button: 2 }); await W(30);
     var ctx = pane(1).el.querySelector('.stpr-ctx');
-    ok('right-click on it: Clone / Delete', ctx && ctx.style.display === 'flex' && /CLONE|Clone/i.test(ctx.textContent) && /Delete/i.test(ctx.textContent), ctx && ctx.textContent);
+    ok('right-click on it: Clone / Delete', ctx && ctx.style.display !== 'none' && /CLONE|Clone/i.test(ctx.textContent) && /Delete/i.test(ctx.textContent), ctx && ctx.textContent);
     ctx.querySelector('[data-act="clone"]').click();
     ok('Clone makes a second one, moved along a little', DW.list.length === 2 && DW.list[1].a.t > d0.a.t && DW.sel === 1);
     var before = DW.list.map(function (d) { return d.a.t; }); mev(1, 'mousedown', mid.x, mid.y); mev(1, 'mousemove', mid.x + 40, mid.y + 10, { held: true }); mev(1, 'mouseup', mid.x + 40, mid.y + 10); await W(30);

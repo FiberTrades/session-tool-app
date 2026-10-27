@@ -28,11 +28,12 @@
     ok('a price the next hours reach first (above or below now): ' + target + ' (the ' + (hitBar && hhmm(hitBar.time)) + ' candle)', target && hitBar, [cur, target]);
 
     // since 23 Oct 2026 the + by the price is the way (Nestor: "eliminate the add alarm by pressing the screen down on a phone and also by
-    // clicking the right button on the mouse, the + symbols is enough"): a right-click on the bare chart offers nothing
+    // clicking the right button on the mouse, the + symbols is enough"); since 26 Oct 2026 a right-click opens the chart's own menu
+    // (TradingView's, which he asked for), Add alert at the price among its rows - a phone's long press stays the crosshair
     var y = P._yOf(0, target), x = pane().el.clientWidth * 0.5;
     mev('contextmenu', x, y); await W(40);
     var ctx = pane().el.querySelector('.stpr-ctx');
-    ok('a right-click on the bare chart: no menu, no Add alert', !(ctx && ctx.style.display === 'flex' && ctx.querySelector('[data-act="alert"]')), ctx && ctx.textContent);
+    ok('a right-click on the bare chart: the chart menu, Add alert among its rows', ctx && ctx.style.display === 'block' && ctx.querySelector('[data-act="alert"]'), ctx && ctx.textContent); document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     mev('mousemove', x, y); await W(60); P._drawOv(0);
     // the + adds the price the crosshair's label reads - not always the exact price at y: a mouse event lands on a whole pixel
     // (clientY drops its fraction) and a pixel here is about half a point, enough to tip the fifth decimal
