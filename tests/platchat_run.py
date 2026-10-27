@@ -4,6 +4,7 @@
 import base64, calendar, functools, http.server, json, os, random, shutil, socket, subprocess, sys, tempfile, threading, time, urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
+os.environ.setdefault('E2E_TIMEOUT', '900')   # the computer and the phone runs together take longer than the helper's 4 minutes on a busy machine
 import browser_test as bt
 T0 = calendar.timegm((2026, 10, 14, 8, 30, 0))
 TOK = 'st-test-platchat-e2e'
