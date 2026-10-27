@@ -297,10 +297,16 @@
     check('a device with the old per-panel widths: the open panel\'s width, else the chat\'s, else the widest', m1[0] === 340 && m2[0] === 410 && m3[0] === 390 && m4[0] === 350 && !m1[1] && !m2[1], [m1, m2, m3, m4]);
     localStorage.setItem('st_plat', stW0); P._plStRead(); P._platSync(); await W(300);   // back as it was (the Trade Manager open, its width)
     check('...and back: the Trade Manager open', !win.classList.contains('pl-notm') && $('.plat-rail [data-plr="tm"]').classList.contains('on') && Math.abs(colW() - wTm0) <= 1, [win.className, colW(), wTm0]);
-    $('[data-pltab="acct"]').click(); await W(300);
-    check('the Account tab: balance, equity, margin, free margin', /Balance/.test($('.pl-acg').textContent) && /Free margin/.test($('.pl-acg').textContent), $('.pl-acg') && $('.pl-acg').textContent.slice(0, 100));
-    var acs = Array.prototype.slice.call(document.querySelectorAll('.pl-acc')), ac0 = acs[0], s0 = ac0 && ac0.querySelector('span').getBoundingClientRect(), b0 = ac0 && ac0.querySelector('b').getBoundingClientRect();
-    check('...the account on its own line, then a cell per figure: its name above its value, hairlines between (26 Oct 2026)', $('.pl-ach b') && $('.pl-ach b').textContent.trim().length > 1 && acs.length >= 5 && s0.bottom <= b0.top + 1 && getComputedStyle(ac0).borderRightWidth === '1px' && !/Account/.test($('.pl-acg').textContent), [$('.pl-ach') && $('.pl-ach').textContent, acs.length]);
+    // no Account tab (Nestor, 27 Oct 2026: "what the point of having the account details down here ... when i have them up here already?"):
+    // the strip keeps the figures; hovering it shows the account, its currency, balance and equity
+    var tabsK = Array.prototype.map.call(document.querySelectorAll('.pl-tabs [data-pltab]'), function (b) { return b.getAttribute('data-pltab'); });
+    check('the bottom panel: Positions, Orders, History - no Account tab; the strip along them stays', tabsK.join('|') === 'pos|ord|hist' && /Open P&L/.test($('.pl-sum').textContent) && /Free margin/.test($('.pl-sum').textContent), [tabsK, $('.pl-sum').textContent]);
+    var sumEl = $('.pl-sum'); sumEl.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); await W(150);
+    var card = $('.pl-sumc'), cr = card && card.getBoundingClientRect(), sr = sumEl.getBoundingClientRect();
+    check('hovering the strip: a card with the account (name, login, currency), Balance and Equity, just above the strip', card && !card.hidden && /FTMO 70K/.test(card.querySelector('h6').textContent) && /90001234/.test(card.textContent) && /Balance/.test(card.textContent) && /Equity/.test(card.textContent) && card.querySelector('h6 em') && cr.bottom <= sr.top && cr.bottom >= sr.top - 12 && cr.right <= sr.right + 1, card && [card.textContent, cr.top, cr.bottom, sr.top]);
+    check('...in the platform\'s font, colours and a hairline border', card && getComputedStyle(card).fontFamily === getComputedStyle($('.plat-top')).fontFamily && getComputedStyle(card).borderTopWidth === '1px', card && [getComputedStyle(card).fontFamily, getComputedStyle(card).borderTopWidth]);
+    sumEl.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })); await W(100);
+    check('...gone when the mouse leaves the strip', card && card.hidden);
     $('[data-pltab="hist"]').click(); for (k = 0; k < 30 && !$('.lc-tb .lctb-t td.r'); k++) await W(200);
     var hr0 = Array.prototype.filter.call(document.querySelectorAll('.lc-tb .lctb-t tr'), function (r) { return /880001/.test(r.textContent); })[0], htd = hr0 ? hr0.querySelectorAll('td') : [];
     var cCom = htd[10] && getComputedStyle(htd[10]).color, cPro = htd[12] && getComputedStyle(htd[12]).color;
