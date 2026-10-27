@@ -297,6 +297,9 @@
     check('a device with the old per-panel widths: the open panel\'s width, else the chat\'s, else the widest', m1[0] === 340 && m2[0] === 410 && m3[0] === 390 && m4[0] === 350 && !m1[1] && !m2[1], [m1, m2, m3, m4]);
     localStorage.setItem('st_plat', stW0); P._plStRead(); P._platSync(); await W(300);   // back as it was (the Trade Manager open, its width)
     check('...and back: the Trade Manager open', !win.classList.contains('pl-notm') && $('.plat-rail [data-plr="tm"]').classList.contains('on') && Math.abs(colW() - wTm0) <= 1, [win.className, colW(), wTm0]);
+    // the Session Indicator's weekday names under the chart's legend, not on its line (Nestor, 27 Oct 2026)
+    var dyY = P._dayY(0), pn0 = P._panes()[0].el.getBoundingClientRect(), lgB = Math.max.apply(null, Array.prototype.map.call(P._panes()[0].el.querySelectorAll('.stpr-tl > *'), function (e) { return e.offsetWidth ? e.getBoundingClientRect().bottom - pn0.top : 0; }));
+    check('the weekday names (MONDAY...) under the legend, about 60 px down, not on its line', dyY >= 60 && dyY >= lgB + 8 && dyY < 120, [dyY, Math.round(lgB)]);
     // no Account tab (Nestor, 27 Oct 2026: "what the point of having the account details down here ... when i have them up here already?"):
     // the strip keeps the figures; hovering it shows the account, its currency, balance and equity
     var tabsK = Array.prototype.map.call(document.querySelectorAll('.pl-tabs [data-pltab]'), function (b) { return b.getAttribute('data-pltab'); });
