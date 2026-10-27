@@ -46,7 +46,8 @@ self.addEventListener('install', (event) => {
       // allSettled so a missing path never fails the whole install
       // Two shells now: the landing at the root, and the app. Both precached so a first
       // offline open works whichever the visitor has.
-      Promise.allSettled([cache.add('./'), cache.add('./index.html'), cache.add('./app.html')])
+      // and the two libraries the app loads from this site (27 Oct 2026), their versions in their names: cache-first is always right for them
+      Promise.allSettled([cache.add('./'), cache.add('./index.html'), cache.add('./app.html'), cache.add('./vendor/supabase-js-2.118.0.min.js'), cache.add('./vendor/lightweight-charts-4.2.3.standalone.production.js')])
     ).catch(() => {})
   );
 });

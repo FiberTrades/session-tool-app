@@ -21226,9 +21226,10 @@ try {
        open trade, kept outside the card's redraws and put back into the card after each one; removed when the trade
        closes. The Live P/L switch hides only the R and money on the card; the chart stays (Nestor, 2 Oct). */
     var charts = {}, barsC = {}, lwcP = null;
-    var LWC_SRC = 'https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js';
+    var LWC_SRC = new URL('vendor/lightweight-charts-4.2.3.standalone.production.js', document.baseURI).href;   // this site's copy (27 Oct 2026)
     function ensureLWC() {
       if (window.LightweightCharts) return Promise.resolve();
+      if (window.__stLWC) return window.__stLWC();   // the chart module's: this site's copy, the CDN's if that fails (27 Oct 2026)
       if (lwcP) return lwcP;
       lwcP = new Promise(function (res, rej) {
         var ex = document.querySelector('script[src="' + LWC_SRC + '"]');   // Trade Replay may be loading it already
@@ -57985,7 +57986,9 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
 <!-- ============================================================
      Session Terminal — cloud auth + sync (gate + Settings tab)
      ============================================================ -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- the database client from this site, its exact version in its name (27 Oct 2026: from jsdelivr, a slow CDN held the whole start back) -->
+<script src="vendor/supabase-js-2.118.0.min.js"></script>
+<script>window.supabase || document.write('<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"><\/script>');</script>
 <script>
 (function () {
   'use strict';
@@ -88439,9 +88442,9 @@ window.__stAZ = (function () {
 </script>
 <script>
 (function(){
-  var LWC_SRC='https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js';
+  var LWC_SRC=new URL('vendor/lightweight-charts-4.2.3.standalone.production.js', document.baseURI).href;   // this site's copy (27 Oct 2026)
   var lwcP=null;
-  function ensureLWC(){ if(window.LightweightCharts) return Promise.resolve(); if(lwcP) return lwcP;
+  function ensureLWC(){ if(window.LightweightCharts) return Promise.resolve(); if(window.__stLWC) return window.__stLWC(); if(lwcP) return lwcP;   // the chart module's loader (this site, then the CDN)
     lwcP=new Promise(function(res,rej){ var s=document.createElement('script'); s.src=LWC_SRC; s.onload=function(){res();}; s.onerror=function(){rej(new Error('lwc'));}; document.head.appendChild(s); }); return lwcP; }
   function el(id){ return document.getElementById(id); }
   function esc(s){ return String(s==null?'':s); }
@@ -93005,12 +93008,12 @@ window.__stAZ = (function () {
 </div>
 <script>
 (function(){
-  var LWC_SRC = 'https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js';
-  var LWC_ALT = 'https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js';
+  var LWC_SRC = new URL('vendor/lightweight-charts-4.2.3.standalone.production.js', document.baseURI).href;   // this site's copy, the exact version in its name (27 Oct 2026); whole, as chart windows load it too
+  var LWC_ALT = 'https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js';   // the CDN, only if this site's copy does not come
   var lwcP = null;
   // The chart library (27 Oct 2026, Nestor: charts loading slowly - traced: the Charts click waited 7.4 s on the CDN before the first
-  // candle was even asked for). The same script a module already added is waited on, not fetched again; the same version from a
-  // second CDN joins in when the first is slow (1.2 s; it is there in a few hundred ms when well) or fails, and whichever arrives first is used.
+  // candle was even asked for). Served from this site now; the same script a module already added is waited on, not fetched again,
+  // and the CDN's copy joins in when this site's is slow (1.2 s) or fails, whichever arrives first is used.
   function ensureLWC(){ if (window.LightweightCharts) return Promise.resolve(); if (lwcP) return lwcP;
     lwcP = new Promise(function(res, rej){ var done = false, tried = 0, failed = 0, alt = false;
       var ok = function(){ if (done || !window.LightweightCharts) return; done = true; clearInterval(iv); res(); };
@@ -93018,14 +93021,20 @@ window.__stAZ = (function () {
       var iv = setInterval(ok, 150);   // or another module's copy arrived first
       var first = function(){ tried++; var ex = document.querySelector('script[src="' + LWC_SRC + '"]'), sc = ex || document.createElement('script');
         sc.addEventListener('load', ok); sc.addEventListener('error', fail); if (!ex) { sc.src = LWC_SRC; document.head.appendChild(sc); } else ok(); };
-      // the second CDN's copy is fetched and run at once: added as a script it waited seconds for its turn behind the busy page
+      // the CDN's copy is fetched and run at once: added as a script it waited seconds for its turn behind the busy page
       var second = function(){ if (alt || done) return; alt = true; tried++;
         fetch(LWC_ALT).then(function(r){ if (!r.ok) throw new Error('lwc ' + r.status); return r.text(); }).then(function(tx){ if (!window.LightweightCharts) (new Function(tx))(); ok(); if (!done) fail(); }).catch(fail); };
       first(); setTimeout(second, 1200); });
     return lwcP; }
-  // ...and asked for once the app has started, so the first Charts click finds it here (the cache keeps it after that)
-  try { if (document.getElementById('page-livecharts')) window.addEventListener('load', function(){ var go = function(){ ensureLWC().catch(function(){}); };
-    if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(go, { timeout: 800 }); else setTimeout(go, 300); }); } catch (e) {}
+  window.__stLWC = ensureLWC;   // the app's other two loaders use this one
+  // into a chart window of its own (its own copy of the library): this site's, then the CDN's if that fails
+  function lwcInto(d, ok, bad){ var add = function(src, next){ var sc = d.createElement('script'); sc.src = src; sc.onload = ok; sc.onerror = next; d.head.appendChild(sc); };
+    add(LWC_SRC, function(){ add(LWC_ALT, bad || function(){}); }); }
+  // ...and asked for once the page is in, so the first Charts click finds it here (not at the page's load event: a slow third-party
+  // script, such as the emoji set, holds that back)
+  try { if (document.getElementById('page-livecharts')) { var lwcPre = function(){ var go = function(){ ensureLWC().catch(function(){}); };
+    if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(go, { timeout: 800 }); else setTimeout(go, 300); };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', lwcPre); else lwcPre(); } } catch (e) {}
   /* The stage: where Live Charts is - this window, or Live Charts' own window (livecharts.html), which this window draws as it draws a
      chart window (stageAttach, 23 Oct 2026). Its elements are looked up there first. */
   var SD = document, SW = window;
@@ -97019,7 +97028,7 @@ window.__stAZ = (function () {
     try { w.__stFree = 0; w.__stLcHost = LV.sat || null; } catch (e) {}
     var up = function(){ if (POP[i] !== o || o.w !== w) return; o.ready = true; delete AWAY[i]; wireWin(w, i); if (!LV.building && !satPending()) rebuild(); };   // (a first build waiting for it builds it there)
     if (w.LightweightCharts) up();
-    else { var sc = d.createElement('script'); sc.src = LWC_SRC; sc.onload = up; sc.onerror = function(){ unpop(i); flash(T('The new window could not load the chart. Check the connection and try again.', 'La ventana nueva no pudo cargar el gráfico. Revisa la conexión y vuelve a intentarlo.')); }; d.head.appendChild(sc); }
+    else lwcInto(d, up, function(){ unpop(i); flash(T('The new window could not load the chart. Check the connection and try again.', 'La ventana nueva no pudo cargar el gráfico. Revisa la conexión y vuelve a intentarlo.')); });
     return true; }
   // the window-wide handlers of this window, in that one too (mouse, keys, right-click, its timeframe buttons)
   function wireWin(w, i){ var d = w.document, L = [], on = function(t, ev, fn, op){ t.addEventListener(ev, fn, op); L.push([t, ev, fn, op]); };   // window-wide: undone when it is let go (satLetGo)
@@ -98321,7 +98330,7 @@ window.__stAZ = (function () {
     was.forEach(function(x){ x.remove(); });
     var ask = function(){ try { if (w.__stAskNow) w.__stAskNow(); } catch (e) {} };
     if (w.LightweightCharts) setTimeout(ask, 0);
-    else { var sc = d.createElement('script'); sc.src = LWC_SRC; sc.onload = ask; d.head.appendChild(sc); } }
+    else lwcInto(d, ask); }
   function stageAttach(w, sym){
     if (!wired) wire();
     var d = w.document, old = d.getElementById('stpr-bg');
