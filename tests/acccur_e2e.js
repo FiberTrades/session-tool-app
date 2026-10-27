@@ -27,8 +27,9 @@
     ok('each account takes the currency its MT5 reports: the 70K GBP, OneFunded USD', A.currency === 'GBP' && B.currency === 'USD', [A.currency, B.currency]);
     var item = function (id) { return document.querySelector('#settings-accounts-list .sacc-item[data-account-id="' + id + '"]'); };
     ok('the lines: the 70K £70,000.00, OneFunded $10,000.00', /£70,000\.00/.test(item(A.id).querySelector('.sacc-bal').textContent) && /\$10,000\.00/.test(item(B.id).querySelector('.sacc-bal').textContent), [item(A.id).querySelector('.sacc-bal').textContent, item(B.id).querySelector('.sacc-bal').textContent]);
-    var tot = document.querySelector('#settings-accounts-list .settings-account-total');
-    ok('All accounts: a total per currency, side by side - never £80,000', tot && /£70,000\.00 · \$10,000\.00/.test(tot.textContent) && !/80,000/.test(tot.textContent), tot && tot.textContent.replace(/\s+/g, ' '));
+    var tot = document.querySelector('#settings-accounts-list .sacc-sum');   // a row per currency since 27 Oct 2026
+    var rowOfCur = function (c) { var r = tot && tot.querySelector('.sacc-cur[data-cur="' + c + '"]'); return r ? r.textContent.replace(/\s+/g, ' ') : ''; };
+    ok('All accounts: a total per currency, each on its own row - never £80,000', /£70,000\.00/.test(rowOfCur('GBP')) && /\$10,000\.00/.test(rowOfCur('USD')) && !/80,000/.test(tot.textContent), [rowOfCur('GBP'), rowOfCur('USD')]);
     item(B.id).querySelector('.sacc-head').click(); await W(600);
     var bb = item(B.id).querySelector('.sacc-body');
     ok('OneFunded\'s card in $: the starting balance, the Overview\'s balance', /\$10,000\.00/.test(bb.querySelector('[data-sx-row="start"]').textContent) && /Balance\$10,000\.00/.test(bb.querySelector('[data-sx="overview"]').textContent) && !/£/.test(bb.querySelector('[data-sx="overview"]').textContent), bb.querySelector('[data-sx="overview"]').textContent);

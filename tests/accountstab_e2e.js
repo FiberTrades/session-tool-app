@@ -35,7 +35,7 @@
     ok('a click opens it (and only it)', it.classList.contains('open') && !!body && document.querySelectorAll('.sacc-item.open').length === 1);
     ok('Read from MT5: FTMO, FTMO-Server4, started 70,000 GBP (EA 9.12)', /FTMO/.test(body.querySelector('[data-slot="facts"]').textContent) && /FTMO-Server4/.test(body.textContent) && /70,000 GBP/.test(body.textContent), body.querySelector('[data-slot="facts"]').textContent);
     ok('its MT5: where it runs, trading from the app, the copier; no Charts row (24 Oct 2026: Live Charts adds them)', /MT5 541419576/.test(body.querySelector('[data-slot="mt5"]').textContent) && body.querySelector('select[data-mt5c-role="541419576"]') && !body.querySelector('[data-slot="mt5"] .sacc-syms'));
-    ok('FTMO and no program yet: the one question, its rules boxes to fill', body.querySelector('.sacc-ask [data-sacc-prog="2step"]') && body.querySelector('[data-rows="firm"] #settings-risk-max-dd'));
+    ok('FTMO and no program picked yet: 2-Step prefilled (FTMO’s own, 27 Oct 2026), not yet kept; its rules boxes to fill', body.querySelector('[data-sacc-prog="2step"][aria-pressed="true"]') && !a1.program && body.querySelector('[data-rows="firm"] #settings-risk-max-dd'));
     ok('the Risk rules form is in it: this account\'s own rules (Max trades 1)', body.querySelector('[data-rows="own"] #settings-risk-max-trades') && document.getElementById('settings-risk-max-trades').value === '1', document.getElementById('settings-risk-max-trades').value);
     ok('...beside what the EA panel in MT5 is set to', /£500\.00 a trade · 1 trade a day/.test(body.textContent));
     body.querySelector('[data-sacc-prog="2step"]').click(); await W(400);

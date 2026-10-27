@@ -32,7 +32,7 @@
     ok('Overview: the balance, the profit, the daily loss left (your £900 stop, the firm\'s £3,500), its chips; FTMO 2-Step · Challenge', /Balance£70,000\.00/.test(ov.textContent) && /Profit£0\.00/.test(ov.textContent) && /Daily loss left£900\.00Your stop · firm limit £3,500\.00/.test(ov.textContent) && /Prop firm/i.test(ov.querySelector('.sx-chips').textContent) && /FTMO 2-Step · Challenge/.test(ov.querySelector('.sx-k').textContent), ov.textContent);
     ok('no Options menu, no Rename dialog', !it.querySelector('.sacc-more') && !document.getElementById('settings-rename-modal-bg') && typeof window.openRenameModal === 'undefined');
     var acs = body.querySelector('[data-sx="account"]'), rows = [].map.call(acs.querySelectorAll('.set-row .settings-label'), function (l) { return l.textContent; });
-    ok('Account: Name, Type, Stage, Firm and server, Starting balance, Opened, Archive or delete', rows.join(' / ') === 'Name / Type / Stage / Firm and server / Starting balance / Opened / Archive or delete', rows);
+    ok('Account: Name, Type, Program, Stage, Firm and server, Starting balance, Opened, Archive or delete', rows.join(' / ') === 'Name / Type / Program / Stage / Firm and server / Starting balance / Opened / Archive or delete', rows);
     ok('...Type is Personal | Prop firm | Test', [].map.call(acs.querySelectorAll('.settings-acct-kind .sak-opt'), function (b) { return b.textContent.trim(); }).join(' | ') === 'Personal | Prop firm | Test');
     ok('...firm and server read from MT5: FTMO · FTMO-Server4, started with 70,000 GBP', /FTMO · FTMO-Server4/.test(acs.querySelector('[data-slot="facts"]').textContent) && /70,000 GBP/.test(acs.textContent));
     ok('...opened 25 Aug 2026', /25 Aug 2026/.test(acs.textContent));
@@ -79,10 +79,11 @@
     var shown = function () { return [].map.call(document.querySelectorAll('.modal-bg.show'), function (e) { return e.id; }).join(','); }, pre = shown();
     b3.querySelector('.sak-opt[data-kind="challenge"]').click(); await W(500);
     b3 = item(a3.id).querySelector('.sacc-body');
-    var ask = b3.querySelector('[data-slot="stage"] .set-row.sacc-ask');
+    var stageRow = function () { return [].filter.call(item(a3.id).querySelectorAll('[data-slot="stage"] .set-row'), function (r) { return !!r.querySelector('[data-sacc-stage]'); })[0]; };
+    var ask = stageRow(); if (ask && !ask.classList.contains('sacc-ask')) ask = null;
     ok('Prop firm: its Stage row asks "Which stage is it in?", Payouts shown, no dialog', a3.kind === 'challenge' && ask && /Which stage is it in\?/.test(ask.textContent) && !b3.querySelector('[data-sx="payouts"]').hidden && shown() === pre, [a3.kind, b3.querySelector('[data-sx="payouts"]').hidden, pre, shown()]);
     ask.querySelector('[data-sacc-stage="Challenge"]').click(); await W(400);
-    ok('...Challenge: it goes in its name', a3.name === 'IC Markets - Challenge' && !item(a3.id).querySelector('[data-slot="stage"] .sacc-ask'), a3.name);
+    ok('...Challenge: it goes in its name', a3.name === 'IC Markets - Challenge' && !stageRow().classList.contains('sacc-ask'), a3.name);
     try { document.querySelectorAll('.undo-toast, .st-toast, .toast').forEach(function (t) { t.remove(); }); } catch (e) {}
 
     // ---- the phone: nothing wider than its section
