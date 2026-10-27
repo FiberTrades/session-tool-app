@@ -64,6 +64,35 @@
     check('its symbol up top opens that chart\'s symbol list, in that window', sm && sm.classList.contains('show') && vis(sm), sm && sm.className);
     try { cd.dispatchEvent(new cw.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); cd.body.click(); } catch (e) {} await W(400);
 
+    // ---- the same bars in both windows (Nestor, 27 Oct 2026: "why is the top bar/column thicker than the one below?"), measured in px ----
+    var bars = function (d) { var v = d.defaultView, tb = d.querySelector('.stpr-win.plat .plat-top'), lf = d.querySelector('.stpr-win.plat .plat-left'), wn = d.getElementById('stpr-win');
+      var r = function (e) { if (!e) return null; var q = e.getBoundingClientRect(); return Math.round(q.width * 10) / 10 + 'x' + Math.round(q.height * 10) / 10; };
+      var tbtn = tb && tb.querySelector('#stpr-snapbtn'), tsym = tb && tb.querySelector('.pl-tfs button.on, .pl-sattfs button.on'), lbtn = lf && lf.querySelector('.stpr-tools > button'), lgrp = lf && lf.querySelector('.stpr-tgm'), lsv = lgrp && lgrp.querySelector('svg');
+      var hOf = function (e) { return e ? Math.round(e.getBoundingClientRect().height * 10) / 10 : null; };   // (a timeframe button's width is its label's: 15m here, 1h there)
+      return { top: tb ? Math.round(tb.getBoundingClientRect().height * 10) / 10 : null, left: lf ? Math.round(lf.getBoundingClientRect().width * 10) / 10 : null, topBtn: r(tbtn), topTfH: hOf(tsym), tfFont: tsym ? v.getComputedStyle(tsym).fontSize : null,
+        leftBtn: r(lbtn), leftGroup: r(lgrp), leftIcon: r(lsv), pad: wn ? v.getComputedStyle(wn).padding + ' / ' + v.getComputedStyle(wn).rowGap : null, rootFont: v.getComputedStyle(d.documentElement).fontSize, zoom: v.getComputedStyle(d.documentElement).zoom || '' }; };
+    var bm = bars(document), bc = bars(cd), same = Object.keys(bm).every(function (k) { return bm[k] === bc[k]; });
+    check('the top bar and the tools column the same size in a chart window as in the main window (px): ' + JSON.stringify(bm), same, { main: bm, chart: bc });
+
+    // ---- the order's stop aimed in a chart window as smoothly as here (Nestor, 27 Oct 2026: "when in the app the execution SL line moves smooth
+    //      but on an external new window it lags"): ms from the mouse moving to the stop line moved and drawn, in each window ----
+    var ex = document.querySelector('.pl-x'); if (ex && !P._s().exec) { ex.click(); await W(400); }
+    var aimMs = async function (pi, w, n) { var p = P._panes()[pi], pc = p.el.querySelector('.stpr-pc'), rc = pc.getBoundingClientRect(), last = p.bars[p.bars.length - 1].close, out = [];
+      var slNow = function () { var l = P._lines(pi).filter(function (x) { return x.k === 'pvsl'; })[0]; return l ? l.p : null; };
+      var frame = function () { return new Promise(function (res) { var t = setTimeout(res, 200); w.requestAnimationFrame(function () { clearTimeout(t); res(); }); }); };
+      for (var j = 0; j < n; j++) { var y = p.series.priceToCoordinate(last - (j % 2 ? 0.0014 : 0.0008)); if (y == null) continue; var s0 = slNow(), t0 = performance.now();
+        pc.dispatchEvent(new w.PointerEvent('pointermove', { bubbles: true, cancelable: true, clientX: rc.left + rc.width * 0.5, clientY: rc.top + y, pointerType: 'mouse', pointerId: 1 }));
+        for (var q2 = 0; q2 < 40 && slNow() === s0; q2++) await frame();   // the stop line moved...
+        await frame(); out.push(performance.now() - t0); }   // ...and that window's next frame drawn
+      out.sort(function (a, b) { return a - b; }); return { med: Math.round(out[out.length >> 1]), p90: Math.round(out[Math.floor(out.length * 0.9)]), n: out.length }; };
+    var amMain = await aimMs(0, window, 24), amWin = await aimMs(1, cw, 24);
+    check('aiming the stop: ' + amMain.med + ' ms a move here (90%: ' + amMain.p90 + '), ' + amWin.med + ' ms in the chart window (90%: ' + amWin.p90 + ')', P._s().exec && amMain.n >= 20 && amWin.n >= 20 && amWin.med <= amMain.med + 10 && amWin.p90 <= 60, { main: amMain, chart: amWin });
+    // the app window out of sight (another screen in use): the browser slows its timers to about one a second - the chart window's aim must not wait for them
+    var st0 = window.setTimeout; window.setTimeout = function (f, ms) { var a = Array.prototype.slice.call(arguments); a[1] = Math.max(+ms || 0, 1000); return st0.apply(window, a); };
+    var amSlow; try { amSlow = await aimMs(1, cw, 12); } finally { window.setTimeout = st0; }
+    check('...and with this app window\'s timers slowed to one a second (out of sight): ' + amSlow.med + ' ms a move in the chart window', amSlow.n >= 10 && amSlow.p90 <= 80, amSlow);
+    if (P._s().exec) { var ex2 = document.querySelector('.pl-x'); if (ex2) ex2.click(); await W(400); }
+
     // ---- Live Charts in a window of its own: the whole platform, as in the tab ----
     var opened = null, wo = window.open, satW = null;
     window.open = function (u, n, f) { opened = [u, n, f]; satW = wo.call(window, u, n, f); return satW; };

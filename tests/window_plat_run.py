@@ -88,7 +88,7 @@ def main():
         try: cdp.call('Page.bringToFront'); cdp.call('Emulation.setFocusEmulationEnabled', enabled=True)
         except Exception: pass
         cdp.call('Emulation.setDeviceMetricsOverride', width=1600, height=960, deviceScaleFactor=1, mobile=False)
-        cdp.call('Page.navigate', url='http://127.0.0.1:%d/app.html?e2e=%d' % (web_port, random.randint(1, 10 ** 9)))
+        cdp.call('Page.navigate', url='http://127.0.0.1:%d/%s?e2e=%d' % (web_port, os.environ.get('E2E_APP', 'app.html'), random.randint(1, 10 ** 9)))   # E2E_APP: another copy of the app, to see the old behaviour
         time.sleep(2)
         cdp.eval('window.__stPlatOff = false; 1')
         if not cdp.eval(bt.PRELUDE):
