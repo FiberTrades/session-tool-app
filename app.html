@@ -93228,9 +93228,17 @@ window.__stAZ = (function () {
       pc: m.pc.map(function(pct, i){ return { pct: Number(pct) || 0, trig: parkStep('pc', i, dir, entry, tp, rd), fired: false }; }) };
     S.done = null; S.exec = false; S.pv = null; return true;
   }
+  // the session is over: in Live the market is closed (when it opens, for a market that opens Sunday evening); picking another day
+  // is Replay's (Nestor, 26 Oct 2026: "the pick another day i think is more suited for trade replay and not for live charts")
+  function mktOpens(){ if (!S || !S.sym || S.sym.cls === 'crypto') return ''; try { var now = nowS() * 1000, f = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: '2-digit', hourCycle: 'h23' });
+      var q0 = {}; f.formatToParts(new Date(now)).forEach(function(q){ q0[q.type] = q.value; }); if (!(q0.weekday === 'Sat' || (q0.weekday === 'Fri' && +q0.hour >= 17) || (q0.weekday === 'Sun' && +q0.hour < 17))) return '';   // a weekday's 17:00 New York: the next day opens at once (Live moves to it)
+      for (var i = 0; i < 4; i++) { var d = new Date(now + i * 864e5); for (var h = 20; h <= 23; h++) { var t = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), h, 0, 0); if (t <= now) continue;
+        var pp = {}; f.formatToParts(new Date(t)).forEach(function(q){ pp[q.type] = q.value; }); if (pp.weekday === 'Sun' && +pp.hour === 17) { var ld = new Date(t); return DAYS[L()][ld.getDay()] + ' ' + hm(Math.floor(t / 1000)); } } } } catch (e) {} return ''; }
+  function overTxt(short){ if (!S || !S.live) return short ? T('The day is over.', 'El día ha terminado.') : T('The day is over. Pick another day.', 'El día ha terminado. Elige otro día.');
+    var o = mktOpens(); return T('Market closed', 'Mercado cerrado') + (o ? T(' · opens ', ' · abre ') + o : ''); }
   function place(dir){
     if (!S || S.pos || S.pend) return false;
-    if (S.now >= S.f.close) { flash(T('The day is over. Pick another day.', 'El día ha terminado. Elige otro día.')); return false; }
+    if (S.now >= S.f.close) { flash(overTxt()); return false; }
     if (!canTrade(true)) return false;
     var e = px(), rd = stopPx(); openPos(dir, e, e - dir * rd, S.now); render(); return true;
   }
@@ -93923,7 +93931,7 @@ window.__stAZ = (function () {
       return; }
     // the panel holds the stop, the target and Execute (17 Oct 2026); no SELL / BUY here (Nestor: "remove buy sell buttons")
     var over = S.now >= S.f.close, can = !over && canTrade(false), ph = touchOnly();
-    var note = over ? T('The day is over: pick another day.', 'El día ha terminado: elige otro día.')
+    var note = over ? (S.live ? overTxt() : T('The day is over: pick another day.', 'El día ha terminado: elige otro día.'))
       : (!can ? (limitHit() ? T('Daily limit reached: no more trades this practice day.', 'Límite diario alcanzado: no más operaciones este día de práctica.') : T('The panel is OFF.', 'El panel está en OFF.'))
       : (S.exec ? (ph ? T('Drag the SL line, then tap SELL / BUY under the chart.', 'Arrastra la línea SL y pulsa VENDER / COMPRAR bajo el gráfico.') : T('Move the mouse to set the stop, click to place it. Press ', 'Mueve el ratón para poner el stop y haz clic para abrir. Pulsa ') + CFG.mm.key + T(' again to leave.', ' otra vez para salir.'))
       : (ph ? T('Tap Execute in the panel to see the SL and TP lines.', 'Pulsa Ejecutar en el panel para ver las líneas SL y TP.') : T('Press ', 'Pulsa ') + CFG.mm.key + T(', then click the chart where your stop goes.', ' y haz clic en el gráfico donde va tu stop.'))));
@@ -93973,7 +93981,7 @@ window.__stAZ = (function () {
     var busy = !!(S.pos || S.pend), over = S.now >= S.f.close;
     var note = off ? (lim ? T('Daily limit reached', 'Límite diario alcanzado') + ' (' + Math.floor(Number(m.maxDay)) + '). ' + T('Back on at the next day.', 'Vuelve al día siguiente.') : T('The panel is OFF: press OFF to switch it on.', 'El panel está en OFF: pulsa OFF para encenderlo.'))
       : (S.exec ? (ph ? T('Drag the SL line to where your stop goes (below price: a buy, above: a sell), then tap the button.', 'Arrastra la línea SL hasta donde va tu stop (por debajo del precio: compra, por encima: venta) y pulsa el botón.') : T('Execution mode on: click the chart where your stop goes. Press ', 'Modo ejecución: haz clic en el gráfico donde va tu stop. Pulsa ') + esc(m.key) + T(' again to leave.', ' otra vez para salir.'))
-      : (busy ? T('One trade at a time.', 'Una operación a la vez.') : (over ? T('The day is over.', 'El día ha terminado.')
+      : (busy ? T('One trade at a time.', 'Una operación a la vez.') : (over ? overTxt(true)
       : (ph ? T('Tap Execute: the SL and TP lines appear on the chart. Touching the chart never places a trade.', 'Pulsa Ejecutar: las líneas SL y TP aparecen en el gráfico. Tocar el gráfico nunca abre una operación.') : T('Press ', 'Pulsa ') + esc(m.key) + T(', then click the chart where your stop goes.', ' y haz clic en el gráfico donde va tu stop.')))));
     // the EA OFF: no execution button at all, the line under it says why (Nestor, 22 Oct 2026: "when the EA is off hide the execution button")
     var btn = (!ph || off) ? '' : (S.exec ? '<div class="stpr-mm-pl"><button type="button" class="stpr-mm-k" data-mm="exec">' + T('Cancel', 'Cancelar') + '</button>' + placeBtn() + '</div>'
@@ -94095,7 +94103,7 @@ window.__stAZ = (function () {
     if (on && S.live) { var rl = null; try { rl = plRule(); } catch (er) {} if (rl) { var e2 = lvOwnEA(); eaMsg(rl.why, { k: 'pre', head: T('Order not sent', 'Orden no enviada') + (e2 ? ' · ' + e2.raw : ''), red: false }); try { paintMM(); } catch (er) {} return; } }   // the account's order rules: locked, why in sight
     if (on && S.live && lvTradeWhy()) { var e1 = lvOwnEA(); eaMsg(lvTradeWhy(), { k: 'pre', head: T('Order not sent', 'Orden no enviada') + (e1 ? ' · ' + e1.raw : ''), red: true }); return; }   // Live Charts: only when the EA can place it - why, in sight
     if (on) {
-      if (S.now >= S.f.close) { flash(T('The day is over. Pick another day.', 'El día ha terminado. Elige otro día.')); return; }
+      if (S.now >= S.f.close) { flash(overTxt()); return; }
       if (S.pos || S.pend) { flash(T('One trade at a time: this one first.', 'Una operación a la vez: primero esta.')); return; }
       if (!canTrade(true)) return;
     }
