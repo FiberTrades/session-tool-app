@@ -161,6 +161,8 @@
     check('its rows: Risk, Stop, Take profit, Break-even, Partial close, Trades today', /^Risk/.test(labs[0]) && /^Stop/.test(labs[1]) && labs[2] === 'Take profit' && labs[3] === 'Break-even' && labs[4] === 'Partial close' && labs[5] === 'Trades today', labs);
     var ws = Array.prototype.map.call(mm.querySelectorAll('.pl-box'), function (x) { return Math.round(x.getBoundingClientRect().width); });
     check('every value box one width (104 px), the stop box too', ws.length === 5 && ws.every(function (w) { return w === 104; }), ws);
+    var smm = mm.querySelector('.pl-box.two.mm'), sem = smm ? Array.prototype.map.call(smm.querySelectorAll('em'), function (e) { return e.textContent; }) : [], sin = smm ? smm.querySelectorAll('input') : [];
+    check('the stop box says which is which inside it: MIN over the first number, MAX over the second (26 Oct 2026)', smm && sem.join('|') === 'MIN|MAX' && sin.length === 2 && sin[0].getAttribute('data-mmi') === 'min' && sin[1].getAttribute('data-mmi') === 'max' && smm.querySelectorAll('em')[0].getBoundingClientRect().bottom <= sin[0].getBoundingClientRect().top + 2, [sem, sin.length]);
     mm.querySelector('[data-mm="rmset:percent"]').click(); await W(300);
     check('% balance: the risk in percent, the segment lit', P._cfg().mm.riskMode === 'percent' && $('[data-mm="rmset:percent"]').classList.contains('on') && /Risk %/.test($('#stpr-mm').textContent), P._cfg().mm.riskMode);
     $('[data-mm="rmset:amount"]').click(); await W(200);
