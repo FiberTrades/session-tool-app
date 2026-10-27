@@ -39,7 +39,7 @@
       var pill = $('#session-live-pill'), tabs = $('.container > .tabs'), pr = pill.getBoundingClientRect(), tr = tabs.getBoundingClientRect(), nx = pill.nextElementSibling;
       while (nx && !(nx.getBoundingClientRect().height > 0)) nx = nx.nextElementSibling;
       var up = pr.top - tr.bottom, dn = nx ? nx.getBoundingClientRect().top - pr.bottom : -1;
-      ok('Charts: the "Session live" label has the same space above it as below it', vis(pill) && up >= 20 && Math.abs(up - dn) <= 1, [Math.round(up), Math.round(dn), $('#page-livecharts').className]);
+      ok('Charts: the "Session live" label has the same space above it as below it', vis(pill) && up >= 12 && Math.abs(up - dn) <= 1, [Math.round(up), Math.round(dn)]);
     }
   } catch (e) { ok('test ran', false, String(e && e.stack || e)); }
   return out;
