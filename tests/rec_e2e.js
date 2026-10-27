@@ -148,7 +148,7 @@
         ctl.querySelector('[data-rc="pause"]').click(); await W(50);
         check(fmt + ': Pause holds the clock, Resume goes on', ps === 'pause' && t2 - t1 < 120 && window.__stRec.state().st === 'rec', [ps, t1, t2]);
         ctl.querySelector('[data-rc="mute"]').click(); await W(50); var mm = ctl.querySelector('[data-rc="mute"]').getAttribute('aria-pressed'); ctl.querySelector('[data-rc="mute"]').click();
-        await W(1200); var fs2 = window.__stRec.state();
+        await W(300); var fa = window.__stRec.state(), ta = performance.now(); await W(1500); var fs2 = window.__stRec.state(); fs2.frames = fs2.frames - fa.frames; fs2.t = performance.now() - ta;   // the rate over 1.5 s of recording, no pause in it
         check(fmt + ': rates: the video drawn at ' + Math.round((fs2.frames || 0) / Math.max(0.5, fs2.t / 1000)) + ' fps, the camera at ' + (fs2.fx && fs2.fx.fps) + ' fps' + (camo.bg !== 'none' ? ', its background at ' + (fs2.fx && fs2.fx.segFps) + ' a second (' + (fs2.fx && fs2.fx.segMs) + ' ms each)' : ''),
           // a floor, not the target: this PC also runs the other test suites (27 Oct 2026: 100% CPU, 21 headless browsers); the target is 30
           !!fs2.fx && fs2.fx.fps >= 3 && (camo.bg === 'none' || fs2.fx.segFps >= 1) && (fs2.frames || 0) / Math.max(0.5, fs2.t / 1000) >= 15, [fs2.frames, fs2.t, fs2.fx]);
