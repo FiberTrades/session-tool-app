@@ -22,7 +22,7 @@
       seen.push(titleOf());
       var c = countOf();
       if (/Charts: Live and Replay/.test(titleOf())) extra.charts = { c: c, txt: tip().textContent, ring: !!document.querySelector('.tab[data-page="livecharts"]') };
-      if (/^Chat and Today, beside the chart$/.test(titleOf())) extra.live = { txt: tip().textContent, ring: !!document.querySelector('.tab[data-page="livecharts"]') };
+      if (/^Your panels, beside the chart$/.test(titleOf())) extra.live = { txt: tip().textContent, ring: !!document.querySelector('.tab[data-page="livecharts"]') };
       if (/Prop firm progress/.test(titleOf())) { var ov = document.querySelector('.stx-tab[data-stx="overview"]'); extra.prop = ov && (ov.classList.contains('active') || ov.getAttribute('aria-selected') === 'true'); }
       if (/^Academy$/.test(titleOf())) extra.academy = tip().textContent;
       if (/^Community$/.test(titleOf())) extra.community = tip().textContent;
@@ -33,9 +33,9 @@
       if (/^17 \/ 17$/.test(c)) break;
       nextB().click(); await W(700);
     }
-    ok('seventeen steps in order: Charts after the live nudges, then Chat and Today (25 Oct 2026: no Session Live step); Calendar, then Discipline Leaderboard; Academy, then Community; Connect MT5, then the good-luck card', seen.length === 17 && /Charts: Live and Replay/.test(seen[4]) && /Live nudges/.test(seen[3]) && /Chat and Today/.test(seen[5]) && seen.indexOf('Session Live') < 0 && seen[9] === 'Calendar' && seen[10] === 'Discipline Leaderboard' && seen[12] === 'Academy' && seen[13] === 'Community' && seen[15] === 'Connect MT5' && /all set/.test(seen[16]), seen);
+    ok('seventeen steps in order: Charts after the live nudges, then Your panels (25 Oct 2026: no Session Live step); Calendar, then Discipline Leaderboard; Academy, then Community; Connect MT5, then the good-luck card', seen.length === 17 && /Charts: Live and Replay/.test(seen[4]) && /Live nudges/.test(seen[3]) && /Your panels/.test(seen[5]) && seen.indexOf('Session Live') < 0 && seen[9] === 'Calendar' && seen[10] === 'Discipline Leaderboard' && seen[12] === 'Academy' && seen[13] === 'Community' && seen[15] === 'Connect MT5' && /all set/.test(seen[16]), seen);
     ok('the Charts step: Live (your MT5 prices, trade from here) and Replay (practice, nothing sent to MT5)', extra.charts && /Live is your MT5 prices/.test(extra.charts.txt) && /Replay is any day of the past year/.test(extra.charts.txt) && /nothing is sent to MT5/.test(extra.charts.txt), extra.charts && extra.charts.txt.slice(0, 200));
-    ok('Chat and Today: on Charts, Today (session clock, red news, risk budget) and Chat (channels and DMs, #session-chat) beside the chart', extra.live && /Today, with your session clock, red news/.test(extra.live.txt) && /Chat, the community chat with its channels and DMs/.test(extra.live.txt) && /session-chat/.test(extra.live.txt) && extra.live.ring, extra.live);
+    ok('Your panels: on Charts, each rail icon its own panel - Watchlist, Trade Manager, Chat (#session-chat), Today (session clock, red news, risk budget), Object tree', extra.live && /each open their own panel/.test(extra.live.txt) && /Chat \(#session-chat/.test(extra.live.txt) && /Today \(your session clock, red news/.test(extra.live.txt) && /Object tree/.test(extra.live.txt) && extra.live.ring, extra.live);
     ok('the prop firm step shows Statistics on Overview (where Prop Firm Progress is)', extra.prop === true, extra.prop);
     ok('one thing a step ("a bit mish mash"): Academy - the two paths and 45 lessons', extra.academy && /Start from zero/.test(extra.academy) && /Jump to the ST Method/.test(extra.academy) && /45 lessons/.test(extra.academy) && !/Leaderboard/.test(extra.academy), extra.academy && extra.academy.slice(0, 200));
     ok('...Community - channels, DMs, live calls, #session-chat; no leaderboard or lessons', extra.community && /channels, DMs and live calls/.test(extra.community) && /session-chat/.test(extra.community) && !/Leaderboard|lessons/.test(extra.community), extra.community && extra.community.slice(0, 200));

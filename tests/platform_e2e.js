@@ -209,17 +209,17 @@
     var ab = Array.prototype.map.call(document.querySelectorAll('.pl-t [data-tma]'), function (b) { return b.getAttribute('data-tma') + (b.disabled ? ':off' : ':on'); });
     check('the position\'s row: Move to BE, Close 50% (and its chevron) and Close, on (MT5 manages it from here)', ab.join(',') === 'tobe:on,part:on,partmenu:on,close:on', ab);
 
-    // ---- the rail, the fold, remembered ----
+    // ---- the rail (one panel at a time, 26 Oct 2026), the fold, remembered ----
     $('[data-plr="wl"]').click(); await W(200);
-    check('the rail: the Watchlist hides, the Trade Manager takes its room', win.classList.contains('pl-nowl') && getComputedStyle($('.pl-wl')).display === 'none' && $('.pl-tmc').getBoundingClientRect().height > 400);
-    $('[data-plr="tm"]').click(); await W(300);
+    check('the rail: the Watchlist takes the column, the Trade Manager goes', win.classList.contains('pl-notm') && !win.classList.contains('pl-nowl') && getComputedStyle($('.pl-tmc')).display === 'none' && $('.pl-wl').getBoundingClientRect().height > 400);
+    $('[data-plr="wl"]').click(); await W(300);
     var cw = $('#stpr-cw').getBoundingClientRect();
-    check('both hidden: the chart takes their room, no second Execute in the top bar (Nestor, 26 Oct 2026)', win.classList.contains('pl-nor') && !$('.pl-exec') && !/Execute/.test($('.plat-top').textContent) && cw.right > $('.plat-rail').getBoundingClientRect().left - 10 && cw.height > 300, [cw.right, cw.height]);
+    check('its icon again closes the column: the chart takes the room, no second Execute in the top bar (Nestor, 26 Oct 2026)', win.classList.contains('pl-nor') && !$('.pl-exec') && !/Execute/.test($('.plat-top').textContent) && cw.right > $('.plat-rail').getBoundingClientRect().left - 10 && cw.height > 300, [cw.right, cw.height]);
     $('[data-pltab]') && $('[data-plfold]').click(); await W(300);
     check('the arrow folds Positions to its tabs', win.classList.contains('pl-folded') && $('#lc-tb').getBoundingClientRect().height < 45, $('#lc-tb').getBoundingClientRect().height);
     var saved = {}; try { saved = JSON.parse(localStorage.getItem('st_plat') || '{}'); } catch (e) {}
-    check('remembered on this device', saved.wl === false && saved.tm === false && saved.fold === true, saved);
-    $('[data-plfold]').click(); await W(200); $('[data-plr="wl"]').click(); $('[data-plr="tm"]').click(); await W(300);
+    check('remembered on this device', saved.pn === '' && saved.fold === true, saved);
+    $('[data-plfold]').click(); await W(200); $('[data-plr="tm"]').click(); await W(300);
     check('...all back', !win.classList.contains('pl-nor') && !win.classList.contains('pl-folded') && $('#lc-tb').getBoundingClientRect().height > 100);
     $('[data-pltab="acct"]').click(); await W(300);
     check('the Account tab: balance, equity, margin, free margin', /Balance/.test($('.pl-acg').textContent) && /Free margin/.test($('.pl-acg').textContent), $('.pl-acg') && $('.pl-acg').textContent.slice(0, 100));
