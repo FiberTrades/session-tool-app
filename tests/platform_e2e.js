@@ -126,6 +126,15 @@
     b1h.click(); for (k = 0; k < 40 && P._panes()[0].tf !== 60; k++) await W(150); await W(400);
     check('a timeframe in the top bar: the chart turns to it, its button lit', P._panes()[0].tf === 60 && $('.pl-tfs button.on').textContent === '1h', [P._panes()[0].tf, $('.pl-tfs button.on') && $('.pl-tfs button.on').textContent]);
     Array.prototype.filter.call(document.querySelectorAll('.pl-tfs button'), function (b) { return b.textContent === '15m'; })[0].click(); for (k = 0; k < 40 && P._panes()[0].tf !== 15; k++) await W(150); await W(300);
+    // a timeframe of your own (26 Oct 2026): the + after them, the old window's box - added, on the chart, remembered, taken off
+    var tfb = function (txt) { return Array.prototype.filter.call(document.querySelectorAll('.pl-tfs [data-pltf]'), function (b) { return b.textContent === txt; })[0]; };
+    $('.pl-tfs [data-pltfadd]').click(); await W(250);
+    check('the + after the timeframes: the custom timeframe box', $('#stpr-menu.show #stpr-tfn') && $('#stpr-menu [data-tfok]'), $('#stpr-menu') && $('#stpr-menu').textContent.slice(0, 80));
+    $('#stpr-tfn').value = '3'; $('#stpr-menu [data-tfu="1"]').click(); $('#stpr-menu [data-tfok]').click(); for (k = 0; k < 40 && P._panes()[0].tf !== 3; k++) await W(150); await W(800);
+    check('...3 minutes: the chart on 3m, a 3m button lit in the top bar, remembered', P._panes()[0].tf === 3 && tfb('3m') && tfb('3m').classList.contains('on') && (P._cfg().ctf || []).indexOf(3) >= 0, [P._panes()[0].tf, P._cfg().ctf, $('.pl-tfs').textContent]);
+    $('.pl-tfs [data-pltfadd]').click(); await W(250); $('#stpr-menu [data-tfx="3"]').click(); for (k = 0; k < 40 && P._panes()[0].tf === 3; k++) await W(150); await W(800);
+    check('...its × in the box: gone from the top bar and the list, the chart on the standard timeframe under it', !tfb('3m') && (P._cfg().ctf || []).indexOf(3) < 0 && P._panes()[0].tf === 1, [P._panes()[0].tf, P._cfg().ctf]);
+    tfb('15m').click(); for (k = 0; k < 40 && P._panes()[0].tf !== 15; k++) await W(150); await W(300);
 
     // ---- the Trade Manager ----
     var mm = $('#stpr-mm');
