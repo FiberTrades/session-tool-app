@@ -1,6 +1,6 @@
 (async function () {
   // Settings -> Accounts, the opened account in titled sections (25 Oct 2026, Nestor's go on the mockup): Overview, Account, MT5, Risk
-  // rules, Order rules, Payouts (prop firm only). The name, starting balance and payout share are changed in place (no Rename dialog,
+  // rules, Payouts (prop firm only; the Order rules section went on 27 Oct 2026). The name, starting balance and payout share are changed in place (no Rename dialog,
   // no stage picker, no Options menu); Type is Personal | Prop firm | Test; a switch to prop firm asks for the stage in its own row.
   // Run: python tests/browser_test.py tests/accsections_e2e.js   (and E2E_MOBILE=375x812 for the phone)
   var W = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
@@ -27,7 +27,7 @@
     var item = function (id) { return document.querySelector('#settings-accounts-list .sacc-item[data-account-id="' + id + '"]'); };
     var it = item(a1.id), body = it.querySelector('.sacc-body');
     var heads = [].map.call(body.querySelectorAll(':scope > .sx'), function (x) { return x.hidden ? '' : ((x.querySelector('.sx-h h4') || x.querySelector('.ru-block > .sacc-sub > span') || {}).textContent || '?'); }).filter(Boolean);
-    ok('the opened account: Overview, Account, MT5, Risk rules, Order rules, Payouts', heads.join(' / ') === 'Overview / Account / MT5 / Risk rules / Order rules / Payouts', heads);
+    ok('the opened account: Overview, Account, MT5, Risk rules, Payouts', heads.join(' / ') === 'Overview / Account / MT5 / Risk rules / Payouts', heads);
     var ov = body.querySelector('[data-sx="overview"]');
     ok('Overview: the balance, the profit, the daily loss left (your £900 stop, the firm\'s £3,500), its chips; FTMO 2-Step · Challenge', /Balance£70,000\.00/.test(ov.textContent) && /Profit£0\.00/.test(ov.textContent) && /Daily loss left£900\.00Your stop · firm limit £3,500\.00/.test(ov.textContent) && /Prop firm/i.test(ov.querySelector('.sx-chips').textContent) && /FTMO 2-Step · Challenge/.test(ov.querySelector('.sx-k').textContent), ov.textContent);
     ok('no Options menu, no Rename dialog', !it.querySelector('.sacc-more') && !document.getElementById('settings-rename-modal-bg') && typeof window.openRenameModal === 'undefined');
@@ -37,7 +37,7 @@
     ok('...firm and server read from MT5: FTMO · FTMO-Server4, started with 70,000 GBP', /FTMO · FTMO-Server4/.test(acs.querySelector('[data-slot="facts"]').textContent) && /70,000 GBP/.test(acs.textContent));
     ok('...opened 25 Aug 2026', /25 Aug 2026/.test(acs.textContent));
     ok('MT5\'s heading says its login; Risk rules\' the program', /541419576/.test(body.querySelector('[data-slot="mt5k"]').textContent) && /FTMO 2-Step/.test(body.querySelector('[data-slot="rulesk"]').textContent));
-    ok('Order rules: its own section, open beside its heading', /Trading open/.test(body.querySelector('[data-sx="orules"] .ru-block > .sacc-sub').textContent));
+    ok('Risk rules ends with "Close trades opened elsewhere while locked", on (the one order rule left)', /Close trades opened elsewhere while locked/.test(body.querySelector('[data-sx="rules"] .ru-block').textContent) && body.querySelector('[data-sx="rules"] [data-ru="closeElsewhere"]').checked);
     var po = body.querySelector('[data-sx="payouts"]');
     ok('Payouts: his own share, 90%, in its heading', !po.hidden && /Your share 90%/.test(po.querySelector('.sx-kbtn').textContent), po.textContent);
 

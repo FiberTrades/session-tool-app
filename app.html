@@ -56930,7 +56930,6 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
             </div></section>
             <section class="sx" data-sx="mt5"><div class="sx-h"><h4>MT5</h4><span class="sx-k" data-slot="mt5k"></span></div><div class="sx-b"><div class="sacc-slot" data-slot="mt5"></div></div></section>
             <section class="sx" data-sx="rules"><div class="sx-h"><h4>${_L('Risk rules', 'Reglas de riesgo')}</h4><span class="sx-k" data-slot="rulesk"></span></div><div class="sx-b"><div class="sacc-slot" data-slot="rules"></div></div></section>
-            <section class="sx sx-or" data-sx="orules"><div class="sacc-slot" data-slot="orules"></div></section>
             <section class="sx" data-sx="payouts"${_prop ? '' : ' hidden'}><div class="sx-h"><h4>${_L('Payouts', 'Retiros')}</h4><span class="sx-kw" data-slot="splitk"></span></div><div class="sx-b"><div class="sacc-slot" data-slot="payouts"></div></div></section>
           </div>` : ''}
         </div>`;
@@ -79798,11 +79797,13 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     var rr = (acc && acc.riskRules) || {}, sb = +acc.startingBalance > 0 ? +acc.startingBalance : 0;
     var own = moneyOf(rr, 'maxLossMode', 'maxLossPct', 'maxLossAmount', sb), firm = moneyOf(rr, 'firmDailyMode', 'firmDailyPct', 'firmDailyAmount', sb);
     var sR = rr.sessLossMode === 'r', oR = rr.openRiskMode === 'r';
+    // 27 Oct 2026 (Nestor: "the order rules are a bit too much ... i think is best to remove them"): the loss and trades per session, the
+    // time between entries, the money at risk across open trades and the allowed symbols are gone - zero here and in the day's snapshot,
+    // so none reaches the EA or refuses an order. The daily loss lock, a break and close-elsewhere remain.
     return { dl: Math.round(((own > 0 && firm > 0) ? Math.min(own, firm) : (own || firm || 0)) * 100) / 100,
-             sl: sR ? 0 : num(rr.sessLossAmount), slr: sR ? num(rr.sessLossR) : 0, sn: int(rr.sessTrades), gp: int(rr.entryGapMin),
-             or: oR ? 0 : num(rr.openRiskAmount), orr: oR ? num(rr.openRiskR) : 0, sy: symAll(rr.allowedSymbols), ce: rr.closeElsewhere !== false };
+             sl: 0, slr: 0, sn: 0, gp: 0, or: 0, orr: 0, sy: [], ce: rr.closeElsewhere !== false };
   }
-  function norm(x) { x = x || {}; return { dl: +x.dl || 0, sl: +x.sl || 0, slr: +x.slr || 0, sn: +x.sn || 0, gp: +x.gp || 0, or: +x.or || 0, orr: +x.orr || 0, sy: Array.isArray(x.sy) ? x.sy.slice() : [], ce: x.ce !== false }; }
+  function norm(x) { x = x || {}; return { dl: +x.dl || 0, sl: 0, slr: 0, sn: 0, gp: 0, or: 0, orr: 0, sy: [], ce: x.ce !== false }; }
   function minPos(a, b) { return (a > 0 && b > 0) ? Math.min(a, b) : (a > 0 ? a : (b > 0 ? b : 0)); }
   function strict(a, b) {
     var sy = !a.sy.length ? b.sy.slice() : (!b.sy.length ? a.sy.slice() : a.sy.filter(function (k) { return b.sy.indexOf(k) >= 0; }));
@@ -80008,38 +80009,13 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     var bits = keys.filter(function (k) { return k in st.pending; }).map(function (k) { return nextTxt(k, st.pending[k]); });
     return bits.length ? '<small class="ru-next">' + esc(T('From tomorrow: ', 'Desde mañana: ') + bits.join(' · ')) + '</small>' : '';
   }
+  // An account's block in Settings -> Accounts -> Risk rules (since 27 Oct 2026, when the Order rules section went): close trades opened
+  // elsewhere while locked - on unless switched off - with the lock in force (the daily loss or a break) said under it.
   function html(acc) {
-    var st = state(acc) || { locks: [], rules: norm({}), pending: {} }, rr = acc.riskRules || {}, x = st.rules, now = Date.now();
-    var head = st.locked ? '<span class="ru-st lock">' + esc(T('Locked', 'Bloqueada')) + '</span>' : '<span class="ru-st open">' + esc(T('Trading open', 'Operativa abierta')) + '</span>';
-    var h = '<div class="sacc-sub"><span>' + T('Order rules', 'Reglas de órdenes') + '</span>' + head + '</div>';
-    if (st.locked) h += '<p class="set-sub ru-lockline">' + esc(st.locks[0].why) + '</p>';
-    h += '<p class="set-sub">' + T('Your Trade Manager refuses an order that breaks one of these, and so does your EA in MT5. Stricter counts at once; looser from your next day.', 'Tu Trade Manager rechaza una orden que incumple alguna de estas, y tu EA en MT5 también. Más estricta cuenta al momento; más suelta, desde tu próximo día.') + '</p>';
-    var dzn = dayZone(acc), dzw = dzn === 'Europe/Prague' ? T('the day resets at midnight in Prague (' + hm(nextReset(acc)) + ' your time), as FTMO’s does', 'el día se reinicia a medianoche en Praga (las ' + hm(nextReset(acc)) + ' en tu hora), como el de FTMO')
-      : (dzn === 'srv' ? T('your firm’s day resets, at its MT5 server’s midnight', 'se reinicia el día de tu firma, a medianoche de su servidor MT5') : T('midnight in London', 'medianoche en Londres'));
-    h += row(T('Daily loss lock', 'Bloqueo por pérdida diaria'), T('When today’s loss reaches your max daily drawdown above, new trades lock until ' + dzw + '. Nothing lifts it.', 'Cuando la pérdida de hoy llega a tu drawdown diario máximo de arriba, las operaciones nuevas se bloquean hasta que ' + dzw + '. Nada lo levanta.'),
-      '<span class="sacc-val">' + (x.dl > 0 ? esc(money(x.dl)) : esc(T('Off', 'Desactivado'))) + (x.dl > 0 ? '' : '<small>' + esc(T('Set Max daily drawdown above', 'Fija el drawdown diario máximo arriba')) + '</small>') + soon(st, ['dl']) + '</span>');
-    var sm = rr.sessLossMode === 'r' ? 'r' : 'amount';
-    h += row(T('Loss per session', 'Pérdida por sesión'), T('Reach it and new trades lock until the next session opens (Asia, London, New York). Nothing lifts it.', 'Al llegar, las operaciones nuevas se bloquean hasta que abre la próxima sesión (Asia, Londres, Nueva York). Nada lo levanta.'),
-      box('sessLoss', sm === 'r' ? rr.sessLossR : rr.sessLossAmount, sm === 'r' ? '2' : '300', sm === 'r' ? '0.5' : '1', unit('sessLossMode', sm)) + soon(st, ['sl', 'slr']));
-    h += row(T('Trades per session', 'Operaciones por sesión'), T('After this many entries in a session, new trades lock until the next session opens.', 'Tras este número de entradas en una sesión, las operaciones nuevas se bloquean hasta que abre la próxima.'),
-      box('sessTrades', rr.sessTrades, '2', '1') + soon(st, ['sn']));
-    h += row(T('Time between entries', 'Tiempo entre entradas'), T('Minutes after an entry before the next one. Refuses only that order. Empty: off.', 'Minutos tras una entrada antes de la siguiente. Rechaza solo esa orden. Vacío: desactivado.'),
-      box('entryGapMin', rr.entryGapMin, '15', '1', '<span class="settings-risk-suffix">min</span>') + soon(st, ['gp']));
-    var om = rr.openRiskMode === 'r' ? 'r' : 'amount';
-    h += row(T('Max open risk', 'Riesgo abierto máximo'), T('The money at risk across your open trades, this order included. Refuses only that order. Empty: off.', 'El dinero en riesgo entre tus operaciones abiertas, esta orden incluida. Rechaza solo esa orden. Vacío: desactivado.'),
-      box('openRisk', om === 'r' ? rr.openRiskR : rr.openRiskAmount, om === 'r' ? '2' : '1000', om === 'r' ? '0.5' : '1', unit('openRiskMode', om)) + soon(st, ['or', 'orr']));
-    h += row(T('Allowed symbols', 'Símbolos permitidos'), T('Orders on any other symbol are refused. Empty: any symbol.', 'Las órdenes en cualquier otro símbolo se rechazan. Vacío: cualquier símbolo.'),
-      '<div class="settings-risk-input-row"><input type="text" class="settings-input settings-input-compact ru-syms" data-ru="allowedSymbols" value="' + esc(symList(rr.allowedSymbols).join(', ')) + '" placeholder="EURUSD, XAUUSD" autocomplete="off" spellcheck="false"></div>' + soon(st, ['sy']));
-    h += row(T('Close trades opened elsewhere while locked', 'Cerrar operaciones abiertas fuera mientras está bloqueada'), T('A trade opened from MT5’s phone app during a lock is closed by your EA at once, and orders still waiting are cancelled when the lock starts.', 'Una operación abierta desde la app de MT5 del móvil durante un bloqueo la cierra tu EA al momento, y las órdenes en espera se cancelan cuando empieza el bloqueo.'),
+    var st = state(acc) || { locks: [], rules: norm({}), pending: {} }, rr = acc.riskRules || {};
+    var lk = st.locked ? '<small class="ru-next ru-lockline">' + esc(st.locks[0].why) + '</small>' : '';
+    return row(T('Close trades opened elsewhere while locked', 'Cerrar operaciones abiertas fuera mientras está bloqueada'), T('While your daily loss lock or a break is on, a trade opened from MT5’s phone app is closed by your EA at once, and orders still waiting are cancelled when the lock starts.', 'Mientras tu bloqueo por pérdida diaria o un descanso están activos, una operación abierta desde la app de MT5 del móvil la cierra tu EA al momento, y las órdenes en espera se cancelan cuando empieza el bloqueo.') + lk,
       '<label class="tk-switch"><input type="checkbox" data-ru="closeElsewhere"' + (rr.closeElsewhere !== false ? ' checked' : '') + '><span class="tk-switch-track"><span class="tk-switch-knob"></span></span></label>' + soon(st, ['ce']));
-    var b = st.brk, sure = SURE[acc.id] && now - SURE[acc.id].at < 5000 ? SURE[acc.id].k : '';
-    var KB = [['1h', '1 h'], ['2h', '2 h'], ['4h', '4 h'], ['session', T('Next session', 'Próxima sesión')], ['tomorrow', T('Tomorrow', 'Mañana')]];
-    h += row(T('Take a break', 'Tomar un descanso'), b ? esc(T('New trades are locked until it ends. It can’t be undone.', 'Las operaciones nuevas están bloqueadas hasta que acabe. No se puede deshacer.'))
-        : (sure ? esc(T('Press it again to start. It can’t be undone.', 'Púlsalo otra vez para empezar. No se puede deshacer.')) : esc(T('Locks new trades until it ends. It can’t be undone.', 'Bloquea las operaciones nuevas hasta que acabe. No se puede deshacer.'))),
-      b ? '<span class="sacc-val">' + esc(T('On a break', 'En pausa')) + '<small>' + esc(T('Trading opens again ' + when(b.until), 'Puedes volver a operar ' + when(b.until))) + '</small></span>'
-        : '<span class="sacc-seg ru-brk" role="group">' + KB.map(function (o) { return '<button type="button" data-ru-break="' + o[0] + '" aria-pressed="' + (sure === o[0]) + '">' + esc(sure === o[0] ? T('Start ', 'Empezar ') + o[1] : o[1]) + '</button>'; }).join('') + '</span>');
-    if (!st.synced && loginsOf(acc).length) h += '<p class="set-sub ru-sync">' + esc(T('Reaches your EA in MT5 the next time it’s connected (EA 9.15 or newer).', 'Llega a tu EA en MT5 la próxima vez que esté conectado (EA 9.15 o posterior).')) + '</p>';
-    return h;
   }
   function paint(el, acc) {
     var ae = document.activeElement; if (ae && el.contains(ae) && /INPUT|SELECT|TEXTAREA/.test(ae.tagName)) return;   // never under a field being typed in
@@ -80302,13 +80278,12 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
         + (edit ? '' : sum) + '<div class="sacc-rows" data-rows="firm"' + (edit ? '' : ' hidden') + '></div>'
         + '<div class="sacc-sub sx-sub"><span>' + T('Your rules', 'Tus reglas') + '</span>' + eaPanelLine(acc) + '</div>'
       : '<div class="sacc-sub sx-sub"><span>' + T('Your rules', 'Tus reglas') + '</span>' + eaPanelLine(acc) + '</div><div class="sacc-rows" data-rows="firm"></div>')
-      + '<div class="sacc-rows" data-rows="own"></div>';
+      + '<div class="sacc-rows" data-rows="own"></div><div data-slot="orules"></div>';
     var fb = el.querySelector('[data-rows="firm"]'), ob = el.querySelector('[data-rows="own"]');
     OWN_IDS.forEach(function (id) { var r = rowOf(id); if (r) ob.appendChild(r); });
     FIRM_IDS.forEach(function (id) { var r = rowOf(id); if (r) (prop ? fb : ob).appendChild(r); });
-    // the order rules (24 Oct 2026): the locks and limits the Trade Manager and the EA keep to - their own section since 25 Oct 2026,
-    // its heading the block's own (open or locked beside it, kept live)
-    try { var os = it.querySelector('[data-slot="orules"]'); if (os && window.__stRules) os.appendChild(window.__stRules.node(acc)); } catch (e) {}
+    // close trades opened elsewhere while locked (the one order rule left in Settings since 27 Oct 2026), after the member's own rules
+    try { var os = el.querySelector('[data-slot="orules"]'); if (os && window.__stRules) os.appendChild(window.__stRules.node(acc)); } catch (e) {}
   }
   function payoutsFill(it, acc) {
     var el = it.querySelector('[data-slot="payouts"]'); if (!el) return;

@@ -1,8 +1,10 @@
 (async function () {
   // Order rules (24 Oct 2026, Nestor: "the daily loss hit you cant lift it ... block myself for the next 4 hourse and it unlocks for
-  // the NY session again"): Settings -> Accounts -> an account's rules gets "Order rules"; window.__stRules refuses an order that
-  // breaks one (locks: the day, a session, a break; per order: time between entries, open risk, allowed symbols), stricter counts at
-  // once and looser from tomorrow, a break can't be cut short, and the rules go to the account's EA (9.15) as a signed "rules".
+  // the NY session again"): window.__stRules refuses an order while a lock is on (the day's loss, a break), stricter counts at once and
+  // looser from tomorrow, a break can't be cut short, and the rules go to the account's EA (9.15) as a signed "rules". Since 27 Oct 2026
+  // (Nestor: "the order rules are a bit too much ... i think is best to remove them") the session limits, the time between entries,
+  // the max open risk and the allowed symbols are gone - never sent, never refusing - and the Order rules section with them; "Close
+  // trades opened elsewhere while locked" is one row in Risk rules, on by default.
   // Run: python tests/browser_test.py tests/order_rules_e2e.js
   var W = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
   var out = [], ok = function (name, cond, got) { out.push({ name: name, ok: !!cond, got: got === undefined ? null : got }); };
@@ -46,57 +48,36 @@
     a2.riskRules = {}; delete a2.ruleDay;
 
     // ---- stricter at once, looser from tomorrow
-    a1.riskRules.sessTrades = 2; R._eff(a1);
-    ok('a new limit (2 trades a session) counts at once', R.state(a1).rules.sn === 2 && !('sn' in R.state(a1).pending), R.state(a1).rules.sn);
-    a1.riskRules.sessTrades = 3; R._eff(a1);
-    var st = R.state(a1);
-    ok('raised to 3 the same day: 2 stays in force, 3 from tomorrow', st.rules.sn === 2 && st.pending.sn === 3, [st.rules.sn, st.pending]);
-    a1.riskRules.sessTrades = 1; R._eff(a1);
-    ok('lowered to 1: counts at once', R.state(a1).rules.sn === 1, R.state(a1).rules.sn);
-    a1.riskRules.sessTrades = 4; R._eff(a1);
-    ok('...and raising it again stays at 1 today (the strictest of the day holds)', R.state(a1).rules.sn === 1 && R.state(a1).pending.sn === 4);
-    a1.ruleDay.day = '2000-01-01'; R._eff(a1);
-    ok('the next day the 4 is in force', R.state(a1).rules.sn === 4 && !('sn' in R.state(a1).pending), R.state(a1).rules.sn);
+    a1.riskRules.maxLossAmount = 600; R._eff(a1);
+    ok('a stricter daily loss (600) counts at once', R.state(a1).rules.dl === 600 && !('dl' in R.state(a1).pending), R.state(a1).rules.dl);
     a1.riskRules.maxLossAmount = 1200; R._eff(a1);
-    ok('the daily loss raised (looser): 800 holds today, 1,200 from tomorrow', R.state(a1).rules.dl === 800 && R.state(a1).pending.dl === 1200);
+    ok('raised to 1,200 the same day (looser): 600 holds today, 1,200 from tomorrow', R.state(a1).rules.dl === 600 && R.state(a1).pending.dl === 1200);
+    a1.ruleDay.day = '2000-01-01'; R._eff(a1);
+    ok('the next day the 1,200 is in force', R.state(a1).rules.dl === 1200 && !('dl' in R.state(a1).pending));
     a1.riskRules.closeElsewhere = false; R._eff(a1);
     ok('close-elsewhere switched off (looser): stays on today', R.state(a1).rules.ce === true && R.state(a1).pending.ce === false);
     a1.ruleDay.day = '2000-01-01'; a1.riskRules = { maxLossMode: 'amount', maxLossAmount: 800 }; R._eff(a1); a1.ruleDay.day = '2000-01-01'; R._eff(a1);
 
-    // ---- allowed symbols
-    a1.riskRules.allowedSymbols = ['EURUSD', 'XAUUSD']; R._eff(a1);
-    var c = R.check({ acct: a1.id, symbol: 'GBPUSD' });
-    ok('allowed symbols: GBPUSD refused, as an order (not a lock), in words', !c.ok && c.rule === 'sym' && c.kind === 'order' && /GBPUSD isn’t one of the allowed symbols/.test(c.why), c);
-    ok('...EURUSD and a broker suffix (XAUUSD.m) allowed', R.check({ acct: a1.id, symbol: 'EURUSD' }).ok && R.check({ acct: a1.id, symbol: 'XAUUSD.m' }).ok);
-    ok('...by login too', !R.check({ login: '9900001', symbol: 'US100.cash' }).ok);
-    a1.riskRules.allowedSymbols = ['EURUSD']; R._eff(a1);
-    ok('...XAUUSD taken out: refused at once (stricter)', !R.check({ acct: a1.id, symbol: 'XAUUSD' }).ok && R.state(a1).rules.sy.join() === 'EURUSD');
-    a1.riskRules.allowedSymbols = ['EURUSD', 'GBPUSD']; R._eff(a1);
-    ok('...GBPUSD added: from tomorrow', !R.check({ acct: a1.id, symbol: 'GBPUSD' }).ok && R.state(a1).pending.sy.join() === 'EURUSD,GBPUSD');
-    a1.ruleDay.day = '2000-01-01'; delete a1.riskRules.allowedSymbols; R._eff(a1); a1.ruleDay.day = '2000-01-01'; R._eff(a1);
+    // ---- the rules removed on 27 Oct 2026: set or left over from before, none is sent and none refuses an order
+    a1.riskRules = { maxLossMode: 'amount', maxLossAmount: 800, sessTrades: 2, sessLossAmount: 300, entryGapMin: 15, openRiskAmount: 1000, allowedSymbols: ['EURUSD'] };
+    a1.ruleDay = { day: a1.ruleDay.day, snap: { dl: 800, sn: 1, sl: 200, gp: 30, or: 500, sy: ['EURUSD'], ce: true } };   // today's snapshot from before
+    R._eff(a1);
+    ok('the session limits, the time between entries, the open risk and the allowed symbols: not in what the EA gets', /^dl=800;lo=-?\d+;so=[\d:\/]+;dz=prg;ce=1$/.test(R._rulesStr(a1)), R._rulesStr(a1));
+    ok('...and no order refused for them (GBPUSD, a 5,000 order)', R.check({ acct: a1.id, symbol: 'GBPUSD', riskMoney: 5000 }).ok);
+    a1.riskRules = { maxLossMode: 'amount', maxLossAmount: 800 }; a1.ruleDay.day = '2000-01-01'; R._eff(a1);
 
-    // ---- what the EA says (9.15's "set"): a session lock, the last entry, the money at risk
+    // ---- what the EA says (9.15's "set"): its daily loss lock
     var now = Date.now(), until = Math.floor(now / 1000) + 3600;
-    R._eaSet({ s: 'EURUSD', lg: '9900001', st: { rr: R._rulesStr(a1), ru: '2|' + until + '|' + Math.floor(now / 1000 - 60) + '|-120.00|-320.00|2|' + Math.floor(now / 1000 - 120) + '|0.00|' + (until + 7200) + '|1|2|' + until } });
-    c = R.check({ login: '9900001', symbol: 'EURUSD' });
-    ok('the EA\'s session lock: refused as a lock, "London session limit reached. New York opens at ..."', !c.ok && c.kind === 'lock' && c.rule === 'ses' && /^London session limit reached\. New York opens (at|tomorrow at) \d\d:\d\d\.$/.test(c.why) && c.until === until * 1000, c);
-    ok('...and the state shows it', R.state(a1).locked && R.state(a1).locks[0].kind === 'ses');
+    R._eaSet({ s: 'EURUSD', lg: '9900001', st: { rr: R._rulesStr(a1), ru: '1|' + until + '|' + Math.floor(now / 1000 - 60) + '|-820.00|-320.00|2|' + Math.floor(now / 1000 - 120) + '|0.00|' + until + '|1|2|' + until } });
+    var c = R.check({ login: '9900001', symbol: 'EURUSD' });
+    ok('the EA\'s daily loss lock: refused as a lock, "Daily loss reached. Trading opens again ..."', !c.ok && c.kind === 'lock' && c.rule === 'day' && /^Daily loss reached\. Trading opens again/.test(c.why) && c.until === until * 1000, c);
+    ok('...and the state shows it', R.state(a1).locked && R.state(a1).locks[0].kind === 'day');
     R._eaSet({ s: 'EURUSD', lg: '9900001', st: { rr: R._rulesStr(a1), ru: '0|0|0|-120.00|-320.00|1|' + Math.floor(now / 1000 - 120) + '|900.00|' + (until + 7200) + '|1|2|' + until } });
     ok('lock over: allowed again', R.check({ login: '9900001', symbol: 'EURUSD' }).ok);
-    a1.riskRules.entryGapMin = 15; R._eff(a1);
-    c = R.check({ login: '9900001', symbol: 'EURUSD' });
-    ok('15 minutes between entries, the last 2 minutes ago: refused for that order, "Next entry from hh:mm"', !c.ok && c.kind === 'order' && c.rule === 'gap' && /^Next entry from \d\d:\d\d \(15 minutes between entries\)\.$/.test(c.why), c);
-    a1.ruleDay.day = '2000-01-01'; delete a1.riskRules.entryGapMin; R._eff(a1); a1.ruleDay.day = '2000-01-01'; R._eff(a1);
-    a1.riskRules.openRiskAmount = 1000; R._eff(a1);
-    c = R.check({ login: '9900001', symbol: 'EURUSD', riskMoney: 500 });
-    ok('max open risk 1,000 with 900 at risk: a 500 order refused, in words', !c.ok && c.rule === 'risk' && /would put £1,400\.00 at risk/.test(c.why) && /£1,000\.00 cap/.test(c.why), c);
-    ok('...a 100 order allowed', R.check({ login: '9900001', symbol: 'EURUSD', riskMoney: 100 }).ok);
-    a1.ruleDay.day = '2000-01-01'; delete a1.riskRules.openRiskAmount; R._eff(a1); a1.ruleDay.day = '2000-01-01'; R._eff(a1);
 
     // ---- the EA's codes in words
-    ok('the EA\'s codes in words: the day, a session, symbols', /^Daily loss reached\. Trading opens again/.test(R.codeText('rule:day:' + until + ':2/0'))
-      && /^New York session limit reached\. Asia opens/.test(R.codeText('rule:ses:' + until + ':2/0')) && /^BTCUSD isn’t one of the allowed symbols/.test(R.codeText('rule:sym:0:BTCUSD')),
-      [R.codeText('rule:day:' + until + ':2/0'), R.codeText('rule:ses:' + until + ':2/0')]);
+    ok('the EA\'s codes in words: the day, a break', /^Daily loss reached\. Trading opens again/.test(R.codeText('rule:day:' + until + ':2/0')) && /^On a break\. Trading opens again/.test(R.codeText('rule:brk:' + until + ':')),
+      [R.codeText('rule:day:' + until + ':2/0'), R.codeText('rule:brk:' + until + ':')]);
     ok('...and __stTM\'s words for an EA refusal use them', window.__stTM.whyTxt && /^Every order needs a stop\.$/.test(window.__stTM.whyTxt('rule:stop:0:')));
 
     // ---- a break: two presses in the rows, can't be undone or cut short
@@ -120,43 +101,24 @@
     ok('...once (in step now, nothing sent again)', calls.length === 1, calls.length);
     window.__stLiveLine = realLL; window.__stTM.acct = realAcct;
 
-    // ---- the rows in Settings -> Accounts
+    // ---- Settings -> Accounts: no Order rules section; close elsewhere is one row in Risk rules, after your rules
     window.__stAccOpenId = undefined;
     document.getElementById('settings-gear').click(); await W(700);
     document.querySelector('#settings-modal-bg .settings-nav-item[data-section="accounts"]').click(); await W(700);
     var item = function (id) { return document.querySelector('#settings-accounts-list .sacc-item[data-account-id="' + id + '"]'); };
     item(a1.id).querySelector('.sacc-head').click(); await W(500);
-    var blk = item(a1.id).querySelector('.ru-block');
-    ok('the account\'s rules end with "Order rules": open, the daily loss lock at £800', blk && /Order rules/.test(blk.textContent) && /Trading open/.test(blk.textContent) && /Daily loss lock/.test(blk.textContent) && /£800\.00/.test(blk.textContent), blk && blk.textContent.slice(0, 200));
-    ok('...the rows: session loss, trades per session, time between entries, max open risk, allowed symbols, close elsewhere, a break',
-      ['Loss per session', 'Trades per session', 'Time between entries', 'Max open risk', 'Allowed symbols', 'Close trades opened elsewhere while locked', 'Take a break'].every(function (t) { return blk.textContent.indexOf(t) >= 0; }));
-    var inp = blk.querySelector('[data-ru="sessTrades"]'); inp.value = '2'; inp.dispatchEvent(new Event('change', { bubbles: true })); await W(300);
-    ok('typing 2 in Trades per session saves it, in force at once', a1.riskRules.sessTrades === 2 && R.state(a1).rules.sn === 2, a1.riskRules.sessTrades);
-    blk = item(a1.id).querySelector('.ru-block'); inp = blk.querySelector('[data-ru="sessTrades"]'); inp.value = '5'; inp.dispatchEvent(new Event('change', { bubbles: true })); await W(300);
-    blk = item(a1.id).querySelector('.ru-block');
-    ok('...5 the same day: "From tomorrow: 5" under it', /From tomorrow: 5/.test(blk.textContent) && R.state(a1).rules.sn === 2, blk.querySelector('.ru-next') && blk.querySelector('.ru-next').textContent);
-    blk.querySelector('[data-ru-mode="sessLossMode"][data-v="r"]').click(); await W(200);
-    blk = item(a1.id).querySelector('.ru-block'); inp = blk.querySelector('[data-ru="sessLoss"]'); inp.value = '2'; inp.dispatchEvent(new Event('change', { bubbles: true })); await W(300);
-    ok('session loss in R: 2R saved, the EA gets slr=2', a1.riskRules.sessLossMode === 'r' && a1.riskRules.sessLossR === 2 && /;slr=2;/.test(R._rulesStr(a1)), R._rulesStr(a1));
-    blk = item(a1.id).querySelector('.ru-block'); inp = blk.querySelector('[data-ru="allowedSymbols"]'); inp.value = 'eurusd, xauusd'; inp.dispatchEvent(new Event('change', { bubbles: true })); await W(300);
-    ok('allowed symbols typed "eurusd, xauusd": saved as EURUSD, XAUUSD', (a1.riskRules.allowedSymbols || []).join() === 'EURUSD,XAUUSD');
-    blk = item(a1.id).querySelector('.ru-block');
-    ok('close elsewhere: on unless switched off', blk.querySelector('[data-ru="closeElsewhere"]').checked === true);
-    blk.querySelector('[data-ru-break="4h"]').click(); await W(200);
-    blk = item(a1.id).querySelector('.ru-block');
-    ok('a break: the first press asks again, nothing started', !a1.ruleBreak && /Start 4 h/.test(blk.querySelector('[data-ru-break="4h"]').textContent));
-    blk.querySelector('[data-ru-break="4h"]').click(); await W(300);
-    // the test's stand-in sign-in can swap the journal object under it: look the account up again, and press once more if the
-    // swap took the press (the two-press guard then sees the same button twice)
-    var fresh = function () { return (window.__stRules.state(a1.id) || {}).brk; };
-    for (var tries = 0; tries < 3 && !fresh(); tries++) { var bb = item(a1.id).querySelector('[data-ru-break="4h"]'); if (bb) bb.click(); await W(400); }
-    blk = item(a1.id).querySelector('.ru-block');
-    a1 = (window.data && window.data.accounts || []).filter(function (x) { return x && x.id === a1.id; })[0] || a1;   // the journal object now (a sync may have replaced it)
-    ok('...the second starts it: Locked, "On a break", the buttons gone', a1.ruleBreak && Math.abs(a1.ruleBreak.until - (Date.now() + 4 * 3600000)) < 10000 && /Locked/.test(blk.textContent) && /On a break/.test(blk.textContent) && !blk.querySelector('[data-ru-break]'), [a1.ruleBreak && new Date(a1.ruleBreak.until).toISOString(), blk.textContent.slice(0, 60), R.state(a1.id) && R.state(a1.id).locked, document.activeElement && document.activeElement.tagName, blk === item(a1.id).querySelector('.ru-block'), item(a1.id).querySelectorAll('.ru-block').length]);
-    // the phone: nothing wider than the screen (checked at 375 by the phone run of this file)
-    var wide = [].slice.call(blk.querySelectorAll('.set-row')).filter(function (r) { return r.scrollWidth > r.clientWidth + 2; }).length;
-    ok('no row wider than its box', wide === 0, wide);
+    var body = item(a1.id).querySelector('.sacc-body'), blk = body.querySelector('[data-slot="rules"] .ru-block');
+    ok('no Order rules section, nor its rows (session, time between entries, open risk, symbols, Take a break)', !body.querySelector('[data-sx="orules"]') && !/Order rules|Loss per session|Trades per session|Time between entries|Max open risk|Allowed symbols|Take a break/.test(body.textContent), body.textContent.slice(0, 120));
+    ok('Risk rules ends with one row: Close trades opened elsewhere while locked, on', blk && blk.querySelectorAll('.set-row').length === 1 && /Close trades opened elsewhere while locked/.test(blk.textContent) && blk.querySelector('[data-ru="closeElsewhere"]').checked === true && blk.compareDocumentPosition(body.querySelector('[data-rows="own"]')) & Node.DOCUMENT_POSITION_PRECEDING, blk && blk.textContent.slice(0, 80));
+    var sw = blk.querySelector('[data-ru="closeElsewhere"]'); sw.checked = false; sw.dispatchEvent(new Event('change', { bubbles: true })); await W(300);
+    ok('switched off: saved (from tomorrow, as any looser rule)', a1.riskRules.closeElsewhere === false && R.state(a1).pending.ce === false, a1.riskRules);
+    a1.riskRules.closeElsewhere = true; a1.ruleDay.day = '2000-01-01'; R._eff(a1);
+    R.breakFor(a1, '1h'); await W(300); window.__stAccFill(); await W(300);
+    blk = item(a1.id).querySelector('[data-slot="rules"] .ru-block');
+    ok('on a break: the row says so ("On a break. Trading opens again ...")', /On a break\. Trading opens again/.test(blk.textContent), blk.textContent);
     delete a1.ruleBreak;
+    var wide = [].slice.call(blk.querySelectorAll('.set-row')).filter(function (r) { return r.scrollWidth > r.clientWidth + 2; }).length;
+    ok('the row fits (' + innerWidth + 'px)', wide === 0, wide);
   } catch (e) { out.push({ name: 'ran', ok: false, got: String(e && e.stack || e) }); }
   return out;
 })()
