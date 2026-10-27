@@ -22,7 +22,7 @@
 
     document.getElementById('stpr-drawbtn').click(); await W(20);
     var lb = document.querySelector('#stpr-tools [data-tool="long"]'), sb = document.querySelector('#stpr-tools [data-tool="short"]');
-    ok('Long position and Short position in the drawing tools, after Text and Emoji', lb && sb && lb.title === 'Long position' && sb.title === 'Short position' && lb.previousElementSibling.getAttribute('data-tool') === 'emoji');
+    ok('Long position and Short position in the drawing tools, first in the Forecasting group (TradingView\'s groups, 26 Oct 2026)', lb && sb && lb.title === 'Long position' && sb.title === 'Short position' && lb.closest('.stpr-tg[data-grp="fore"]') && sb.closest('.stpr-tg[data-grp="fore"]') && lb.nextElementSibling === sb);
     var X = Math.round(r.width * 0.45), Y = Math.round(r.height * 0.45);
     lb.click(); mev('mousedown', X, Y); mev('mouseup', X, Y); await W(60);
     var d = DW.list[0], B = pane().bars, La = P._lOfT(0, d && d.a.t), Lb = P._lOfT(0, d && d.b.t);

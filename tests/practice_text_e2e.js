@@ -22,7 +22,7 @@
 
     document.getElementById('stpr-drawbtn').click(); await W(20);
     var tb = document.querySelector('#stpr-tools [data-tool="text"]');
-    ok('a Text button sits in the drawing tools, in the text and notes group after Measure (batch B)', tb && tb.title === 'Text' && tb.closest('.stpr-tg') && tb.closest('.stpr-tg').previousElementSibling && tb.closest('.stpr-tg').previousElementSibling.getAttribute('data-tool') === 'range', tb && tb.title);
+    ok('a Text button sits in the drawing tools, in the Text and notes group after Shapes (TradingView\'s groups, 26 Oct 2026)', tb && tb.title === 'Text' && tb.closest('.stpr-tg[data-grp="notes"]') && tb.closest('.stpr-tg').previousElementSibling && tb.closest('.stpr-tg').previousElementSibling.getAttribute('data-grp') === 'shapes', tb && tb.title);
     var X = Math.round(r.width * 0.45), Y = 120;
     tb.click(); mev('mousedown', X, Y); mev('mouseup', X, Y); await W(80);
     var ta = pane().el.querySelector('textarea.stpr-txed'), d = DW.list[0];
