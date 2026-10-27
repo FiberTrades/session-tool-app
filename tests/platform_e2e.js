@@ -110,6 +110,16 @@
     var nm = $('#stpr-grid .pl-nm'), oh = $('#stpr-grid .stpr-ohlc');
     check('the chart\'s legend: Euro / U.S. Dollar · 15 · the account, and O H L C on the same line', nm && /^Euro \/ U\.S\. Dollar · 15 · FTMO 70K$/.test(nm.textContent) && oh && /O.*H.*L.*C/.test(oh.textContent) && Math.abs(nm.getBoundingClientRect().top - oh.getBoundingClientRect().top) < 6,
       [nm && nm.textContent, oh && oh.textContent]);
+    // the legend's O H L C follows the crosshair over the candles, the last candle when it leaves; Chart settings can hide it (26 Oct 2026)
+    var pl0 = P._panes()[0], Bl = pl0.bars, bi = Bl.length - 25, pcl = $('#stpr-grid .stpr-pc'), rl = pcl.getBoundingClientRect(), xb = pl0.chart.timeScale().timeToCoordinate(Bl[bi].time), dg5 = function (v) { return Number(v).toFixed(5); };
+    var at0 = document.elementFromPoint(rl.left + xb, rl.top + 120); at0.dispatchEvent(new MouseEvent('mousemove', { clientX: rl.left + xb, clientY: rl.top + 120, bubbles: true })); await W(250);
+    check('the crosshair over a candle: the legend shows that candle\'s O H L C', oh.textContent.indexOf('O' + dg5(Bl[bi].open)) >= 0 && oh.textContent.indexOf('C' + dg5(Bl[bi].close)) >= 0, [oh.textContent, dg5(Bl[bi].open), dg5(Bl[bi].close)]);
+    pl0.el.dispatchEvent(new PointerEvent('pointerleave', { pointerType: 'mouse' })); await W(250);
+    var lb0 = pl0.bars[pl0.bars.length - 1];
+    check('...off the chart: the last candle\'s again', oh.textContent.indexOf('C' + dg5(lb0.close)) >= 0, [oh.textContent, dg5(lb0.close)]);
+    P._lookSet('ohlc', false); await W(250);
+    check('Chart settings, O H L C values off: none in the legend, its name stays', oh.textContent === '' && /Euro/.test(nm.textContent), oh.textContent);
+    P._lookSet('ohlc', true); delete P._cfg().look.ohlc; await W(250);
 
     // ---- the timeframes ----
     var b1h = Array.prototype.filter.call(document.querySelectorAll('.pl-tfs button'), function (b) { return b.textContent === '1h'; })[0];
