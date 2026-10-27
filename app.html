@@ -1200,6 +1200,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   #settings-modal-bg .sx .ru-brk button { flex: 1 1 30% !important; height: 36px !important; border-top: 1px solid var(--border-2) !important; }
   #settings-modal-bg .sx .ru-brk button:nth-child(-n+3) { border-top: 0 !important; } #settings-modal-bg .sx .ru-brk button:nth-child(4) { border-left: 0 !important; }
   #settings-modal-bg .sx .tk-switch { justify-content: flex-end; width: 100%; }
+  #settings-modal-bg .settings-account-total .sat-sep { color: var(--text-dim); font-weight: 400; }   /* a total per currency, side by side */
   #settings-modal-bg .sx .sacc-r { align-items: center !important; }
   #settings-modal-bg .sx .mt5c-pick { width: 100% !important; height: 38px; }
   @media (max-width: 560px) {
@@ -13376,11 +13377,18 @@ try {
   const CURRENCY_SYMBOLS = {
     GBP: '£', EUR: '€', USD: '$', JPY: '¥', CHF: 'CHF ', CAD: 'C$', AUD: 'A$',
   };
-  // Returns the symbol for the user's chosen currency (default £)
+  // Returns the symbol for the user's chosen currency (default £) - or, while one account is in view, that account's own currency
+  // (27 Oct 2026: each account carries the currency its MT5 reports - OneFunded 10K in $ beside the 70K in £ - so its figures read in it)
   function curSym() {
-    const code = (typeof data !== 'undefined' && data && data.settings && data.settings.currency) || 'GBP';
+    let code = (typeof data !== 'undefined' && data && data.settings && data.settings.currency) || 'GBP';
+    try { const a = currentScopeAccount(); if (a && a.currency && CURRENCY_SYMBOLS[a.currency]) code = a.currency; } catch (e) {}
     return CURRENCY_SYMBOLS[code] || '£';
   }
+  // an account's currency: what its MT5 reports (acc.currency), else the member's chosen one
+  function accCur(acc) { return (acc && acc.currency) || (typeof data !== 'undefined' && data && data.settings && data.settings.currency) || 'GBP'; }
+  function curSymOf(code) { return CURRENCY_SYMBOLS[code] || (code ? code + ' ' : '£'); }
+  window.__stAccCur = accCur; window.__stCurSymOf = curSymOf;
+  window.__stApplyCur = function () { try { applyCurrencySymbol(); } catch (e) {} };   // an account's card re-labels its {C} buttons
   // Bridge for the plan chooser, which lives in a separate <script> block and cannot see `data`.
   // Same pattern as __stGetPlan / __stAcctState. It lets the pricing open in the currency the
   // member already reads their P&L in, instead of always starting at GBP.
@@ -13392,13 +13400,14 @@ try {
   //   <span data-currency-symbol="Risk {C}">Risk £</span>
   function applyCurrencySymbol() {
     const sym = curSym();
+    const symAt = (el) => { try { const it = el.closest('#settings-accounts-list .sacc-item[data-account-id]'); if (it) { const a = (data.accounts || []).find(x => x.id === it.getAttribute('data-account-id')); if (a) return curSymOf(accCur(a)); } } catch (e) {} return sym; };   // in an account's card: its own
     document.querySelectorAll('[data-currency-symbol]').forEach(el => {
       // If the element also has data-i18n, use the translated string as the
       // template (so the label can be localized AND have its {C} placeholder
       // filled). Falls back to the hardcoded data-currency-symbol attribute.
       const i18nKey = el.getAttribute('data-i18n');
       const tmpl = i18nKey ? t(i18nKey) : el.getAttribute('data-currency-symbol');
-      el.textContent = tmpl.replace(/\{C\}/g, sym);
+      el.textContent = tmpl.replace(/\{C\}/g, symAt(el));
     });
     // Currency-aware input placeholders
     document.querySelectorAll('[data-currency-placeholder]').forEach(el => {
@@ -21806,7 +21815,7 @@ try {
     const sign = v > 0 ? '+' : v < 0 ? '−' : '';
     const abs = Math.abs(v);
     const str = abs.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    return `${opts.noSign ? '' : sign}${curSym()}${str}`;
+    return `${opts.noSign ? '' : sign}${opts.cur ? curSymOf(opts.cur) : curSym()}${str}`;   // opts.cur: a currency of its own (an account's)
   }
   function fmtMoneyShort(v) {
     if (v == null || isNaN(v) || v === 0) return '£0';
@@ -55893,7 +55902,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
         inp.value = (v !== undefined && v !== null) ? v : '';
         inp.placeholder = (mode === 'amount') ? defaultAmtPh : defaultPctPh;
         if (suffixEl) suffixEl.textContent = (mode === 'amount')
-          ? (t('settings.risk_amt_suffix') || '{C} amount').replace(/\{C\}/g, (typeof curSym === 'function' ? curSym() : '£'))
+          ? (t('settings.risk_amt_suffix') || '{C} amount').replace(/\{C\}/g, curSymOf(accCur((data.accounts || []).find(a => a.id === _riskFormAccountId()))))
           : t('settings.risk_pct_suffix');
       };
       showActiveValue(rMaxLossInp,  rMaxLossSuffix,  lossMode, 'maxLossPct', 'maxLossAmount', '1.0', '100');
@@ -56472,7 +56481,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
           inp.placeholder = (mode === 'amount') ? def.amtPh : def.pctPh;
           if (sufEl) {
             sufEl.textContent = (mode === 'amount')
-              ? (t('settings.risk_amt_suffix') || '{C} amount').replace(/\{C\}/g, (typeof curSym === 'function' ? curSym() : '£'))
+              ? (t('settings.risk_amt_suffix') || '{C} amount').replace(/\{C\}/g, curSymOf(accCur((data.accounts || []).find(a => a.id === _riskFormAccountId()))))
               : t('settings.risk_pct_suffix');
           }
           // Refresh the greeting since the rule definition changed.
@@ -56792,13 +56801,16 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       const countedAccounts = activeAccounts.filter(a => !a.separate);
       // one account: open from the start (nothing to choose between); several: all closed until one is clicked
       if (window.__stAccOpenId === undefined && activeAccounts.length === 1) window.__stAccOpenId = activeAccounts[0].id;
-      const totalActiveBal = countedAccounts.reduce((s, a) => s + (a.startingBalance || 0), 0);
-      const totalActiveCur = countedAccounts.reduce((s, a) => s + computeAccountStats(a).current, 0);
-      // What the trading made, payouts added back - same rule as each account's own %.
-      const totalActiveMade = countedAccounts.reduce((s, a) => { const x = computeAccountStats(a); return s + x.current + (x.paidOut || 0); }, 0);
-      const totalPct = totalActiveBal > 0 ? ((totalActiveMade - totalActiveBal) / totalActiveBal) * 100 : 0;
-      const totalPctCls = totalPct > 0 ? 'good' : totalPct < 0 ? 'bad' : '';
-      const totalPctSign = totalPct > 0 ? '+' : '';
+      // A total per currency (27 Oct 2026: OneFunded's $10,000 and the 70K's £70,000 read as "80k"): accounts in different currencies are
+      // never added together - each currency's started and now side by side, the % beside each.
+      const _byCur = {};
+      countedAccounts.forEach(a => { const c = accCur(a), x = computeAccountStats(a), g = _byCur[c] || (_byCur[c] = { bal: 0, cur: 0, made: 0 });
+        g.bal += (a.startingBalance || 0); g.cur += x.current; g.made += x.current + (x.paidOut || 0); });   // made: payouts added back, as each account's own %
+      const _curs = Object.keys(_byCur);
+      const _pctOf = g => g.bal > 0 ? ((g.made - g.bal) / g.bal) * 100 : 0;
+      const _pctHtml = g => { const p = _pctOf(g); return `<span class="settings-account-total-pct ${p > 0 ? 'good' : p < 0 ? 'bad' : ''}">${p > 0 ? '+' : ''}${p.toFixed(2)}%</span>`; };
+      const _startedHtml = _curs.map(c => `<span class="sat-num">${fmt(_byCur[c].bal, { noSign: true, cur: c })}</span>`).join('<span class="sat-sep"> · </span>');
+      const _nowHtml = _curs.map(c => `<span class="sat-num">${fmt(_byCur[c].cur, { noSign: true, cur: c })}</span>${_pctHtml(_byCur[c])}`).join('<span class="sat-sep"> · </span>');
       // Multi-account summary only when relevant — with one account, the row
       // below already shows the balance, so the summary would be redundant.
       // Label/value rows, not a sentence: the inline version wrapped mid-phrase on
@@ -56810,8 +56822,8 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
         : `<div class="settings-account-total">
              <div class="sat-l"><div class="sat-t">${window._stT('All accounts', 'Todas las cuentas')}</div><div class="sat-sub">${tt('settings.across_label')} ${countedAccounts.length} ${countedAccounts.length === 1 ? tt('settings.account_word') : tt('settings.accounts_word')}</div></div>
              <div class="sat-rows">
-             <div class="sat-row"><span class="sat-k">${window._stT('Started', 'Inicial')}</span><strong class="sat-v"><span class="sat-num">${fmt(totalActiveBal, { noSign: true })}</span></strong></div>
-             <div class="sat-row"><span class="sat-k">${window._stT('Now', 'Ahora')}</span><strong class="sat-v"><span class="sat-num">${fmt(totalActiveCur, { noSign: true })}</span><span class="settings-account-total-pct ${totalPctCls}">${totalPctSign}${totalPct.toFixed(2)}%</span></strong></div>
+             <div class="sat-row"><span class="sat-k">${window._stT('Started', 'Inicial')}</span><strong class="sat-v">${_startedHtml}</strong></div>
+             <div class="sat-row"><span class="sat-k">${window._stT('Now', 'Ahora')}</span><strong class="sat-v">${_nowHtml}</strong></div>
              </div>
            </div>`;
       const buildRow = (acc) => {
@@ -56908,7 +56920,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
         return `<div class="${rowCls.join(' ')} sacc-item${_open ? ' open' : ''}" data-account-id="${acc.id}">
           <button type="button" class="sacc-head" data-sacc-toggle="${acc.id}" aria-expanded="${_open}">
             <span class="sacc-hl"><span class="sacc-nm"><span class="san-txt">${escapeHtml(accDisplayName(acc))}</span>${(isArchived || acc.separate) ? ' ' + badgeHtml : ''}</span><span class="sacc-chips">${_chips}</span></span>
-            <span class="sacc-bal"><b>${fmt(s.current, { noSign: true })}</b><small class="${pctCls}">${pctSign}${s.pct.toFixed(2)}%</small></span>
+            <span class="sacc-bal"><b>${fmt(s.current, { noSign: true, cur: accCur(acc) })}</b><small class="${pctCls}">${pctSign}${s.pct.toFixed(2)}%</small></span>
             <svg class="sacc-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
           </button>
           ${_open ? `<div class="sacc-body">
@@ -56923,7 +56935,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
               <div class="sacc-slot" data-slot="facts"></div>
               ${_row(_L('Starting balance', 'Saldo inicial'), _L('What it started with. Every % for this account is measured from it.', 'Con lo que empezó. Cada % de esta cuenta se mide desde él.')
                 + (_linked ? '' : ` <button type="button" class="settings-account-match" data-id="${acc.id}">${_L("Doesn't match your broker?", '¿No coincide con tu bróker?')}</button>`),
-                `<span class="sx-v">${fmt(acc.startingBalance, { noSign: true })}</span>${_pen('start')}`, 'start')}
+                `<span class="sx-v">${fmt(acc.startingBalance, { noSign: true, cur: accCur(acc) })}</span>${_pen('start')}`, 'start')}
               ${_openedDs ? _row(_L('Opened', 'Creada'), '', `<span class="sx-v">${_openedDs}</span>`) : ''}
               ${_arch ? _row(isArchived ? _L('Archived', 'Archivada') : _L('Archive or delete', 'Archivar o borrar'), isArchived ? _L('Its trades are kept. Unarchive it to use it again.', 'Sus operaciones se guardan. Desarchívala para volver a usarla.')
                 : _L('Archived accounts keep their trades and move to the bottom of the list.', 'Las cuentas archivadas guardan sus operaciones y pasan al final de la lista.'), _arch) : ''}
@@ -57137,6 +57149,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       const when = p => (p.status === 'paid' ? (p.paidOn || p.requestedOn) : p.requestedOn) || '';
       let allGot = 0, allN = 0, allPend = 0;
       const block = (acc) => {
+        const fmt = (v, o) => fmtMoney(v, Object.assign({ cur: accCur(acc) }, o || {}));   // in that account's currency
         const list = P.list(acc).slice().sort((a, b) => when(b).localeCompare(when(a)));
         const paid = list.filter(p => p.status === 'paid');
         const got = paid.reduce((sm, p) => sm + P.received(acc, p), 0);
@@ -80085,7 +80098,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
   var T = function (en, es) { try { return window._stT ? window._stT(en, es) : en; } catch (e) { return en; } };
   function esc(v) { return String(v == null ? '' : v).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function D() { return (typeof data !== 'undefined' && data) ? data : {}; }
-  function money(v) { try { return fmtMoney(v, { noSign: true }); } catch (e) { return String(Math.round(v)); } }
+  function money(v, acc) { try { return fmtMoney(v, { noSign: true, cur: acc && window.__stAccCur ? window.__stAccCur(acc) : undefined }); } catch (e) { return String(Math.round(v)); } }   // acc: in that account's currency
   function accById(id) { return (D().accounts || []).filter(function (a) { return a && a.id === id; })[0] || null; }
   function loginsOf(acc) { var m = D().mt5LoginMap || {}; return Object.keys(m).filter(function (k) { return m[k] === acc.id; }).sort(); }
   function cloudOf(lg) { try { return window.__stMt5c.cloud().filter(function (r) { return String(r.login) === String(lg); })[0] || null; } catch (e) { return null; } }
@@ -80166,19 +80179,19 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
   }
   // Overview: the balance, the profit, what today still allows (the daily stop, else the firm's daily limit), and the line's chips
   function tile(k, v, sub, cls) { return '<div class="sx-tile"><span>' + k + '</span><b' + (cls ? ' class="' + cls + '"' : '') + '>' + v + '</b>' + (sub ? '<small>' + sub + '</small>' : '') + '</div>'; }
-  function signed(v) { return (v < 0 ? '−' : (v > 0 ? '+' : '')) + money(Math.abs(v)); }
+  function signed(v, acc) { return (v < 0 ? '−' : (v > 0 ? '+' : '')) + money(Math.abs(v), acc); }
   function ovHtml(acc) {
     var st = null; try { st = window.__stAccStats(acc); } catch (e) {}
     var sb = +acc.startingBalance || 0, cur = st ? st.current : sb, made = st ? st.current + (st.paidOut || 0) - sb : 0, pc = st ? (+st.pct || 0) : 0;
-    var h = tile(T('Balance', 'Saldo'), esc(money(cur)), esc((st && st.paidOut > 0) ? T('Paid out ', 'Retirado ') + money(st.paidOut) : T('Started at ', 'Empezó con ') + money(sb)));
-    h += tile(T('Profit', 'Beneficio'), esc(signed(made)), esc((pc > 0 ? '+' : (pc < 0 ? '−' : '')) + Math.abs(pc).toFixed(2) + '%' + T(' since ', ' desde ') + money(sb)), made > 0 ? 'up' : (made < 0 ? 'dn' : ''));
+    var h = tile(T('Balance', 'Saldo'), esc(money(cur, acc)), esc((st && st.paidOut > 0) ? T('Paid out ', 'Retirado ') + money(st.paidOut, acc) : T('Started at ', 'Empezó con ') + money(sb, acc)));
+    h += tile(T('Profit', 'Beneficio'), esc(signed(made, acc)), esc((pc > 0 ? '+' : (pc < 0 ? '−' : '')) + Math.abs(pc).toFixed(2) + '%' + T(' since ', ' desde ') + money(sb, acc)), made > 0 ? 'up' : (made < 0 ? 'dn' : ''));
     var rs = null, rr = acc.riskRules || {}, fd = 0, net = 0; try { rs = window.__stRules.state(acc); } catch (e) {}
     var dl = rs && rs.rules ? (+rs.rules.dl || 0) : 0;
     if (isProp(acc) && (rr.firmDailyPct > 0 || rr.firmDailyAmount > 0)) fd = (rr.firmDailyMode === 'amount' || !(rr.firmDailyPct > 0)) ? (+rr.firmDailyAmount || 0) : sb * rr.firmDailyPct / 100;
     try { net = +window.__stRules.today(acc) || 0; } catch (e) {}
     var cap = dl > 0 ? dl : fd;
-    h += cap > 0 ? tile(T('Daily loss left', 'Pérdida diaria restante'), esc(money(Math.max(0, cap + Math.min(0, net)))), esc(dl > 0 ? T('Your stop', 'Tu stop') + (fd > 0 ? T(' · firm limit ', ' · límite de la firma ') + money(fd) : '') : T('The firm’s daily limit', 'El límite diario de la firma')))
-      : tile(T('Today', 'Hoy'), esc(signed(net)), esc(T('Closed trades, after costs', 'Operaciones cerradas, tras costes')), net > 0 ? 'up' : (net < 0 ? 'dn' : ''));
+    h += cap > 0 ? tile(T('Daily loss left', 'Pérdida diaria restante'), esc(money(Math.max(0, cap + Math.min(0, net)), acc)), esc(dl > 0 ? T('Your stop', 'Tu stop') + (fd > 0 ? T(' · firm limit ', ' · límite de la firma ') + money(fd, acc) : '') : T('The firm’s daily limit', 'El límite diario de la firma')))
+      : tile(T('Today', 'Hoy'), esc(signed(net, acc)), esc(T('Closed trades, after costs', 'Operaciones cerradas, tras costes')), net > 0 ? 'up' : (net < 0 ? 'dn' : ''));
     return '<div class="sx-tiles">' + h + '</div><div class="sacc-chips sx-chips">' + window.__stAccChips(acc) + '</div>';
   }
   function ovKey(acc) {
@@ -80242,23 +80255,23 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     var rr = acc.riskRules || {}, sb = +acc.startingBalance || 0, st = null, h = '';
     try { st = window.__stAccStats(acc); } catch (e) {}
     var amt = function (mode, pct, a) { return (mode === 'amount' || (!(pct > 0) && a > 0)) ? (+a || 0) : sb * (+pct || 0) / 100; };
-    var lbl = function (mode, pct, a) { return (mode === 'amount' || (!(pct > 0) && a > 0)) ? money(+a || 0) : (+pct || 0) + '%'; };
+    var lbl = function (mode, pct, a) { return (mode === 'amount' || (!(pct > 0) && a > 0)) ? money(+a || 0, acc) : (+pct || 0) + '%'; };
     if (rr.maxDrawdownPct > 0 || rr.maxDrawdownAmount > 0) { var dd = amt(rr.maxDrawdownMode, rr.maxDrawdownPct, rr.maxDrawdownAmount);
       h += row(T('Max loss', 'Pérdida máxima'), rr.ddType === 'trailing' || rr.ddType === 'trailing_lock' ? T('Measured from your highest balance, so the floor rises as you profit', 'Se mide desde tu saldo más alto: el suelo sube con tus ganancias') : T('The balance must stay above the floor', 'El saldo debe quedarse por encima del suelo'),
-        '<span class="sacc-val">' + esc(lbl(rr.maxDrawdownMode, rr.maxDrawdownPct, rr.maxDrawdownAmount)) + '<small>' + (rr.ddType === 'trailing' || rr.ddType === 'trailing_lock' ? T('trailing', 'dinámico') : T('floor ', 'suelo ') + esc(money(sb - dd))) + '</small></span>'); }
+        '<span class="sacc-val">' + esc(lbl(rr.maxDrawdownMode, rr.maxDrawdownPct, rr.maxDrawdownAmount)) + '<small>' + (rr.ddType === 'trailing' || rr.ddType === 'trailing_lock' ? T('trailing', 'dinámico') : T('floor ', 'suelo ') + esc(money(sb - dd, acc))) + '</small></span>'); }
     if (rr.firmDailyPct > 0 || rr.firmDailyAmount > 0) h += row(T('Daily loss limit', 'Límite de pérdida diaria'), T('A day that loses this much fails the account', 'Un día que pierde esto suspende la cuenta'),
-      '<span class="sacc-val">' + esc(lbl(rr.firmDailyMode, rr.firmDailyPct, rr.firmDailyAmount)) + '<small>' + esc(money(amt(rr.firmDailyMode, rr.firmDailyPct, rr.firmDailyAmount))) + ' ' + T('a day', 'al día') + '</small></span>');
+      '<span class="sacc-val">' + esc(lbl(rr.firmDailyMode, rr.firmDailyPct, rr.firmDailyAmount)) + '<small>' + esc(money(amt(rr.firmDailyMode, rr.firmDailyPct, rr.firmDailyAmount), acc)) + ' ' + T('a day', 'al día') + '</small></span>');
     if (stageOf(acc) === 'Funded') h += row(T('Profit target', 'Objetivo de beneficio'), T('None on a funded account', 'Ninguno en una cuenta fondeada'), '<span class="sacc-val">—</span>');
     else if (rr.profitTargetPct > 0 || rr.profitTargetAmount > 0) { var tg = amt(rr.profitTargetMode, rr.profitTargetPct, rr.profitTargetAmount), made = st ? (st.current + (st.paidOut || 0) - sb) : 0, pc = tg > 0 ? Math.max(0, Math.min(100, made / tg * 100)) : 0;
-      h += row(T('Profit target', 'Objetivo de beneficio'), esc(money(Math.max(0, made))) + T(' of ', ' de ') + esc(money(tg)) + (made < 0 ? ' · <span class="sacc-dn">−' + esc(money(Math.abs(made))) + T(' from start', ' desde el inicio') + '</span>' : '') + '<span class="sacc-bar"><i style="width:' + pc.toFixed(1) + '%"></i></span>',
-        '<span class="sacc-val">' + esc(lbl(rr.profitTargetMode, rr.profitTargetPct, rr.profitTargetAmount)) + '<small>' + esc(money(sb + tg)) + '</small></span>'); }
+      h += row(T('Profit target', 'Objetivo de beneficio'), esc(money(Math.max(0, made), acc)) + T(' of ', ' de ') + esc(money(tg, acc)) + (made < 0 ? ' · <span class="sacc-dn">−' + esc(money(Math.abs(made), acc)) + T(' from start', ' desde el inicio') + '</span>' : '') + '<span class="sacc-bar"><i style="width:' + pc.toFixed(1) + '%"></i></span>',
+        '<span class="sacc-val">' + esc(lbl(rr.profitTargetMode, rr.profitTargetPct, rr.profitTargetAmount)) + '<small>' + esc(money(sb + tg, acc)) + '</small></span>'); }
     if (rr.consistencyPct > 0) h += row(T('Consistency', 'Consistencia'), T('Biggest day as a share of total profit', 'El mejor día como parte del beneficio total'), '<span class="sacc-val">' + esc(rr.consistencyPct) + '%</span>');
     return h;
   }
   function eaPanelLine(acc) {   // what the EA panel in MT5 is set to, beside "Your rules" (it sizes the trades)
     var bits = [];
     loginsOf(acc).forEach(function (lg) { var r = eaRows(lg).filter(function (x) { return x.symbol === 'EURUSD'; })[0] || eaRows(lg)[0], s = r && r.settings; if (!s || bits.length) return;
-      if (+s.risk_money > 0) bits.push(money(+s.risk_money) + ' ' + T('a trade', 'por operación'));
+      if (+s.risk_money > 0) bits.push(money(+s.risk_money, acc) + ' ' + T('a trade', 'por operación'));
       if (+s.max_trades_day > 0) bits.push(s.max_trades_day + ' ' + (+s.max_trades_day === 1 ? T('trade a day', 'operación al día') : T('trades a day', 'operaciones al día'))); });
     return bits.length ? '<span class="sacc-ea">' + T('EA panel: ', 'Panel del EA: ') + esc(bits.join(' · ')) + '</span>' : '';
   }
@@ -80282,6 +80295,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     var fb = el.querySelector('[data-rows="firm"]'), ob = el.querySelector('[data-rows="own"]');
     OWN_IDS.forEach(function (id) { var r = rowOf(id); if (r) ob.appendChild(r); });
     FIRM_IDS.forEach(function (id) { var r = rowOf(id); if (r) (prop ? fb : ob).appendChild(r); });
+    try { if (window.__stApplyCur) window.__stApplyCur(); } catch (e) {}   // its amount buttons in this account's currency
     // close trades opened elsewhere while locked (the one order rule left in Settings since 27 Oct 2026), after the member's own rules
     try { var os = el.querySelector('[data-slot="orules"]'); if (os && window.__stRules) os.appendChild(window.__stRules.node(acc)); } catch (e) {}
   }
@@ -80353,6 +80367,8 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
   // keep: only what MT5 and the server report (a repaint while the member may be typing in a rules box)
   function autoFill() {
     var changed = false;
+    // its currency is what its MT5 reports (27 Oct 2026: OneFunded's USD beside the 70K's GBP)
+    (D().accounts || []).forEach(function (a) { if (!a) return; var c = facts(a).cur; if (c && /^[A-Z]{3}$/.test(c) && a.currency !== c) { a.currency = c; changed = true; } });
     (D().accounts || []).forEach(function (a) { if (!a || !(a._nameAuto || a._sbAuto)) return; var f = facts(a);
       if (a._sbAuto && f.start > 0) { var n = 0; try { n = getAllLifetimeTrades().filter(function (x) { return x.accountId === a.id; }).length; } catch (e) {}
         if (!n) { a.startingBalance = f.start; changed = true; } delete a._sbAuto; }
@@ -80501,6 +80517,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
   setInterval(function () { try { var sec = document.querySelector('#settings-modal-bg .settings-section[data-section="accounts"]'), bg = document.getElementById('settings-modal-bg');
     if (bg && bg.classList.contains('show') && sec && sec.style.display !== 'none') window.__stAccFill(true); } catch (e) {} }, 5000);
   window.__stAccFirms = FIRMS;
+  setInterval(function () { try { var ch = false; (D().accounts || []).forEach(function (a) { if (!a) return; var c = facts(a).cur; if (c && /^[A-Z]{3}$/.test(c) && a.currency !== c) { a.currency = c; ch = true; } }); if (ch) { try { saveData(); } catch (e) {} try { if (typeof refreshAllSurfaces === 'function') refreshAllSurfaces(); } catch (e) {} } } catch (e) {} }, 60000);
 })();
 </script>
 <script>
