@@ -90522,7 +90522,10 @@ window.__stAZ = (function () {
   @media (hover: hover) { #page-livecharts.lcm-desk #lc-host .stpr-win.lcp #stpr-lvback:hover { background: rgba(78,205,139,.1); } }
   /* the prop firm progress lives in Statistics and Accounts, not under the chart (Nestor, 25 Oct 2026) */
   #page-livecharts .lc-pfp { display: none !important; }
-  #page-livecharts.lcm-replay .lc-tb, #page-livecharts.lcm-replay .lc-pfp { display: none !important; }   /* MT5's Toolbox and the prop progress: Live's
+  #page-livecharts.lcm-replay .lc-tb, #page-livecharts.lcm-replay .lc-pfp { display: none !important; }
+  /* built at start-up for the chart windows that reopen, never seen (lcWarm): off screen, invisible, untouchable */
+  #page-livecharts.lc-warm:not(.active) { display: block !important; position: fixed !important; left: -400vw !important; top: 0 !important; width: 100vw !important; height: 100vh !important;
+    visibility: hidden !important; pointer-events: none !important; overflow: hidden !important; z-index: -1 !important; }   /* MT5's Toolbox and the prop progress: Live's
   /* MT5's messages in the app (19 Oct 2026): a banner at the chart's bottom left, where MT5 writes them on its own chart */
   .stpr-eamsg { position: absolute; left: 12px; bottom: 40px; z-index: 9; display: none; align-items: flex-start; gap: 10px; max-width: min(560px, calc(100% - 90px)); padding: 9px 8px 9px 12px; border-radius: 8px; background: rgba(19,18,23,.97); border: 1px solid rgba(244,192,90,.5); border-left: 3px solid #f4c05a; box-shadow: 0 10px 28px rgba(0,0,0,.5); font-family: 'AppNum','DM Mono',monospace; font-size: 12px; line-height: 1.45; color: #f4c05a; }
   .stpr-eamsg.show { display: flex; }
@@ -95295,15 +95298,21 @@ window.__stAZ = (function () {
          hid it (Nestor, 22 Oct 2026). Charts and the windows follow as soon as it is answered. */
       if (window.__stNewDayPending && window.__stNewDayPending()) { setTimeout(go, 700); return; }
       var tb = document.querySelector('.tab[data-page="livecharts"]'); if (!tb) return;
-      /* ...and the app lands where it always did, on Session Bias (Nestor, 24 Oct 2026: "i keep being taken to the charts tab, i need to be
-         landing on session bias instead, as i was before"): Charts builds the charts, they go out to their windows (which run on with the
-         tab left), and the app goes back to the tab it started on - unless the member has picked a tab meanwhile. */
-      var at = document.querySelector('.tabs .tab.active'), back = (at && at !== tb) ? at.getAttribute('data-page') : null;
-      if (!tb.classList.contains('active')) tb.click();
-      var home = function(){ if (!back || !tb.classList.contains('active')) return; var bt = document.querySelector('.tab[data-page="' + back + '"]'); if (bt) bt.click(); };
-      var n = 0, ready = function(){ n++; if (S && panes.length === CFG.layout && panes.every(function(p){ return p.n > 0; })) { wsrOpenAll(false); setTimeout(home, 600); return; } if (n < 120) setTimeout(ready, 500); else home(); };
+      /* ...and the app never leaves the tab it is on, not even for a frame (Nestor, 24 Oct 2026: "i need to be landing on session bias";
+         25 Oct 2026: "on reload the first and only thing i see is the session bias"): Live Charts is built in its tab's page kept off screen
+         and unseen (lcWarm), its charts go out to their windows (which run on by themselves), and the page is hidden again. Charts opened
+         meanwhile by the member simply shows what is built. */
+      var here = function(){ return tb.classList.contains('active'); };
+      if (!here()) { lcWarm(true); lcShow(); }
+      var slots = wsrSlots(), t0 = Date.now(), done = function(){ var w0 = Date.now();
+          (function wait(){ var outAll = slots.every(function(k){ return popOn(+k) || !(+k < CFG.layout); });   // its windows took their charts first (else leaving would stop them)
+            if (!outAll && Date.now() - w0 < 15000) { setTimeout(wait, 300); return; }
+            if (!here()) lcHide(); lcWarm(false); })(); };
+      var n = 0, ready = function(){ n++; if (S && panes.length === CFG.layout && panes.every(function(p){ return p.n > 0; })) { wsrOpenAll(false); setTimeout(done, 600); return; } if (n < 120) setTimeout(ready, 500); else done(); };
       setTimeout(ready, 800); };
     go(); }
+  // Live Charts' page built off screen and unseen: on the page, it lays out and draws as in the tab (charts need a size), nothing of it shows
+  function lcWarm(on){ var pg = document.getElementById('page-livecharts'); LV.warm = !!on; if (pg) pg.classList.toggle('lc-warm', !!on); }
   // chart.html asks this window for its chart when it loads and after its own reload; when this window reloads it reloads too and
   // asks again, so each chart window carries on by itself (Nestor, 21 Oct 2026: "i want each extrenal chart window to work individually")
   // the chart's window asks for its chart: the app's look goes in, then the chart library, then the chart. null = not now (this app
@@ -96462,7 +96471,7 @@ window.__stAZ = (function () {
     var under = lcUnder(), chrome = win.offsetHeight - cw.offsetHeight;   // MT5's Toolbox included: it fits on the page with the charts
     var h = Math.round(Math.max(360, Math.min(1100, window.innerHeight - under - chrome - 22))); if (cw.style.height !== h + 'px') cw.style.height = h + 'px'; }
   // opening the tab: the page scrolls so the window sits under the tab bar, all of it on screen
-  function lcSnap(){ var win = $('stpr-win'); if (!LV.inl || phone() || !win) return; lcFit();
+  function lcSnap(){ var win = $('stpr-win'); if (!LV.inl || phone() || !win || LV.warm) return; lcFit();
     var r = win.getBoundingClientRect(), under = lcUnder(); if (r.top < under - 1 || r.bottom > window.innerHeight + 1) { try { window.scrollTo(0, Math.max(0, window.scrollY + r.top - under - 10)); } catch (e) {} } }
   try { window.addEventListener('focus', function(){ pullCfg(); }); document.addEventListener('visibilitychange', function(){ if (!document.hidden) pullCfg(); }); } catch (e) {}   // another device's settings (mergeCfg)
   function lcShow(){ var host = $('lc-host'); if (!host) return; LV.host = host; pullCfg();
