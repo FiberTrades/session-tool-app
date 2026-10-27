@@ -52,7 +52,8 @@
     var SB = window.__stSB, from0 = SB.from.bind(SB), rpc0 = SB.rpc.bind(SB), COMM = /^(categories|channels|channel_|roles|member_roles|dm_|friend|profiles_public|community|presence|notif)/;
     SB.from = function (t) { return COMM.test(t) ? Q(t) : from0(t); };
     SB.rpc = function (fn, a) { if (fn === 'st_admin_ids') return Promise.resolve({ data: [{ id: ADMIN }], error: null }); if (fn === 'st_members') return Promise.resolve({ data: MEMBERS, error: null }); return rpc0(fn, a); };
-    var fakeChan = function () { var ch = { on: function () { return ch; }, subscribe: function (cb) { try { cb && cb('SUBSCRIBED'); } catch (e) {} return ch; }, unsubscribe: function () {}, send: function () { return Promise.resolve(); }, track: function () { return Promise.resolve(); }, presenceState: function () { return {}; } }; return ch; };
+    var subs = [];   // the Community's realtime subscriptions, so a test message arrives as Supabase would hand it
+    var fakeChan = function () { var ch = { on: function (ev, f, cb) { if (f && f.table) subs.push({ ev: f.event, table: f.table, filter: f.filter || '', cb: cb }); return ch; }, subscribe: function (cb) { try { cb && cb('SUBSCRIBED'); } catch (e) {} return ch; }, unsubscribe: function () {}, send: function () { return Promise.resolve(); }, track: function () { return Promise.resolve(); }, presenceState: function () { return {}; } }; return ch; };
     var chan0 = SB.channel.bind(SB); SB.channel = function (name) { return /^realtime:stl-|^stl-/.test(String(name)) ? chan0(name) : fakeChan(); };
     var SESSION = { access_token: 'test', token_type: 'bearer', user: { id: ADMIN, email: 'be.o2@hotmail.com', user_metadata: { full_name: 'Nestor' }, app_metadata: {} } };
     SB.auth.getSession = function () { return Promise.resolve({ data: { session: SESSION }, error: null }); };
@@ -153,8 +154,9 @@
       check('Today: no bias (that is in Check my plan now)', !/morning's bias/i.test(tdt));
       check('Today names the session and how long it has (or until the next)', /\d+ ?(min|h)/.test($('.plat-right .pl-tds').textContent), $('.plat-right .pl-tds').textContent);
       // closed: a new message counts on its icon
-      var ml = document.getElementById('dcx-msgs'), fake = document.createElement('div'); fake.className = 'dcx-msg'; fake.setAttribute('data-mid', 'tst-' + Date.now()); fake.innerHTML = '<div class="dcx-text">hi</div>';
-      if (ml) ml.appendChild(fake); await W(600);
+      var nm = { id: 'tst-' + Date.now(), channel_id: 'ch-chat', sender_id: TROY, sender_name: 'Troy', body: 'hi', created_at: new Date().toISOString() };
+      DB.channel_messages.unshift(nm); subs.forEach(function (x) { if (x.table === 'channel_messages' && x.ev === 'INSERT' && (!x.filter || x.filter === 'channel_id=eq.ch-chat')) { try { x.cb({ new: nm }); } catch (e) {} } });
+      for (k = 0; k < 15 && !($('.plat-rail .pl-rbch .pl-rbn') && !$('.plat-rail .pl-rbch .pl-rbn').hidden); k++) await W(200);
       var bd = $('.plat-rail .pl-rbch .pl-rbn');
       check('a new message while Chat is not open shows on its icon', bd && !bd.hidden && bd.textContent === '1', bd && [bd.hidden, bd.textContent]);
       // the Object tree: the drawings on this symbol
@@ -177,7 +179,6 @@
       check('...opening Chat clears its count', bd.hidden);
       for (k = 0; k < 15 && !atEnd(); k++) await W(200);
       check('...and it opens at the latest message again', atEnd(), [msgs.scrollTop, msgs.clientHeight, msgs.scrollHeight]);
-      if (fake.parentNode) fake.remove();
       DW.list = []; DW.sel = null; P._render();
       // Community: the chat goes home, and comes back
       document.querySelector('.tab[data-page="community"]').click(); await W(2200);
