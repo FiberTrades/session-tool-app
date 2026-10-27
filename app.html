@@ -93799,6 +93799,7 @@ window.__stAZ = (function () {
         H.f = null;
         var add = function(v){ if (v > 0) { lo = Math.min(lo, v); hi = Math.max(hi, v); } };
         if (S.pos) { add(S.pos.sl); add(S.pos.tp); if (S.pos.rd > 0) add(S.pos.entry - S.pos.dir * S.pos.rd); }   // + the original stop: its box stays in view after break-even
+        try { var xr = window.__stRecAZ && window.__stRecAZ(X0); if (xr) xr.forEach(add); } catch (e) {}   // recording a video: the open trade's entry, stop and target stay on the chart (27 Oct 2026)
         H.last = { lo: lo, hi: hi };
         return window.__stAZ.fit(H, { priceRange: { minValue: lo, maxValue: hi }, margins: r.margins }); }; })(X, AZ) });
     var pane = { i: i, src: X, tf: tf, want: want, el: el, chart: chart, series: series, _look: 1, lines: [], static: [], n: 0, times: [], step: Math.min(tf, 525600) * 60, ov: el.querySelector('.stpr-ov'), card: el.querySelector('.strp-newscard') };
@@ -99841,9 +99842,27 @@ window.__stAZ = (function () {
   .rs-seg button:disabled { color: var(--dim); cursor: default; opacity: .55; }
   .rs-c select { width: 150px; height: 30px; padding: 0 8px; border: 1px solid var(--ln); border-radius: 4px; background: var(--b); color: var(--tx); font: inherit; }
   .rs-c select:disabled { opacity: .5; }
-  .rs-cam { width: 64px; height: 64px; flex: none; border-radius: 8px; overflow: hidden; border: 1px solid var(--ln); background: var(--b2); }
-  .rs-cam video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); display: block; }
-  .rs-cam.off video { visibility: hidden; }
+  /* the camera's block under its row (27 Oct 2026, Nestor: "crop my body so its just my face", backgrounds, blur): the live preview -
+     framed and with its background as the video will have it - zoom, background and corner */
+  .rs-camx { display: flex; gap: 18px; padding: 4px 0 12px; }
+  .rs-camx[hidden] { display: none; }
+  .rs-pv { position: relative; width: 156px; height: 156px; flex: none; border-radius: 12px; overflow: hidden; border: 1px solid var(--ln); background: var(--b2); cursor: grab; touch-action: none; }
+  .rs-pv:active { cursor: grabbing; }
+  .rs-pv canvas { display: block; width: 100%; height: 100%; transform: scaleX(-1); }
+  .rs-pv small { position: absolute; left: 0; right: 0; bottom: 6px; text-align: center; font-size: 11px; color: #ffffff; text-shadow: 0 1px 2px rgba(0,0,0,.9); pointer-events: none; }
+  .rs-cx { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+  .rs-cxr { display: flex; align-items: center; gap: 10px; min-height: 30px; }
+  .rs-cxr > span:first-child { width: 86px; flex: none; font-weight: 600; color: var(--hi); }
+  .rs-cxr input[type=range] { flex: 1 1 auto; min-width: 0; accent-color: var(--blue); }
+  .rs-cxr b { width: 38px; flex: none; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .rs-bgi { display: flex; align-items: center; gap: 10px; }
+  .rs-bgi[hidden] { display: none; }
+  .rs-bgi img { width: 46px; height: 30px; object-fit: cover; border-radius: 4px; border: 1px solid var(--ln); }
+  .rs-bgi img[hidden] { display: none; }
+  .rs-b.sm { height: 30px; padding: 0 12px; font-size: 12px; }
+  .rs-fxn { font-size: 12px; color: var(--dim); }
+  .rs-fxn:empty { display: none; }
+  @media (max-width: 560px) { .rs-camx { flex-direction: column; } }
   .rs-cn { display: grid; grid-template-columns: 15px 15px; gap: 3px; flex: none; }
   .rs-cn button { position: relative; width: 15px; height: 15px; padding: 0; border: 1px solid var(--ln); border-radius: 3px; background: transparent; cursor: pointer; }
   .rs-cn button::after { content: ''; position: absolute; width: 5px; height: 5px; border-radius: 1px; background: var(--dim); }
@@ -99920,9 +99939,9 @@ window.__stAZ = (function () {
   function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   // the set-up kept on this device; Streamer mode is on again every time the set-up opens, so a balance never shows by accident
-  function load() { var d = { fmt: 'yt', hi: false, fit: 'fill', fps: 30, cam: false, camId: '', mic: true, micId: '', fs: true, corner: 'bl' };
+  function load() { var d = { fmt: 'yt', hi: false, fit: 'fill', fps: 30, cam: false, camId: '', mic: true, micId: '', fs: true, corner: 'bl', bg: 'none', frames: {} };
     try { var o = JSON.parse(localStorage.getItem('st_rec') || '{}'); Object.keys(d).forEach(function (k) { if (o[k] !== undefined && typeof o[k] === typeof d[k]) d[k] = o[k]; }); } catch (e) {}
-    if (!FMT[d.fmt]) d.fmt = 'yt'; if (d.fps !== 60) d.fps = 30; if (['tl', 'tr', 'bl', 'br'].indexOf(d.corner) < 0) d.corner = 'bl'; d.sm = true; return d; }
+    if (!FMT[d.fmt]) d.fmt = 'yt'; if (d.fps !== 60) d.fps = 30; if (['tl', 'tr', 'bl', 'br'].indexOf(d.corner) < 0) d.corner = 'bl'; if (['none', 'blur', 'image'].indexOf(d.bg) < 0) d.bg = 'none'; if (!d.frames || typeof d.frames !== 'object' || Array.isArray(d.frames)) d.frames = {}; d.sm = true; return d; }
   function save() { try { var o = {}; Object.keys(CFG).forEach(function (k) { if (k !== 'sm') o[k] = CFG[k]; }); localStorage.setItem('st_rec', JSON.stringify(o)); } catch (e) {} }
   // a computer's Chrome or Edge: it can capture its own tab and record it; a phone or tablet never sees the button
   function can() { try { var md = navigator.mediaDevices; if (!(md && md.getDisplayMedia && window.MediaRecorder && window.HTMLCanvasElement && HTMLCanvasElement.prototype.captureStream)) return false;
@@ -99966,11 +99985,16 @@ window.__stAZ = (function () {
     return '<div class="rs" role="dialog" aria-modal="true" aria-labelledby="st-rec-t"><div class="rs-h"><span class="rs-rd"></span><b id="st-rec-t">' + esc(T('Record a video', 'Grabar un vídeo')) + '</b><button type="button" class="rs-x" data-r="close" aria-label="' + esc(T('Close', 'Cerrar')) + '">' + I.x + '</button></div>'
       + '<div class="rs-sec"><div class="rs-st">' + esc(T('Format', 'Formato')) + '</div><div class="rs-fmts">' + ORDER.map(fmtBtn).join('') + '</div>'
       + row('hi', T('Size', 'Tamaño'), T('1440p for the sharpest YouTube upload', '1440p para la subida más nítida a YouTube'), seg('rhi', [['0', '1080p'], ['1', '1440p']]))
-      + row('fit', T('Framing', 'Encuadre'), T('Fill: the newest candles and the price scale, cropped to the format. Fit: the whole platform, with bands.', 'Llenar: las velas más recientes y la escala de precios, recortadas al formato. Ajustar: toda la plataforma, con bandas.'), seg('rfit', [['fill', T('Fill', 'Llenar')], ['fit', T('Fit', 'Ajustar')]]))
+      + row('fit', T('Framing', 'Encuadre'), T('Fill: while it records, the platform takes the shape of the format and the chart lays itself out for it. Fit: the whole platform as it is, with bands.', 'Llenar: mientras graba, la plataforma toma la forma del formato y el gráfico se coloca para ella. Ajustar: toda la plataforma tal cual, con bandas.'), seg('rfit', [['fill', T('Fill', 'Llenar')], ['fit', T('Fit', 'Ajustar')]]))
       + row('', T('Frame rate', 'Fotogramas'), T('60 for smooth scrolling and drawing', '60 para desplazar y dibujar con suavidad'), seg('rfps', [['30', '30 fps'], ['60', '60 fps']])) + '</div>'
       + '<div class="rs-sec"><div class="rs-st">' + esc(T('Camera and microphone', 'Cámara y micrófono')) + '</div>'
-      + row('cam', T('Camera', 'Cámara'), T('Mirrored, in the corner of the chart you pick', 'En espejo, en la esquina del gráfico que elijas'), '<select data-rdev="cam" aria-label="' + esc(T('Camera', 'Cámara')) + '"></select><span class="rs-cam off"><video muted playsinline></video></span>'
-        + '<span class="rs-cn" role="group" aria-label="' + esc(T('Camera corner', 'Esquina de la cámara')) + '">' + [['tl', T('Top left', 'Arriba a la izquierda')], ['tr', T('Top right', 'Arriba a la derecha')], ['bl', T('Bottom left', 'Abajo a la izquierda')], ['br', T('Bottom right', 'Abajo a la derecha')]].map(function (c) { return '<button type="button" data-rcn="' + c[0] + '" title="' + esc(c[1]) + '" aria-label="' + esc(c[1]) + '"></button>'; }).join('') + '</span>' + sw('cam'))
+      + row('cam', T('Camera', 'Cámara'), T('Mirrored, framed as you like, in the corner of the chart you pick', 'En espejo, encuadrada a tu gusto, en la esquina del gráfico que elijas'), '<select data-rdev="cam" aria-label="' + esc(T('Camera', 'Cámara')) + '"></select>' + sw('cam'))
+      + '<div class="rs-camx" hidden><div class="rs-pv" title="' + esc(T('Drag to choose what shows; scroll to zoom', 'Arrastra para elegir qué se ve; la rueda para el zoom')) + '"><canvas width="312" height="312"></canvas><small>' + esc(T('Drag to frame yourself', 'Arrastra para encuadrarte')) + '</small></div><div class="rs-cx">'
+        + '<div class="rs-cxr"><span>' + esc(T('Zoom', 'Zoom')) + '</span><input type="range" min="1" max="3" step="0.05" data-rz aria-label="' + esc(T('Camera zoom', 'Zoom de la cámara')) + '"><b data-rzv></b></div>'
+        + '<div class="rs-cxr"><span>' + esc(T('Background', 'Fondo')) + '</span>' + seg('rbg', [['none', T('None', 'Ninguno')], ['blur', T('Blur', 'Desenfocar')], ['image', T('Image', 'Imagen')]]) + '</div>'
+        + '<div class="rs-cxr rs-bgi" hidden><span></span><img alt="" hidden><button type="button" class="rs-b sm" data-rbgpick>' + esc(T('Choose a picture', 'Elegir una imagen')) + '</button><input type="file" accept="image/*" hidden data-rbgfile></div>'
+        + '<div class="rs-cxr"><span>' + esc(T('Corner', 'Esquina')) + '</span><span class="rs-cn" role="group" aria-label="' + esc(T('Camera corner', 'Esquina de la cámara')) + '">' + [['tl', T('Top left', 'Arriba a la izquierda')], ['tr', T('Top right', 'Arriba a la derecha')], ['bl', T('Bottom left', 'Abajo a la izquierda')], ['br', T('Bottom right', 'Abajo a la derecha')]].map(function (c) { return '<button type="button" data-rcn="' + c[0] + '" title="' + esc(c[1]) + '" aria-label="' + esc(c[1]) + '"></button>'; }).join('') + '</span></div>'
+        + '<div class="rs-fxn" role="status"></div></div></div>'
       + row('mic', T('Microphone', 'Micrófono'), T('Your voice over the chart', 'Tu voz sobre el gráfico'), '<select data-rdev="mic" aria-label="' + esc(T('Microphone', 'Micrófono')) + '"></select><span class="rs-mt"><i></i></span>' + sw('mic')) + '</div>'
       + '<div class="rs-sec"><div class="rs-st">' + esc(T('Privacy and screen', 'Privacidad y pantalla')) + '</div>'
       + row('sm', T('Streamer mode', 'Modo streamer'), T('Hides positions, P&L, balance, equity, account names and trade sizes. R and pips stay.', 'Oculta posiciones, P&L, balance, fondos, nombres de cuenta y tamaños. La R y los pips se quedan.'), sw('sm'))
@@ -99989,7 +100013,11 @@ window.__stAZ = (function () {
     bg.querySelectorAll('[data-rfps]').forEach(function (b) { b.classList.toggle('on', +b.getAttribute('data-rfps') === CFG.fps); });
     ['cam', 'mic', 'sm', 'fs'].forEach(function (k) { var i = q('[data-rsw="' + k + '"]'); if (i) i.checked = !!CFG[k]; });
     q('[data-rdev="cam"]').disabled = !CFG.cam; q('[data-rdev="mic"]').disabled = !CFG.mic;
-    q('.rs-cam').classList.toggle('off', !(CFG.cam && SH.cam)); q('.rs-mt').style.visibility = CFG.mic ? '' : 'hidden';
+    q('.rs-camx').hidden = !CFG.cam; q('.rs-mt').style.visibility = CFG.mic ? '' : 'hidden';
+    var fr = frameOf(camKey()), rz = q('[data-rz]'); if (rz && document.activeElement !== rz) rz.value = fr.z; var rzv = q('[data-rzv]'); if (rzv) rzv.textContent = fr.z.toFixed(1) + '×';
+    bg.querySelectorAll('[data-rbg]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-rbg') === CFG.bg); });
+    var bi = q('.rs-bgi'), im = bgImgUrl(); bi.hidden = CFG.bg !== 'image'; bi.querySelector('img').hidden = !im; if (im && bi.querySelector('img').src !== im) bi.querySelector('img').src = im;
+    bi.querySelector('[data-rbgpick]').textContent = im ? T('Change the picture', 'Cambiar la imagen') : T('Choose a picture', 'Elegir una imagen');
     bg.querySelectorAll('[data-rcn]').forEach(function (b) { var on = b.getAttribute('data-rcn') === CFG.corner; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); b.disabled = !CFG.cam; }); }
   function err(m, k) { var e = q('.rs-err'); if (!e) return; if (!m && k && SH.ek && SH.ek !== k) return; SH.ek = m ? (k || 'x') : ''; e.textContent = m || ''; e.hidden = !m; }
   async function devices() { if (!SH) return; var list = []; try { list = await navigator.mediaDevices.enumerateDevices(); } catch (e) {}
@@ -100001,11 +100029,17 @@ window.__stAZ = (function () {
       if (cur && ds.some(function (d) { return d.deviceId === cur; })) sel.value = cur === 'default' ? '' : cur; }); }
   var TOK = { cam: 0, mic: 0 };
   async function camOn() { if (!SH) return; var my = ++TOK.cam; camOff(); var id = CFG.camId;
-    try { var s = await navigator.mediaDevices.getUserMedia({ video: Object.assign({ width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } }, id ? { deviceId: { exact: id } } : {}), audio: false });
+    try { var s = await navigator.mediaDevices.getUserMedia({ video: Object.assign({ width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }, id ? { deviceId: { exact: id } } : {}), audio: false });   // 1080p: zoomed to the face it stays sharp
       if (!SH || my !== TOK.cam || !CFG.cam) { stopS(s); return; }
-      SH.cam = s; var v = q('.rs-cam video'); v.srcObject = s; v.play().catch(noop); err('', 'cam'); paint(); devices(); }
+      SH.cam = s; SH.fx = camFx(s); pvOn(); if (CFG.bg !== 'none') fxLoad(); err('', 'cam'); paint(); devices(); }
     catch (e) { if (my !== TOK.cam) return; if (id && e && e.name === 'OverconstrainedError') { CFG.camId = ''; save(); camOn(); return; } CFG.cam = false; save(); paint(); err(why(e, 'cam'), 'cam'); } }
-  function camOff() { if (!SH) return; stopS(SH.cam); SH.cam = null; var v = q('.rs-cam video'); if (v) v.srcObject = null; paint(); }
+  function camOff() { if (!SH) return; pvOff(); if (SH.fx) SH.fx.stop(); SH.fx = null; stopS(SH.cam); SH.cam = null; paint(); }
+  // the preview: the framed picture as the video will have it, mirrored; drag to pan, the wheel or the slider to zoom
+  function pvOn() { pvOff(); var c = q('.rs-pv canvas'); if (!c) return; var g = c.getContext('2d'), my = SH;
+    var tick = function () { if (SH !== my || !my.fx) return; my.pvRaf = requestAnimationFrame(tick); if (my.fx.n !== my.pvN) { my.pvN = my.fx.n; g.drawImage(my.fx.out, 0, 0, c.width, c.height); } };
+    my.pvRaf = requestAnimationFrame(tick); }
+  function pvOff() { if (SH) try { cancelAnimationFrame(SH.pvRaf); } catch (e) {} }
+
   async function micOn() { if (!SH) return; var my = ++TOK.mic; micOff(); var id = CFG.micId;
     try { var s = await navigator.mediaDevices.getUserMedia({ audio: Object.assign({ echoCancellation: true, noiseSuppression: true, autoGainControl: true }, id ? { deviceId: { exact: id } } : {}), video: false });
       if (!SH || my !== TOK.mic || !CFG.mic) { stopS(s); return; }
@@ -100019,9 +100053,9 @@ window.__stAZ = (function () {
   function open() { if (R || SH) return; closePv(); if (!can()) return;
     var bg = document.createElement('div'); bg.id = 'st-rec-bg'; if (light()) bg.className = 'lt'; bg.innerHTML = sheetHtml(); document.body.appendChild(bg);
     SH = { bg: bg, cam: null, mic: null, views: views() }; CFG.sm = true; sm(true); paint(); devices();   // views: each chart as it was before Streamer mode widened it
-    bg.addEventListener('click', onClick); bg.addEventListener('change', onChange); document.addEventListener('keydown', onKey, true);
+    bg.addEventListener('click', onClick); bg.addEventListener('change', onChange); bg.addEventListener('input', onInput); document.addEventListener('keydown', onKey, true); pvDrag(bg.querySelector('.rs-pv'));
     if (CFG.cam) camOn(); if (CFG.mic) micOn(); }
-  function closeSheet(keep) { if (!SH) return; var s = SH; meterOff(); if (!keep) { stopS(s.cam); stopS(s.mic); sm(false); putViews(s.views); } document.removeEventListener('keydown', onKey, true); s.bg.remove(); SH = null; }
+  function closeSheet(keep) { if (!SH) return; var s = SH; meterOff(); pvOff(); if (!keep) { if (s.fx) s.fx.stop(); stopS(s.cam); stopS(s.mic); sm(false); putViews(s.views); } document.removeEventListener('keydown', onKey, true); s.bg.remove(); SH = null; }
   function onKey(e) { if (e.key === 'Escape' && SH) { e.preventDefault(); e.stopPropagation(); closeSheet(false); } }
   function onClick(e) { var t = e.target, b = t && t.closest && t.closest('button'); if (t === SH.bg) { closeSheet(false); return; } if (!b) return;
     var a = b.getAttribute('data-r');
@@ -100031,14 +100065,86 @@ window.__stAZ = (function () {
     if (b.hasAttribute('data-rhi')) { CFG.hi = b.getAttribute('data-rhi') === '1'; save(); paint(); return; }
     if (b.hasAttribute('data-rfit')) { CFG.fit = b.getAttribute('data-rfit'); save(); paint(); return; }
     if (b.hasAttribute('data-rfps')) { CFG.fps = +b.getAttribute('data-rfps') === 60 ? 60 : 30; save(); paint(); return; }
-    if (b.hasAttribute('data-rcn')) { CFG.corner = b.getAttribute('data-rcn'); save(); paint(); return; } }
+    if (b.hasAttribute('data-rcn')) { CFG.corner = b.getAttribute('data-rcn'); save(); paint(); return; }
+    if (b.hasAttribute('data-rbg')) { CFG.bg = b.getAttribute('data-rbg'); save(); paint(); if (CFG.bg === 'image' && !bgImgUrl()) q('[data-rbgfile]').click(); if (CFG.bg !== 'none') fxLoad(); else fxNote(''); return; }
+    if (b.hasAttribute('data-rbgpick')) { q('[data-rbgfile]').click(); return; } }
+  function onInput(e) { var t = e.target; if (t && t.hasAttribute('data-rz')) { setFrame({ z: +t.value }); paint(); } }
+  function pvDrag(el) { if (!el) return;
+    el.addEventListener('pointerdown', function (e) { if (!SH || !SH.fx) return; e.preventDefault(); try { el.setPointerCapture(e.pointerId); } catch (x) {} var x0 = e.clientX, y0 = e.clientY, f0 = frameOf(camKey()), sz = el.clientWidth || 156;
+      var mv = function (ev) { var v = SH && SH.fx && SH.fx.v, vw = v ? v.videoWidth : 0, vh = v ? v.videoHeight : 0; if (!vw || !vh) return; var cs = Math.min(vw, vh) / f0.z, k = sz / cs;   // the preview is mirrored: a drag to the right moves the picture right
+        setFrame({ x: f0.x + (ev.clientX - x0) / k / vw, y: f0.y - (ev.clientY - y0) / k / vh }); };
+      var up = function () { el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up); save(); };
+      el.addEventListener('pointermove', mv); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up); });
+    el.addEventListener('wheel', function (e) { if (!SH || !SH.fx) return; e.preventDefault(); setFrame({ z: frameOf(camKey()).z - Math.sign(e.deltaY) * 0.1 }); paint(); }, { passive: false }); }
   function onChange(e) { var t = e.target; if (!t) return; var k = t.getAttribute('data-rsw'), d = t.getAttribute('data-rdev');
+    if (t.hasAttribute('data-rbgfile')) { var fl = t.files && t.files[0]; t.value = ''; if (fl) bgImgSet(fl); return; }
     if (k) { CFG[k] = !!t.checked; if (k !== 'sm') save(); err('', k);
       if (k === 'cam') { if (CFG.cam) camOn(); else { TOK.cam++; camOff(); } }
       else if (k === 'mic') { if (CFG.mic) micOn(); else { TOK.mic++; micOff(); } }
       else if (k === 'sm') sm(CFG.sm);
       paint(); return; }
     if (d) { CFG[d + 'Id'] = t.value || ''; save(); if (d === 'cam' && CFG.cam) camOn(); if (d === 'mic' && CFG.mic) micOn(); } }
+
+  // ---- the camera's picture (27 Oct 2026, Nestor: "zoom in or out with the webcam ... crop my body so its just my face", backgrounds, blur) ----
+  // camFx: its own loop, at the camera's frame rate: the framed square (zoom 1-3x, panned; kept per camera on this computer), then, for
+  // Blur or Image, the person cut out with MediaPipe's selfie segmenter (the model is this site's own file; the library from jsDelivr;
+  // nothing leaves the computer) over a blurred copy or the chosen picture, the mask's edge softened. When the segmenter is slow it
+  // runs on every 2nd or 3rd camera frame and the mask is reused: the camera's processing slows, never the recording's.
+  var MP = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14', SEG = { p: null, seg: null, dg: '', err: '' };
+  function segLoad() { if (SEG.p) return SEG.p;
+    SEG.p = (async function () { var v = await import(MP + '/vision_bundle.mjs'), fs = await v.FilesetResolver.forVisionTasks(MP + '/wasm'), mdl = new URL('models/selfie_segmenter.tflite', location.href).href;
+      var opt = function (d) { return { baseOptions: { modelAssetPath: mdl, delegate: d }, runningMode: 'VIDEO', outputCategoryMask: false, outputConfidenceMasks: true }; };
+      try { SEG.seg = await v.ImageSegmenter.createFromOptions(fs, opt('GPU')); SEG.dg = 'GPU'; } catch (e) { SEG.seg = await v.ImageSegmenter.createFromOptions(fs, opt('CPU')); SEG.dg = 'CPU'; }
+      return SEG.seg; })();
+    SEG.p.catch(function (e) { SEG.err = String((e && e.message) || e); SEG.p = null; });
+    return SEG.p; }
+  function fxNote(m) { var n = q('.rs-fxn'); if (n) n.textContent = m || ''; }
+  function fxLoad() { if (SEG.seg) { fxNote(''); return; } fxNote(T('Getting the background effect ready…', 'Preparando el efecto de fondo…'));
+    segLoad().then(function () { fxNote(''); }, function () { if (CFG.bg !== 'none') { CFG.bg = 'none'; save(); paint(); } fxNote(T('The background effect could not load (is the internet on?). The camera works without it.', 'El efecto de fondo no pudo cargar (¿hay internet?). La cámara funciona sin él.')); }); }
+  function camKey() { try { var t = SH && SH.cam && SH.cam.getVideoTracks()[0], d = t && t.getSettings ? t.getSettings().deviceId : ''; return String(d || CFG.camId || 'default').slice(0, 80); } catch (e) { return 'default'; } }
+  function frameOf(k) { var f = CFG.frames[k] || {}; return { z: Math.max(1, Math.min(3, +f.z || 1)), x: isFinite(+f.x) ? Math.max(0, Math.min(1, +f.x)) : 0.5, y: isFinite(+f.y) ? Math.max(0, Math.min(1, +f.y)) : 0.5 }; }
+  function setFrame(o) { var k = camKey(), f = frameOf(k); if (o.z != null) f.z = Math.max(1, Math.min(3, +o.z || 1)); if (o.x != null) f.x = Math.max(0, Math.min(1, o.x)); if (o.y != null) f.y = Math.max(0, Math.min(1, o.y));
+    CFG.frames[k] = { z: Math.round(f.z * 100) / 100, x: Math.round(f.x * 1000) / 1000, y: Math.round(f.y * 1000) / 1000 }; if (SH && SH.fx) SH.fx.key = k;
+    clearTimeout(setFrame.t); setFrame.t = setTimeout(save, 300); }
+  var BGI = { url: null, img: null };
+  function bgImgUrl() { if (BGI.url == null) { try { BGI.url = localStorage.getItem('st_rec_bgimg') || ''; } catch (e) { BGI.url = ''; } } return BGI.url; }
+  function bgImg() { var u = bgImgUrl(); if (!u) return null; if (!BGI.img || BGI.img._u !== u) { BGI.img = new Image(); BGI.img._u = u; BGI.img.src = u; } return BGI.img.complete && BGI.img.naturalWidth ? BGI.img : null; }
+  function bgImgSet(file) { var rd = new FileReader(); rd.onload = function () { var im = new Image(); im.onload = function () {
+      var k = Math.min(1, 1280 / Math.max(im.naturalWidth, im.naturalHeight)), c = document.createElement('canvas'); c.width = Math.max(1, Math.round(im.naturalWidth * k)); c.height = Math.max(1, Math.round(im.naturalHeight * k));
+      c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); var u = c.toDataURL('image/jpeg', 0.86); BGI.url = u; BGI.img = null;
+      try { localStorage.setItem('st_rec_bgimg', u); } catch (e) { fxNote(T('Kept until you reload: this browser had no room to remember it.', 'Se guarda hasta que recargues: este navegador no tenía espacio para recordarla.')); }
+      CFG.bg = 'image'; save(); paint(); fxLoad(); }; im.onerror = function () { fxNote(T('That file is not a picture this browser can open.', 'Ese archivo no es una imagen que este navegador pueda abrir.')); }; im.src = rd.result; }; rd.readAsDataURL(file); }
+  function camFx(stream) { var S = 512, mk = function (n) { var c = document.createElement('canvas'); c.width = c.height = n; return c; };
+    var fx = { v: vid(stream), out: mk(S), per: mk(S), sin: mk(256), msk: mk(256), n: 0, k: 0, every: 1, segN: 0, segMs: 0, key: camKey(), t0: performance.now(), stopped: false, has: false };
+    var mg = fx.msk.getContext('2d'), mi = mg.createImageData(256, 256), og = fx.out.getContext('2d'), pg = fx.per.getContext('2d'), sg = fx.sin.getContext('2d', { willReadFrequently: false });
+    for (var i = 0; i < mi.data.length; i += 4) { mi.data[i] = mi.data[i + 1] = mi.data[i + 2] = 255; }
+    var crop = function () { var v = fx.v, vw = v.videoWidth, vh = v.videoHeight, f = frameOf(fx.key), cs = Math.min(vw, vh) / f.z;
+      return { x: Math.max(0, Math.min(vw - cs, f.x * vw - cs / 2)), y: Math.max(0, Math.min(vh - cs, f.y * vh - cs / 2)), s: cs }; };
+    var step = function () { if (fx.stopped) return; sched(); var v = fx.v; if (!(v.videoWidth > 16)) return; var c = crop(), mode = CFG.bg, im = mode === 'image' ? bgImg() : null;
+      if (mode === 'none' || !SEG.seg || (mode === 'image' && !im)) { og.drawImage(v, c.x, c.y, c.s, c.s, 0, 0, S, S); fx.n++; return; }
+      if (fx.k++ % fx.every === 0 || !fx.has) { var t = performance.now(); try { sg.drawImage(v, c.x, c.y, c.s, c.s, 0, 0, 256, 256);
+          var res = SEG.seg.segmentForVideo(fx.sin, t), ms = res && res.confidenceMasks, mm = ms && ms[ms.length > 1 ? 1 : 0], a = mm && mm.getAsFloat32Array();
+          if (a && a.length === 65536) { for (var j = 0; j < 65536; j++) mi.data[j * 4 + 3] = Math.round(a[j] * 255); mg.putImageData(mi, 0, 0); fx.has = true; }
+          try { if (res && res.close) res.close(); else if (ms) ms.forEach(function (x) { x.close(); }); } catch (e) {} } catch (e) { fx.err = String((e && e.message) || e); }
+        var dt = performance.now() - t; fx.segMs = fx.segMs ? fx.segMs * 0.85 + dt * 0.15 : dt; fx.every = fx.segMs > 40 ? 3 : (fx.segMs > 22 ? 2 : 1); fx.segN++; }
+      pg.globalCompositeOperation = 'source-over'; pg.clearRect(0, 0, S, S); pg.drawImage(v, c.x, c.y, c.s, c.s, 0, 0, S, S);   // the person: the picture, kept where the mask says person, its edge softened
+      pg.globalCompositeOperation = 'destination-in'; pg.filter = 'blur(3px)'; pg.drawImage(fx.msk, 0, 0, S, S); pg.filter = 'none'; pg.globalCompositeOperation = 'source-over';
+      if (mode === 'blur') { og.filter = 'blur(' + Math.round(S / 34) + 'px)'; og.drawImage(v, c.x, c.y, c.s, c.s, -S * 0.06, -S * 0.06, S * 1.12, S * 1.12); og.filter = 'none'; }
+      else { var iw = im.naturalWidth, ih = im.naturalHeight, kk = Math.max(S / iw, S / ih); og.drawImage(im, (S - iw * kk) / 2, (S - ih * kk) / 2, iw * kk, ih * kk); }
+      og.drawImage(fx.per, 0, 0); fx.n++; };
+    var sched = function () { if (fx.stopped) return; if (fx.v.requestVideoFrameCallback) fx.cb = fx.v.requestVideoFrameCallback(step); else fx.tm = setTimeout(step, 33); };
+    fx.v.addEventListener('loadeddata', function () { fx.key = fx.key || camKey(); }, { once: true }); sched();
+    fx.stats = function () { var s2 = (performance.now() - fx.t0) / 1000; return { fps: Math.round(fx.n / s2 * 10) / 10, segFps: Math.round(fx.segN / s2 * 10) / 10, segMs: Math.round(fx.segMs * 10) / 10, every: fx.every, dg: SEG.dg, err: fx.err || SEG.err || '' }; };
+    fx.reset = function () { fx.t0 = performance.now(); fx.n = 0; fx.segN = 0; };
+    fx.stop = function () { fx.stopped = true; clearTimeout(fx.tm); try { if (fx.cb != null && fx.v.cancelVideoFrameCallback) fx.v.cancelVideoFrameCallback(fx.cb); } catch (e) {} try { fx.v.srcObject = null; fx.v.remove(); } catch (e) {} };
+    return fx; }
+
+  // ---- while it records, the price scale holds the open trade's entry, stop and target, with room for their tags (27 Oct 2026: a
+  //      Reel's TP ran off the top). Only while the scale fits itself: one the member has dragged stays as it is ----
+  window.__stRecAZ = function (src) { if (!R || !R.rec) return null; var out = [];
+    try { (window.__stPractice._panes() || []).forEach(function (p) { if (p.src !== src) return; (p._plLv || []).forEach(function (l) { var t = String((l.o && l.o.title) || ''); if ((t === 'Entry' || t === 'Entrada' || /^SL/.test(t) || t === 'TP') && +l.price > 0) out.push(+l.price); }); }); } catch (e) {}
+    if (out.length > 1) { var lo = Math.min.apply(null, out), hi = Math.max.apply(null, out), pad = (hi - lo) * 0.06; out.push(lo - pad, hi + pad); } return out; };
+  function azRefresh() { try { (window.__stPractice._panes() || []).forEach(function (p) { try { p.series.applyOptions({ autoscaleInfoProvider: p.series.options().autoscaleInfoProvider }); } catch (e) {} }); } catch (e) {} }   // the series asks its provider again
 
   // ---- recording ----
   function pickMime(au, W, H) { var lvl = W * H > 2228224 ? '640033' : (CFG.fps > 30 ? '64002a' : '640028'), a = au ? ',mp4a.40.2' : '', o = au ? ',opus' : '';
@@ -100052,6 +100158,7 @@ window.__stAZ = (function () {
       preferCurrentTab: true, selfBrowserSurface: 'include', surfaceSwitching: 'exclude', monitorTypeSurfaces: 'exclude' }); } catch (e) { gp = Promise.reject(e); }
     fsP = (CFG.fs && !document.fullscreenElement && document.documentElement.requestFullscreen) ? document.documentElement.requestFullscreen({ navigationUI: 'hide' }).then(function () { return true; }, function () { return false; }) : Promise.resolve(false);
     var r = R = { st: 'starting', cam: CFG.cam ? SH.cam : null, mic: CFG.mic ? SH.mic : null, sm: !!CFG.sm, fmt: CFG.fmt, fps: CFG.fps, at: new Date(), paused: 0, muted: false, views: SH.views };
+    r.fx = CFG.cam && SH.cam ? SH.fx : null; if (!r.fx && SH.fx) SH.fx.stop(); SH.fx = null;
     if (!CFG.cam) stopS(SH.cam); if (!CFG.mic) stopS(SH.mic); SH.cam = SH.mic = null; closeSheet(true);
     go(r, gp, fsP); }
   async function go(r, gp, fsP) { var vs;
@@ -100074,7 +100181,7 @@ window.__stAZ = (function () {
     var cv = document.createElement('canvas'); cv.width = sz.w; cv.height = sz.h;
     r.W = sz.w; r.H = sz.h; r.cv = cv; r.g = cv.getContext('2d', { alpha: false }); r.fit = r.fmt === 'yt' ? 'auto' : CFG.fit; r.lt = light(); r.sym = symKey();
     try { r.bg = getComputedStyle(w).backgroundColor || '#0b0d12'; if (/rgba\(0, 0, 0, 0\)|transparent/.test(r.bg)) r.bg = r.lt ? '#e0e3eb' : '#0b0d12'; } catch (e) { r.bg = '#0b0d12'; }
-    r.sv = vid(vs); r.cvid = r.cam ? vid(r.cam) : null;
+    r.sv = vid(vs); r.cvid = r.fx ? r.fx.v : null;
     if (r.cvid) { r.cb = camBox(r); r.cbT = setInterval(function () { if (R === r) r.cb = camBox(r); }, 700); }   // where the camera goes, looked at again as the chart moves
     var tracks = cv.captureStream(r.fps).getVideoTracks();
     if (r.mic) { try { var ac = new (window.AudioContext || window.webkitAudioContext)(), gn = ac.createGain(), dst = ac.createMediaStreamDestination(); ac.createMediaStreamSource(r.mic).connect(gn); gn.connect(dst); r.ac = ac; r.gn = gn; tracks = tracks.concat(dst.stream.getAudioTracks()); } catch (e) {} }
@@ -100084,7 +100191,7 @@ window.__stAZ = (function () {
     r.rec.ondataavailable = function (e) { if (e.data && e.data.size) r.chunks.push(e.data); };
     r.rec.onstop = function () { done(r); };
     loop(r);
-    countdown(r, function () { if (R !== r) return; try { r.rec.start(1000); } catch (e) { fail(r, T('The recording did not start.', 'La grabación no arrancó.')); return; } r.t0 = performance.now(); r.st = 'rec'; ctl(r); tallView(r); }); }
+    countdown(r, function () { if (R !== r) return; try { r.rec.start(1000); } catch (e) { fail(r, T('The recording did not start.', 'La grabación no arrancó.')); return; } r.t0 = performance.now(); r.n0 = r.n || 0; r.st = 'rec'; ctl(r); tallView(r); azRefresh(); if (r.fx) r.fx.reset(); }); }
   function loop(r) { var gap = 1000 / r.fps - 4, last = 0;
     var tick = function (ts) { if (R !== r) return; r.raf = requestAnimationFrame(tick); if (ts - last < gap) return; last = ts; draw(r); };
     r.raf = requestAnimationFrame(tick);
@@ -100102,7 +100209,7 @@ window.__stAZ = (function () {
       g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high'; g.drawImage(v, c.x, c.y, c.w, c.h, dx, dy, dw, dh);
       r.mp = { dx: dx, dy: dy, k: r.cb && r.cb.ww ? dw / r.cb.ww : 0 };   // the platform's pixels onto the video's
       if (f === 'fit' && dy >= H * 0.08) band(r, dy); }
-    if (r.cvid && r.cvid.videoWidth > 16 && r.cam.getVideoTracks().some(function (t) { return t.readyState === 'live'; })) cam(r);   // a camera unplugged mid-way leaves the corner clear
+    if (r.fx && r.fx.n > 0 && r.cam.getVideoTracks().some(function (t) { return t.readyState === 'live'; })) cam(r);   // a camera unplugged mid-way leaves the corner clear
     r.n = (r.n || 0) + 1; }
   // Fit leaves a band above the platform: the symbol and the app's name in it
   function band(r, bh) { var g = r.g, W = r.W, m = Math.round(Math.min(W, r.H) * 0.045), s1 = Math.round(W * 0.06), s2 = Math.round(W * 0.03), y = bh / 2;
@@ -100139,11 +100246,11 @@ window.__stAZ = (function () {
     var s = Math.max(40, Math.min(camW(r) / k, 0.35 * Math.min(pr - pl, pb - pt), (left ? pr : rx) - pl - 2 * m));
     var x = left ? pl + m : Math.max(pl + m, rx - m - s), y = top ? pt + m : Math.max(pt + m, pb - m - s);
     return { x: x - wb.left, y: y - wb.top, s: s, ww: wb.width, plot: { l: pl - wb.left, t: pt - wb.top, r: pr - wb.left, b: pb - wb.top, rx: rx - wb.left }, nx: nx == null ? null : nx - wb.left }; }
-  function cam(r) { var g = r.g, W = r.W, H = r.H, v = r.cvid, vw = v.videoWidth, vh = v.videoHeight, s = Math.min(vw, vh), sx = (vw - s) / 2, sy = (vh - s) / 2, m = Math.round(Math.min(W, H) * 0.025), cw, x, y;
+  function cam(r) { var g = r.g, W = r.W, H = r.H, src = r.fx.out, s = src.width, sx = 0, sy = 0, m = Math.round(Math.min(W, H) * 0.025), cw, x, y;   // the framed picture, its background done (camFx)
     if (r.cb && r.mp && r.mp.k > 0) { var a = r.mp; cw = Math.round(r.cb.s * a.k); x = Math.round(Math.max(8, Math.min(W - 8 - cw, a.dx + r.cb.x * a.k))); y = Math.round(Math.max(8, Math.min(H - 8 - cw, a.dy + r.cb.y * a.k))); }
     else { cw = camW(r); x = CFG.corner.charAt(1) === 'l' ? m : W - m - cw; y = CFG.corner.charAt(0) === 't' ? m : H - m - cw; }   // another window shared: the video's own corner
     r.camC = { x: x, y: y, s: cw }; var rad = Math.round(cw * 0.1), lw = Math.max(2, Math.round(W / 720));
-    g.save(); rr(g, x, y, cw, cw, rad); g.clip(); g.translate(x + cw, y); g.scale(-1, 1); g.drawImage(v, sx, sy, s, s, 0, 0, cw, cw); g.restore();
+    g.save(); rr(g, x, y, cw, cw, rad); g.clip(); g.translate(x + cw, y); g.scale(-1, 1); g.drawImage(src, sx, sy, s, s, 0, 0, cw, cw); g.restore();
     g.save(); rr(g, x + lw / 2, y + lw / 2, cw - lw, cw - lw, Math.max(0, rad - lw / 2)); g.lineWidth = lw; g.strokeStyle = r.lt ? 'rgba(19,23,34,.7)' : 'rgba(255,255,255,.88)'; g.stroke(); g.restore(); }
   function countdown(r, cb) { var w = win(), b = w ? w.getBoundingClientRect() : { left: 0, top: 0, width: innerWidth, height: innerHeight }, el = document.createElement('div'), n = 3;
     el.id = 'st-rec-cd'; el.style.left = b.left + 'px'; el.style.top = b.top + 'px'; el.style.width = b.width + 'px'; el.style.height = b.height + 'px'; document.body.appendChild(el); r.cd = el;
@@ -100175,7 +100282,8 @@ window.__stAZ = (function () {
     if (r.st !== 'end') cleanup(r); }   // before the countdown ends: nothing was recorded
   function cleanup(r) { if (R === r) R = null; try { cancelAnimationFrame(r.raf); } catch (e) {} clearInterval(r.iv); clearInterval(r.tk); clearInterval(r.cdT);
     stopS(r.vs); stopS(r.cam); stopS(r.mic); try { if (r.ac) r.ac.close(); } catch (e) {}
-    [r.sv, r.cvid, r.ctl, r.cd].forEach(function (el) { try { if (el) { if (el.srcObject) el.srcObject = null; el.remove(); } } catch (e) {} });
+    if (r.fx) r.fx.stop(); setTimeout(azRefresh, 60);
+    [r.sv, r.ctl, r.cd].forEach(function (el) { try { if (el) { if (el.srcObject) el.srcObject = null; el.remove(); } } catch (e) {} });
     if (r.onRs) window.removeEventListener('resize', r.onRs); clearInterval(r.cbT);
     if (document.body.classList.contains('st-rec-tall')) { document.body.classList.remove('st-rec-tall'); document.body.style.removeProperty('--st-rec-w'); refit(); clearTimeout(r.vwT); clearTimeout(r.vwT2); }
     document.body.classList.remove('st-rec-on'); sm(false);
@@ -100186,7 +100294,7 @@ window.__stAZ = (function () {
   function done(r) { var mp4 = /mp4/i.test(r.mime), blob = new Blob(r.chunks, { type: mp4 ? 'video/mp4' : 'video/webm' }), name = 'Session Terminal – ' + r.sym + ' – ' + stamp(r.at) + (mp4 ? '.mp4' : '.webm');
     cleanup(r); if (!blob.size) return;
     var u = URL.createObjectURL(blob); download(u, name);
-    LAST = { name: name, size: blob.size, type: blob.type, w: r.W, h: r.H, dur: r.dur || 0, mode: r.mode, mime: r.mime, frames: r.n || 0, cam: r.camC || null, tall: !!r.tall, url: u };
+    LAST = { name: name, size: blob.size, type: blob.type, w: r.W, h: r.H, dur: r.dur || 0, mode: r.mode, mime: r.mime, frames: (r.n || 0) - (r.n0 || 0), cam: r.camC || null, tall: !!r.tall, url: u };
     preview(LAST); }
   function download(u, name) { var a = document.createElement('a'); a.href = u; a.download = name; a.style.display = 'none'; document.body.appendChild(a); a.click(); setTimeout(function () { try { a.remove(); } catch (e) {} }, 1000); }
   function mb(n) { return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
@@ -100202,7 +100310,7 @@ window.__stAZ = (function () {
     setTimeout(function () { try { URL.revokeObjectURL(p.x.url); } catch (e) {} }, 60000); }
   function onVid(r) { var b = r.cb, a = r.mp; if (!b || !a || !(a.k > 0)) return null; var X = function (v) { return Math.round(a.dx + v * a.k); }, Y = function (v) { return Math.round(a.dy + v * a.k); };
     return { plot: { l: X(b.plot.l), t: Y(b.plot.t), r: X(b.plot.r), b: Y(b.plot.b), rx: X(b.plot.rx) }, nx: b.nx == null ? null : X(b.nx), right: X(b.ww) }; }   // the plotting area, the newest candle and the platform's right edge, on the video
-  function state() { return R ? { st: R.st, mode: R.mode || null, fmt: R.fmt, w: R.W || 0, h: R.H || 0, mime: R.mime || '', t: elapsed(R), frames: R.n || 0, fs: !!R.fs, maxed: !!R.maxed, tall: !!R.tall, shapeW: R.shapeW || 0, corner: CFG.corner, cam: R.camC || null, on: onVid(R) } : { st: SH ? 'setup' : (PV ? 'preview' : 'idle'), last: LAST }; }
+  function state() { return R ? { st: R.st, mode: R.mode || null, fmt: R.fmt, w: R.W || 0, h: R.H || 0, mime: R.mime || '', t: elapsed(R), frames: (R.n || 0) - (R.n0 || 0), fs: !!R.fs, maxed: !!R.maxed, tall: !!R.tall, shapeW: R.shapeW || 0, corner: CFG.corner, cam: R.camC || null, on: onVid(R), fx: R.fx ? R.fx.stats() : null } : { st: SH ? 'setup' : (PV ? 'preview' : 'idle'), last: LAST, fx: SH && SH.fx ? SH.fx.stats() : null }; }
   window.__stRec = { open: open, start: start, stop: stop, pause: pause, mute: mute, state: state, can: can, _cfg: function () { return CFG; }, _r: function () { return R; }, _last: function () { return LAST; } };
 })();
 </script>

@@ -60,7 +60,7 @@
       return JSON.stringify(C.res); },
     // the set-up: this format, this framing, the camera and the microphone on
     // the set-up: this format, this framing, this camera corner, the camera and the microphone on
-    sheet: async function (fmt, fit, first, corner) { var C = mk(), check = C.check; window.__recW0 = $('#stpr-win').getBoundingClientRect().width; window.__recV0 = view0();
+    sheet: async function (fmt, fit, first, corner, camo) { var C = mk(), check = C.check; camo = camo || { z: 1, bg: 'none' }; window.__recW0 = $('#stpr-win').getBoundingClientRect().width; window.__recV0 = view0();
       try {
         $('.plat-top .pl-rec').click(); for (var k = 0; k < 20 && !$('#st-rec-bg'); k++) await W(100);
         var bg = $('#st-rec-bg'); check(fmt + ': the set-up opens', !!bg && vis(bg));
@@ -77,11 +77,31 @@
         check(fmt + ': chosen', bg.querySelector('[data-rf="' + fmt + '"]').classList.contains('on') && (fmt === 'yt' ? bg.querySelector('[data-row="fit"]').hidden && !bg.querySelector('[data-row="hi"]').hidden : !bg.querySelector('[data-row="fit"]').hidden && bg.querySelector('[data-rfit="' + fit + '"]').classList.contains('on')));
         if (first) check('the camera\'s corner: four to pick from, bottom left at first', bg.querySelectorAll('.rs-cn [data-rcn]').length === 4 && bg.querySelector('[data-rcn="bl"]').classList.contains('on'));
         ['cam', 'mic'].forEach(function (k2) { var i = bg.querySelector('[data-rsw="' + k2 + '"]'); if (!i.checked) { i.checked = true; i.dispatchEvent(new Event('change', { bubbles: true })); } });
-        var v = bg.querySelector('.rs-cam video'); for (k = 0; k < 60 && !(v.videoWidth > 0 && window.__stRec._cfg().cam); k++) await W(100);
+        var pv = bg.querySelector('.rs-pv canvas'), fx0 = function () { return window.__stRec.state().fx; };
+        for (k = 0; k < 60 && !(fx0() && fx0().fps > 0 && window.__stRec._cfg().cam); k++) await W(100);
         await W(700);
         var lvl = bg.querySelector('.rs-mt i');
         for (k = 0; k < 30 && !(parseFloat(lvl.style.width) > 0); k++) await W(100);   // the stand-in microphone beeps now and then
-        check(fmt + ': the camera\'s live preview plays, mirrored', v.videoWidth > 0 && !bg.querySelector('.rs-cam').classList.contains('off') && /matrix\(-1/.test(getComputedStyle(v).transform), [v.videoWidth, getComputedStyle(v).transform]);
+        var lit = function (c) { var d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data, n = 0; for (var i = 0; i < d.length; i += 64) if (d[i] + d[i + 1] + d[i + 2] > 150) n++; return n; };
+        check(fmt + ': the camera\'s live preview plays, mirrored, in its own block', !bg.querySelector('.rs-camx').hidden && lit(pv) > 100 && /matrix\(-1/.test(getComputedStyle(pv).transform) && bg.querySelector('.rs-pv').getBoundingClientRect().width >= 150, [fx0(), lit(pv), getComputedStyle(pv).transform]);
+        // the framing: zoom on the slider, then a drag in the preview (a drag right moves the mirrored picture right: the crop moves right on the camera)
+        var rz = bg.querySelector('[data-rz]'); rz.value = String(camo.z); rz.dispatchEvent(new Event('input', { bubbles: true })); await W(80);
+        var pr0 = bg.querySelector('.rs-pv').getBoundingClientRect(), key = Object.keys(window.__stRec._cfg().frames)[0], f1 = key && window.__stRec._cfg().frames[key];
+        check(fmt + ': zoom ' + camo.z + '× on the slider, kept for this camera', !!f1 && Math.abs(f1.z - camo.z) < 0.01 && bg.querySelector('[data-rzv]').textContent === camo.z.toFixed(1) + '×', [key, f1]);
+        if (camo.drag) { var pe = function (t, x, y) { bg.querySelector('.rs-pv').dispatchEvent(new PointerEvent(t, { bubbles: true, clientX: x, clientY: y, pointerId: 1, isPrimary: true, button: 0, buttons: t === 'pointerup' ? 0 : 1 })); };
+          var fxa = window.__stRec._cfg().frames[key].x; pe('pointerdown', pr0.left + 70, pr0.top + 70); pe('pointermove', pr0.left + 70 + camo.drag, pr0.top + 70); pe('pointerup', pr0.left + 70 + camo.drag, pr0.top + 70); await W(400);
+          var fxb = window.__stRec._cfg().frames[key].x; check(fmt + ': a drag in the preview moves the framing (and it is kept)', (fxb - fxa) * camo.drag > 0, [fxa, fxb]);
+          window.__stRec._cfg().frames[key].x = 0.5; }   // back to the middle for the picture checks
+        // the background: None, Blur, or a picture from this computer
+        if (camo.bg === 'image') { var gc = document.createElement('canvas'); gc.width = 400; gc.height = 300; var gg = gc.getContext('2d'), gr = gg.createLinearGradient(0, 0, 400, 0); gr.addColorStop(0, '#00c040'); gr.addColorStop(1, '#00e060'); gg.fillStyle = gr; gg.fillRect(0, 0, 400, 300);
+          var blob = await new Promise(function (res) { gc.toBlob(res, 'image/png'); }), dtf = new DataTransfer(); dtf.items.add(new File([blob], 'my-background.png', { type: 'image/png' }));
+          var fi = bg.querySelector('[data-rbgfile]'); fi.files = dtf.files; fi.dispatchEvent(new Event('change', { bubbles: true }));
+          for (k = 0; k < 40 && window.__stRec._cfg().bg !== 'image'; k++) await W(100);
+          check(fmt + ': Image: the picture chosen, shown beside the button, kept on this computer only', window.__stRec._cfg().bg === 'image' && !bg.querySelector('.rs-bgi').hidden && !bg.querySelector('.rs-bgi img').hidden && /^data:image\/jpeg/.test(localStorage.getItem('st_rec_bgimg') || ''));
+        } else bg.querySelector('[data-rbg="' + camo.bg + '"]').click();
+        if (camo.bg !== 'none') { for (k = 0; k < 300 && !(fx0() && fx0().segFps > 0); k++) await W(100); await W(1200); var st0 = fx0();
+          check(fmt + ': ' + camo.bg + ': the person cut out on this computer (the selfie segmenter, ' + (st0 && st0.dg) + '), live in the preview', !!st0 && st0.segFps > 0 && !st0.err && !bg.querySelector('.rs-bgi').querySelector('[data-rbgpick]').disabled && lit(pv) > 100, [st0, bg.querySelector('.rs-fxn').textContent]); }
+        else check(fmt + ': no background effect', window.__stRec._cfg().bg === 'none' && bg.querySelector('[data-rbg="none"]').classList.contains('on'));
         check(fmt + ': the microphone\'s meter moves', parseFloat(lvl.style.width) > 0, lvl.style.width);
         check(fmt + ': both devices listed by name', bg.querySelector('[data-rdev="cam"]').options.length > 0 && bg.querySelector('[data-rdev="mic"]').options.length > 0 && !bg.querySelector('[data-rdev="cam"]').disabled,
           [bg.querySelector('[data-rdev="cam"]').textContent, bg.querySelector('[data-rdev="mic"]').textContent]);
@@ -91,7 +111,7 @@
       } catch (e) { check(fmt + ': set-up ran', false, String(e && e.stack || e)); }
       return JSON.stringify(C.res); },
     // while it records: Streamer mode on the platform, the control on screen and outside the platform
-    during: async function (fmt, fit, corner) { var C = mk(), check = C.check;
+    during: async function (fmt, fit, corner, camo) { var C = mk(), check = C.check; camo = camo || { z: 1, bg: 'none' };
       try {
         var st = window.__stRec.state(), win = $('#stpr-win');
         check(fmt + ': recording, the platform alone captured (Element Capture)', st.st === 'rec' && st.mode === 'el', st);
@@ -105,6 +125,10 @@
         if (corner.charAt(1) === 'r') check(fmt + ': ...left of the trade\'s tags and the newest candle', !!cm && !!on && cm.x + cm.s <= on.plot.rx + 2 && (on.nx == null || cm.x + cm.s < on.nx), [cm, on]);
         if (tall) { var v1 = view0(), top = $('.plat-top'); check(fmt + ': the candles keep their width (fewer of them, as on a phone)', Math.abs(v1.sp / window.__recV0.sp - 1) < 0.12, [v1, window.__recV0]);
           check(fmt + ': no scrollbar, and a top bar that fits the tall shape', win.scrollWidth <= win.clientWidth + 1 && top.scrollWidth <= top.clientWidth + 1 && vis($('.plat-top #stpr-sym')) && vis($('.plat-top .pl-tfs')), [win.scrollWidth, win.clientWidth, top.scrollWidth, top.clientWidth]); }
+        // the open trade's lines inside the price scale while it records (the scale fits itself to them), tags not cut
+        var p0 = window.__stPractice._panes()[0], pb = p0.el.getBoundingClientRect(), tsh = p0.chart.timeScale().height(), tg = {};
+        Array.prototype.forEach.call(document.querySelectorAll('.pl-tag:not([hidden])'), function (t) { var m = /^(TP|SL)/.exec(t.textContent); if (m) tg[m[1]] = t.getBoundingClientRect(); });
+        check(fmt + ': the TP and SL tags whole inside the chart', !!tg.TP && !!tg.SL && [tg.TP, tg.SL].every(function (b) { return b.height > 0 && b.top >= pb.top && b.bottom <= pb.bottom - tsh && b.right <= pb.right + 1; }), [tg.TP && [tg.TP.top, tg.TP.bottom], tg.SL && [tg.SL.top, tg.SL.bottom], pb.top, pb.bottom - tsh]);
         if (tall) check(fmt + ': the whole platform on the video, the price scale entire, the newest candle in the right half', !!on && Math.abs(on.right - EW) <= 3 && on.plot.r < EW - 20 && on.nx != null && on.nx > EW * 0.5 && on.nx < on.plot.r, on);
         check(fmt + ': the canvas is the format\'s size', st.w === { yt: 1920, reel: 1080, ig: 1080, sq: 1080 }[fmt] && st.h === { yt: 1080, reel: 1920, ig: 1350, sq: 1080 }[fmt], [st.w, st.h]);
         check(fmt + ': MP4 (H.264 + AAC)', /^video\/mp4/.test(st.mime) && /avc1/.test(st.mime) && /mp4a/.test(st.mime), st.mime);
@@ -124,6 +148,9 @@
         ctl.querySelector('[data-rc="pause"]').click(); await W(50);
         check(fmt + ': Pause holds the clock, Resume goes on', ps === 'pause' && t2 - t1 < 120 && window.__stRec.state().st === 'rec', [ps, t1, t2]);
         ctl.querySelector('[data-rc="mute"]').click(); await W(50); var mm = ctl.querySelector('[data-rc="mute"]').getAttribute('aria-pressed'); ctl.querySelector('[data-rc="mute"]').click();
+        await W(1200); var fs2 = window.__stRec.state();
+        check(fmt + ': rates: the video drawn at ' + Math.round((fs2.frames || 0) / Math.max(0.5, fs2.t / 1000)) + ' fps, the camera at ' + (fs2.fx && fs2.fx.fps) + ' fps' + (camo.bg !== 'none' ? ', its background at ' + (fs2.fx && fs2.fx.segFps) + ' a second (' + (fs2.fx && fs2.fx.segMs) + ' ms each)' : ''),
+          !!fs2.fx && fs2.fx.fps >= 10 && (camo.bg === 'none' || fs2.fx.segFps >= 3) && (fs2.frames || 0) / Math.max(0.5, fs2.t / 1000) >= 24, [fs2.frames, fs2.t, fs2.fx]);
         check(fmt + ': the microphone mutes and comes back', mm === 'true' && ctl.querySelector('[data-rc="mute"]').getAttribute('aria-pressed') === 'false');
       } catch (e) { check(fmt + ': during ran', false, String(e && e.stack || e)); }
       return JSON.stringify(C.res); },
@@ -132,7 +159,7 @@
         ctl.style.background = '#ff00ff'; ctl.style.borderColor = '#ff00ff'; ctl.style.transform = 'none'; ctl.style.bottom = 'auto'; ctl.style.left = Math.round(cw.left + cw.width * 0.3) + 'px'; ctl.style.top = Math.round(cw.top + cw.height * 0.45) + 'px'; return true; },
     stop: function () { var b = $('#st-rec-ctl [data-rc="stop"]'); if (b) b.click(); return !!b; },
     // the file: its size, its length, one frame of it (handed back for the runner to keep), the control's magenta nowhere in it
-    after: async function (fmt, fit) { var C = mk(), check = C.check, frame = null;
+    after: async function (fmt, fit, camo) { var C = mk(), check = C.check, frame = null; camo = camo || { z: 1, bg: 'none' };
       try {
         for (var k = 0; k < 80 && !$('#st-rec-pv'); k++) await W(100);
         for (k = 0; k < 30 && document.fullscreenElement; k++) await W(100);   // leaving full screen takes a moment
@@ -159,8 +186,12 @@
         check(fmt + ': the platform is in it (the blue BUY tag and line)', blue > 150, blue);
         // the camera where it was placed: the stand-in camera's picture (a blue backdrop, a peach face), not the dark chart
         var q = x.cam, cd = q ? g.getImageData(q.x + 6, q.y + 6, q.s - 12, q.s - 12).data : [], camPx = 0, all = 0;
-        for (i = 0; i < cd.length; i += 16) { all++; if ((cd[i + 2] > 100 && cd[i + 2] - cd[i] > 25) || (cd[i] > 200 && cd[i + 1] > 150)) camPx++; }
+        var peach = 0, green = 0;
+        for (i = 0; i < cd.length; i += 16) { all++; var isP = cd[i] > 200 && cd[i + 1] > 150 && cd[i + 2] > 120, isG = cd[i + 1] > 150 && cd[i] < 110 && cd[i + 2] < 140; if (isP) peach++; if (isG) green++; if ((cd[i + 2] > 100 && cd[i + 2] - cd[i] > 25) || isP || isG) camPx++; }
         check(fmt + ': the camera is in the video where it was placed', !!q && camPx / Math.max(1, all) > 0.8, [q, camPx, all]);
+        if (camo.z >= 2) check(fmt + ': zoomed ' + camo.z + '×: the face fills most of the bubble', peach / Math.max(1, all) > 0.45, [peach, all]);
+        else if (camo.bg === 'none') check(fmt + ': not zoomed: the whole stand-in picture in the bubble (the face a fifth of it)', peach / Math.max(1, all) > 0.1 && peach / Math.max(1, all) < 0.35, [peach, all]);
+        if (camo.bg === 'image') check(fmt + ': Image: the chosen picture behind (the stand-in camera has no person in it, so most of the bubble is the picture)', green / Math.max(1, all) > 0.2, [green, all]);
         frame = c.toDataURL('image/png'); v.remove();
         pv.querySelector('[data-p="x"]').click(); await W(100);
         check(fmt + ': Discard closes the preview', !$('#st-rec-pv'));
