@@ -10,11 +10,11 @@
 (async function () {
   var PHASE = '__PHASE__';
   var W = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
-  var results = [];
+  var results = [], step = function (x) { window.__crStep = x; };   // where it is, for a runner watching a slow run
   function check(name, cond, got) { results.push({ name: name, ok: !!cond, got: got === undefined ? null : got }); }
   try {
     for (var i0 = 0; i0 < 200 && !(window.__stPractice && window.__stLC && window.__stLiveLine && window.__stSB && window.STCommunity); i0++) await W(100);
-    await W(800);
+    await W(800); step('loaded');
     try { Object.defineProperty(document, 'hidden', { configurable: true, get: function () { return false; } }); } catch (e) {}
     try { Object.defineProperty(document, 'visibilityState', { configurable: true, get: function () { return 'visible'; } }); } catch (e) {}
     var errs = []; window.addEventListener('error', function (e) { errs.push(String(e.message)); });
@@ -83,8 +83,8 @@
     var SESSION = { access_token: 'test', token_type: 'bearer', user: { id: ADMIN, email: 'be.o2@hotmail.com', user_metadata: { full_name: 'Nestor' }, app_metadata: {} } };
     SB.auth.getSession = function () { return Promise.resolve({ data: { session: SESSION }, error: null }); };
     SB.auth.getUser = function () { return Promise.resolve({ data: { user: SESSION.user }, error: null }); };
-    try { await SB.auth._notifyAllSubscribers('SIGNED_IN', SESSION); } catch (e) {}
-    await W(2500);
+    try { await Promise.race([SB.auth._notifyAllSubscribers('SIGNED_IN', SESSION), W(8000)]); } catch (e) {}   // a listener that waits on the network never holds the test
+    step('signed in'); await W(2500);
     document.querySelectorAll('.stc-gate.open').forEach(function (e) { e.classList.remove('open'); }); document.querySelectorAll('.modal-bg.show').forEach(function (e) { e.classList.remove('show'); });
     window.STCloud.syncToken = '__TOK__'; window.__stRelayURL = '__RELAY__';
     var css0 = document.createElement('style'); css0.textContent = '#st-nudge, .st-nudge, .st-tour-ov, .st-welcome, .stc-gate, #lp-front, #st-demo-bar, #onboarding-modal-bg, [class^="st-tour"], .dcx-notif-prompt { display: none !important; }'; document.head.appendChild(css0);
@@ -94,11 +94,11 @@
     var acc0 = (data.accounts || [])[0] || {};
     data.accounts.push(Object.assign(JSON.parse(JSON.stringify(acc0)), { id: 'acc-plat', name: 'FTMO 70K', kind: 'challenge', status: 'active', separate: false, startingBalance: 70000, balanceAtSetup: 70000 }));
     data.mt5LoginMap = Object.assign({}, data.mt5LoginMap || {}, { '90001234': 'acc-plat' });
-    document.querySelector('.tab[data-page="livecharts"]').click();
+    document.querySelector('.tab[data-page="livecharts"]').click(); step('charts');
     for (var k = 0; k < 120 && !(P._s() && P._s().live && LC.state().fresh && P._panes()[0] && P._panes()[0].bars && P._panes()[0].bars.length); k++) await W(250);
     var $ = function (s) { return document.querySelector(s); }, root = function () { return document.getElementById('dcx-root'); };
     for (k = 0; k < 60 && !(root() && root().classList.contains('dcx-plat') && document.querySelectorAll('#dcx-msgs .dcx-msg').length >= 20); k++) await W(250);
-    await W(1500);
+    await W(1500); step('chat ' + document.querySelectorAll('#dcx-msgs .dcx-msg').length);
     var badge = function () { var b = phoneNow ? $('.ph-chb .pl-rbn') : $('.plat-rail .pl-rbch .pl-rbn'); return !b ? 'none' : (b.hidden ? '' : b.textContent); };
     var newest = function () { return DB.channel_messages.reduce(function (t, m) { return m.channel_id === 'ch-chat' && m.created_at > t ? m.created_at : t; }, ''); };
     var mark = function () { var r = DB.channel_reads.filter(function (x) { return x.user_id === ADMIN && x.channel_id === 'ch-chat'; })[0]; return r ? r.read_at : null; };

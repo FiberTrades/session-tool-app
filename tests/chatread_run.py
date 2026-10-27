@@ -5,6 +5,7 @@
 import base64, calendar, functools, http.server, json, os, random, shutil, socket, subprocess, sys, tempfile, threading, time, urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
+os.environ.setdefault('E2E_TIMEOUT', '1500')   # three reloads and the crops take longer than the helper's 4 minutes
 import browser_test as bt
 T0 = calendar.timegm((2026, 10, 14, 8, 30, 0))
 TOK = 'st-test-chatread-e2e'
@@ -95,7 +96,8 @@ try:
     elif os.environ.get('CR_PHASES'):
         run('desk', 1600, 960, False, os.environ['CR_PHASES'].split(','))
     elif TAG == 'after':
-        run('desk', 1600, 960, False, ['1', '2', '3', 'shot'])
+        run('desk', 1600, 960, False, ['1', '2', '3'])
+        run('desk', 1600, 960, False, ['shot'])   # the crops in a fresh browser: nothing left over from the reloads
     else:
         run('desk', 1600, 960, False, ['shot'])
     run('phone', 375, 812, True, ['shot'])
