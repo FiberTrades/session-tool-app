@@ -25,7 +25,11 @@
     ts.scrollToPosition(ts.scrollPosition() - 3, false); await W(200); var b = await draw();
     var bar = ts.options().barSpacing;
     ok('the chart dragged 3 candles: the label moved with it (not held at the right edge), or went off with its line', b.length === 0 || (x0 != null && b[0].x - x0 > 2 * bar), [x0, b.length ? b[0].x : null, bar]);
-    for (s = 0; s < 15 && b.length; s++) { ts.scrollToPosition(ts.scrollPosition() - 15, false); await W(200); b = await draw(); }
+    var xs = b.length ? [b[0].x] : [];
+    var stp = Math.max(1, Math.round(60 / bar));   // about 60 px a step, so it is seen near the edge
+    for (s = 0; s < 60 && b.length; s++) { ts.scrollToPosition(ts.scrollPosition() - stp, false); await W(150); b = await draw(); if (b.length) xs.push(b[0].x); }
+    var steps = xs.slice(1).map(function (x, k) { return Math.round(x - xs[k]); });
+    ok('...each step it moved with the chart, right up to the edge and off it: never held back inside the chart (Nestor, 27 Oct 2026: they slid along, then vanished)', xs.length >= 3 && steps.every(function (d) { return Math.abs(d - stp * bar) <= 2; }) && xs[xs.length - 1] > pw - 60, [steps, stp * bar, xs.map(Math.round), pw]);
     ok('dragged until the line\'s end is off the right of the chart: PDH and PDL go with it', b.length === 0 && !rec.some(function (r) { return /^P[DWM][HL]/.test(r.t); }), [b, rec.filter(function (r) { return /^P[DWM][HL]/.test(r.t); }).slice(0, 3)]);
   } catch (e) { ok('test ran', false, String(e && e.stack || e)); }
   CanvasRenderingContext2D.prototype.fillText = fill0;
