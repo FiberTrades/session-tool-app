@@ -278,6 +278,12 @@
     check('...all back', !win.classList.contains('pl-nor') && !win.classList.contains('pl-folded') && $('#lc-tb').getBoundingClientRect().height > 100);
     $('[data-pltab="acct"]').click(); await W(300);
     check('the Account tab: balance, equity, margin, free margin', /Balance/.test($('.pl-acg').textContent) && /Free margin/.test($('.pl-acg').textContent), $('.pl-acg') && $('.pl-acg').textContent.slice(0, 100));
+    var acs = Array.prototype.slice.call(document.querySelectorAll('.pl-acc')), ac0 = acs[0], s0 = ac0 && ac0.querySelector('span').getBoundingClientRect(), b0 = ac0 && ac0.querySelector('b').getBoundingClientRect();
+    check('...the account on its own line, then a cell per figure: its name above its value, hairlines between (26 Oct 2026)', $('.pl-ach b') && $('.pl-ach b').textContent.trim().length > 1 && acs.length >= 5 && s0.bottom <= b0.top + 1 && getComputedStyle(ac0).borderRightWidth === '1px' && !/Account/.test($('.pl-acg').textContent), [$('.pl-ach') && $('.pl-ach').textContent, acs.length]);
+    $('[data-pltab="hist"]').click(); for (k = 0; k < 30 && !$('.lc-tb .lctb-t td.r'); k++) await W(200);
+    var hr0 = Array.prototype.filter.call(document.querySelectorAll('.lc-tb .lctb-t tr'), function (r) { return /880001/.test(r.textContent); })[0], htd = hr0 ? hr0.querySelectorAll('td') : [];
+    var cCom = htd[10] && getComputedStyle(htd[10]).color, cPro = htd[12] && getComputedStyle(htd[12]).color;
+    check('History: the commission (-8.75) red, the profit (200.00) green', cCom === 'rgb(242, 54, 69)' && cPro === 'rgb(8, 153, 129)', [cCom, cPro, hr0 && hr0.textContent.slice(0, 120)]);
     $('[data-pltab="pos"]').click(); await W(200);
 
     // ---- Check my plan in the top bar (window.__stPlanCheck) ----
