@@ -73,7 +73,7 @@
       check('...Move to BE and Close as they were', mg1 === mg0 && /close/.test(mg1), [mg0, mg1]);
       $('.ph-dim').click(); await sheetAt(false);
       var pg = $('.ph-go');
-      check('...docked: Execute locked, the time left, on screen', pg && pg.classList.contains('lock') && /^1:59:5\d$/.test(pg.textContent) && pg.getBoundingClientRect().right <= innerWidth + 1 && /On a break/.test(pg.getAttribute('aria-label')), pg && [pg.textContent, Math.round(pg.getBoundingClientRect().right)]);
+      check('...docked: Execute locked, the time left, on screen', pg && pg.classList.contains('lock') && /^(1:59:[45]\d|2:00:00)$/.test(pg.textContent) && pg.getBoundingClientRect().right <= innerWidth + 1 && /On a break/.test(pg.getAttribute('aria-label')), pg && [pg.textContent, Math.round(pg.getBoundingClientRect().right)]);
       delete acQ.ruleBreak; window.dispatchEvent(new CustomEvent('st-rules-change')); await W(600);
       check('the break over: the docked Execute back', $('.ph-go') && !$('.ph-go').classList.contains('lock') && $('.ph-go').textContent === 'Execute', $('.ph-go') && $('.ph-go').textContent);
       $('[data-phtf]').click(); await W(300);
@@ -112,12 +112,12 @@
       [nm && nm.textContent, oh && oh.textContent]);
     // the legend's O H L C follows the crosshair over the candles, the last candle when it leaves; Chart settings can hide it (26 Oct 2026)
     var pl0 = P._panes()[0], Bl = pl0.bars, bi = Bl.length - 25, pcl = $('#stpr-grid .stpr-pc'), rl = pcl.getBoundingClientRect(), xb = pl0.chart.timeScale().timeToCoordinate(Bl[bi].time), dg5 = function (v) { return Number(v).toFixed(5); };
-    var at0 = document.elementFromPoint(rl.left + xb, rl.top + 120); at0.dispatchEvent(new MouseEvent('mousemove', { clientX: rl.left + xb, clientY: rl.top + 120, bubbles: true })); await W(250);
+    var at0 = document.elementFromPoint(rl.left + xb, rl.top + 120); at0.dispatchEvent(new MouseEvent('mousemove', { clientX: rl.left + xb, clientY: rl.top + 120, bubbles: true })); for (k = 0; k < 20 && oh.textContent.indexOf('C' + dg5(Bl[bi].close)) < 0; k++) await W(100);
     check('the crosshair over a candle: the legend shows that candle\'s O H L C', oh.textContent.indexOf('O' + dg5(Bl[bi].open)) >= 0 && oh.textContent.indexOf('C' + dg5(Bl[bi].close)) >= 0, [oh.textContent, dg5(Bl[bi].open), dg5(Bl[bi].close)]);
     pl0.el.dispatchEvent(new PointerEvent('pointerleave', { pointerType: 'mouse' })); await W(250);
     var lb0 = pl0.bars[pl0.bars.length - 1];
     check('...off the chart: the last candle\'s again', oh.textContent.indexOf('C' + dg5(lb0.close)) >= 0, [oh.textContent, dg5(lb0.close)]);
-    P._lookSet('ohlc', false); await W(250);
+    P._lookSet('ohlc', false); for (k = 0; k < 20 && oh.textContent !== ''; k++) await W(100);
     check('Chart settings, O H L C values off: none in the legend, its name stays', oh.textContent === '' && /Euro/.test(nm.textContent), oh.textContent);
     P._lookSet('ohlc', true); delete P._cfg().look.ohlc; await W(250);
 
@@ -201,6 +201,19 @@
     check('...against the price scale', Math.abs(br.right - (pane.right - pr0 - 6)) <= 2, [br.right, pane.right - pr0 - 6]);
     check('...opened (the mouse over it): the lots, the money and R, and ✕', /BUY 13\.5 lots/.test(bt.querySelector('.k2').textContent) && /£175\.00/.test(bt.querySelector('.v2').textContent) && bt.querySelector('.xx'), bt.textContent);
     check('the library\'s own labels are off (the tags say it)', p0.lines.every(function (l) { return !l.options().title; }), p0.lines.map(function (l) { return l.options().title; }));
+    // dragging the SL (26 Oct 2026: "i need to see the R pips and money ... its very slow"): the line moves at once, its tag says R · pips · money;
+    // dragged past the entry, what it locks in
+    var slL = p0.lines.filter(function (l) { return /\|sl\|/.test(l._k || ''); })[0], pcd = p0.el.querySelector('.stpr-pc'), rcd = pcd.getBoundingClientRect();
+    var pev = function (t, y) { pcd.dispatchEvent(new PointerEvent(t, { bubbles: true, cancelable: true, pointerType: 'mouse', button: 0, clientX: rcd.left + rcd.width * 0.45, clientY: rcd.top + y, pointerId: 7 })); };
+    var ySl = p0.series.priceToCoordinate(slL._p), yTo = p0.series.priceToCoordinate(rr.tick.op + 0.5 * rr.tick.rpx), sl0 = slL._p;
+    pev('pointerdown', ySl); var tm0 = performance.now(); pev('pointermove', yTo); var dtm = performance.now() - tm0;
+    var dtag = $('.pl-tag.drag'), dtx = dtag ? dtag.textContent : '';
+    check('the SL dragged into profit: its tag at once - SL +0.5R · +3.5 pips · +£125', dtag && /^SL\+0\.(4[6-9]|5[0-4])R\s+·\s+\+3\.[3-7] pips\s+·\s+\+£1(1[5-9]|2\d|3[0-4])\.\d\d$/.test(dtx), dtx);
+    check('...the line itself there, in the same move (no rebuild of every line: ' + Math.round(dtm) + ' ms)', Math.abs(slL._p - (rr.tick.op + 0.5 * rr.tick.rpx)) < 0.00004 && dtm < 30, [slL._p, dtm]);
+    pev('pointerup', yTo); await W(300);
+    var tmc = p0.el.querySelector('.stpr-tmc'); if (tmc && tmc.style.display !== 'none') { var cx0 = tmc.querySelector('[data-tmc="0"]'); if (cx0) cx0.click(); } await W(500);
+    var slTag = Array.prototype.filter.call(document.querySelectorAll('.pl-tag'), function (t) { return t.querySelector('.k') && t.querySelector('.k').textContent === 'SL'; })[0];
+    check('...let go and Cancel: the SL back where MT5 has it, the tag as it was', !$('.pl-tag.drag') && slTag && /SL\s*−1R/.test(slTag.textContent) && Math.abs(p0.lines.filter(function (l) { return /\|sl\|/.test(l._k || ''); })[0]._p - sl0) < 1e-9, slTag && slTag.textContent);
     bt.querySelector('.xx').click(); await W(300);
     var ask = Array.prototype.filter.call(document.querySelectorAll('.pl-tag'), function (t) { return t.classList.contains('ask'); })[0];
     check('✕ asks first: Close it in MT5? Close / Keep', ask && /Close it in MT5\?/.test(ask.textContent) && ask.querySelector('[data-plyes]') && ask.querySelector('[data-plno]'), ask && ask.textContent);

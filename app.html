@@ -91465,6 +91465,7 @@ window.__stAZ = (function () {
   .pl-tag.lbl { height: 14px; background: transparent; box-shadow: none; font: 400 11px var(--pl-font); color: var(--tc); pointer-events: none; }
   .pl-tag.lbl > span { padding: 0; }
   .stpr-win.plat.pl-clt .pl-tag:not(.lbl):not(.ask) { box-shadow: 0 0 0 1px var(--tc); }
+  .pl-tag.drag .v { font-variant-numeric: tabular-nums; white-space: nowrap; }   /* a dragged SL / TP: R · pips · money, steady while it moves */
   /* the Watchlist and the Trade Manager */
   .stpr-win.plat > .plat-right { grid-area: right; display: flex; flex-direction: column; gap: 4px; min-height: 0; min-width: 0; position: relative; }
   .pl-card { display: flex; flex-direction: column; min-height: 0; overflow: hidden; background: var(--pl-bg); border-radius: 6px; }
@@ -95138,7 +95139,9 @@ window.__stAZ = (function () {
     }, true);
     // and before the click, the stop follows the mouse
     el.addEventListener('pointermove', function(e){ if (!S || drag || !S.exec || S.pos || S.pend || e.pointerType !== 'mouse' || PS(p) !== S) return; var pr = p.series.coordinateToPrice(rel(e).y); if (pr != null) { aim(pr); aimSoon(); } });
-    el.addEventListener('pointermove', function(e){ if (!S || !drag || drag.p !== p) return; var pr = p.series.coordinateToPrice(rel(e).y); if (pr != null) { setLine(drag.k, pr); linesAll(); paintPill(); paintPlace(); } }, true);
+    el.addEventListener('pointermove', function(e){ if (!S || !drag || drag.p !== p) return; var pr = p.series.coordinateToPrice(rel(e).y); if (pr == null) return;
+      if (/^lt\|/.test(drag.k)) { setLine(drag.k, pr); if (LT.k === drag.k) ltMove(drag.k, pr); return; }   // a live trade's line: moved where it is at once, its tag's read-out with it
+      setLine(drag.k, pr); linesAll(); paintPill(); paintPlace(); }, true);
     el.addEventListener('pointerup', function(){ if (!drag || drag.p !== p) return; var k = drag.k; drag = null; hold(false);
       if (/^lt\|/.test(k)) { ltDrop(k, p); return; }   // a live trade's line: confirm, then MT5
       if (k === 'pvsl' || k === 'pvtp' || k === 'pvent') save();
@@ -96586,6 +96589,10 @@ window.__stAZ = (function () {
     b.innerHTML = '<span>' + esc(txt) + '</span><button type="button" class="stpr-b go" data-tmc="1">' + esc(T('Move', 'Mover')) + '</button><button type="button" class="stpr-b" data-tmc="0">' + esc(T('Cancel', 'Cancelar')) + '</button>';
     var y = yOf(p, LT.price), h = p.el.clientHeight; b.style.top = Math.max(6, Math.min(h - 52, (y == null ? h / 2 : y) + 12)) + 'px'; b.style.display = 'flex';
     b.onclick = function(e){ var t = e.target.closest && e.target.closest('[data-tmc]'); if (!t) return; e.stopPropagation(); b.style.display = 'none'; b.onclick = null; cb(t.getAttribute('data-tmc') === '1'); }; }
+  function ltMove(k, pr){ panes.forEach(function(q){ var hit = false;
+      (q.lines || []).forEach(function(l){ if (l._k === k) { hit = true; l._p = pr; try { l.applyOptions({ price: pr }); } catch (e) {} } });
+      (q._plLv || []).forEach(function(o){ if (o.k === k) { hit = true; o.price = pr; } });
+      if (hit) { try { drawOv(q); } catch (e) {} } }); }
   function ltDrop(k, p){
     var a = k.split('|'), tk = a[1], kind = a[2], ix = a[3] === '' ? null : +a[3], x = lvIdeas(PS(p).sym).filter(function(o){ return String(o.r.ticket) === tk; })[0];
     if (!x || LT.k !== k || !(LT.price > 0)) { LT.k = null; linesAll(); return; }
@@ -97828,7 +97835,7 @@ window.__stAZ = (function () {
   function plTags(p, dm){ var box = p._plt, L = p._plLv || [];
     if (!PL.on || !S || !S.live || !L.length || p._plHide) { if (box && box.firstChild) box.innerHTML = ''; p._plR = []; return; }
     var D = p.el.ownerDocument; if (!box || !box.isConnected) { box = p._plt = D.createElement('div'); box.className = 'pl-tags'; p.el.appendChild(box); box.addEventListener('click', plTagClick); box.addEventListener('pointerdown', function(e){ e.stopPropagation(); }); }
-    var cur = plCur(), want = [], byT = {};
+    var cur = plCur(), want = [], byT = {}, ux = {}, fx = false; try { ux = units(PS(p).sym) || {}; fx = PS(p).sym.cls === 'fx'; } catch (e) {}
     L.forEach(function(l){ var tk = l.x.tk, t = String(l.o.title || ''), k = String(l.x.r.ticket); (byT[k] = byT[k] || { x: l.x, ls: [] }).ls.push({ l: l, t: t }); });
     Object.keys(byT).forEach(function(k){ var g = byT[k], x = g.x, tk = x.tk, r = x.r, d = x.long ? 1 : -1, risk = +(r.risk0 || r.risk) || 0, lots = +r.lots || 0, R = isFinite(+tk.r) ? +tk.r : NaN, pnl = isFinite(+tk.pnl) ? +tk.pnl : null;
       var at = function(pr){ return tk.rpx > 0 ? d * (pr - tk.op) / tk.rpx : NaN; }, mon = function(pr){ var m = plMoneyAt(x, pr); return isFinite(m) ? plSg(m, cur) + '  ·  ' : ''; };
@@ -97839,13 +97846,16 @@ window.__stAZ = (function () {
       g.ls.forEach(function(q){ var l = q.l, t = q.t, rr = at(l.price), wait = l.k && LT.k === l.k && LT.wait;
         if (t === 'Entry' || t === 'Entrada' || (/^SL/.test(t) && be)) return;
         if (/^SL/.test(t) || t === 'TP') { var kk = /^SL/.test(t) ? 'SL' : 'TP', v = wait ? T('sending…', 'enviando…') : (kk === 'TP' && isFinite(rr) ? (rr < 0 ? '−' : '') + Math.abs(rr).toFixed(1) + 'R' : plR1(rr));
+          if (l.k && LT.k === l.k && !LT.wait && isFinite(rr)) {   // being dragged: what that stop or target would mean, as MT5's line says it (26 Oct 2026)
+            var dist = d * (l.price - tk.op), pt = fx ? ux.pips : (ux.pts || 0), pv = pt > 0 ? (dist < 0 ? '−' : '+') + (Math.abs(dist) / pt).toFixed(fx ? 1 : (pt < 1 ? 0 : 1)) + ' ' + (fx ? T('pips', 'pips') : T('pts', 'ptos')) : '';   // pips on forex, points on the rest
+            want.push({ key: k + '|' + kk, tag: 1, y: yOf(p, l.price), c: kk === 'SL' ? '#f23645' : '#089981', drag: 1, html: '<span class="k">' + kk + '</span><span class="v">' + esc([plR(rr, 2), pv, (function(){ var m = plMoneyAt(x, l.price); return isFinite(m) ? plSg(m, cur) : ''; })()].filter(Boolean).join('  ·  ')) + '</span>' }); return; }
           want.push({ key: k + '|' + kk, tag: 1, y: yOf(p, l.price), c: kk === 'SL' ? '#f23645' : '#089981', html: '<span class="k">' + kk + '</span><span class="v">' + esc(v) + '</span><span class="k2">' + kk + '</span><span class="v2">' + esc(mon(l.price) + plR(rr, 1)) + '</span>' }); return; }
         var w = t === 'BE' ? T('Break-even', 'Break-even') + (isFinite(rr) ? T(' at ', ' en ') + plR1(rr) : '') : t;
         want.push({ key: k + '|' + t, tag: 0, y: yOf(p, l.price), c: l.c, html: '<span>' + esc(w + (wait ? ' · ' + T('sending…', 'enviando…') : '')) + '</span>' }); }); });
     var have = {}, used = {}; Array.prototype.forEach.call(box.children, function(c){ have[c._k] = c; });
     want.forEach(function(w){ var el = have[w.key]; if (!el) { el = D.createElement('div'); el._k = w.key; box.appendChild(el); } used[w.key] = 1;
       var html = PL.ask === w.key ? '<span class="k">' + esc(T('Close it in MT5?', '¿Cerrarla en MT5?')) + '</span><button type="button" data-plyes="' + esc(w.tk) + '">' + esc(T('Close', 'Cerrar')) + '</button><button type="button" data-plno="1">' + esc(T('Keep', 'Mantener')) + '</button>' : w.html;
-      if (el._h !== html) { el._h = html; el.innerHTML = html; } var cls = 'pl-tag' + (w.tag ? '' : ' lbl') + (PL.ask === w.key ? ' ask' : '') + (PL.tap === w.key && w.tag ? ' tap' : ''); if (el.className !== cls) el.className = cls;
+      if (el._h !== html) { el._h = html; el.innerHTML = html; } var cls = 'pl-tag' + (w.tag ? '' : ' lbl') + (PL.ask === w.key ? ' ask' : '') + (PL.tap === w.key && w.tag ? ' tap' : '') + (w.drag ? ' drag' : ''); if (el.className !== cls) el.className = cls;
       if (el._c !== w.c) { el._c = w.c; el.style.setProperty('--tc', w.c); } el._y = w.y; el._tag = w.tag; var hid = w.y == null || w.y < -12 || w.y > dm.ph + 12; if (el.hidden !== hid) el.hidden = hid; });
     Array.prototype.slice.call(box.children).forEach(function(c){ if (!used[c._k]) c.remove(); });
     var R2 = [], edge = dm.w - dm.pw + 6, last = -1e9, kids = Array.prototype.slice.call(box.children).filter(function(c){ return !c.hidden; });
