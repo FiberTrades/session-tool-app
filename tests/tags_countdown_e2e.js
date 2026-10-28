@@ -33,15 +33,17 @@
     var ovc = p.ov, dpr = window.devicePixelRatio || 1, g = ovc.getContext('2d'), y = Math.round(p.series.priceToCoordinate(tp.p) * dpr), pw = ovc.width / dpr - p.chart.priceScale('right').width();
     var at = function (x) { return Array.prototype.slice.call(g.getImageData(Math.round(x * dpr), y, 1, 1).data); };
     var inTag = pw - ov[0].x / 2;
-    // the note is written the TradingView way since 23 Oct 2026 (372fa33d: "without the background behind the text"): red letters on the
-    // line, no box - so red somewhere along the words' band, not at one fixed spot
-    var redIn = function (x1) { for (var yy = -4; yy <= 4; yy++) for (var x = x1 - 150; x <= x1; x++) { var c = Array.prototype.slice.call(g.getImageData(Math.round(x * dpr), y + Math.round(yy * dpr), 1, 1).data); if (c[0] > 180 && c[1] < 120 && c[3] > 200) return true; } return false; };
+    // the note is written the TradingView way: red letters just above the line, nothing painted behind them (28 Oct 2026, Nestor: "remove
+    // all backgrounds from text") - so red somewhere along the words' band above the line, and nothing of ours on the line under them
+    var redIn = function (x1) { for (var yy = -16; yy <= -2; yy++) for (var x = x1 - 150; x <= x1; x++) { var c = Array.prototype.slice.call(g.getImageData(Math.round(x * dpr), y + Math.round(yy * dpr), 1, 1).data); if (c[0] > 180 && c[1] < 120 && c[3] > 200) return true; } return false; };
+    var bare = function (x1) { for (var x = x1 - 140; x <= x1 - 10; x += 3) { if (g.getImageData(Math.round(x * dpr), y, 1, 1).data[3] !== 0) return false; } return true; };
     ok('...on the overlay: red letters at the note, nothing of ours over the tag', redIn(pw - ov[0].x - 2) && at(inTag)[3] === 0, [at(inTag)]);
+    ok('...and nothing painted behind the words: the line under them untouched (no box, no knock-out)', bare(pw - ov[0].x - 2));
     // moved off the TP: still the note's own words on the line, now against the scale (no box: the library's title stays empty)
     d.price = tp.p + 0.0020; P._render(); await W(400);
     hl = (p.hl || []).filter(function (l) { return Math.abs(l.options().price - d.price) < 1e-9; })[0]; var ov2 = p._hlOv || [];
     y = Math.round(p.series.priceToCoordinate(d.price) * dpr);
-    ok('moved off the TP: the note against the scale, still on the line (no box)', hl && hl.options().title === '' && hl.options().axisLabelVisible && ov2.length === 1 && !ov2[0].x && redIn(pw - 2), [hl && hl.options().title, ov2]);
+    ok('moved off the TP: the note against the scale, still on the line (no box)', hl && hl.options().title === '' && hl.options().axisLabelVisible && ov2.length === 1 && !ov2[0].x && redIn(pw - 2) && bare(pw - 2), [hl && hl.options().title, ov2]);
   } catch (e) { ok('test ran', false, String(e && e.stack || e)); }
   try { window.__stPractice.close(); } catch (e) {}
   return out;
