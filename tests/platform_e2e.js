@@ -349,7 +349,7 @@
     $('[data-plbrkgo="1h"]').click(); await W(800);
     check('the break starts: an hour on this account', acP.ruleBreak && Math.abs(acP.ruleBreak.until - Date.now() - 3600000) < 5000, acP.ruleBreak);
     var lk = $('#stpr-mm .pl-lks');
-    check('...its lock under the Trade Manager\'s title, with the time left', lk && /On a break\. Trading opens again at \d\d:\d\d\./.test(lk.textContent) && /(59:5\d|1:00:00)$/.test(lk.textContent), lk && lk.textContent);
+    check('...its lock under the Trade Manager\'s title, with the time left', lk && /On a break\. Trading opens again (tomorrow )?at \d\d:\d\d\./.test(lk.textContent) && /(59:5\d|1:00:00)$/.test(lk.textContent), lk && lk.textContent);
     var lx = $('#stpr-mm .pl-x');
     check('...Execute: Locked and the time left, not pressable; managing open trades said under it', lx && lx.classList.contains('lock') && lx.disabled && /^Locked(59:5\d|1:00:00)$/.test(lx.textContent) && /still be managed and closed/.test($('.pl-why2').textContent), lx && [lx.textContent, $('.pl-why2') && $('.pl-why2').textContent]);
     var c1 = $('#stpr-mm .pl-x .pl-cd').textContent; await W(2100); var c2 = $('#stpr-mm .pl-x .pl-cd').textContent;
