@@ -33,10 +33,12 @@
     // the menu
     var nav = [].map.call(D.querySelectorAll('.nav-links a:not(.btn)'), function (a) { return tx(a) + '>' + a.getAttribute('href'); });
     ok('Questions in the top menu, between Pricing and Community, going to the Questions section ("call q&a questions in english")', nav.join(' ') === 'Features>#workflow More>#more Pricing>#pricing Questions>#faq Community>#community Contact>#contact' && D.getElementById('faq'), nav);
-    // the same six links at the top of the hero for phones and tablets ("shall we add these here on phone?", then "go with A")
-    var hl = [].map.call(D.querySelectorAll('.hero .hero-links a'), function (a) { return tx(a) + '>' + a.getAttribute('href'); });
+    // the same six links for phones and tablets ("shall we add these here on phone?", then "go with A"): first at the top of the hero; since
+    // 22 Oct 2026 a second row of the sticky top bar on a black band the page's width, so they stay as the page scrolls ("can these move
+    // down as i scroll down the page?")
+    var hl = [].map.call(D.querySelectorAll('.nav .hero-links a'), function (a) { return tx(a) + '>' + a.getAttribute('href'); });
     var hlCss = D.head.innerHTML + D.body.innerHTML;
-    ok('the six links also sit at the top of the hero, shown only under 940px (one line; two rows under 360px)', hl.join(' ') === nav.join(' ') && /\.hero-links\{display:none;\}/.test(hlCss) && /@media\(max-width:940px\)\{ \.hero-links\{display:flex;/.test(hlCss) && /@media\(max-width:359px\)\{ \.hero-links\{display:grid;/.test(hlCss), hl);
+    ok('the six links also sit in the top bar\'s second row (not in the hero), shown only under 940px (one line; two rows under 360px)', hl.join(' ') === nav.join(' ') && !D.querySelector('.hero .hero-links') && /\.hero-links\{display:none;\}/.test(hlCss) && /@media\(max-width:940px\)\{ \.hero-links\{display:block;[^}]*\}\s*\.hero-links \.hl-in\{display:flex;/.test(hlCss) && /@media\(max-width:359px\)\{ \.hero-links \.hl-in\{display:grid;/.test(hlCss), hl);
     // Spanish
     D.querySelector('.lang-sq[data-lang="es"]').click(); await W(400);
     var esRows = [].map.call(fr2.querySelectorAll('.bias-rows .r'), function (r) { return tx(r.querySelector('.k')) + '=' + tx(r.querySelector('.val')); });
