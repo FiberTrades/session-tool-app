@@ -59,7 +59,7 @@ def run(view, w, h, mob):
             c.eval("(function(){document.querySelectorAll('[class^=\"st-tour\"], .st-greet-pop').forEach(function(e){e.remove();});var n=document.querySelector('.dcx-notif-no');if(n&&n.offsetParent)n.click();return 1;})()"); time.sleep(0.6)
             img = c.call('Page.captureScreenshot', format='png'); p = os.path.join(SHOTS, 'platchat_%s.png' % name); open(p, 'wb').write(base64.b64decode(img['data'])); print('shot', p)
         if mob:
-            shot('phone')
+            shot(view.replace(' ', '_'))
         else:   # each rail panel, light (where the test left it) then dark
             for th in ('light', 'dark'):
                 for k in ('wl', 'tm', 'ch', 'td', 'ot'):
@@ -76,6 +76,8 @@ def run(view, w, h, mob):
 try:
     run('computer', 1600, 960, False)
     run('phone', 390, 844, True)
+    run('phone 375', 375, 812, True)
+    run('phone on its side', 812, 375, True)   # 28 Oct 2026: the chat as a panel at the right
 finally:
     relay.terminate(); ea.terminate()
 print('\n%d failed' % fails)

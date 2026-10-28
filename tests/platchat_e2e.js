@@ -12,7 +12,7 @@
     await W(800);
     try { Object.defineProperty(document, 'hidden', { configurable: true, get: function () { return false; } }); } catch (e) {}
     var errs = []; window.addEventListener('error', function (e) { errs.push(String(e.message)); });
-    var P = window.__stPractice, LC = window.__stLC, T0 = Date.UTC(2026, 9, 14, 8, 30) / 1000, phoneNow = innerWidth < 760;
+    var P = window.__stPractice, LC = window.__stLC, T0 = Date.UTC(2026, 9, 14, 8, 30) / 1000, phoneNow = innerWidth < 760 || (innerHeight < 500 && matchMedia('(pointer: coarse)').matches);   // a phone on its side too
     P._lvClock(T0 * 1000 - Date.now());
     window.isSessionLive = function () { return true; };
     window.__stPlatOff = false; window.__stLcForce = true; await W(1200);
@@ -201,10 +201,26 @@
       check('a phone: Chat in the bottom toolbar, on screen', !!chb && chb.getBoundingClientRect().width > 20 && chb.getBoundingClientRect().right <= innerWidth, chb && [Math.round(chb.getBoundingClientRect().right), Array.prototype.map.call(document.querySelectorAll('.ph-bar > *, .ph-icons > *'), function (x) { var r = x.getBoundingClientRect(); return (x.className || x.id || x.tagName).toString().slice(0, 14) + ':' + Math.round(r.left) + '-' + Math.round(r.right); }), getComputedStyle(document.querySelector('.ph-bar')).paddingLeft]);
       chb.click(); await W(400);
       for (k = 0; k < 40 && !(root() && root().classList.contains('dcx-plat')); k++) await W(250);
-      var sh = $('.ph-chs'), shr = sh && sh.getBoundingClientRect();
-      check('...tapping it slides the chat up as a sheet', win.classList.contains('ph-chaton') && shr && shr.top < innerHeight * 0.15 && shr.bottom <= innerHeight + 1 && root() && sh.contains(root()), shr && [shr.top, shr.bottom]);
+      await W(700);
+      var sh = $('.ph-chs'), shr = sh && sh.getBoundingClientRect(), land = innerWidth > innerHeight, wr2 = win.getBoundingClientRect();
+      // Nestor, 28 Oct 2026: "it should only take half of the screen not most of it"; on its side "just take part of the right side of the screen"
+      if (!land) check('...tapping it slides the chat up over the lower half, the chart above it', win.classList.contains('ph-chaton') && shr && Math.abs(shr.top - (wr2.top + wr2.height / 2)) <= 4 && Math.abs(shr.bottom - wr2.bottom) <= 1 && root() && sh.contains(root()), shr && [Math.round(shr.top), Math.round(shr.bottom), Math.round(wr2.height)]);
+      else check('...on its side: a panel at the right (320-420 px, about 40%), full height, the chart on the left', win.classList.contains('ph-chaton') && shr && Math.abs(shr.right - wr2.right) <= 1 && shr.width >= 319 && shr.width <= 421 && shr.width <= wr2.width * 0.46 && Math.abs(shr.top - wr2.top) <= 1 && Math.abs(shr.bottom - wr2.bottom) <= 1 && root() && sh.contains(root()), shr && [Math.round(shr.left), Math.round(shr.width), Math.round(shr.top), Math.round(shr.bottom)]);
+      if (land) { await W(400); var pe = P._panes()[0] && P._panes()[0].el.getBoundingClientRect();
+        check('...the chart beside it, its price scale in view (not under the panel)', pe && pe.right <= shr.left + 1 && pe.width > 300, pe && [Math.round(pe.right), Math.round(shr.left)]); }
+      var hd = $('.ph-chh'), hr = hd && hd.getBoundingClientRect(), ex = $('.ph-exit'), er = ex && ex.offsetParent ? ex.getBoundingClientRect() : null;
+      check('...nothing over its header (the exit tile clear of it)', hr && (!er || er.right <= hr.left || er.left >= hr.right || er.bottom <= hr.top || er.top >= hr.bottom), [hr && [Math.round(hr.left), Math.round(hr.top)], er && [Math.round(er.left), Math.round(er.top), Math.round(er.right), Math.round(er.bottom)]]);
       var cp2 = $('#dcx-root .dcx-composer'), cq2 = cp2 && cp2.getBoundingClientRect();
-      check('...the message box on screen at its foot', cq2 && cq2.bottom <= innerHeight && cq2.width > 300, cq2 && [cq2.bottom, cq2.width]);
+      check('...the message box on screen at its foot', cq2 && cq2.bottom <= innerHeight && cq2.bottom >= shr.bottom - 80 && cq2.width > 260, cq2 && [cq2.bottom, cq2.width]);
+      var ms = sh.querySelector('.dcx-msgs');
+      check('...at the newest message', ms && (ms.scrollHeight <= ms.clientHeight + 2 || ms.scrollTop + ms.clientHeight >= ms.scrollHeight - 4), ms && [ms.scrollTop, ms.clientHeight, ms.scrollHeight]);
+      var ta = cp2 && cp2.querySelector('textarea, input, [contenteditable="true"]');
+      if (ta && !land) {
+        ta.focus(); await W(500); var tr2 = sh.getBoundingClientRect();
+        check('...typing: the sheet goes taller (room above the keyboard)', win.classList.contains('ph-chkb') && tr2.top < wr2.top + wr2.height * 0.15, [win.className.indexOf('ph-chkb') >= 0, Math.round(tr2.top)]);
+        ta.blur(); await W(500); var tr3 = sh.getBoundingClientRect();
+        check('...and back to half when the box is left', !win.classList.contains('ph-chkb') && Math.abs(tr3.top - (wr2.top + wr2.height / 2)) <= 4, Math.round(tr3.top));
+      }
       window.__pcShot = 'phone';
     }
     check('no script errors', !errs.length, errs.slice(0, 4));
