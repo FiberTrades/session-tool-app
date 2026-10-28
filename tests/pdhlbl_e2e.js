@@ -22,6 +22,7 @@
     for (var s = 0; s < 10 && !a.length; s++) { ts.scrollToPosition(ts.scrollPosition() + 20, false); await W(200); a = await draw(); }
     ok('PDH on the chart: written right of its line\'s end, inside the chart', a.length >= 1 && a[0].x < pw, [a, pw]);
     var x0 = a.length ? a[0].x : null;
+    var pos0 = ts.scrollPosition();
     ts.scrollToPosition(ts.scrollPosition() - 3, false); await W(200); var b = await draw();
     var bar = ts.options().barSpacing;
     ok('the chart dragged 3 candles: the label moved with it (not held at the right edge), or went off with its line', b.length === 0 || (x0 != null && b[0].x - x0 > 2 * bar), [x0, b.length ? b[0].x : null, bar]);
@@ -31,6 +32,15 @@
     var steps = xs.slice(1).map(function (x, k) { return Math.round(x - xs[k]); });
     ok('...each step it moved with the chart, right up to the edge and off it: never held back inside the chart (Nestor, 27 Oct 2026: they slid along, then vanished)', xs.length >= 3 && steps.every(function (d) { return Math.abs(d - stp * bar) <= 2; }) && xs[xs.length - 1] > pw - 60, [steps, stp * bar, xs.map(Math.round), pw]);
     ok('dragged until the line\'s end is off the right of the chart: PDH and PDL go with it', b.length === 0 && !rec.some(function (r) { return /^P[DWM][HL]/.test(r.t); }), [b, rec.filter(function (r) { return /^P[DWM][HL]/.test(r.t); }).slice(0, 3)]);
+    // the P/D zone's pips number (e.g. 106.8), right of the zone's end: the same, in time (Nestor, 28 Oct 2026: "i can see the P/D zone pips number still
+    // travels left when i drag the chart then disappears")
+    ts.scrollToPosition(pos0, false); await W(250);
+    var zn = async function () { await draw(); return rec.filter(function (r) { return /^\d{1,4}\.\d$/.test(r.t) && r.x > 40 && r.x < pw + 40; }); };
+    var z = await zn(); for (s = 0; s < 10 && !z.length; s++) { ts.scrollToPosition(ts.scrollPosition() + 20, false); await W(200); z = await zn(); }
+    var zx = z.length ? [z[0].x] : [];
+    for (s = 0; s < 80 && z.length; s++) { ts.scrollToPosition(ts.scrollPosition() - stp, false); await W(150); z = await zn(); if (z.length) zx.push(z[0].x); }
+    var zst = zx.slice(1).map(function (x, k) { return Math.round(x - zx[k]); });
+    ok('the P/D zone\'s pips number: each step it moved with the chart, right up to the edge and off it, never held back inside', zx.length >= 3 && zst.every(function (d) { return Math.abs(d - stp * bar) <= 2; }) && zx[zx.length - 1] > pw - 60, [zst, stp * bar, zx.map(Math.round), pw]);
   } catch (e) { ok('test ran', false, String(e && e.stack || e)); }
   CanvasRenderingContext2D.prototype.fillText = fill0;
   try { window.__stPractice.close(); } catch (e) {}
