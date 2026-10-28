@@ -199,7 +199,12 @@
     } else {
       var chb = $('.ph-icons .ph-chb');
       check('a phone: Chat in the bottom toolbar, on screen', !!chb && chb.getBoundingClientRect().width > 20 && chb.getBoundingClientRect().right <= innerWidth, chb && [Math.round(chb.getBoundingClientRect().right), Array.prototype.map.call(document.querySelectorAll('.ph-bar > *, .ph-icons > *'), function (x) { var r = x.getBoundingClientRect(); return (x.className || x.id || x.tagName).toString().slice(0, 14) + ':' + Math.round(r.left) + '-' + Math.round(r.right); }), getComputedStyle(document.querySelector('.ph-bar')).paddingLeft]);
+      // the exit tile never over the chart's name and O H L C, on its side too (28 Oct 2026), chat closed or open
+      var clearOf = function () { var ex = $('.ph-exit'), er = ex && ex.offsetParent ? ex.getBoundingClientRect() : null; if (!er) return true;
+        return ['.pl-nm', '.stpr-ohlc'].every(function (sl) { var e = $('#stpr-win ' + sl), q = e && e.getBoundingClientRect(); return !q || !q.width || q.right <= er.left || q.left >= er.right || q.bottom <= er.top || q.top >= er.bottom; }); };
+      check('the exit tile clear of the chart\'s name and O H L C', clearOf(), [$('#stpr-win .pl-nm') && Math.round($('#stpr-win .pl-nm').getBoundingClientRect().left)]);
       chb.click(); await W(400);
+      await W(400); check('...and with the chat open', clearOf());
       for (k = 0; k < 40 && !(root() && root().classList.contains('dcx-plat')); k++) await W(250);
       await W(700);
       var sh = $('.ph-chs'), shr = sh && sh.getBoundingClientRect(), land = innerWidth > innerHeight, wr2 = win.getBoundingClientRect();
