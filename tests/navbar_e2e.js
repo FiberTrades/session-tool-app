@@ -5,7 +5,7 @@
   var out = [], W = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
   var ok = function (name, cond, got) { out.push({ name: name, ok: !!cond, got: got }); };
   try {
-    for (var i = 0; i < 80 && !(window.__stNav && document.querySelector('.container > .tabs')); i++) await W(100);
+    for (var i = 0; i < 80 && !document.querySelector('.container > .tabs'); i++) await W(100);
     await W(900);
     try { STCloud.getData()._tourDoneV1 = true; } catch (e) {}
     document.querySelectorAll('[class^="st-tour"], .st-greet-pop').forEach(function (e) { e.remove(); });
@@ -74,17 +74,14 @@
     ok('no extra page padding for a bottom bar', pb <= 90, pb);
     document.querySelector('.container > .tabs .tab[data-page="trades"]').click(); await W(600);
     ok('tapping the Statistics box opens Statistics', document.querySelector('.tab[data-page="trades"]').classList.contains('active') && document.getElementById('page-trades').classList.contains('active'), (document.querySelector('.page.active') || {}).id);
+    var bg0 = getComputedStyle(row).backgroundColor;
     all8(); document.querySelector('.tab[data-page="livecharts"]').click(); await W(800);
     // Charts opens as a page like the others since 26 Oct 2026 (Nestor: "like community chat"): the row stays; only the chart's full screen covers it
     ok('on Charts the row stays (a page first; the chart\'s full screen covers it)', getComputedStyle(row).display !== 'none', getComputedStyle(row).display);
-    ok('...black as on every tab, no blue-grey band (28 Oct 2026)', getComputedStyle(row).backgroundColor !== 'rgb(19, 23, 34)' && getComputedStyle(row, '::before').backgroundColor !== 'rgb(19, 23, 34)', [getComputedStyle(row).backgroundColor, getComputedStyle(row, '::before').backgroundColor]);
-    ok('window.__stNav keeps its API', typeof __stNav.open === 'function' && typeof __stNav.close === 'function' && typeof __stNav.isOpen === 'function', Object.keys(__stNav));
-    __stNav.open(); await W(400);
-    ok('__stNav.open() opens it', __stNav.isOpen(), __stNav.isOpen());
-    __stNav.close(); await W(400);
-    ok('__stNav.close() closes it', !__stNav.isOpen(), __stNav.isOpen());
+    ok('...on black, as on every other tab (the blue-grey band went on 28 Oct 2026)', getComputedStyle(row).backgroundColor === bg0, [getComputedStyle(row).backgroundColor, bg0]);
+    ok('no "All pages" sheet any more (28 Oct 2026, Nestor: "remove these options for the tabs on phone"): window.__stNav is gone', typeof window.__stNav === 'undefined' && !document.querySelector('.st-navsheet-bg'));
     document.querySelector('.tab[data-page="bias"]').click(); await W(400);
-    ok('back on Session Bias the row is there again, black', getComputedStyle(row).display !== 'none' && getComputedStyle(row).backgroundColor !== 'rgb(19, 23, 34)', [getComputedStyle(row).display, getComputedStyle(row).backgroundColor]);
+    ok('back on Session Bias the row is there, black', getComputedStyle(row).display !== 'none' && getComputedStyle(row).backgroundColor === bg0, [getComputedStyle(row).display, getComputedStyle(row).backgroundColor]);
   } catch (e) { out.push({ name: 'ran', ok: false, got: String(e && e.stack || e) }); }
   return out;
 })()

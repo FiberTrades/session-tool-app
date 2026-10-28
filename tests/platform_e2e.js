@@ -108,13 +108,9 @@
       check('the timeframe opens its list above the bar', mn && mr.bottom <= bar.getBoundingClientRect().top + 1 && mn.querySelector('[data-phtfv="60"]'), mr && [mr.top, mr.bottom]);
       mn.querySelector('[data-phtfv="60"]').click(); for (k = 0; k < 40 && P._panes()[0].tf !== 60; k++) await W(150); await W(900);
       check('...1h: the chart turns to it, the button says so', P._panes()[0].tf === 60 && $('.ph-tf').textContent.indexOf('1h') === 0, [P._panes()[0].tf, $('.ph-tf').textContent]);
-      $('.ph-logo').click(); await W(300);
-      var nv = window.__stNav ? true : (win.classList.contains('ph-navon') && document.querySelectorAll('.ph-navs [data-phnavt]').length >= 4);
-      check('the logo opens the app\'s tabs', nv, document.querySelectorAll('.ph-navs [data-phnavt]').length);
-      if (!window.__stNav) { $('.ph-navs [data-phnavt="bias"]').click(); await W(600);
-        check('...a tab from there: that page, the chart put away', document.getElementById('page-bias').classList.contains('active') && getComputedStyle(win).display === 'none' || !document.getElementById('page-livecharts').classList.contains('active'));
-        document.querySelector('.tab[data-page="livecharts"]').click(); await W(1500); }
-      try { if (window.__stNav && window.__stNav.close) window.__stNav.close(); } catch (e) {} await W(300);
+      // the logo: out of full screen, as the top-left tile; no "All pages" sheet any more (Nestor, 28 Oct 2026: "remove these options for the tabs on phone")
+      $('.ph-logo').click(); await W(800);
+      check('the logo: out of full screen, the page and its tab icons back; no "All pages" sheet', !win.classList.contains('ph-full') && !document.querySelector('.st-navsheet-bg') && !window.__stNav && !document.querySelector('.ph-navs') && getComputedStyle($('.container > .tabs')).display !== 'none', [win.className, !!window.__stNav]);
       if (!win.classList.contains('ph-full')) { window.scrollTo(0, Math.round(window.scrollY + win.getBoundingClientRect().top)); for (k = 0; k < 30 && !win.classList.contains('ph-full'); k++) await W(100); await W(600); }
       $('.ph-exit').click(); await W(800);
       check('the way out: the page as it was (at its top), the tab icons a tap away', !win.classList.contains('ph-full') && !document.body.classList.contains('st-phfull') && window.scrollY === 0 && getComputedStyle($('.container > .tabs')).display !== 'none', [win.className, window.scrollY]);
@@ -124,7 +120,6 @@
       check('...back to Charts: a page again, not full screen (nothing remembered)', document.getElementById('page-livecharts').classList.contains('active') && !win.classList.contains('ph-full') && !document.body.classList.contains('st-phfull'), win.className);
       check('no errors', errs.length === 0, errs.slice(0, 3));
       // for the picture: the sheet open, the chevron's menu showing
-      try { if (window.__stNav && window.__stNav.isOpen()) window.__stNav.close(); } catch (e) {} await W(400);
       if ($('[data-phgo]')) { $('[data-phgo]').click(); await W(600); if ($('.ph-pos [data-tma="partmenu"]')) { $('.ph-pos [data-tma="partmenu"]').click(); await W(300); } }
       try { localStorage.removeItem('st_partPct'); } catch (e) {}
       return results;
