@@ -36,10 +36,10 @@
     window.__stLcForce = true; window.__stPlatOff = false;
     document.querySelector('.tab[data-page="livecharts"]').click(); for (var k = 0; k < 40 && !$('#page-livecharts.active'); k++) await W(150); window.scrollTo(0, 0); await W(800); updateSessionLiveBanner(); await W(200);
     if (innerWidth >= 821) {
-      var pill = $('#session-live-pill'), tabs = $('.container > .tabs'), pr = pill.getBoundingClientRect(), tr = tabs.getBoundingClientRect(), nx = pill.nextElementSibling;
+      var pill = $('#session-live-pill'), pr = pill.getBoundingClientRect(), nx = pill.nextElementSibling, tbb = Math.max.apply(null, Array.prototype.map.call(document.querySelectorAll('.container > .tabs .tab'), function (t) { return t.getBoundingClientRect().bottom; }));   // the tab buttons are the edge (the row is black)
       while (nx && !(nx.getBoundingClientRect().height > 0)) nx = nx.nextElementSibling;
-      var up = pr.top - tr.bottom, dn = nx ? nx.getBoundingClientRect().top - pr.bottom : -1;
-      ok('Charts: the "Session live" label has the same space above it as below it', vis(pill) && up >= 12 && Math.abs(up - dn) <= 1, [Math.round(up), Math.round(dn)]);
+      var gw = $('#page-livecharts.active .st-asst-wrap'), up = pr.top - tbb, dn = gw ? gw.getBoundingClientRect().top - pr.bottom : (nx ? nx.getBoundingClientRect().top - pr.bottom : -1);
+      ok('Charts: the "Session live" label as far from the tab buttons as from the greeting', vis(pill) && up >= 16 && Math.abs(up - dn) <= 1, [Math.round(up), Math.round(dn)]);
     }
   } catch (e) { ok('test ran', false, String(e && e.stack || e)); }
   return out;
