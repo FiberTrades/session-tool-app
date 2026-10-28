@@ -476,6 +476,21 @@
     check('...it is made again: only the member deletes it', !!box() && !P._cfg().tbDel['tb:88001'], box());
     var Lx = P._dr().list; Lx.splice(Lx.indexOf(box()), 1); await W(3500);
     check('...deleted by hand: it stays deleted (remembered)', !box() && P._cfg().tbDel['tb:88001'] === 1, P._cfg().tbDel);
+    // only the account the chart is on (Nestor, 28 Oct 2026: "can you eliminate all the demo account trade history arrows please?"): the demo's test
+    // trades, and a row with no login, never mark the 70K's chart - with its own EA or with the prices from another account's EA (the hub)
+    var mk3 = function (tk, lg) { return { ticket: tk, symbol: 'EURUSD', direction: 'buy', lots: 1, entry_price: bxr.tick.op, exit_price: lx, open_time: new Date(tx0 * 1000).toISOString(), close_time: new Date(Bx[Bx.length - 5].time * 1000).toISOString(), pnl: 50, risk_gbp: 100, login: lg }; };
+    window.__stLive.openIdeas = function () { return []; }; P._lvTr([mk3(88101, '90001234'), mk3(88102, '1515070952'), mk3(88103, null)]); await W(200);
+    var lst1 = P._lvTrList();
+    check('closed trades marked: the chart\'s own account\'s only - not the demo\'s, not a row without a login', lst1.join('|') === '88101', lst1);
+    var ea0 = P._s().ea, lvLg0 = P._cfg().lvLg, act0 = data.activeAccountId;
+    P._s().ea = Object.assign({}, ea0, { hub: 'EURUSD|1515070952', lg: 1515070952 }); P._cfg().lvLg = ''; data.activeAccountId = 'acc-plat';
+    var lst2 = P._lvTrList(), lgs2 = P._lvMarkLgs();
+    check('...prices from another account\'s EA (the hub, here the demo): still the account on screen\'s, never the hub\'s', lst2.join('|') === '88101' && lgs2.join('|') === '90001234', [lst2, lgs2]);
+    P._cfg().lvLg = '1515070952'; var lst3 = P._lvTrList();
+    check('...the demo picked to trade with: then the demo\'s own', lst3.join('|') === '88102', lst3);
+    P._s().ea = Object.assign({}, ea0, { hub: null, lg: 1515070952 }); P._cfg().lvLg = '90001234'; var lst4 = P._lvTrList();
+    check('...the account picked (the 70K) off the line, the chart on the demo EA for its prices: still the 70K trades', lst4.join('|') === '88101', lst4);
+    P._s().ea = ea0; P._cfg().lvLg = lvLg0; data.activeAccountId = act0;
     P._lvTr([]); window.__stLive.openIdeas = oi0; await W(400);
 
     // ---- Replay: the window as it was, and back ----

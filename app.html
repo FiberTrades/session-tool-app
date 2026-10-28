@@ -97975,13 +97975,19 @@ window.__stAZ = (function () {
   function lvTrR(x){ if (x.open) return isFinite(x.R) ? x.R : NaN; return (x.risk > 0 && x.pnl != null && isFinite(x.pnl)) ? x.pnl / x.risk : NaN; }
   // won, lost or about even (a stop at break-even closes a few pence down after costs): within 0.1R is even
   function lvTrRes(x){ var r = lvTrR(x); if (isFinite(r)) return r > 0.1 ? 'w' : (r < -0.1 ? 'l' : 'b'); var v = x.pnl; return (v == null || !isFinite(v) || v === 0) ? 'b' : (v > 0 ? 'w' : 'l'); }
-  // a chart's trades: the open ones (live feed) and the closed ones on its symbol, on the account it shows
-  function lvTrList(F){ var sym = F && F.sym; if (!sym) return []; var lg = (S && S.ea && S.ea.lg) ? String(S.ea.lg) : '', out = [], open = {}, seen = {};
-    lvIdeas(sym).forEach(function(i){ var r = i.r, tk = i.tk; open[String(r.ticket)] = 1;
+  // The MT5 login(s) whose trades a chart marks: the account picked to trade with (Trade with); else the chart's own EA's; with the prices
+  // from the hub (another account's EA streaming the watchlist), the journal account on screen. Never the hub's, and nothing when no account is known (Nestor,
+  // 28 Oct 2026: "can you eliminate all the demo account trade history arrows please?" - the demo's test trades marked his 70K's charts:
+  // marks went by symbol and only left out a trade when both logins were known, so the hub's login, an unknown one or a row without a
+  // login let any account's trades through)
+  function lvMarkLgs(){ var e = S && S.ea; if (CFG.lvLg) return [String(CFG.lvLg)]; if (e && e.lg && !e.hub) return [String(e.lg)];   // the account picked to trade with first: its EA off the line, the chart takes another's prices, never its trades
+    try { var map = (typeof data !== 'undefined' && data && data.mt5LoginMap) || {}, act = data && data.activeAccountId; if (act) return Object.keys(map).filter(function(k){ return map[k] === act; }); } catch (er) {}
+    return []; }
+  // a chart's trades: the open ones (live feed) and the closed ones on its symbol, of the account it is on (lvMarkLgs)
+  function lvTrList(F){ var sym = F && F.sym; if (!sym) return []; var lgs = lvMarkLgs(), mine = function(lg){ return lg != null && lg !== '' && lgs.indexOf(String(lg)) >= 0; }, out = [], open = {};
+    lvIdeas(sym).forEach(function(i){ var r = i.r, tk = i.tk; open[String(r.ticket)] = 1; if (r.login != null && r.login !== '' && !mine(r.login)) return;   // another account's open trade
       out.push({ ticket: String(r.ticket), dir: i.long ? 1 : -1, lots: +r.lots || 0, entry: +tk.op, exit: 0, eTs: i.at, xTs: 0, open: true, px: +tk.px, R: isFinite(+tk.r) ? +tk.r : NaN, pnl: isFinite(+tk.pnl) ? +tk.pnl : null, risk: +(r.risk0 || r.risk) || 0 }); });
-    LTR.rows.forEach(function(x){ if (x.key !== sym.key || open[x.ticket] || (lg && x.login && x.login !== lg)) return;
-      if (!lg) { var k = x.dir + '|' + Math.floor(x.eTs / 60); if (seen[k]) return; seen[k] = 1; }   // no account known: one mark for a trade and its copies
-      out.push(x); });
+    LTR.rows.forEach(function(x){ if (x.key !== sym.key || open[x.ticket] || !mine(x.login)) return; out.push(x); });   // its own account's only: a row without a login is no one's
     return out; }
   async function lvTrLoad(u){ var sb = sbc(); if (!sb || !u) return; LTR.busy = true; LTR.at = Date.now();
     try { var r = await sb.from('trades_inbox').select('ticket,symbol,direction,lots,entry_price,exit_price,open_time,close_time,pnl,risk_gbp,login,sl_moves,tp_moves,sl_pips,tp_pips')
@@ -99496,7 +99502,7 @@ window.__stAZ = (function () {
     _newsActuals: newsActuals, _newsState: function(){ return NEWS; }, _newsEvery: newsEvery, _newsTick: newsTick,
     _newsCard: function(i, k){ var p = panes[i || 0]; if (!p) return null; var h = k == null ? null : (p._news || [])[k]; newsCard(p, h || null); return h ? (p.card ? p.card.textContent : '') : null; },
     _dwAdopt: function(raw, list){ dwAdopt('L|' + raw, list, Date.now()); },   // a list from the server (tbSync's test)
-    _lvTr: function(rows){ LTR.rows = (rows || []).map(lvTrNorm).filter(Boolean); LTR.at = Date.now(); if (S && S.live) render(); }, _tmAt: function(i, x, y){ return tmAt(panes[i || 0], x, y); }, _rtGo: function(i){ rtGo(panes[i || 0]); }, _rtOff: function(i){ return rtOff(panes[i || 0]); }, _tmCardText: function(i, tk){ var p = panes[i || 0], x = p && lvTrList(PS(p)).filter(function(q){ return q.ticket === String(tk); })[0]; if (!x) return null; var c = document.createElement('div'); tmCard(p, { g: { list: [x] }, x: 100, top: 100, bot: 110, above: true }, c); return c.textContent; }, _tmk: function(i){ var p = panes[i || 0]; return p ? p._tmk : null; }, _arw: function(i){ var p = panes[i || 0]; return (p && p.series.__stArw) ? p.series.__stArw.items : []; } };
+    _lvTr: function(rows){ LTR.rows = (rows || []).map(lvTrNorm).filter(Boolean); LTR.at = Date.now(); if (S && S.live) render(); }, _lvTrList: function(){ return S ? lvTrList(S).map(function(x){ return x.ticket; }) : []; }, _lvMarkLgs: lvMarkLgs, _tmAt: function(i, x, y){ return tmAt(panes[i || 0], x, y); }, _rtGo: function(i){ rtGo(panes[i || 0]); }, _rtOff: function(i){ return rtOff(panes[i || 0]); }, _tmCardText: function(i, tk){ var p = panes[i || 0], x = p && lvTrList(PS(p)).filter(function(q){ return q.ticket === String(tk); })[0]; if (!x) return null; var c = document.createElement('div'); tmCard(p, { g: { list: [x] }, x: 100, top: 100, bot: 110, above: true }, c); return c.textContent; }, _tmk: function(i){ var p = panes[i || 0]; return p ? p._tmk : null; }, _arw: function(i){ var p = panes[i || 0]; return (p && p.series.__stArw) ? p.series.__stArw.items : []; } };
 })();
 </script>
 
