@@ -49,6 +49,14 @@
       check('the bottom toolbar: the logo first, Live, the symbol, the timeframe, drawing tools, undo, Show on chart, alerts - all on screen', kids.every(function (k) { return k && k.getBoundingClientRect().width > 0 && k.getBoundingClientRect().right <= innerWidth + 1; }) && !!$('.ph-logo svg'),
         kids.map(function (k) { return k ? Math.round(k.getBoundingClientRect().right) : null; }));
       check('above it, docked: the open trade (or None) and a square pink Execute', (/No open trade/.test($('.ph-trade').textContent) || /lots/.test($('.ph-trade').textContent)) && $('.ph-go') && parseFloat(getComputedStyle($('.ph-go')).borderRadius) <= 4 && $('.ph-trade').getBoundingClientRect().bottom <= bar.getBoundingClientRect().top + 1);
+      // the trade row behind its button (Nestor, 28 Oct 2026: "can't this live in a button that when pressed the position row displays and it can be hidden away?")
+      var trb = $('.ph-icons > [data-phtrb]'), trH = function () { return Math.round($('.ph-trade').getBoundingClientRect().height); }, cwH = function () { return Math.round($('#stpr-cw').getBoundingClientRect().height); };
+      var trh0 = trH(), cwh0 = cwH();
+      check('the trade row is put away to start with, its button first of the toolbar\'s icons', trb && $('.ph-icons').firstElementChild === trb && trh0 === 0 && !trb.classList.contains('on'), [trh0, trb && trb.className]);
+      trb.click(); await W(450);
+      var trh1 = trH(), cwh1 = cwH(), trsv = {}; try { trsv = JSON.parse(localStorage.getItem('st_plat') || '{}'); } catch (e) {}
+      check('...its button brings it up, the chart gives way, kept on this device', trh1 >= 44 && cwh1 <= cwh0 - 40 && trb.classList.contains('on') && trsv.phTr === true, [trh1, cwh0, cwh1, trsv.phTr]);
+      check('no squashed + in the bar: Compare is in the symbol menu on a phone', getComputedStyle($('#stpr-cmpbtn')).display === 'none', getComputedStyle($('#stpr-cmpbtn')).display);
       $('[data-phpill]').click(); await sheetAt(true); await W(200);
       check('the pill slides up the Trade Manager, Setup and Why in it', win.classList.contains('ph-open') && $('.ph-sheet #stpr-mm.pl-mm') && $('.ph-sheet [data-plsetup]') && $('.ph-sheet [data-plwhy]') && $('.ph-sheet').getBoundingClientRect().bottom <= innerHeight + 1, [win.className, !!$('.ph-sheet #stpr-mm.pl-mm'), !!$('.ph-sheet [data-plsetup]'), Math.round($('.ph-sheet').getBoundingClientRect().bottom), innerHeight]);
       $('.ph-sheet .pl-x').click(); await sheetAt(false);
@@ -56,6 +64,9 @@
       $('.ph-trade [data-phplace]').click();
       for (k = 0; k < 40 && !/lots/.test($('.ph-sum') ? $('.ph-sum').textContent : ''); k++) await W(250);
       check('...the side it places: the order fills, the bar shows the trade', /BUY|SELL/.test($('.ph-sum').textContent) && /lots/.test($('.ph-sum').textContent), $('.ph-trade').textContent);
+      trb.click(); await W(450); var trdot = trb.querySelector('.ph-trd');
+      check('...put away with a trade open: its button shows a dot, green or red by the trade\'s profit', trH() === 0 && !trdot.hidden && /ph-trd (u|d|z)/.test(trdot.className), [trH(), trdot.className, trdot.hidden]);
+      trb.click(); await W(450);
       $('[data-phgo]').click(); await sheetAt(true);
       check('the sheet lists the open trade with Move to BE, Close 50% (and its chevron) and Close', $('.ph-pos .ph-p') && $('.ph-pos [data-tma="part"]') && $('.ph-pos [data-tma="partmenu"]') && $('.ph-pos [data-tma="close"]'), $('.ph-pos') && $('.ph-pos').textContent.slice(0, 120));
       // how much to close (25 Oct 2026): the chevron's menu on screen, over the sheet; 75% picked is the button's label
@@ -131,7 +142,7 @@
     var tabs = $('.container > .tabs') || $('.tabs'), ta1 = tabs.querySelector('.tab.active'), tabsNow = { h: tabs.offsetHeight, th: ta1.offsetHeight, fs: getComputedStyle(ta1).fontSize, tb: getComputedStyle(ta1).backgroundColor, bg: getComputedStyle(tabs).backgroundColor, tk: $('.ticker-bar') ? getComputedStyle($('.ticker-bar')).backgroundColor : '' };
     var butBg = function(o){ var x = Object.assign({}, o); delete x.bg; return JSON.stringify(x); };   // the row's own background: the platform's blue-grey on Charts (27 Oct 2026)
     check('the app\'s tab row over it as on every other tab: its height, the tabs\' height, font and colour, the ticker', butBg(tabsNow) === butBg(tabsBefore) && getComputedStyle(tabs).display !== 'none', [tabsBefore, tabsNow]);
-    check('...the row itself on the platform\'s blue-grey, not black (Nestor, 27 Oct 2026)', tabsNow.bg === 'rgb(19, 23, 34)' && tabsBefore.bg !== tabsNow.bg, [tabsBefore.bg, tabsNow.bg]);
+    check('...the row itself black, as on every other tab (Nestor, 28 Oct 2026: no blue-grey band)', tabsNow.bg === tabsBefore.bg, [tabsBefore.bg, tabsNow.bg]);
     check('as tall as the screen under the tabs', wr.bottom <= innerHeight + 2 && wr.height > innerHeight - 200, [wr.top, wr.bottom, innerHeight]);
     var nm = $('#stpr-grid .pl-nm'), oh = $('#stpr-grid .stpr-ohlc');
     check('the chart\'s legend: Euro / U.S. Dollar · 15 · the account, and O H L C on the same line', nm && /^Euro \/ U\.S\. Dollar · 15 · FTMO 70K$/.test(nm.textContent) && oh && /O.*H.*L.*C/.test(oh.textContent) && Math.abs(nm.getBoundingClientRect().top - oh.getBoundingClientRect().top) < 6,

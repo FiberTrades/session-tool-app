@@ -77,14 +77,14 @@
     all8(); document.querySelector('.tab[data-page="livecharts"]').click(); await W(800);
     // Charts opens as a page like the others since 26 Oct 2026 (Nestor: "like community chat"): the row stays; only the chart's full screen covers it
     ok('on Charts the row stays (a page first; the chart\'s full screen covers it)', getComputedStyle(row).display !== 'none', getComputedStyle(row).display);
-    ok('...on the platform blue-grey, not black (27 Oct 2026)', getComputedStyle(row).backgroundColor === 'rgb(19, 23, 34)' && getComputedStyle(row, '::before').backgroundColor === 'rgb(19, 23, 34)', [getComputedStyle(row).backgroundColor, getComputedStyle(row, '::before').backgroundColor]);
+    ok('...black as on every tab, no blue-grey band (28 Oct 2026)', getComputedStyle(row).backgroundColor !== 'rgb(19, 23, 34)' && getComputedStyle(row, '::before').backgroundColor !== 'rgb(19, 23, 34)', [getComputedStyle(row).backgroundColor, getComputedStyle(row, '::before').backgroundColor]);
     ok('window.__stNav keeps its API', typeof __stNav.open === 'function' && typeof __stNav.close === 'function' && typeof __stNav.isOpen === 'function', Object.keys(__stNav));
     __stNav.open(); await W(400);
     ok('__stNav.open() opens it', __stNav.isOpen(), __stNav.isOpen());
     __stNav.close(); await W(400);
     ok('__stNav.close() closes it', !__stNav.isOpen(), __stNav.isOpen());
     document.querySelector('.tab[data-page="bias"]').click(); await W(400);
-    ok('back on Session Bias the row is there again, black again', getComputedStyle(row).display !== 'none' && getComputedStyle(row).backgroundColor !== 'rgb(19, 23, 34)', [getComputedStyle(row).display, getComputedStyle(row).backgroundColor]);
+    ok('back on Session Bias the row is there again, black', getComputedStyle(row).display !== 'none' && getComputedStyle(row).backgroundColor !== 'rgb(19, 23, 34)', [getComputedStyle(row).display, getComputedStyle(row).backgroundColor]);
   } catch (e) { out.push({ name: 'ran', ok: false, got: String(e && e.stack || e) }); }
   return out;
 })()
