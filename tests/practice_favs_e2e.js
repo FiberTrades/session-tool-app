@@ -1,7 +1,8 @@
 (async function () {
   // Favourite drawing tools (Nestor, 26 Oct 2026, TradingView's; 29 Oct 2026: "favourites needs to be shared with other charts and if the
   // other charts dont need it the star icon can be turned off individually for each chart", "i need to be able to organize these however i
-  // want and also i want to have the emojis in here too"): a star on every tool in the menus and on every emoji in the emoji picker; one list
+  // want and also i want to have the emojis in here too"): a star on every tool in the menus and on the Emoji tool (29 Oct 2026: "i meant to
+  // have the actual emoji icon and when clicked on it opens all the emojis" - one smiley on the bar, the whole picker under it); one list
   // for every chart; a bar inside each chart that wants it - its own on / off (the star button) and place - its tools dragged into any order.
   // Run: python tests/browser_test.py tests/practice_favs_e2e.js
   var W = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
@@ -56,16 +57,25 @@
     ok('...and hides only that one', !shown(1) && shown(0));
     C.act = 0; P._render(); await W(40);
 
-    // emojis: starred in the emoji picker, on the bar, one click arms them
-    DW.sel = null; P._props(); tools.querySelector('#stpr-tool-emoji').click(); await W(60); P._dbar().open('emoji'); await W(60);
-    var ep = P._dbar().pop(), eb = ep && ep.querySelector('[data-emo]'), ex = eb && eb.getAttribute('data-emo'), es = eb && eb.querySelector('[data-efav]');
-    ok('a star on each emoji in the picker', !!es && ep.querySelectorAll('[data-efav]').length === ep.querySelectorAll('[data-emo]').length, ep && ep.querySelectorAll('[data-efav]').length);
-    es.click(); await W(60);
-    ok('starred: on the Favourites bar, the emoji not picked by the star', (C.fav || []).indexOf('emo:' + ex) >= 0 && !!bar(0).querySelector('[data-fvt="emo:' + ex + '"]') && !DW.emoArm, [C.fav, DW.emoArm]);
-    P._dbar().closePop(); if (DW.tool !== 'none') tools.querySelector('#stpr-tool-emoji').click(); await W(40);
-    bar(0).querySelector('[data-fvt="emo:' + ex + '"]').click(); await W(40);
-    var ch0 = pn[0].el.querySelector('.stpr-pc'), cr = ch0.getBoundingClientRect(), n0 = DW.list.length;
-    ok('one click on it arms the Emoji tool with it, lit on the bar', DW.tool === 'emoji' && DW.emoArm && bar(0).querySelector('[data-fvt="emo:' + ex + '"]').classList.contains('on'), [DW.tool, DW.emoArm]);
+    // the Emoji tool: starred like any tool (its star in its button's corner); on the bar its smiley opens the whole picker, right under it
+    DW.sel = null; P._props(); var eTool = tools.querySelector('#stpr-tool-emoji'), eStar = eTool && eTool.querySelector('[data-fav="emoji"]');
+    ok('the Emoji tool has its star in its corner, shown on hover', !!eStar && getComputedStyle(eStar).position === 'absolute' && getComputedStyle(eStar).opacity === '0', eStar && [getComputedStyle(eStar).position, getComputedStyle(eStar).opacity]);
+    eStar.click(); await W(60);
+    ok('starred: the Emoji tool on the Favourites bar as its smiley, the tool not picked by the star', (C.fav || []).join(',') === 'rect,trend,emoji' && eStar.classList.contains('on') && !!bar(0).querySelector('[data-fvt="emoji"] svg') && DW.tool !== 'emoji', [C.fav, DW.tool]);
+    eTool.click(); await W(60); var ep = P._dbar().pop();
+    ok('the picker (from the toolbar): every emoji, and no star on any of them', DW.tool === 'emoji' && ep && ep.style.display !== 'none' && ep.querySelectorAll('[data-emo]').length >= 20 && !ep.querySelector('[data-efav], .stdb-efav, [data-fav]'), ep && [ep.style.display, ep.querySelectorAll('[data-emo]').length]);
+    eTool.click(); await W(40);
+    // starred one by one before (or by a device not updated yet): the one Emoji tool, where the first of them was
+    C.fav = ['rect', 'emo:🚀', 'trend', 'emo:🎯']; fb.click(); await W(40); fb.click(); await W(60);
+    ok('emojis starred one by one before: the one Emoji tool where the first was, the rest gone', (C.fav || []).join(',') === 'rect,emoji,trend' && ids(0) === 'rect,emoji,trend', [C.fav, ids(0)]);
+    var fe = bar(0).querySelector('[data-fvt="emoji"]'); fe.click(); await W(80);
+    var fe2 = bar(0).querySelector('[data-fvt="emoji"]'), fr2 = fe2.getBoundingClientRect(), dbEl = P._dbar().el(), ep2 = P._dbar().pop(), dr = dbEl.getBoundingClientRect(), pr = ep2.getBoundingClientRect(), dbe = dbEl.querySelector('[data-db="emoji"]');
+    ok('the bar\'s smiley picks the Emoji tool, lit there, the whole picker open', DW.tool === 'emoji' && fe2.classList.contains('on') && ep2.style.display !== 'none' && ep2.querySelectorAll('[data-emo]').length >= 20, [DW.tool, ep2.style.display]);
+    var de = dbe && dbe.getBoundingClientRect();
+    ok('...anchored to the bar: the tool\'s smiley right under the bar\'s, the picker under that', !!de && Math.abs(de.left - fr2.left) < 2 && dr.top >= fr2.bottom && dr.top - fr2.bottom < 12 && pr.top >= dr.bottom && pr.top - dr.bottom < 12, [de && de.left, fr2.left, fr2.bottom, dr.top, dr.bottom, pr.top]);
+    var eb = ep2.querySelectorAll('[data-emo]')[3], ex = eb.getAttribute('data-emo'); eb.click(); await W(60);
+    var ch0 = pn[0].el.querySelector('.stpr-pc'), cr = ch0.getBoundingClientRect(), n0 = DW.list.length, dr2 = P._dbar().el().getBoundingClientRect();
+    ok('one picked there: armed, its toolbar still under the bar', DW.tool === 'emoji' && DW.emoArm && Math.abs(dr2.top - dr.top) < 1 && Math.abs(dr2.left - dr.left) < 1, [DW.emoArm, dr2.top - dr.top]);
     ch0.dispatchEvent(new MouseEvent('mousedown', { clientX: cr.left + cr.width * 0.4, clientY: cr.top + cr.height * 0.4, bubbles: true, cancelable: true, button: 0, buttons: 1, view: window }));
     ch0.dispatchEvent(new MouseEvent('mouseup', { clientX: cr.left + cr.width * 0.4, clientY: cr.top + cr.height * 0.4, bubbles: true, cancelable: true, button: 0, view: window })); await W(80);
     ok('...and a click on the chart places that emoji', DW.list.length === n0 + 1 && DW.list[DW.list.length - 1].type === 'emoji' && DW.list[DW.list.length - 1].e === ex, DW.list[DW.list.length - 1]);
@@ -78,6 +88,12 @@
     ok('chart 2 in its own window: its Favourites bar there, inside its chart, the same list', !!win && !!wb && wb.ownerDocument === win.document && wb.classList.contains('show') && Array.prototype.map.call(wb.querySelectorAll('[data-fvt]'), function (b) { return b.getAttribute('data-fvt'); }).join(',') === (C.fav || []).join(','), [!!pb, !!win, !!wb]);
     var wfb = win && win.document.querySelector('#stpr-favbtn');
     ok('that window\'s star shows its own chart\'s bar as on', !!wfb && wfb.getAttribute('aria-pressed') === 'true', wfb && wfb.getAttribute('aria-pressed'));
+    // a tool's star pressed in that window: the favourite, not the tool (its menu's stars, and the Emoji tool's)
+    var t0 = DW.tool, ws = win && win.document.querySelector('[data-fav="hline"]'), we = win && win.document.querySelector('[data-fav="emoji"]');
+    if (ws) { ws.click(); await W(80); }
+    var hIn = (C.fav || []).indexOf('hline') >= 0; if (we) { we.click(); await W(80); }
+    ok('a star pressed in that window: Horizontal line in, the Emoji tool out, neither tool picked', !!ws && !!we && hIn && (C.fav || []).indexOf('emoji') < 0 && DW.tool === t0, [C.fav, DW.tool, t0]);
+    if (ws) { ws.click(); await W(40); } if (we) { we.click(); await W(60); }
     if (wfb) { wfb.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); wfb.click(); await W(150); }
     var p1 = P._panes()[1], bars1 = p1.el.querySelectorAll('.stpr-favbar');
     ok('pressed there: that chart\'s bar goes, this window\'s chart keeps its own', !(wb && wb.classList.contains('show')) && C.favOnP[1] === false && shown(0), [C.favOnP, bars1.length, p1._fvb === wb, wb && wb.className, wb && wb.isConnected, p1._fvb && p1._fvb.className]);
@@ -85,7 +101,7 @@
     // nothing starred: it says how
     if (DW.tool !== 'none') tools.querySelector('#stpr-tool-emoji').click();
     C.fav = []; fb.click(); await W(40); fb.click(); await W(60);   // a repaint of the bars
-    ok('nothing starred: the bar says how to add a tool or an emoji', /Star a tool or an emoji/.test(bar(0).textContent), bar(0).textContent);
+    ok('nothing starred: the bar says how to add a tool', /Star a tool \(★\) to add it here/.test(bar(0).textContent), bar(0).textContent);
   } catch (e) { out.push({ name: 'ran', ok: false, got: String(e && e.stack || e) }); }
   try { if (win && !win.closed) win.close(); } catch (e) {}
   return JSON.stringify(out);
