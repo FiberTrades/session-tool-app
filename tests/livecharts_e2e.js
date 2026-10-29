@@ -466,7 +466,8 @@
     check('two accounts run the EA on EUR/USD: the panel\'s account name is a picker (a small arrow)', nb && !!nb.querySelector('svg') && LC._accs().join() === '90001234,90007777', [LC._accs(), nb && nb.outerHTML.slice(0, 120)]);
     var pxA = LC.state().px.b; nb.click(); await W(1900);
     var am = document.getElementById('stpr-menu'), rowsA = am.querySelectorAll('[data-lvacc]');
-    check('...it lists both - FTMO 70K Challenge · 90001234 (the one shown) and MT5 · 90007777 - after asking every EA to say hi', am.classList.contains('show') && rowsA.length === 2 && /FTMO 70K Challenge · 90001234/.test(am.textContent) && /MT5 · 90007777/.test(am.textContent) && am.querySelector('[data-lvacc="90001234"]').classList.contains('on') && /follow the account you pick/.test(am.textContent), am.textContent);
+    var twRow = function (lg) { var b = am.querySelector('[data-lvacc="' + lg + '"]'); return b ? [b.querySelector('.stpr-tw-n b').textContent, b.querySelector('.stpr-tw-n small').textContent, b.classList.contains('on'), !!b.querySelector('.stpr-tw-ck svg')] : null; };
+    check('...it lists both, one line each (29 Oct 2026: name, login small, a check on the one traded) - FTMO 70K Challenge 90001234 and MT5 90007777 - after asking every EA to say hi, Copy trading… under them', am.classList.contains('show') && rowsA.length === 2 && JSON.stringify(twRow('90001234')) === JSON.stringify(['FTMO 70K Challenge', '90001234', true, true]) && JSON.stringify(twRow('90007777')) === JSON.stringify(['MT5', '90007777', false, false]) && !!am.querySelector('[data-cpsheet]'), [twRow('90001234'), twRow('90007777'), am.textContent]);
     am.querySelector('[data-lvacc="90007777"]').click();
     for (k = 0; k < 80; k++) { await W(250); st = LC.state(); if (st.live && st.ea && String(st.ea.lg) === '90007777' && st.fresh && st.px && Math.abs(st.px.b - (pxA + 0.005)) < 0.002) break; }
     var nm2 = (document.querySelector('#stpr-mm .stpr-mm-an') || {}).textContent || '';
@@ -484,9 +485,11 @@
     document.querySelector('#stpr-mm [data-mm="acct"]').click(); await W(1900);   // opening it asks every EA to say hi (and send its settings)
     LC.set({ s: eaF.raw, lg: eaF.lg, st: Object.assign({}, LC._lvset()[kF] || stF, { copy_role: 'lead', copy_followers: 0 }) }); await W(150);
     var amF = document.getElementById('stpr-menu'); amF.innerHTML = LC._accHtml(false); await W(50);
+    check('...90001234 the Lead: its row says LEAD (a chip), MT5 90007777 none', /LEAD/.test((amF.querySelector('[data-lvacc="90001234"] .stpr-twc.lead') || {}).textContent || '') && !amF.querySelector('[data-lvacc="90007777"] .stpr-twc'), amF.innerHTML.slice(0, 600));
+    amF.querySelector('[data-cpsheet]').click(); await W(100); amF = document.getElementById('stpr-menu');   // the copier's actions: Copy trading…, a sheet of its own
     // in words since 27 Oct 2026 ("i dont know if i am asking to follow or for the account to be a follow account"): the action names the Lead
     var cpF = function () { return amF.querySelector('[data-cpact="follow|90007777"]'); };
-    check('with 90001234 the Lead: "Copy <the Lead>\'s trades" beside MT5 · 90007777 only (not the Lead, not the account on screen) - greyed with an EA before 9.10', amF.querySelectorAll('[data-cpact^="follow|"]').length === 1 && cpF() && cpF().disabled && /^Copy .+’s trades$/.test(cpF().textContent) && /9\.10/.test(cpF().title) && /Lead · its trades are copied/.test(amF.textContent), amF.innerHTML.slice(0, 400));
+    check('Copy trading: the Lead (90001234, Stop being the Lead), then "Copy <the Lead>\'s trades" beside MT5 90007777 only - greyed with an EA before 9.10', !!amF.querySelector('[data-cpback]') && !!amF.querySelector('[data-cpact="off|90001234"]') && amF.querySelectorAll('[data-cpact^="follow|"]').length === 1 && cpF() && cpF().disabled && /^Copy .+’s trades$/.test(cpF().textContent) && /9\.10/.test(cpF().title) && /^Copy trading\s*Lead\s*FTMO 70K Challenge\s*90001234\s*Stop being the Lead\s*Copying it\s*No account copies it yet\.\s*Not copying\s*MT5\s*90007777/.test(amF.textContent), [amF.querySelectorAll('[data-cpact]').length, cpF() && cpF().outerHTML, amF.textContent]);
     var rpcF = window.__stSB.rpc, sndF = LN._send, callsF = [], pokesF = [], cuF = window.currentUser;
     window.currentUser = cuF || { id: '00000000-0000-0000-0000-0000000c0de7' };
     window.__stSB.rpc = function (fn, a) { callsF.push([fn, a]); return Promise.resolve({ data: 1792723362, error: null }); };
@@ -496,8 +499,8 @@
       var fbt = cpF();
       check('...EA 9.10: the button can be pressed', !!fbt && !fbt.disabled, fbt && fbt.outerHTML);
       fbt.click(); await W(200); amF = document.getElementById('stpr-menu');
-      var rF = amF.querySelector('[data-lvacc="90007777"]'); rF = rF && rF.closest('.stpr-accw2');
-      check('...pressed: saved as follow for 90007777 (st_copy_wish), its EAs poked, the row says "Setting up copy… (asked HH:MM)", and the chart stays on 90001234', callsF.length === 1 && callsF[0][1].p_login === '90007777' && callsF[0][1].p_role === 'follow' && pokesF.some(function (q) { return q[0] === 'role' && q[1].lg === 90007777; }) && rF && /Setting up copy… \(asked \d\d:\d\d\)/.test(rF.textContent) && String(LC.state().ea.lg) === '90001234', [callsF, rF && rF.textContent]);
+      var rF = amF.querySelector('[data-cprow="90007777"]'); rF = rF && rF.nextElementSibling && rF.nextElementSibling.classList.contains('stpr-cpst') ? rF.nextElementSibling : rF;   // what was asked: under its row
+      check('...pressed: saved as follow for 90007777 (st_copy_wish), its EAs poked, under its row "Setting up copy… (asked HH:MM)", and the chart stays on 90001234', callsF.length === 1 && callsF[0][1].p_login === '90007777' && callsF[0][1].p_role === 'follow' && pokesF.some(function (q) { return q[0] === 'role' && q[1].lg === 90007777; }) && rF && /Setting up copy… \(asked \d\d:\d\d\)/.test(rF.textContent) && String(LC.state().ea.lg) === '90001234', [callsF, rF && rF.textContent]);
     } finally { window.__stSB.rpc = rpcF; LN._send = sndF; window.currentUser = cuF; window.__stCopyWish._clear(); ekF.forEach(function (k, i) { eLf[k].v = vF[i]; }); }
     document.body.click(); await W(100);
     LC.set({ s: eaF.raw, lg: eaF.lg, st: Object.assign({}, stF, { copy_role: 'off', copy_followers: 0 }) }); await W(150);
