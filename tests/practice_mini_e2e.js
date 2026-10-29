@@ -2,7 +2,7 @@
   // Practice Replay, Nestor 17 Oct 2026: "the minimalist indicator from trading view to be used in practice replay" (the
   // Gann box asked for with it was taken out again the same day), and the layout buttons pressed again to change the arrangement ("the left one also give me
   // the option of having 2 charts horizontally ... the large horizontal chart below and above and also on the right side").
-  // Real EUR/USD candles of Thu 1 Oct 2026.
+  // Real EUR/USD candles of Thu 15 Oct 2026 - a day inside the candle store's stand-in (tests/fixtures/candles: its 1-minute sample is the week of 12-16 Oct 2026), so the day and the history before it are the same real candles.
   // Run: python tests/browser_test.py tests/practice_mini_e2e.js
   var W = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
   var out = [], ok = function (name, cond, got) { out.push({ name: name, ok: !!cond, got: got === undefined ? null : got }); };
@@ -12,7 +12,7 @@
     var P = window.__stPractice;
     try { Object.keys(localStorage).filter(function (k) { return /^st_practice/.test(k); }).forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
     var C = P._cfg(); C.layout = 2; C.tfs = [15, 60, 5, 240]; C.stopPx = { EURUSD: 0.0012 }; C.speed = 0; C.ses = {}; C.max = true; C.mini = false; C.miniOff = {}; C.lv = {};
-    await P.open({ symbol: 'EURUSD', day: '2026-10-01' }); for (var k = 0; k < 100 && !(P._s() && P._panes().length === 2 && P._panes()[1].n); k++) await W(100);
+    await P.open({ symbol: 'EURUSD', day: '2026-10-15' }); for (var k = 0; k < 100 && !(P._s() && P._panes().length === 2 && P._panes()[1].n); k++) await W(100);
     var S = function () { return P._s(); }, pane = function (i) { return P._panes()[i || 0]; }, DW = P._dr();
     var mev = function (i, t, xx, yy, o) { var ch = pane(i).el.querySelector('.stpr-pc'), r = ch.getBoundingClientRect(), el = document.elementFromPoint(r.left + xx, r.top + yy) || ch;
       el.dispatchEvent(new MouseEvent(t, Object.assign({ clientX: r.left + xx, clientY: r.top + yy, bubbles: true, cancelable: true, button: 0, buttons: t === 'mousedown' || t === 'mousemove' && o && o.held ? 1 : 0 }, o || {}))); };
@@ -53,7 +53,7 @@
     // previous day: 22:00 London to 22:00 London
     var lk = P._lonK, today = lk(B[n - 1].time).day, pd = B.filter(function (b) { return lk(b.time).day === today - 1; });
     var pdh = Math.max.apply(null, pd.map(function (b) { return b.high; })), pdl = Math.min.apply(null, pd.map(function (b) { return b.low; }));
-    ok('the previous day is Wed 30 Sep (22:00 London Tue to 22:00 Wed): PDH ' + pdh + ' PDL ' + pdl, M.dwm.d && M.dwm.d.hi === pdh && M.dwm.d.lo === pdl && new Date(M.dwm.d.t0 * 1000).toISOString() === '2026-09-29T21:00:00.000Z', M.dwm.d && [M.dwm.d.hi, M.dwm.d.lo, new Date(M.dwm.d.t0 * 1000).toISOString()]);
+    ok('the previous day is Wed 14 Oct (22:00 London Tue to 22:00 Wed): PDH ' + pdh + ' PDL ' + pdl, M.dwm.d && M.dwm.d.hi === pdh && M.dwm.d.lo === pdl && new Date(M.dwm.d.t0 * 1000).toISOString() === '2026-10-13T21:00:00.000Z', M.dwm.d && [M.dwm.d.hi, M.dwm.d.lo, new Date(M.dwm.d.t0 * 1000).toISOString()]);
     ok('its range reads in pips: ' + P._miniDist(pdh - pdl), P._miniDist(pdh - pdl) === String(parseFloat(((pdh - pdl) / 0.0001).toFixed(1))));
     var B1 = pane(1).bars, pw = P._mini(1).dwm.w, wkStart = pw && new Date(pw.t0 * 1000), wk1 = B1.filter(function (b) { return P._lonK(b.time).wk === P._lonK(pw.t0).wk; });
     ok('the previous week (on the 1h, a month of candles) starts on Sunday 22:00 London', pw && wkStart.getUTCDay() === 0 && wkStart.getUTCHours() === 21 && pw.hi === Math.max.apply(null, wk1.map(function (b) { return b.high; })) && pw.lo === Math.min.apply(null, wk1.map(function (b) { return b.low; })), pw && wkStart.toISOString());
@@ -79,8 +79,12 @@
     var zy = onTop ? zTop : P._yOf(0, M.zone.bot + zR * 0.125);
     // the zone's shading is under the candles since 22 Oct 2026 (on the chart's own canvas, not the overlay): the chart's picture,
     // tinted pixels along that row of the zone
+    // tinted = exactly that quarter's colour over the chart's background (a lone 10% tint lifts red over blue by only about 10, so a
+    // threshold on the hue alone depended on what else that row crossed on the day): the blend, each channel within 3
+    var rgba = function (c) { var m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/.exec(c); if (m) return [+m[1], +m[2], +m[3], m[4] == null ? 1 : +m[4]]; var h = String(c).replace('#', ''); return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16), 1]; };
+    var tc = rgba(P._ms(pane(0))[onTop ? 'cTop' : 'cBot']), bgc = rgba((pane(0).chart.options().layout.background || {}).color || '#121116'), ex = [0, 1, 2].map(function (j) { return bgc[j] * (1 - tc[3]) + tc[j] * tc[3]; });
     var tintRow = function () { var cv = pane(0).chart.takeScreenshot(), d = cv.width / pane(0).el.querySelector('.stpr-pc').clientWidth, g = cv.getContext('2d'), n0 = 0, x0 = Math.max(10, P._xOfT(0, B[M.zone.i0].time) + 4), x1 = P._xOfT(0, B[n - 1].time);
-      for (var x = x0; x < x1; x += 2) { var q = g.getImageData(Math.round(x * d), Math.round(zy * d), 1, 1).data; if ((onTop ? q[0] - q[2] > 12 : q[2] - q[0] > 12) && Math.max(q[0], q[1], q[2]) < 90) n0++; } return n0; };
+      for (var x = x0; x < x1; x += 2) { var q = g.getImageData(Math.round(x * d), Math.round(zy * d), 1, 1).data; if (Math.abs(q[0] - ex[0]) <= 3 && Math.abs(q[1] - ex[1]) <= 3 && Math.abs(q[2] - ex[2]) <= 3) n0++; } return n0; };
     var zp = tintRow();
     ok('drawn: the ' + (onTop ? 'top quarter of the zone is tinted pink' : 'bottom quarter of the zone is tinted cyan') + ', under the candles', zp > 10 && pane(0).series.__stMub && pane(0).series.__stMub.list.length >= 3, [zp, zx, zy]);
     P._miniDialog(); await W(60); document.querySelector('.stpr-dlg [data-k="part.zone"]').click(); await W(40); document.querySelector('.stpr-dlg [data-dok]').click(); await W(40); redraw(); await W(60);

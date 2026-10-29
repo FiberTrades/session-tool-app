@@ -2,7 +2,7 @@
   // Practice Replay: the Minimalist's settings window, TradingView's (Inputs / Style / Visibility, Defaults / Cancel / Ok),
   // and its range zone moved by hand (Nestor, 17 Oct 2026: "it doesnt have all the settings options and i cant move the P/D
   // zone?", "distance units? will that be calculated automatically", "i need the visability option for the indicator").
-  // Real EUR/USD candles of Thu 1 Oct 2026.
+  // Real EUR/USD candles of Thu 15 Oct 2026 - a day inside the candle store's stand-in (tests/fixtures/candles: its 1-minute sample is the week of 12-16 Oct 2026), so the day and the history before it are the same real candles.
   // Run: python tests/browser_test.py tests/practice_miniset_e2e.js
   var W = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
   var out = [], ok = function (name, cond, got) { out.push({ name: name, ok: !!cond, got: got === undefined ? null : got }); };
@@ -12,7 +12,7 @@
     var P = window.__stPractice;
     try { Object.keys(localStorage).filter(function (k) { return /^st_practice/.test(k); }).forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
     var C = P._cfg(); C.layout = 1; C.tfs = [15]; C.look = {}; C.mini = true; C.miniOff = {}; C.miniS = {}; C.max = true; C.mm = Object.assign({}, C.mm, { col: true });
-    await P.open({ symbol: 'EURUSD', day: '2026-10-01' }); for (var k = 0; k < 100 && !(P._s() && P._panes().length && P._panes()[0].n); k++) await W(100);
+    await P.open({ symbol: 'EURUSD', day: '2026-10-15' }); for (var k = 0; k < 100 && !(P._s() && P._panes().length && P._panes()[0].n); k++) await W(100);
     P._goto('14:30'); await W(500); P._render(); await W(100);
     var pane = function () { return P._panes()[0]; }, M = function () { pane()._mini = null; return P._mini(0); };
     var ch = pane().el.querySelector('.stpr-pc'), r = ch.getBoundingClientRect();
@@ -42,9 +42,19 @@
     var tipEl = dlg().querySelector('.stpr-dtip');
     ok('pressing an (i) opens its note under the row (a phone has no hover); pressed again it closes', tipEl && /Master toggle/.test(tipEl.textContent) && (i0b.click(), !dlg().querySelector('.stpr-dtip')), tipEl && tipEl.textContent);
     ok('colours inline with opacity, as on his panel: Premium, Equilibrium, Discount, the label colour, each session', ['cTop', 'cMid', 'cBot', 'sesInk', 's0.col', 's1.col', 's2.col', 's3.col'].every(function (k) { return dlg().querySelector('[data-dsw="' + k + '"]'); }));
-    var z0 = M().zone; inp('len').value = '15'; fire(inp('len'), 'input'); await W(60);
+    // the zone a structure length gives, worked out here as the indicator does (swings of len bars each side, counted once len bars have
+    // closed after them; a close beyond one anchors the zone at the strong point of the leg that broke it; its top and bottom since then)
+    var zoneFor = function (len) { var B = P._panes()[0].bars, n = B.length, sh = null, shI = -1, shB = true, sl = null, slI = -1, slB = true, sI = -1, i, k;
+      for (i = 0; i < n; i++) { var c = i - len; if (c >= len) { var isH = true, isL = true; for (k = c - len; k <= c + len && (isH || isL); k++) { if (k === c) continue; if (isH && (k < c ? B[k].high >= B[c].high : B[k].high > B[c].high)) isH = false; if (isL && (k < c ? B[k].low <= B[c].low : B[k].low < B[c].low)) isL = false; }
+          if (isH) { sh = B[c].high; shI = c; shB = false; } if (isL) { sl = B[c].low; slI = c; slB = false; } }
+        if (!shB && sh != null && B[i].close > sh) { shB = true; sI = shI; for (k = shI; k <= i; k++) if (B[k].low < B[sI].low) sI = k; }
+        if (!slB && sl != null && B[i].close < sl) { slB = true; sI = slI; for (k = slI; k <= i; k++) if (B[k].high > B[sI].high) sI = k; } }
+      if (sI < 0) return null; var hi = -1e9, lo = 1e9; for (k = sI; k < n; k++) { hi = Math.max(hi, B[k].high); lo = Math.min(lo, B[k].low); } return { i0: sI, top: hi, bot: lo }; };
+    var z0 = M().zone, e30 = zoneFor(30), same = function (a, b) { return !!(a && b && a.i0 === b.i0 && a.top === b.top && a.bot === b.bot); };
+    var L = [15, 10, 20, 12, 8, 25, 40, 50, 5, 6, 75, 80].filter(function (x) { var z = zoneFor(x); return z && !same(z, e30); })[0], eL = L ? zoneFor(L) : null;   // a length that moves the zone on this day
+    inp('len').value = String(L || 15); fire(inp('len'), 'input'); await W(60);
     var z1 = M().zone;
-    ok('a change shows on the chart at once (structure length 15: a different zone)', C.miniS.len === 15 && z1 && (z1.i0 !== z0.i0 || z1.top !== z0.top || z1.bot !== z0.bot), [z0, z1]);
+    ok('a change shows on the chart at once (structure length ' + L + ': the zone that length gives, not the one 30 gives)', same(z0, e30) && !!L && C.miniS.len === L && same(z1, eL) && !same(z1, z0), [z0, e30, L, z1, eL]);
     dlg().querySelector('[data-dc]').click(); await W(60);
     ok('Cancel puts it back (30, the zone as it was)', !dlg() && (!C.miniS || !C.miniS.len || C.miniS.len === 30) && M().zone.i0 === z0.i0, C.miniS);
 

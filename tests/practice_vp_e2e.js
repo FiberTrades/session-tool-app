@@ -1,7 +1,7 @@
 (async function () {
   // Practice Replay: his Minimalist's volume profile (Minimalist-v4.pine: the POC vote and the liquidity arrows) from the
   // candles' tick volume (Nestor, 17 Oct 2026: "Tick volume from the EA, but the EA should only send the information
-  // about the P/D zone selected"). Real EUR/USD, Thu 1 Oct 2026; the volume is put on the candles here (the EA 9.00 sends it).
+  // about the P/D zone selected"). Real EUR/USD, Thu 15 Oct 2026 (a day inside the candle store's stand-in (tests/fixtures/candles: its 1-minute sample is the week of 12-16 Oct 2026), so the day and the history before it are the same real candles); the volume is put on the candles here (the EA 9.00 sends it).
   // Run: python tests/browser_test.py tests/practice_vp_e2e.js
   var W = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
   var out = [], ok = function (name, cond, got) { out.push({ name: name, ok: !!cond, got: got === undefined ? null : got }); };
@@ -26,7 +26,7 @@
     // ---- on the chart ----
     try { Object.keys(localStorage).filter(function (k) { return /^st_practice/.test(k); }).forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
     var C = P._cfg(); C.layout = 1; C.tfs = [15]; C.look = {}; C.mini = true; C.miniOff = {}; C.miniS = { vpOn: true, ext: 0, vpOff: 2 }; C.max = true; C.resume = null; C.mm = Object.assign({}, C.mm, { col: true });
-    await P.open({ symbol: 'EURUSD', day: '2026-10-01' }); for (var k = 0; k < 100 && !(P._s() && P._panes().length && P._panes()[0].n); k++) await W(100);
+    await P.open({ symbol: 'EURUSD', day: '2026-10-15' }); for (var k = 0; k < 100 && !(P._s() && P._panes().length && P._panes()[0].n); k++) await W(100);
     P._goto('12:00'); await W(500);
     // the window shows the group, as in his panel
     P._miniDialog(); await W(80);
