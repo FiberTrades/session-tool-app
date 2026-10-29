@@ -96974,7 +96974,7 @@ window.__stAZ = (function () {
     p._nrK = k; return (p._nr = { y: ph - 8 - sh / 2, lo: left, hi: right - 4 }); }
   function drawNews(p, g, pw, ph){
     if (p.tf > 240 || !NEWS.rows.length) return;
-    var nd = newsDims(), FD = nd.FD, GAP = nd.GAP, RING = nd.RING, OR = nd.OR, STEP = 2 * OR + 3, MAX = 3, COL = ['#9598a1', '#f7931a', '#f23645'], groups = {}, G = [];
+    var nd = newsDims(), FD = nd.FD, GAP = nd.GAP, RING = nd.RING, OR = nd.OR, STEP = 2 * OR + 3, BOVER = 6, COL = ['#9598a1', '#f7931a', '#f23645'], groups = {}, G = [];
     var dpr = 1; try { dpr = (p.el.ownerDocument.defaultView || window).devicePixelRatio || 1; } catch (e) {}
     var ccyOk = window.__stNewsCcyOk || function(){ return true; };   // only the calendar's countries (19 Oct 2026)
     // Live: the rest of today's releases too, at their time, in full colour, those already out translucent (Nestor, 30 Oct 2026: "i need at least the days news
@@ -96982,9 +96982,12 @@ window.__stAZ = (function () {
     var dEnd = 0; if (S.live) { var de = new Date(S.now * 1000); de.setHours(24, 0, 0, 0); dEnd = de.getTime() / 1000; }
     NEWS.rows.forEach(function(e){ var t = Math.floor(Date.parse(e.at) / 1000); if (!(t >= 0) || (t > S.now && !(S.live && t < dEnd)) || !ccyOk(e.currency)) return; var k = keyOf(Math.max(p.tf, PS(p).baseTf), t); (groups[k] = groups[k] || []).push(e); });
     Object.keys(groups).forEach(function(k){ var x = xOfT(p, +k); if (x == null) return;
-      var list = groups[k].sort(function(a, b){ return nImp(b) - nImp(a); }), n = list.length, shown = Math.min(n, MAX), cnt = shown + (n > shown ? 1 : 0);
+      // ONE flag per currency at a time, not one per release (Nestor, 29 Oct 2026: "isn't it better that have a us flag with a +3 next to it
+      // instead of so many flags?"): its ring the most important of that currency's releases, a "+n" badge on its corner for the rest
+      var list = groups[k].sort(function(a, b){ return nImp(b) - nImp(a); }), cs = [], by = {};
+      list.forEach(function(e){ var c = nCcy(e); if (!by[c]) { by[c] = { ccy: c, list: [] }; cs.push(by[c]); } by[c].list.push(e); });   // most important first: a currency's first release is its ring
       var up = list.every(function(e){ return Date.parse(e.at) / 1000 > S.now; });
-      G.push({ x: x, list: list, n: n, shown: shown, up: up, w: (cnt - 1) * STEP + 2 * OR }); });
+      G.push({ x: x, list: list, n: list.length, cs: cs, up: up, w: (cs.length - 1) * STEP + 2 * OR + (cs[cs.length - 1].list.length > 1 ? BOVER : 0) }); });   // the last flag's badge reaches past it
     // left to right: a group that would touch the one before moves right, never on top of it; then right to left: a group whose release is
     // on screen keeps all its flags on screen (29 Oct 2026: a group at the latest candles went half under the price scale) and clear of the
     // logo, the » chip and Spread - nudged right of the logo, left of the chip and Spread, its neighbours moved aside, never stacked or hidden
@@ -96995,8 +96998,8 @@ window.__stAZ = (function () {
     var y = Math.round(row.y * dpr) / dpr; g.save(); g.beginPath(); g.rect(0, 0, pw, ph); g.clip();
     G.forEach(function(q){ if (!inP(q) && (q.l < LO - 1 || q.l + q.w > HI + 1)) return;   // a release off the chart's edge: not under the logo, the chip or Spread
       var spots = []; g.globalAlpha = q.up ? 1 : 0.55;   // already out: translucent; still to come: full colour (Nestor, 30 Oct 2026)
-      for (var i = 0; i < q.shown; i++) { var fx = q.l + OR + i * STEP; newsFlag(g, fx, y, FD, GAP, RING, q.list[i].currency, COL[nImp(q.list[i])], dpr); spots.push({ x: fx, i: i }); }
-      if (q.n > q.shown) { var mx = q.l + OR + q.shown * STEP; newsMore(g, mx, y, OR, q.n - q.shown); spots.push({ x: mx, i: -1 }); }
+      q.cs.forEach(function(cq, i){ var fx = q.l + OR + i * STEP, col = COL[nImp(cq.list[0])]; newsFlag(g, fx, y, FD, GAP, RING, cq.ccy, col, dpr); spots.push({ x: fx, ccy: cq.ccy }); });
+      q.cs.forEach(function(cq, i){ if (cq.list.length > 1) newsBadge(g, q.l + OR + i * STEP, y, OR, cq.list.length - 1, COL[nImp(cq.list[0])], dpr); });   // over the flags, a neighbour's too
       g.globalAlpha = 1; p._news.push({ x: q.l + q.w / 2, y: y, r: OR, spots: spots, e: q.list[0], list: q.list, n: q.n }); });
     g.restore();
   }
@@ -97011,8 +97014,15 @@ window.__stAZ = (function () {
       g.beginPath(); g.arc(x, y, r0 + GAP / 2, 0, Math.PI * 2); g.lineWidth = GAP; g.strokeStyle = '#ffffff'; g.stroke(); }
     else { g.beginPath(); g.arc(x, y, r0, 0, Math.PI * 2); g.fillStyle = '#2a2e39'; g.fill(); g.fillStyle = '#ffffff'; g.font = "700 6px 'AppNum','DM Mono',monospace"; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(ccy || '?').slice(0, 3), x, y + 0.5); }
     g.beginPath(); g.arc(x, y, r0 + GAP + RING / 2, 0, Math.PI * 2); g.lineWidth = RING; g.strokeStyle = col; g.stroke(); g.restore(); }
-  function newsMore(g, x, y, R, n){ x = Math.round(x); g.save(); g.setLineDash([]); g.beginPath(); g.arc(x, y, R - 1, 0, Math.PI * 2); g.fillStyle = '#ffffff'; g.fill(); g.lineWidth = 1.5; g.strokeStyle = '#9598a1'; g.stroke();
-    g.fillStyle = '#131722'; g.font = "700 9px 'AppNum','DM Mono',monospace"; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('+' + (n > 9 ? '9' : n), x, y + 0.5); g.restore(); }
+  function nCcy(e){ return String((e && e.currency) || '?').toUpperCase(); }
+  // the rest of a currency's releases at that time: a small pill on its flag's top-right corner - a bold "+3" in the platform's font, white
+  // on the dark face the chart's own labels use, its border the flag's ring colour (clear on a light chart and a dark one)
+  function newsBadge(g, x, y, OR, n, col, dpr){ var t = '+' + n, fs = OR >= 12 ? 9 : 8;
+    g.save(); g.setLineDash([]); g.font = '700 ' + fs + "px -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif";
+    var h = fs + 5, w = Math.max(h, Math.ceil(g.measureText(t).width) + 7), cx = x + OR * 0.72, cy = y - OR * 0.72, l = Math.round((cx - w / 2) * dpr) / dpr, tp = Math.round((cy - h / 2) * dpr) / dpr, r = h / 2;
+    g.beginPath(); g.moveTo(l + r, tp); g.arcTo(l + w, tp, l + w, tp + h, r); g.arcTo(l + w, tp + h, l, tp + h, r); g.arcTo(l, tp + h, l, tp, r); g.arcTo(l, tp, l + w, tp, r); g.closePath();
+    g.fillStyle = '#131722'; g.fill(); g.lineWidth = 1.5; g.strokeStyle = col; g.stroke();
+    g.fillStyle = '#ffffff'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(t, l + w / 2, tp + h / 2 + 0.5); g.restore(); }
   function newsAt(p, x, y){ return newsAt0(p, x, y) || tmAt(p, x, y); }   // a news disc first, else a trade's arrow (Live Charts)
   // a trade's arrow under the mouse: drawn by __stArrows (the library's size and gap from the candle), so measured the same way
   function tmAt(p, x, y){ if (!S || !S.live || !showOn(p, 'hist') || !(p._tmk && p._tmk.length)) return null;
@@ -97024,10 +97034,11 @@ window.__stAZ = (function () {
       if (dx <= rx && y >= y0 - 4 && y <= y1 + 4 && dx < bd) { bd = dx; best = { tm: true, e: g.key, g: g, x: gx, y: g.above ? y0 : y1, top: y0, bot: y1, above: g.above }; } });
     return best; }
   // the flag under the mouse or the finger: its own drawn circle (Nestor, 29 Oct 2026: "only this news gets this the other 2 when hovering
-  // dont get anything"); the card lists every release of its group, that flag's release lit; the "+n" chip opens the group's card
+  // dont get anything"); the card lists every release of its time, that flag's currency first
   function newsAt0(p, x, y){ var best = null, bd = 1e9;
     (p._news || []).forEach(function(h){ var r = (h.r || 11) + 1;
-      (h.spots || [{ x: h.x, i: 0 }]).forEach(function(sp){ var dx = sp.x - x, dy = h.y - y, d2 = dx * dx + dy * dy; if (d2 <= r * r && d2 < bd) { bd = d2; best = Object.assign({}, h, { x: sp.x, sel: sp.i, e: sp.i >= 0 ? h.list[sp.i] : h.list[0] }); } }); });
+      (h.spots || [{ x: h.x }]).forEach(function(sp){ var dx = sp.x - x, dy = h.y - y, d2 = dx * dx + dy * dy; if (d2 <= r * r && d2 < bd) { bd = d2;
+        var mine = sp.ccy ? h.list.filter(function(e){ return nCcy(e) === sp.ccy; }) : []; best = Object.assign({}, h, { x: sp.x, ccy: sp.ccy || null, e: mine[0] || h.list[0] }); } }); });
     return best; }
   function newsCard(p, hit){
     var c = p.card; if (!c) return; var tm0 = p._tmShow ? p._tmShow.e : null; p._tmShow = (hit && hit.tm) ? hit : null; if (tm0 !== (p._tmShow ? p._tmShow.e : null)) dirty();   // its path on the chart
@@ -97035,12 +97046,13 @@ window.__stAZ = (function () {
     if (!hit) { p._ncHit = null; c.style.display = 'none'; return; }
     if (hit.tm) { p._ncHit = null; tmCard(p, hit, c); return; }
     p._ncHit = hit;   // a figure that lands while it is open is shown in it (newsMerge)
-    var e = hit.e, t = Math.floor(Date.parse(e.at) / 1000), list = hit.list || [e], many = list.length > 1;
+    var e = hit.e, t = Math.floor(Date.parse(e.at) / 1000), list = hit.list || [e], many = list.length > 1, two = false;
+    if (hit.ccy) { var mine = list.filter(function(x){ return nCcy(x) === hit.ccy; }); two = mine.length < list.length; list = mine.concat(list.filter(function(x){ return nCcy(x) !== hit.ccy; })); }   // that flag's currency first
     var grid = function(x){ return impCls(x.impact) === 'hol' ? '' : '<div class="strp-nc-grid">' + [[T('Actual', 'Real'), x.actual], [T('Forecast', 'Previsión'), x.forecast], [T('Previous', 'Anterior'), x.previous]].map(function(r){ return '<div class="strp-nc-k">' + esc(r[0]) + '</div><div class="strp-nc-v">' + esc(r[1] == null || r[1] === '' ? '—' : r[1]) + '</div>'; }).join('') + '</div>'; };
     var when = '<div class="strp-nc-when">' + esc(dshort(new Date(t * 1000)) + ' ' + hm(t)) + (many ? ' · ' + T(list.length + ' releases', list.length + ' publicaciones') : '') + '</div>';
     // every release on the candle, highest impact first, each in a compact block (one release: the card as it always was)
     c.innerHTML = !many ? '<div class="strp-nc-title">' + esc((e.currency ? e.currency + ' · ' : '') + (e.title || '')) + '</div>' + when + grid(e)
-      : when + list.map(function(x, ix){ return '<div class="strp-nc-item' + (ix === hit.sel ? ' on' : '') + '"><div class="strp-nc-title"><i class="strp-nc-dot ' + impCls(x.impact) + '"></i><span>' + esc((x.currency ? x.currency + ' · ' : '') + (x.title || '')) + '</span></div>' + grid(x) + '</div>'; }).join('');
+      : when + list.map(function(x){ return '<div class="strp-nc-item' + (two && nCcy(x) === hit.ccy ? ' on' : '') + '"><div class="strp-nc-title"><i class="strp-nc-dot ' + impCls(x.impact) + '"></i><span>' + esc((x.currency ? x.currency + ' · ' : '') + (x.title || '')) + '</span></div>' + grid(x) + '</div>'; }).join('');
     c.className = 'strp-newscard nca ' + impCls(e.impact) + (many ? ' multi' : ''); c.scrollTop = 0;
     // above the flag, inside the plot, its arrow on the flag's centre whatever the card's place (Nestor, 29 Oct 2026: "why is the last news the
     // only one that gets the small arrow ... and also its not centered"): the arrow is its own tile beside the card, so a card that scrolls

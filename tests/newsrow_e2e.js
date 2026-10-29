@@ -43,7 +43,7 @@
     var lg0 = logo(), sp0 = spr();
     put(); for (k = 0; k < 20 && !(p._news && p._news.length >= 3); k++) { P._drawOv(0); await W(100); } await W(200); P._drawOv(0);
     var N = p._news || [], sp1 = spr(), lg1 = logo(), same = function (a, b) { return !a && !b || (a && b && Math.abs(a.l - b.l) < 0.6 && Math.abs(a.t - b.t) < 0.6 && Math.abs(a.w - b.w) < 0.6); };
-    check('three groups of flags (the first candles, two releases on one middle candle, a candle under Spread)', N.length === 3 && N.some(function (h) { return h.n === 2; }), N.map(function (h) { return [Math.round(h.x), h.n]; }));
+    check('three groups of flags (the first candles, a USD and a GBP release on one middle candle - two flags, a candle under Spread)', N.length === 3 && N.some(function (h) { return h.n === 2 && h.spots.length === 2; }), N.map(function (h) { return [Math.round(h.x), h.n, h.spots.length]; }));
     check('the Spread label and the TradingView logo where they were, news on', sp0 && sp1 && same(sp0, sp1) && same(lg0, lg1), [sp0, sp1, lg0, lg1]);
     var midS = sp1 ? (sp1.t + sp1.b) / 2 : null;
     check('the flags\' row on the Spread label\'s row: centred on it', midS != null && N.every(function (h) { return Math.abs(h.y - midS) <= 1; }), [midS, N.map(function (h) { return h.y; })]);
@@ -54,8 +54,10 @@
     // every flag's card: the arrow under it, on that flag's centre, the card inside the plot
     var ch = el.querySelector('.stpr-pc') || el, cardOK = [], hov = function (x, y) { var o = er(), cx = o.left + x, cy = o.top + y; (document.elementFromPoint(cx, cy) || ch).dispatchEvent(new MouseEvent('mousemove', { clientX: cx, clientY: cy, bubbles: true })); };
     for (var gi = 0; gi < N.length; gi++) { var h = N[gi]; for (var si = 0; si < h.spots.length; si++) { var sx = h.spots[si].x; hov(sx, h.y); await W(60);
-      var cd = rel(p.card), ar = p.ncArr && p.ncArr.style.display === 'block' ? rel(p.ncArr) : null, lit = p.card.querySelector('.strp-nc-item.on'), items = p.card.querySelectorAll('.strp-nc-item');
-      var acx = ar ? (ar.l + ar.r) / 2 : null, good = !!(cd && p.card.style.display === 'block' && ar && Math.abs(acx - sx) <= 1 && ar.b > cd.b + 3 && ar.b <= h.y - h.r + 1 && ar.t < cd.b && cd.l >= -0.5 && cd.r <= pw() + 0.5 && acx - cd.l >= 12 && cd.r - acx >= 12 && (h.n < 2 || (lit && items[h.spots[si].i] === lit)));
+      var cd = rel(p.card), ar = p.ncArr && p.ncArr.style.display === 'block' ? rel(p.ncArr) : null, items = Array.prototype.slice.call(p.card.querySelectorAll('.strp-nc-item')), ccy = h.spots[si].ccy;
+      var ofC = function (it) { return it.textContent.indexOf(ccy + ' · ') >= 0; }, many = items.some(function (it) { return !ofC(it); });   // the card: that flag's currency first, lit when others are in it
+      var acx = ar ? (ar.l + ar.r) / 2 : null, good = !!(cd && p.card.style.display === 'block' && ar && Math.abs(acx - sx) <= 1 && ar.b > cd.b + 3 && ar.b <= h.y - h.r + 1 && ar.t < cd.b && cd.l >= -0.5 && cd.r <= pw() + 0.5 && acx - cd.l >= 12 && cd.r - acx >= 12
+        && (h.n < 2 || (items.length === h.n && ofC(items[0]) && items.every(function (it) { return it.classList.contains('on') === (many && ofC(it)); }))));
       cardOK.push([Math.round(sx), good, cd && [Math.round(cd.l), Math.round(cd.r), Math.round(cd.b)], ar && [Math.round(acx), Math.round(ar.b)]]); } }
     hov(pw() * 0.5, ph() * 0.3); await W(60);
     check('every flag\'s card has its arrow, centred on that flag, the card inside the plot (the group\'s card with that release lit)', cardOK.length >= 4 && cardOK.every(function (c) { return c[1]; }), cardOK);
@@ -70,6 +72,28 @@
     check('scrolled back, candles under the » chip and Spread: a release there is nudged left of them, the rest clear too, all on the Spread row', !!cp && N2.length === 3 && N2.every(clear(zone)) && N2.some(function (h) { return h.spots[h.spots.length - 1].x + h.r > cp.l - 12; }) && N2.every(function (h) { return Math.abs(h.y - midS) <= 1; }),
       [cp && Math.round(cp.l), sp2 && Math.round(sp2.l), N2.map(function (h) { return Math.round(h.spots[h.spots.length - 1].x + h.r); }), p.n, JSON.stringify(ts.getVisibleLogicalRange())]);
     ts.scrollToRealTime(); await W(400);
+    // ONE flag per currency at a time (Nestor, 29 Oct 2026: "isn't it better that have a us flag with a +3 next to it instead of so many flags?"):
+    // four USD releases and a EUR one on a candle - a US flag with a "+3" badge on its corner (bold, the platform's font, its border the ring's
+    // colour: red, a high one among them), a EU flag without one; and four USD alone - one flag, +3
+    var bC = near(pw() * 0.45), atC = iso(bC.time), bD = near(pw() * 0.75), atD = iso(bD.time), RL = function (at, c, t, imp) { return { at: at, currency: c, title: t, impact: imp, forecast: '1', previous: '1', actual: '' }; };
+    P._news([RL(atC, 'USD', 'CPI m/m', 'High'), RL(atC, 'USD', 'Core CPI m/m', 'High'), RL(atC, 'USD', 'CPI y/y', 'Medium'), RL(atC, 'USD', 'Unemployment Claims', 'Medium'), RL(atC, 'EUR', 'ECB speech', 'Medium'),
+      RL(atD, 'USD', 'Retail Sales m/m', 'Medium'), RL(atD, 'USD', 'Core Retail Sales m/m', 'Medium'), RL(atD, 'USD', 'Empire State Index', 'Low'), RL(atD, 'USD', 'Import Prices m/m', 'Low')]);
+    var cl = [], pth = null, fP = CanvasRenderingContext2D.prototype.fillText, sP = CanvasRenderingContext2D.prototype.stroke;
+    CanvasRenderingContext2D.prototype.fillText = function (t, x, y) { cl.push({ t: String(t), x: x, y: y, f: this.font, c: String(this.fillStyle).toLowerCase() }); return fP.apply(this, arguments); };
+    CanvasRenderingContext2D.prototype.stroke = function () { cl.push({ k: 'stroke', c: String(this.strokeStyle).toLowerCase(), w: this.lineWidth }); return sP.apply(this, arguments); };
+    try { P._drawOv(0); } finally { CanvasRenderingContext2D.prototype.fillText = fP; CanvasRenderingContext2D.prototype.stroke = sP; }
+    var NC = (p._news || []).slice().sort(function (a, b) { return a.x - b.x; }), g5 = NC.filter(function (h) { return h.n === 5; })[0], g4 = NC.filter(function (h) { return h.n === 4; })[0];
+    var badge = function (h, sp, t) { var i = cl.findIndex(function (c) { return c.t === t && c.x > sp.x && c.x < sp.x + h.r + 8 && c.y < h.y; }); return i < 0 ? null : { t: cl[i], border: cl.slice(0, i).reverse().filter(function (c) { return c.k === 'stroke'; })[0] }; };
+    var b5 = g5 && badge(g5, g5.spots[0], '+3'), b4 = g4 && badge(g4, g4.spots[0], '+3');
+    check('four USD releases and a EUR one at a time: two flags, US first, EU second', !!g5 && g5.spots.map(function (sp) { return sp.ccy; }).join(',') === 'USD,EUR', g5 && g5.spots);
+    check('...the US flag carries a "+3" badge on its top-right corner: bold, the platform\'s font, white, its border the ring\'s colour (red: a high one among them)', !!b5 && /^700 (8|9)px -apple-system/.test(b5.t.f) && b5.t.c === '#ffffff' && b5.border && b5.border.c === '#f23645' && b5.t.x > g5.spots[0].x + 3 && b5.t.y < g5.y - 3, b5);
+    check('...the EU flag has none', !!g5 && !cl.some(function (c) { return /^\+\d/.test(c.t || '') && c.x > g5.spots[1].x && c.x < g5.spots[1].x + g5.r + 8; }), cl.filter(function (c) { return /^\+\d/.test(c.t || ''); }));
+    check('four USD releases alone: ONE flag with +3, its badge orange (the most important of them a medium one)', !!g4 && g4.spots.length === 1 && !!b4 && b4.border && b4.border.c === '#f7931a', [g4 && g4.spots, b4]);
+    hov(g5.spots[1].x, g5.y); await W(80); var it5 = Array.prototype.slice.call(p.card.querySelectorAll('.strp-nc-item')), ar5 = p.ncArr && p.ncArr.style.display === 'block' ? rel(p.ncArr) : null;
+    check('...hovering the EU flag: the card lists all five, EUR first and lit, the arrow on the EU flag', it5.length === 5 && /EUR · ECB speech/.test(it5[0].textContent) && it5[0].classList.contains('on') && !it5[1].classList.contains('on') && ar5 && Math.abs((ar5.l + ar5.r) / 2 - g5.spots[1].x) <= 1, [it5.map(function (x) { return x.textContent.slice(0, 18) + (x.classList.contains('on') ? '*' : ''); }), ar5]);
+    hov(g5.spots[0].x, g5.y); await W(80); it5 = Array.prototype.slice.call(p.card.querySelectorAll('.strp-nc-item'));
+    check('...the US flag: the four USD releases first, lit', it5.length === 5 && it5.slice(0, 4).every(function (x) { return /USD · /.test(x.textContent) && x.classList.contains('on'); }) && !it5[4].classList.contains('on'), it5.map(function (x) { return x.textContent.slice(0, 18) + (x.classList.contains('on') ? '*' : ''); }));
+    hov(pw() * 0.5, ph() * 0.3); await W(60);
     // the session boxes' names: under the legend, as the weekday names (no higher than max(60, the legend's bottom + 10), under the names when they show)
     var ps = p.series.priceScale(), m0 = ps.options().scaleMargins; ps.applyOptions({ scaleMargins: { top: 0, bottom: 0.25 } }); await W(400);
     var calls = [], fT = CanvasRenderingContext2D.prototype.fillText, sR = CanvasRenderingContext2D.prototype.strokeRect, box = null;
