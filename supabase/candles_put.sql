@@ -11,10 +11,9 @@
 --   - it is new;
 --   - it brings the tick volume a stored bar lacks (EA 9.00+; the volume profile);
 --   - it is recent - opened within max(2 bars, 3 hours) - and its values changed: the newest bars may have been sent unfinished;
---   - it is older but its range is WIDER than the one stored: a bar stored while it was still forming, its MT5 then offline past
---     the recent window, would otherwise stay short forever. Only the high goes up and the low down (open and close kept), so it
---     converges and two brokers' feeds can't rewrite each other back and forth.
 -- Otherwise a closed bar already stored keeps its prices and its volume: the first MT5 to send it wins (before, the last one did).
+-- (A rule widening an older bar's high/low to the incoming range ran from 18:59 to ~20:00 UTC on 29 Oct and was taken out: the
+-- table is shared across brokers, and it mixed another broker's highs and lows into stored wicks. Migration candles_put_no_widen.)
 -- Rows that change nothing are filtered out BEFORE the insert, so they are not even locked: ON CONFLICT DO UPDATE ... WHERE false
 -- still locks (and so writes) the row it skips.
 --
@@ -41,7 +40,6 @@ as $$
     left join public.candles k on k.symbol = p_symbol and k.tf = p_tf and k.t = x.t
     where k.t is null                                                              -- new
        or (k.v is null and x.v is not null)                                        -- its volume arrives
-       or x.h > k.h or x.l < k.l                                                   -- a wider range (stored while forming)
        or (x.t >= cut.t and ((k.o, k.h, k.l, k.c) is distinct from (x.o, x.h, x.l, x.c)
                              or (x.v is not null and k.v is distinct from x.v)))     -- a recent bar that changed
   ),
@@ -50,8 +48,8 @@ as $$
     select p_symbol, p_tf::smallint, t, o, h, l, c, v from todo
     on conflict (symbol, tf, t) do update
       set o = case when excluded.t >= (select t from cut) then excluded.o else k.o end,
-          h = case when excluded.t >= (select t from cut) then excluded.h else greatest(k.h, excluded.h) end,
-          l = case when excluded.t >= (select t from cut) then excluded.l else least(k.l, excluded.l) end,
+          h = case when excluded.t >= (select t from cut) then excluded.h else k.h end,
+          l = case when excluded.t >= (select t from cut) then excluded.l else k.l end,
           c = case when excluded.t >= (select t from cut) then excluded.c else k.c end,
           v = case when excluded.t >= (select t from cut) then coalesce(excluded.v, k.v) else coalesce(k.v, excluded.v) end
     returning 1
