@@ -236,6 +236,8 @@ const T: Record<string, [string, string]> = {
   tr_part: ["Partial close on your {SYM} {SIDE}: {P}% closed at {R} — {PNL} banked.", "Cierre parcial en tu operación {SIDEF} de {SYM}: {P}% cerrado a {R}, {PNL} realizados."],
   tr_part_nr: ["Partial close on your {SYM} {SIDE}: {P}% closed — {PNL} banked.", "Cierre parcial en tu operación {SIDEF} de {SYM}: {P}% cerrado, {PNL} realizados."],
   tr_pcend: ["Last partial close on your {SYM} {SIDE}: the trade is closed, {PNL} in total.", "Último cierre parcial en tu operación {SIDEF} de {SYM}: operación cerrada, {PNL} en total."],
+  // EA 9.18 (29 Oct 2026): a trade opened on an account that copies a Lead - in MT5's own window or its phone app - closed at once
+  tr_fol: ["Closed your {SYM} {SIDE} ({PNL}): this account copies {LEAD}, trade on the Lead.", "Cerrada tu operación {SIDEF} de {SYM} ({PNL}): esta cuenta copia a {LEAD}; opera en el Líder."],
   dd_left: ["{LEFT} left before your maximum drawdown — less than one full trade ({RISK}).", "Te quedan {LEFT} antes de tu drawdown máximo, menos que una operación completa ({RISK})."],
   target_hit: ["Profit target reached on {ACC}. Anything more is risk without reward.", "Objetivo de beneficio alcanzado en {ACC}. Todo lo demás es riesgo sin recompensa."],
   consistency: ["Today is now {P}% of your total profit. Your consistency rule caps a day at {L}%.", "Hoy ya es el {P}% de tu beneficio total. Tu regla de consistencia limita un día al {L}%."],
@@ -721,6 +723,7 @@ async function closeExtra(admin: Any, ctx: Ctx, me: Row, rule: string, pnl: numb
 // Which alert a close is: the broker's take profit, or its stop - at a loss, at break-even, or locked in profit.
 export function closeAlert(ctx: Ctx, me: Row): string | null {
   const why = me.close_reason, pnl = Number(me.pnl) || 0;
+  if (why === "fol") return "tr_fol";                // EA 9.18: opened on a Follow account, closed
   if (why === "tp") return "tr_tp";
   if (why === "pc") return "tr_pcend";                // the partial-close ladder took the last of it
   if (why !== "sl") return null;                     // closed by hand or by the EA: you did it, no alert
@@ -777,8 +780,18 @@ export async function afterCloseTrade(admin: Any, userId: string, ticket: number
   const ctx = await loadCtx(admin, userId); if (!ctx || !cfgOf(ctx.j).trades) return;
   const me = ctx.rows.find((r) => r.ticket === ticket); if (!me || me.pnl == null || isCopy(ctx, me)) return;
   const rule = closeAlert(ctx, me); if (!rule) return;
-  const x = await closeExtra(admin, ctx, me, rule, Number(me.pnl));
-  return await deliver(admin, userId, "trade", [item(rule, String(ticket), tradeWords(ctx, me, rule, Number(me.pnl), x), mates(ctx, me))], esOf(ctx.j), 0);
+  const x = rule === "tr_fol" ? "" : await closeExtra(admin, ctx, me, rule, Number(me.pnl));
+  let words = tradeWords(ctx, me, rule, Number(me.pnl), x);
+  if (rule === "tr_fol") words = words.replace("{LEAD}", leadName(ctx, me.login));
+  return await deliver(admin, userId, "trade", [item(rule, String(ticket), words, mates(ctx, me))], esOf(ctx.j), 0);
+}
+// the account an account copies, from its EA's last report (ctx.ea): its name in the journal, else its MT5 login
+function leadName(ctx: Ctx, login: string | null): string {
+  let lead = "";
+  (ctx.ea || []).forEach((r: Any) => { if (!lead && r && String(r.login) === String(login || "") && r.settings && r.settings.copy_lead) lead = String(r.settings.copy_lead); });
+  if (!lead) return esOf(ctx.j) ? "su Líder" : "its Lead";
+  try { const a = accountFor(ctx, lead); if (a && a.name && ((ctx.j && ctx.j.lm) || {})[lead]) return String(a.name); } catch (_e) { /* the login */ }
+  return "MT5 " + lead;
 }
 
 // Open now: the server's open rows that the EA is still announcing (seen in the last 2 minutes).

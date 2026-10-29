@@ -319,7 +319,7 @@ async function rememberClose(userId: string, t: number, pnl: number | null, clos
 }
 function strOrNull(v: unknown) { return (typeof v === "string" && v.trim()) ? v.trim().slice(0, 32) : null; }
 function loginOf(v: unknown) { const x = (v === undefined || v === null) ? "" : String(v).trim(); return /^\d{1,20}$/.test(x) && x !== "0" ? x : null; }
-function reasonOf(v: unknown) { const x = String(v ?? ""); return ["sl", "tp", "so", "manual", "ea", "pc", "other"].indexOf(x) !== -1 ? x : null; }
+function reasonOf(v: unknown) { const x = String(v ?? ""); return ["sl", "tp", "so", "manual", "ea", "pc", "fol", "other"].indexOf(x) !== -1 ? x : null; }   // fol: EA 9.18, opened on a Follow account
 
 // Values that move on their own - risk in money follows the balance on a % setting, the day's
 // trade count and the currency are facts about the moment - are sent for display, never counted

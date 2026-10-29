@@ -9660,6 +9660,7 @@ try {
       'nudge.tr_part': 'Partial close on your {SYM} {SIDE}: {P}% closed at {R} — {PNL} banked.',
       'nudge.tr_part_nr': 'Partial close on your {SYM} {SIDE}: {P}% closed — {PNL} banked.',
       'nudge.tr_pcend': 'Last partial close on your {SYM} {SIDE}: the trade is closed, {PNL} in total.',
+      'nudge.tr_fol': 'Closed your {SYM} {SIDE} ({PNL}): this account copies {LEAD}, trade on the Lead.',
       'nudge.w_long_f': 'long',
       'nudge.w_short_f': 'short',
       'nudge.w_points': 'points',
@@ -11625,6 +11626,7 @@ try {
       'nudge.tr_part': 'Cierre parcial en tu operación {SIDEF} de {SYM}: {P}% cerrado a {R}, {PNL} realizados.',
       'nudge.tr_part_nr': 'Cierre parcial en tu operación {SIDEF} de {SYM}: {P}% cerrado, {PNL} realizados.',
       'nudge.tr_pcend': 'Último cierre parcial en tu operación {SIDEF} de {SYM}: operación cerrada, {PNL} en total.',
+      'nudge.tr_fol': 'Cerrada tu operación {SIDEF} de {SYM} ({PNL}): esta cuenta copia a {LEAD}; opera en el Líder.',
       'nudge.w_long_f': 'larga',
       'nudge.w_short_f': 'corta',
       'nudge.w_points': 'puntos',
@@ -20118,8 +20120,17 @@ try {
     }
     // The broker's take profit, or its stop: at a loss, at break-even, or past the entry (a break-even offset reads
     // as break-even; a stop trailed well into profit as "in profit"). Closed by hand or by the EA: no alert.
+    // the account an account copies (its EA's last report), by its name in the journal, else its MT5 login
+    function trLeadName(login) {
+      var lead = '';
+      try { var R = window.__stEA ? window.__stEA.rows() : {}; Object.keys(R).forEach(function (k2) { var r = R[k2], x = (r && r.settings) || {}; if (!lead && r && String(r.login) === String(login) && x.copy_lead) lead = String(x.copy_lead); }); } catch (e) {}
+      if (!lead) return window._stT ? window._stT('its Lead', 'su Líder') : 'its Lead';
+      var a = trAccount(lead); try { if (!(data.mt5LoginMap || {})[lead]) a = null; } catch (e) { a = null; }
+      return a && a.name ? a.name : 'MT5 ' + lead;
+    }
     function trCloseRule(raw, cur, k) {
       var why = raw.close_reason, pnl = Number(cur.pnl) || 0;
+      if (why === 'fol') return 'tr_fol';   // EA 9.18: opened on an account that copies - closed, said so (29 Oct 2026)
       if (why === 'tp') return 'tr_tp';
       if (why === 'pc') return 'tr_pcend';   // EA 8.87: the partial-close ladder took the last of it
       if (why !== 'sl') return null;
@@ -20176,7 +20187,7 @@ try {
           var rule = trCloseRule(raw, cur, k);
           if (rule && !other('t')) { var c2 = Object.assign({}, cur, { login: raw.login });
             if (/^tr_(tp|sl|slp|beout)$/.test(rule)) trCloseX(k, raw, cur, rule, function (x) { raise([{ rule: rule, text: trText('nudge.' + rule, c2, Number(cur.pnl) || 0).replace(/\.$/, '') + x + '.' }], k); });
-            else raise([{ rule: rule, text: trText('nudge.' + rule, c2, Number(cur.pnl) || 0) }], k); }
+            else raise([{ rule: rule, text: trText('nudge.' + rule, c2, Number(cur.pnl) || 0).replace('{LEAD}', trLeadName(raw.login)) }], k); }
         }
       } catch (e) {}
     }
@@ -97418,6 +97429,7 @@ window.__stAZ = (function () {
     var mx = Math.floor(+st.max_trades_day || 0); if (!(mx > 0)) return false; var from = tbDayStart(nowS()), n = 0;
     try { lvTrList(S).forEach(function(x){ if (x.eTs >= from) n++; }); } catch (er) {} return n >= mx; }
   function lvEmsg(p){ if (!p || !p.m || !S || !S.live) return;
+    p = Object.assign({}, p, { m: String(p.m).replace(/\bcopies (\d{5,12})\b/, function(m0, lg){ return 'copies ' + cpName(lg); }) });   // EA 9.18 names the Lead by its login
     if (/daily (trade )?limit reached/i.test(String(p.m))) { LV.dayLock = LV.dayLock || {}; LV.dayLock[String(p.sym || '') + '|' + String(p.lg || '')] = Date.now(); }   // (lvDayLocked)
     eaMsg(String(p.m).slice(0, 300), { head: eaHead(p.sym, p.lg), k: 'em', red: /not allowed|cannot|refus|fail|error|reject/i.test(String(p.m)) }); }
   // Algo Trading off in MT5 (9.06), for the account the chart shows: said at once, and gone when it is switched on
