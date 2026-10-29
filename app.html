@@ -1213,6 +1213,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   #settings-modal-bg .settings-account-total .sat-sep { color: var(--text-dim); font-weight: 400; }   /* a total per currency, side by side */
   #settings-modal-bg .sx .sacc-r { align-items: center !important; }
   #settings-modal-bg .sx .mt5c-pick { width: 100% !important; height: 38px; }
+  #settings-modal-bg .sx .set-r > .sacc-cur { width: 100% !important; height: 38px; text-align: left; }   /* an account's currency (29 Oct 2026) */
+  #settings-modal-bg .sacc-addbal { flex-wrap: nowrap; width: 100%; } #settings-modal-bg .sacc-addbal .set-in { flex: 1 1 auto; min-width: 0; }
+  #settings-modal-bg .sacc-addbal .sacc-addcur { flex: 0 0 104px; width: 104px; height: 38px; }
   /* Accounts at 5 and more (27 Oct 2026, Nestor: "i feel this is going to get messy as soon as i start adding 3, 4, 5 accounts"): All
      accounts is one row per currency - its code, how many accounts, now and the % change, what they started with under it, smaller;
      every account's line is the same height - its name on one line, its chips on one line - with the balance and % right. On a phone
@@ -8744,7 +8747,7 @@ try {
         <div class="set-row"><div class="set-l"><label class="settings-label" for="settings-account-add-name" data-i18n="settings.add_name_label">Account name</label></div>
           <div class="set-r"><textarea id="settings-account-add-name" class="settings-input settings-account-name-ta set-in" rows="1" maxlength="40" autocomplete="off" data-lpignore="true" data-1p-ignore="true" data-form-type="other" data-i18n-placeholder="settings.add_name_ph" placeholder="Account name (e.g. MFF 100K)"></textarea></div></div>
         <div class="set-row"><div class="set-l"><label class="settings-label" for="settings-account-add-balance" data-i18n="settings.add_start_label">Starting balance</label><p class="settings-hint" data-i18n="settings.add_start_hint">What the account started with.</p></div>
-          <div class="set-r"><input type="number" id="settings-account-add-balance" class="settings-input set-in" min="0" step="any" autocomplete="off" data-lpignore="true" data-1p-ignore="true" data-form-type="other" data-i18n-placeholder="settings.add_balance_ph" placeholder="Starting balance" /></div></div>
+          <div class="set-r"><div class="set-line sacc-addbal"><input type="number" id="settings-account-add-balance" class="settings-input set-in" min="0" step="any" autocomplete="off" data-lpignore="true" data-1p-ignore="true" data-form-type="other" data-i18n-placeholder="settings.add_balance_ph" placeholder="Starting balance" /><select id="settings-account-add-cur" class="settings-input sacc-addcur" aria-label="Currency" title="Currency"><option value="GBP">GBP £</option><option value="USD">USD $</option><option value="EUR">EUR €</option><option value="AUD">AUD A$</option><option value="CAD">CAD C$</option><option value="CHF">CHF CHF</option><option value="JPY">JPY ¥</option></select></div></div></div>
         <div class="set-row"><div class="set-l"><label class="settings-label" for="settings-account-add-current" data-i18n="settings.add_now_label">Balance now</label><p class="settings-hint" data-i18n="settings.add_now_hint">Only if it has been traded elsewhere: what your broker shows today. Leave it blank for a brand-new account.</p></div>
           <div class="set-r"><input type="number" id="settings-account-add-current" class="settings-input set-in" min="0" step="any" autocomplete="off" placeholder="Balance now (optional)" data-i18n-placeholder="settings.add_current_ph"></div></div>
         <div class="set-row"><div class="set-l"></div><div class="set-r"><button type="button" id="settings-account-add-create" class="settings-btn" data-i18n="settings.add">Add</button></div></div>
@@ -57590,6 +57593,8 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
         if (isNaN(balance) || balance <= 0) { balInp.focus(); return; }
         if (window.__stNameTaken(name)) { try { showToast(t('acct.name_taken'), { duration: 7000 }); } catch (e) {} nameInp.focus(); nameInp.select(); return; }
         const acc = createAccount(name, balance);
+        // its currency, asked beside the starting balance (29 Oct 2026): MT5's report replaces it once a login is linked
+        try { const cs = document.getElementById('settings-account-add-cur'); if (acc && cs && /^[A-Z]{3}$/.test(cs.value)) acc.currency = cs.value; } catch (e) {}
         // "Balance now": for an account that has ALREADY been traded before it was added
         // here. No trades are logged against it yet, so this figure IS its starting point -
         // stored directly, with no arithmetic that a later trade could invalidate.
@@ -80526,6 +80531,21 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     var hint = T('Read from MT5', 'Leído de MT5') + (f.start > 0 ? T(' · it started with ', ' · empezó con ') + esc(Math.round(f.start).toLocaleString('en-GB')) + (f.cur ? ' ' + esc(f.cur) : '') : (f.cur ? ' · ' + esc(f.cur) : '')) + '.';
     return row(v.length ? T('Firm and server', 'Firma y servidor') : T('From MT5', 'De MT5'), hint, v.length ? '<span class="sx-v">' + v.join(' <small>·</small> ') + '</span>' : '');
   }
+  // Currency (29 Oct 2026, Nestor: "yes please"): an account with no MT5 login picks its own; with MT5 linked, MT5's report is shown and
+  // wins (autoFill sets it). Every figure of the account follows acc.currency.
+  var CURS = [['GBP', '£'], ['USD', '$'], ['EUR', '€'], ['AUD', 'A$'], ['CAD', 'C$'], ['CHF', 'CHF'], ['JPY', '¥']];
+  function curHtml(acc) {
+    var cur = window.__stAccCur ? window.__stAccCur(acc) : (acc.currency || 'GBP');
+    if (loginsOf(acc).length) return row(T('Currency', 'Moneda'), T('Read from its MT5 account.', 'Leída de su cuenta MT5.'), '<span class="sx-v">' + esc(T('From MT5: ', 'De MT5: ') + (facts(acc).cur || cur)) + '</span>');
+    return row(T('Currency', 'Moneda'), T('Every amount on this account is in it. Once its MT5 is connected, MT5’s currency is used.', 'Cada importe de esta cuenta va en ella. Al conectar su MT5, se usa la moneda de MT5.'),
+      '<select class="settings-input sacc-cur" data-sacc-cur="' + esc(acc.id) + '" aria-label="' + esc(T('Currency', 'Moneda')) + '">' + CURS.map(function (c) { return '<option value="' + c[0] + '"' + (c[0] === cur ? ' selected' : '') + '>' + c[0] + ' ' + esc(c[1]) + '</option>'; }).join('') + '</select>');
+  }
+  // the add-by-hand form's default: the currency most of the member's accounts are in, else their own
+  function curMostUsed() { var n = {}, best = '', bn = 0; (D().accounts || []).forEach(function (a) { if (!a || a.demo || a.status === 'archived') return; var c = window.__stAccCur ? window.__stAccCur(a) : a.currency; if (c) n[c] = (n[c] || 0) + 1; });
+    Object.keys(n).forEach(function (c) { if (n[c] > bn) { best = c; bn = n[c]; } }); return best || ((D().settings && D().settings.currency) || 'GBP'); }
+  document.addEventListener('change', function (e) { var sel = e.target && e.target.closest && e.target.closest('[data-sacc-cur]'); if (!sel) return;
+    var a = accById(sel.getAttribute('data-sacc-cur')); if (!a || loginsOf(a).length || !/^[A-Z]{3}$/.test(sel.value)) return;
+    a.currency = sel.value; try { saveData(); } catch (er) {} redraw(); try { if (window.__stApplyCur) window.__stApplyCur(); } catch (er) {} try { if (typeof refreshAllSurfaces === 'function') refreshAllSurfaces(); } catch (er) {} });
   // Overview: the balance, the profit, what today still allows (the daily stop, else the firm's daily limit), and the line's chips
   function tile(k, v, sub, cls) { return '<div class="sx-tile"><span>' + k + '</span><b' + (cls ? ' class="' + cls + '"' : '') + '>' + v + '</b>' + (sub ? '<small>' + sub + '</small>' : '') + '</div>'; }
   function signed(v, acc) { return (v < 0 ? '−' : (v > 0 ? '+' : '')) + money(Math.abs(v), acc); }
@@ -80705,6 +80725,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     var s = document.getElementById('sacc-h-sub'); if (s) s.textContent = n > 1 ? T('click one to see or change its settings', 'pulsa una para ver o cambiar sus ajustes') : '';
     var a = document.getElementById('sacc-add-txt'); if (a) a.textContent = T('Another account? Name it and give its starting balance, then connect its MT5: in the cloud or on your PC.', '¿Otra cuenta? Ponle nombre y su saldo inicial, y conecta su MT5: en la nube o en tu PC.');
     var b = document.getElementById('sacc-add-open'), w = document.getElementById('sacc-add-wrap'); if (b) b.textContent = (w && !w.hidden) ? T('Close', 'Cerrar') : T('+ Add account', '+ Añadir cuenta');
+    var cs1 = document.getElementById('settings-account-add-cur'); if (cs1) { cs1.setAttribute('aria-label', T('Currency', 'Moneda')); cs1.title = T('Its currency', 'Su moneda'); }
     if (w) { var ac = w.querySelector('#sacc-addcloud'); if (cloudOn() && !ac) { ac = document.createElement('div'); ac.id = 'sacc-addcloud'; ac.innerHTML = addCloudHtml(); w.insertBefore(ac, w.firstChild); } else if (!cloudOn() && ac) ac.remove(); }
     if (a && cloudOn()) a.textContent = T('Another account? Its MT5 login, server and password, and it runs in the cloud. Or add one by hand.', '¿Otra cuenta? Su login, servidor y contraseña de MT5, y funciona en la nube. O añádela a mano.');
     var cd = document.getElementById('sacc-conn'); if (cd) cd.hidden = !pcEa();
@@ -80732,7 +80753,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     if (keep) { wrap.querySelectorAll('.sacc-item').forEach(function (x) { var a = accById(x.getAttribute('data-account-id')), cs = x.querySelector('.sacc-head .sacc-chips'); if (a && cs) cs.innerHTML = window.__stAccChips(a, true); }); }   // the line's: compact, with its Test / Archived badge
     if (!acc) return;
     var put = function (k, h) { var el = it.querySelector('[data-slot="' + k + '"]'); if (el) el.innerHTML = h; };
-    put('facts', factsHtml(acc));
+    put('facts', factsHtml(acc) + curHtml(acc));
     put('overview', ovHtml(acc)); put('ovk', esc(ovKey(acc))); put('mt5k', esc(loginsOf(acc).join(' · ')));
     var ae = document.activeElement, typing = ae && it.contains(ae) && /INPUT|SELECT|TEXTAREA/.test(ae.tagName);
     if (!typing || !it.querySelector('[data-slot="mt5"]').contains(ae)) put('mt5', mt5Html(acc));
@@ -80861,7 +80882,8 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
       cur = cur.filter(function (s) { return s !== p[1]; }); if (cur.length) setSyms(p[0], cur); return; }
     b = tg.closest('[data-sacc-symadd]'); if (b) { addSym(b.getAttribute('data-sacc-symadd')); return; }
     if (tg.closest('#sacc-add-open')) { var w = document.getElementById('sacc-add-wrap'); if (CF.forAcc) { CF.forAcc = null; var o3 = w && w.querySelector('#sacc-addcloud'); if (o3) o3.remove(); }
-      if (w) { w.hidden = !w.hidden; heads(); if (!w.hidden) setTimeout(function () { try { w.scrollIntoView({ block: 'nearest' }); document.getElementById('settings-account-add-name').focus(); } catch (er) {} }, 50); } return; }
+      if (w) { w.hidden = !w.hidden; heads(); if (!w.hidden) { var cs0 = document.getElementById('settings-account-add-cur'); if (cs0) cs0.value = curMostUsed(); }
+        if (!w.hidden) setTimeout(function () { try { w.scrollIntoView({ block: 'nearest' }); document.getElementById('settings-account-add-name').focus(); } catch (er) {} }, 50); } return; }
   });
   document.addEventListener('keydown', function (e) { var i = e.target && e.target.closest && e.target.closest('[data-sacc-symin]'); if (i && e.key === 'Enter') { e.preventDefault(); addSym(i.getAttribute('data-sacc-symin')); } });
   // what the EAs and the server report changes on its own: the lines' chips and the opened account's MT5 part follow
