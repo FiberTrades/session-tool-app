@@ -22,7 +22,8 @@
     ok('scrolled back: the latest candle is off the right edge, and with the mouse in the middle there is no button', P._rtOff(0) && !shown(), [P._rtOff(0), shown()]);
     mv(dims().pw - 40, dims().ph - 40); await W(50);
     var br = btn.getBoundingClientRect(), d = dims();
-    ok('the mouse near the bottom right corner: the button there, where the Spread label goes (27 Oct 2026), above the times', shown() && Math.abs(br.right - (r.left + d.pw - 8)) <= 2 && Math.abs(br.bottom - (r.top + d.ph - 3)) <= 2, [shown(), br.right, r.left + d.pw, br.bottom, r.top + d.ph]);
+    var lane = P._newsLane ? P._newsLane(0) : 0;
+    ok('the mouse near the bottom right corner: the button there, where the Spread label goes (27 Oct 2026), above the times and the news flags lane (29 Oct 2026)', shown() && Math.abs(br.right - (r.left + d.pw - 8)) <= 2 && Math.abs(br.bottom - (r.top + d.ph - 3 - lane)) <= 2, [shown(), br.right, r.left + d.pw, br.bottom, r.top + d.ph, lane]);
     ok('...with its name and key: Scroll to the most recent bar (Alt+Shift+→)', /Scroll to the most recent bar/.test(btn.title) && /Alt\+Shift/.test(btn.title), btn.title);
     // Live Charts puts its Spread label in that corner (lvBadges' p.cdb, made the same way here): the button sits on its row, centred on it, just
     // left of it (Nestor, 27 Oct 2026: "make the >> arrow at bottom of the chart align with the spread label")

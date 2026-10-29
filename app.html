@@ -95589,7 +95589,7 @@ window.__stAZ = (function () {
       g.strokeStyle = 'rgba(41,98,255,0.85)'; g.lineWidth = 1; g.setLineDash([4, 3]); g.strokeRect(mm.x0 + .5, mm.y0 + .5, mm.x1 - mm.x0 - 1, mm.y1 - mm.y0 - 1); g.restore(); }
     g.restore();
     if (KIT) LST.forEach(function(d){ if (d && (d.type === 'vline' || (KIT.hasAxis && KIT.hasAxis(d.type))) && visibleOn(d, p.tf)) try { KIT.axis(g, d, kx(p, false, dm)); } catch (e) {} });   // a vertical line's time on the time axis
-    p._news = []; if (CFG.news !== false) drawNews(p, g, dm.pw, dm.ph);
+    p._news = []; if (CFG.news !== false) drawNews(p, g, dm.pw, dm.ph); laneFit(p);
     var cx = cxFor(p); if (cx) paintCx(p, g, cx, dm); else { try { window.__stAxisLbl(p.series).set('cx', null); } catch (e) {} }
     try { paintOhlc(p); } catch (e) {}
   }
@@ -96229,9 +96229,14 @@ window.__stAZ = (function () {
     var im = nFlagImg(c); if (!im) return null; var cv = document.createElement('canvas'); cv.width = px; cv.height = px; var cx = cv.getContext('2d');
     cx.imageSmoothingQuality = 'high'; cx.drawImage(im, 0, 0, px, px); return (NFC[k] = cv); }
   function nImp(e){ var s2 = String(e && e.impact || '').toLowerCase(); return /high/.test(s2) ? 2 : (/med/.test(s2) ? 1 : 0); }   // red, orange, grey (low and holidays)
+  // the flags' sizes (a phone's a little smaller) and their own lane just above the time axis: the chart's TradingView logo, the Spread label
+  // and the » chip sit above it, so a flag never runs over them (29 Oct 2026); none when the news is off or the chart is over 4h
+  function newsDims(){ var sm = PL.ph || phone(), FD = sm ? 14 : 17, GAP = 2, RING = 2; return { FD: FD, GAP: GAP, RING: RING, OR: FD / 2 + GAP + RING }; }   // 25 px across (22 on a phone): a touch bigger than TradingView's 22 (29 Oct 2026: "ours now looks very small")
+  function newsLane(p){ if (CFG.news === false || !p || p.tf > 240) return 0; return Math.ceil(2 * newsDims().OR + 6 + 6); }
+  function laneFit(p){ var L = newsLane(p), lo = null; try { lo = p.el.querySelector('#tv-attr-logo'); } catch (e) {} if (lo) { var b = (13 + L) + 'px'; if (lo.style.bottom !== b) lo.style.bottom = b; } }
   function drawNews(p, g, pw, ph){
     if (p.tf > 240 || !NEWS.rows.length) return;
-    var sm = PL.ph || phone(), FD = sm ? 13 : 15, GAP = 2, RING = 1.75, OR = FD / 2 + GAP + RING, STEP = 2 * OR + 3, MAX = 3, COL = ['#9598a1', '#f7931a', '#f23645'], groups = {}, G = [];
+    var nd = newsDims(), FD = nd.FD, GAP = nd.GAP, RING = nd.RING, OR = nd.OR, STEP = 2 * OR + 3, MAX = 3, COL = ['#9598a1', '#f7931a', '#f23645'], groups = {}, G = [];
     var dpr = 1; try { dpr = (p.el.ownerDocument.defaultView || window).devicePixelRatio || 1; } catch (e) {}
     var ccyOk = window.__stNewsCcyOk || function(){ return true; };   // only the calendar's countries (19 Oct 2026)
     NEWS.rows.forEach(function(e){ var t = Math.floor(Date.parse(e.at) / 1000); if (!(t >= 0) || t > S.now || !ccyOk(e.currency)) return; var k = keyOf(Math.max(p.tf, PS(p).baseTf), t); (groups[k] = groups[k] || []).push(e); });
@@ -96241,11 +96246,12 @@ window.__stAZ = (function () {
     // left to right: a group that would touch the one before moves right, never on top of it
     G.sort(function(a, b){ return a.x - b.x; }); var lastR = -1e9;
     G.forEach(function(q){ var l = q.x - q.w / 2; if (l < lastR + 3) l = lastR + 3; q.l = l; lastR = l + q.w; });
-    var y = Math.round((ph - 6 - OR) * dpr) / dpr;
+    var y = Math.round((ph - 6 - OR) * dpr) / dpr; g.save(); g.beginPath(); g.rect(0, 0, pw, ph); g.clip();   // the plot only: a flag at its edge goes under the price scale, as a candle does
     G.forEach(function(q){ if (q.l + q.w < -OR || q.l > pw + OR) return;
       for (var i = 0; i < q.shown; i++) newsFlag(g, q.l + OR + i * STEP, y, FD, GAP, RING, q.list[i].currency, COL[nImp(q.list[i])], dpr);
       if (q.n > q.shown) newsMore(g, q.l + OR + q.shown * STEP, y, OR, q.n - q.shown);
       p._news.push({ x: q.l + q.w / 2, y: y, hw: q.w / 2 + 2, e: q.list[0], list: q.list, n: q.n }); });
+    g.restore();
   }
   // one release: the ring in its impact's colour, a white gap, its country's flag (a currency without one: its letters)
   function newsFlag(g, x, y, FD, GAP, RING, ccy, col, dpr){ x = Math.round(x * dpr) / dpr; var r0 = FD / 2, bm = nFlagBmp(ccy, FD, dpr);
@@ -96355,7 +96361,7 @@ window.__stAZ = (function () {
   function rtPaint(p){ var b = p && p._rt; if (!b) return; var on = rtOff(p) && (touchOnly() || !!p._rtNear); if (b.classList.contains('on') !== on) b.classList.toggle('on', on);
     // on the Spread label's row, centred on it, just left of it (Nestor, 27 Oct 2026: "make the >> arrow at bottom of the chart align with the
     // spread label"); with no Spread label, where it would be
-    if (on) { var dm = paneDims(p), sb = p.cdb, bh = b.offsetHeight || 28, right = dm.psw + 8, mid = dm.h - dm.ph + 8 + 9;
+    if (on) { var dm = paneDims(p), sb = p.cdb, bh = b.offsetHeight || 28, right = dm.psw + 8, mid = dm.h - dm.ph + 8 + 9 + newsLane(p);
       if (sb && sb.isConnected && !sb.hidden && sb.offsetWidth) { var pr = p.el.getBoundingClientRect(), sr = sb.getBoundingClientRect(); right = pr.right - sr.left + 6; mid = pr.bottom - (sr.top + sr.height / 2); }
       b.style.right = Math.round(right) + 'px'; b.style.bottom = Math.round(mid - bh / 2) + 'px'; } }
   function rtGo(p){ if (!p || !p.chart || !(p.n > 0)) return; var r = null; try { r = p.chart.timeScale().getVisibleLogicalRange(); } catch (e) {} if (!r) return;
@@ -97993,7 +97999,7 @@ window.__stAZ = (function () {
       var tx = sp ? T('Spread', 'Margen') + ' ' + sp : '';   // the candle's time left is on the price scale now (cdLbl)
       if (!tx) { b.hidden = true; return; } b.hidden = false; if (b.textContent !== tx) b.textContent = tx;
       var psw = 56, th = 28; try { psw = p.chart.priceScale('right').width() || 56; th = p.chart.timeScale().height() || 28; } catch (e) {}
-      var rr = (psw + 8) + 'px', bb = (th + 8) + 'px'; if (b.style.right !== rr) b.style.right = rr; if (b.style.bottom !== bb) b.style.bottom = bb; }); }
+      var rr = (psw + 8) + 'px', bb = (th + 8 + newsLane(p)) + 'px'; if (b.style.right !== rr) b.style.right = rr; if (b.style.bottom !== bb) b.style.bottom = bb; }); }   // above the news flags' lane
   // ---- alerts on a live chart: a price_alerts row each (the EA watches them, MT5 rings, the phone hears); reached here too ----
   function lvAlertScan(F, a, b){ if (!F || F.cmpOnly) return; var lo = Math.min(a, b), hi = Math.max(a, b), raw = F.sym.raw, cr = !!(F.sym && F.sym.cls === 'crypto'), t = nowS(), got = false;
     dwListOf(raw).forEach(function(d){ if (!(d && altKind(d) && d.alert && d.live && !d.hitAt)) return; var lv = altLv(d, t, cr), ev = lv && altEv(d, lv, a, lo, hi, b); if (!ev) return;   // a move after it was set (the first price is only a start)
@@ -99391,7 +99397,7 @@ window.__stAZ = (function () {
     _newsActuals: newsActuals, _newsState: function(){ return NEWS; }, _newsEvery: newsEvery, _newsTick: newsTick,
     _newsCard: function(i, k){ var p = panes[i || 0]; if (!p) return null; var h = k == null ? null : (p._news || [])[k]; newsCard(p, h || null); return h ? (p.card ? p.card.textContent : '') : null; },
     _dwAdopt: function(raw, list){ dwAdopt('L|' + raw, list, Date.now()); },   // a list from the server (tbSync's test)
-    _lvTr: function(rows){ LTR.rows = (rows || []).map(lvTrNorm).filter(Boolean); LTR.at = Date.now(); if (S && S.live) render(); }, _lvTrList: function(){ return S ? lvTrList(S).map(function(x){ return x.ticket; }) : []; }, _lvMarkLgs: lvMarkLgs, _tmAt: function(i, x, y){ return tmAt(panes[i || 0], x, y); }, _rtGo: function(i){ rtGo(panes[i || 0]); }, _rtOff: function(i){ return rtOff(panes[i || 0]); }, _tmCardText: function(i, tk){ var p = panes[i || 0], x = p && lvTrList(PS(p)).filter(function(q){ return q.ticket === String(tk); })[0]; if (!x) return null; var c = document.createElement('div'); tmCard(p, { g: { list: [x] }, x: 100, top: 100, bot: 110, above: true }, c); return c.textContent; }, _tmk: function(i){ var p = panes[i || 0]; return p ? p._tmk : null; }, _arw: function(i){ var p = panes[i || 0]; return (p && p.series.__stArw) ? p.series.__stArw.items : []; } };
+    _lvTr: function(rows){ LTR.rows = (rows || []).map(lvTrNorm).filter(Boolean); LTR.at = Date.now(); if (S && S.live) render(); }, _lvTrList: function(){ return S ? lvTrList(S).map(function(x){ return x.ticket; }) : []; }, _lvMarkLgs: lvMarkLgs, _newsLane: function(i){ return newsLane(panes[i || 0]); }, _tmAt: function(i, x, y){ return tmAt(panes[i || 0], x, y); }, _rtGo: function(i){ rtGo(panes[i || 0]); }, _rtOff: function(i){ return rtOff(panes[i || 0]); }, _tmCardText: function(i, tk){ var p = panes[i || 0], x = p && lvTrList(PS(p)).filter(function(q){ return q.ticket === String(tk); })[0]; if (!x) return null; var c = document.createElement('div'); tmCard(p, { g: { list: [x] }, x: 100, top: 100, bot: 110, above: true }, c); return c.textContent; }, _tmk: function(i){ var p = panes[i || 0]; return p ? p._tmk : null; }, _arw: function(i){ var p = panes[i || 0]; return (p && p.series.__stArw) ? p.series.__stArw.items : []; } };
 })();
 </script>
 
