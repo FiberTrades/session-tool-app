@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "9.17"
+#property version   "9.18"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -4069,7 +4069,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.17\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\",\"cloud\":%s,\"company\":\"%s\",\"server\":\"%s\",\"start_bal\":%s}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.18\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\",\"cloud\":%s,\"company\":\"%s\",\"server\":\"%s\",\"start_bal\":%s}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY),g_inCloud?"true":"false",
                             JsonSafe(AccountInfoString(ACCOUNT_COMPANY)),JsonSafe(AccountInfoString(ACCOUNT_SERVER)),DoubleToString(CpAccountSize(),2)));   // v9.12: the Accounts tab's "Read from MT5" line
   }
@@ -4464,7 +4464,7 @@ void LwOpen()
 // v9.06: MT5's Algo Trading button (and this EA's own "Allow Algo Trading") - off, no order can be placed, from here or from the app
 bool AlgoOn(){ return TerminalInfoInteger(TERMINAL_TRADE_ALLOWED)!=0 && MQLInfoInteger(MQL_TRADE_ALLOWED)!=0; }
 int  g_lwAl=-1;                       // v9.06: Algo Trading as last told to the app
-string LwHi(){ return StringFormat("{\"v\":\"9.17\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d,\"cl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0,g_inCloud?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
+string LwHi(){ return StringFormat("{\"v\":\"9.18\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d,\"cl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0,g_inCloud?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
 // v9.06 (Nestor, 19 Oct 2026: "whatever messages appear in MT5 i need to also see them in the app"): every message this EA writes on its
 // chart (Flash) goes to Session Terminal too, which shows it on Live Charts. Only while the line is up; nothing is queued.
 void LwMsg(string m)
@@ -8104,11 +8104,72 @@ void CopySetRole(ENUM_COPY_ROLE r)
    if(g_copyRole==CR_FOLLOW) FileDelete(CpFileF(me),FILE_COMMON);
    CpRelease(); g_ownF=false;
    g_copyRole=r; g_roleAtMs=GetTickCount64();
-   GlobalVariableSet("MMC_ROLE_"+me,(double)r); GlobalVariablesFlush();
+   GlobalVariableSet("MMC_ROLE_"+me,(double)r);
+   if(r!=CR_FOLLOW) GlobalVariableDel("MMC_FOLAT_"+me); else if(!GlobalVariableCheck("MMC_FOLAT_"+me)) GlobalVariableSet("MMC_FOLAT_"+me,(double)TimeGMT());   // v9.18
+   GlobalVariablesFlush();
    g_copyLeadSig=""; g_cpLast=""; g_cpLastWarn=false; g_cpStatus=""; g_cpStatusWarn=false;
    if(r==CR_FOLLOW){ CpLoadMaps(); CpPickLead(); if(g_execMode) ToggleExecMode(); }
    PrintFormat("COPIER: this account (%s) is now %s.",me,CopyRoleText());
    CopierSlowTick();
+  }
+// v9.18 (Nestor, 29 Oct 2026: "when an account is the follow account trading on that account should not be allowed"): a Follow takes the
+// Lead's trades only. A position or a pending order on it that the copier did not place - the copier stamps its own with InpCopyMagic and
+// "STC <lead ticket>"; MT5's own chart and phone app place theirs with none - is closed or deleted at once, as the order rules' close-
+// elsewhere does: each chart its own symbol's, the first chart the symbols with no chart, each tried once every 30 s at most. Only one opened
+// since the account became a Follow (MMC_FOLAT_<login>): a trade it already had when it was made a Follow runs on. Said on the chart, to
+// the app and, as the close's reason ("fol"), on the phone. Copies are never touched.
+ulong g_folTk[]; long g_folTry[]; ulong g_folDone[];
+bool FolDone(ulong id){ for(int i=0;i<ArraySize(g_folDone);i++) if(g_folDone[i]==id) return true; return false; }
+bool FolTryNow(ulong tk,long nowUtc)
+  {
+   int n=ArraySize(g_folTk), at=-1;
+   for(int j=0;j<n;j++) if(g_folTk[j]==tk){ at=j; break; }
+   if(at>=0 && nowUtc-g_folTry[at]<30) return false;
+   if(at<0){ if(n>=32){ ArrayRemove(g_folTk,0,1); ArrayRemove(g_folTry,0,1); n--; } ArrayResize(g_folTk,n+1); ArrayResize(g_folTry,n+1); at=n; g_folTk[at]=tk; }
+   g_folTry[at]=nowUtc; return true;
+  }
+void FolTick()
+  {
+   if(g_copyRole!=CR_FOLLOW || InpCopyMagic==InpMagic || g_aside) return;   // copies not told apart from the rest: nothing closed
+   string k="MMC_FOLAT_"+CpLogin(); if(!GlobalVariableCheck(k)) GlobalVariableSet(k,(double)TimeGMT());
+   long since=(long)GlobalVariableGet(k), nowUtc=(long)TimeGMT(); bool closer=RuCloser();
+   string lead=(g_copyLead>0) ? IntegerToString(g_copyLead) : "its Lead";
+   for(int i=PositionsTotal()-1;i>=0;i--)
+     {
+      ulong tk=PositionGetTicket(i); if(tk==0 || !PositionSelectByTicket(tk)) continue;
+      if(PositionGetInteger(POSITION_MAGIC)==InpCopyMagic) continue;                    // a copy: never touched
+      string sy=PositionGetString(POSITION_SYMBOL);
+      if(sy!=_Symbol && !(closer && !RuHasChart(sy))) continue;
+      long tsrv=(long)PositionGetInteger(POSITION_TIME), tutc=tsrv-SrvOffAt((datetime)tsrv);
+      if(tutc<since) continue;                                                           // it had it before it was made a Follow
+      if(!FolTryNow(tk,nowUtc)) continue;
+      ulong id=(ulong)PositionGetInteger(POSITION_IDENTIFIER); double vol=PositionGetDouble(POSITION_VOLUME);
+      int n=ArraySize(g_folDone); if(n>=32){ ArrayRemove(g_folDone,0,1); n--; } ArrayResize(g_folDone,n+1); g_folDone[n]=id;   // its close event says why
+      if(trade.PositionClose(tk))
+        {
+         string m="Closed "+sy+" "+DoubleToString(vol,2)+": this account copies "+lead+", trade on the Lead.";
+         Print("Session Terminal copier: ",m); Flash(m);
+        }
+      else Print("Session Terminal copier: could not close ",sy," #",tk," (",trade.ResultRetcode(),")");
+     }
+   for(int i=OrdersTotal()-1;i>=0;i--)
+     {
+      ulong tk=OrderGetTicket(i); if(tk==0 || !OrderSelect(tk)) continue;
+      if(OrderGetInteger(ORDER_MAGIC)==InpCopyMagic) continue;                           // the copier's pending copy: never touched
+      long ot=OrderGetInteger(ORDER_TYPE);
+      if(ot!=ORDER_TYPE_BUY_LIMIT && ot!=ORDER_TYPE_SELL_LIMIT && ot!=ORDER_TYPE_BUY_STOP && ot!=ORDER_TYPE_SELL_STOP && ot!=ORDER_TYPE_BUY_STOP_LIMIT && ot!=ORDER_TYPE_SELL_STOP_LIMIT) continue;
+      string sy=OrderGetString(ORDER_SYMBOL);
+      if(sy!=_Symbol && !(closer && !RuHasChart(sy))) continue;
+      long tsrv=(long)OrderGetInteger(ORDER_TIME_SETUP), tutc=tsrv-SrvOffAt((datetime)tsrv);
+      if(tutc<since) continue;
+      if(!FolTryNow(tk,nowUtc)) continue;
+      if(trade.OrderDelete(tk))
+        {
+         string m="Deleted the "+sy+" order: this account copies "+lead+", trade on the Lead.";
+         Print("Session Terminal copier: ",m); Flash(m);
+        }
+      else Print("Session Terminal copier: could not delete order ",sy," #",tk," (",trade.ResultRetcode(),")");
+     }
   }
 void CopierSlowTick()
   {
@@ -8167,6 +8228,7 @@ void CopyWish(string role,long at)
    if(r==CR_FOLLOW && g_onVps){ Print("COPIER: Follow is not set on the MT5 VPS - a Follow account copies a Lead in another MT5 on the same computer."); return; }
    if(r==g_copyRole) return;
    Print("COPIER: role set in Session Terminal.");
+   if(r==CR_FOLLOW) GlobalVariableSet("MMC_FOLAT_"+CpLogin(),(double)at);   // v9.18: a Follow since the member asked for it
    CopySetRole(r);
   }
 // The account's copier role as set on any chart of it here (CopySetRole keeps it in a terminal global variable): a chart standing
@@ -8265,7 +8327,7 @@ int OnInit()
    RulesLoad(true);   // v9.15: the account's order rules, before any order
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v9.17 loaded (a typed target banks its distance from the real fill: MT5's TP and the EA's close both sit at the target plus the slippage this account has shown, whichever fires first; order rules from Session Terminal: locks for the day, the session and a break, the time between entries, the money at risk, the allowed symbols; BE halfway between the entry and the TP, the trailing / partial steps parked clear of the TP on every unit; MT5's messages and Algo Trading on or off, to Session Terminal; alerts on drawings from Session Terminal: a trend line or ray followed tick by tick, a rectangle or channel rings when price enters or leaves it; Live Charts: this chart's prices streamed to Session Terminal while its Live Charts tab shows them - 2 a second in your session, every 2 s with a trade open, every 5 s otherwise - and today's 1-minute candles when it asks; tick volume with every candle sent, and the older candles a volume profile in Practice Replay asks for; price alerts from Session Terminal, sent to your phone; 1-minute candles for the live chart; a live line to Session Terminal: the live chart updates every second, 3 hours a day; the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
+   Print("=== MinimalistManager v9.18 loaded (a Follow account trades only the Lead's copies: anything opened on it in MT5 is closed; a typed target banks its distance from the real fill: MT5's TP and the EA's close both sit at the target plus the slippage this account has shown, whichever fires first; order rules from Session Terminal: locks for the day, the session and a break, the time between entries, the money at risk, the allowed symbols; BE halfway between the entry and the TP, the trailing / partial steps parked clear of the TP on every unit; MT5's messages and Algo Trading on or off, to Session Terminal; alerts on drawings from Session Terminal: a trend line or ray followed tick by tick, a rectangle or channel rings when price enters or leaves it; Live Charts: this chart's prices streamed to Session Terminal while its Live Charts tab shows them - 2 a second in your session, every 2 s with a trade open, every 5 s otherwise - and today's 1-minute candles when it asks; tick volume with every candle sent, and the older candles a volume profile in Practice Replay asks for; price alerts from Session Terminal, sent to your phone; 1-minute candles for the live chart; a live line to Session Terminal: the live chart updates every second, 3 hours a day; the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
    Print("=== MinimalistManager v5.7 notes (BE-offset ladder now sweeps EVERY level from +0R to +1R in 0.05R steps, arms itself off the price path so it runs on EVERY trade instead of only ones moved to BE, and reports a stop-never-moved baseline so locking in can be judged against doing nothing. v5.6 kept: the sweep freeze fix and the heartbeat) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)
@@ -8769,6 +8831,7 @@ void OnTimer()
    if(g_flashMsg!="" && GetTickCount64()>=g_flashUntil) DrawHint();   // a message's 6 seconds are up
    DailyLimitTick();   // auto-off at the cap, and auto-on again on the new day
    RulesTick();        // v9.15: the order rules - locks, and a trade opened elsewhere while locked
+   FolTick();          // v9.18: a Follow - anything not copied from the Lead is closed
    AimTick();          // v9.16: a typed target reached in a quiet market
    if(g_ceInitDue && (LwJoined() || g_lwOff || GetTickCount()-g_eaStartMs>=20000)){ g_ceInitDue=false; CE_CatchupOnce(); CE_Sweep(); }   // v9.15: Trade Replay's exports after the live line
    bool _connNow=(bool)TerminalInfoInteger(TERMINAL_CONNECTED);
@@ -8998,6 +9061,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
       // v8.86: why it closed (stop loss / take profit / by hand / by the EA) and the account, for the trade alerts.
       // v8.87: "pc" when the partial-close ladder took the last of it.
       string _why=(g_pcClosing!=0 && posId==g_pcClosing) ? "pc" : LiveCloseReason(dealTicket);
+      if(FolDone(posId)) _why="fol";   // v9.18: closed because this account is a Follow
       if(g_pcClosing!=0 && posId==g_pcClosing) g_pcClosing=0;
       if(g_aimClosing!=0 && posId==g_aimClosing)   // v9.16: closed at its aimed target - a take profit
         {
