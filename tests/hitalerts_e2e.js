@@ -33,6 +33,19 @@
     ok('out at break-even: its own words, no R', /Out at break-even on your EURUSD short: \+£4\.20\./.test(card()), card());
     close(900104, 140, 'tp', '27007659', 70); await until(/\$140/);
     ok('OneFunded\'s target in $: "+$140.00 · +2.0R"', /Target hit on your EURUSD short: \+\$140\.00 · \+2\.0R\./.test(card()), card());
+    // EA 9.18: a trade opened on an account that copies, closed (reason "fol"): the Lead named by its account, from the EA's report
+    var realRows = window.__stEA.rows, eaRows = {};
+    window.__stEA.rows = function () { return eaRows; };
+    eaRows = { 'r1': { login: 27007659, settings: { copy_role: 'follow', copy_lead: '541419576' }, updated_at: new Date().toISOString() } };
+    close(900105, -0.12, 'fol', '27007659', 70); await until(/this account copies/);
+    ok('closed on a Follow: "Closed your EURUSD short (−$0.12): this account copies FTMO 70K - Challenge, trade on the Lead."', /Closed your EURUSD short \(−\$0\.12\): this account copies FTMO 70K - Challenge, trade on the Lead\./.test(card()), card());
+    eaRows = { 'r1': { login: 27007659, settings: { copy_role: 'follow', copy_lead: '90009999' }, updated_at: new Date().toISOString() } };
+    close(900106, -0.10, 'fol', '27007659', 70); await until(/copies MT5 90009999/);
+    ok('a Lead not in the journal: by its MT5 login', /this account copies MT5 90009999, trade on the Lead\./.test(card()), card());
+    eaRows = {};
+    close(900107, -0.08, 'fol', '27007659', 70); await until(/copies its Lead/);
+    ok('no report from the EA yet: "its Lead"', /this account copies its Lead, trade on the Lead\./.test(card()), card());
+    window.__stEA.rows = realRows;
     var src = await fetch('/app.html', { cache: 'no-store' }).then(function (r) { return r.text(); });
     ok('this window never claims a target or stop hit as seen, so the phone gets it too', /if \(\/\^tr_\(tp\|sl\|slp\|beout\)\$\/\.test\(x\.rule\)\) return; try \{ _claimSessionAlertCloud\('seen:'/.test(src));
     window.__stSB = realSB;
