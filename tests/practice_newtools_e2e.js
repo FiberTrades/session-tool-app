@@ -55,7 +55,7 @@
     ok('Vertical line: one click puts it at that candle\'s time, selected, the tool put down', v && v.type === 'vline' && v.a && v.a.t > 0 && DW.sel === DW.list.length - 1 && DW.tool === 'none' && Math.abs(vx - X) < 8, v);
     var vTop = px(Math.round(vx), 12), vBot = px(Math.round(vx), dm.ph - 6), vAx = px(Math.round(vx), dm.ph + 9);
     ok('it runs the full height, blue, and its time sits on the time axis in its colour', near(vTop, [96, 165, 250], 10) && near(vBot, [96, 165, 250], 10) && near(vAx, [96, 165, 250], 10), [vTop, vBot, vAx]);
-    ok('its toolbar: Templates, line colour, width, style, Visibility, lock, delete, More', acts() === 'tpl,line,width,dash,vis,lock,del,more', acts());
+    ok('its toolbar: Templates, line colour, text, width, style, Visibility, lock, delete, More', acts() === 'tpl,line,text,width,dash,vis,lock,del,more', acts());
     var v2 = px(Math.round(P._xOfT(1, v.a.t)), 40, 1);
     ok('it is on the other chart of EUR/USD too (15m), at the same time', near(v2, [96, 165, 250], 10), v2);
 
@@ -88,7 +88,7 @@
     ok('the third sets the other line through that point: kept, selected, the tool put down', cn.type === 'channel' && !('st' in cn) && cn.off > 0 && Math.abs((cy0 - cy1) - 50) < 6 && DW.sel === DW.list.length - 1 && DW.tool === 'none', [cn.off, cy0 - cy1]);
     var inC = px(Math.round(cx0 + 20), Math.round((cy0 + cy1) / 2 - 3));
     ok('filled between its lines (its colour at 10%)', inC[3] > 15 && inC[3] < 50, inC);
-    ok('its toolbar: Templates, line, fill, width, style, Visibility, alert (batch D), lock, delete, More (extend left / right, middle line)', acts() === 'tpl,line,fill,width,dash,vis,alert,lock,del,more' && (bar().querySelector('[data-db="more"]').click(), pop().querySelector('[data-tgl="extL"]') && pop().querySelector('[data-tgl="extR"]') && pop().querySelector('[data-tgl="mid"]')), acts());
+    ok('its toolbar: Templates, line, fill, text, width, style, Visibility, alert (batch D), lock, delete, More (extend left / right, middle line)', acts() === 'tpl,line,fill,text,width,dash,vis,alert,lock,del,more' && (bar().querySelector('[data-db="more"]').click(), pop().querySelector('[data-tgl="extL"]') && pop().querySelector('[data-tgl="extR"]') && pop().querySelector('[data-tgl="mid"]')), acts());
     var tgm = pop().querySelector('[data-tgl="mid"]'); tgm.checked = true; tgm.dispatchEvent(new Event('change', { bubbles: true })); await W(30); DB.closePop();
     var cmx = P._xOfT(0, cn.a.t) + 30, cmy = (P._yOf(0, cn.a.price + (cn.b.price - cn.a.price) * 30 / (P._xOfT(0, cn.b.t) - P._xOfT(0, cn.a.t))) + P._yOf(0, cn.a.price + cn.off + (cn.b.price - cn.a.price) * 30 / (P._xOfT(0, cn.b.t) - P._xOfT(0, cn.a.t)))) / 2, midInk = 0;
     for (var yy = Math.round(cmy) - 2; yy <= Math.round(cmy) + 2; yy++) for (var xx = Math.round(cmx) - 4; xx <= Math.round(cmx) + 4; xx++) { var cc = px(xx, yy); if (cc[3] > 120) midInk++; }

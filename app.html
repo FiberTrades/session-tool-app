@@ -87449,7 +87449,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   // a part's value: the look's, or the app's own (today's look: a drawing that never had one stays exactly as it was)
   function eff(dsty, ty, o, k){ if (o && o[k] != null) return o[k]; var ds = (dsty && dsty[ty]) || {};
     switch (k) { case 'color': return ds.c || '#ffffff'; case 'width': return ds.w || 1; case 'dash': return 'solid';
-      case 'fill': return ds.f || withA(eff(dsty, ty, o, 'color'), 0.10); case 'tcol': return ds.tc || eff(dsty, ty, o, 'color'); case 'tsz': return ds.ts || 11; case 'ta': return 'c'; case 'tv': return 'above';
+      case 'fill': return ds.f || withA(eff(dsty, ty, o, 'color'), 0.10); case 'tcol': return ds.tc || eff(dsty, ty, o, 'color'); case 'tsz': return ds.ts || 11; case 'ta': return ds.ta || 'c'; case 'tv': return ds.tv || 'above';
       case 'midDash': return 'dotted'; case 'levels': return FIBS.slice(); case 'show': return {}; case 'ptc': return '#4ECD8B'; case 'psc': return '#E56767'; default: return false; } }
   function norm(k, v){ if (k === 'color' || k === 'fill' || k === 'tcol' || k === 'ptc' || k === 'psc') { var p = parseC(v); return p.h + '/' + p.a.toFixed(2); }
     if (k === 'show') return ['pips', 'r', 'bars'].map(function(x){ return !(v && v[x] === false); }).join(','); return JSON.stringify(v); }
@@ -87942,6 +87942,37 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     handles: function(g, d, X, sq){ var a = X.P(d.a), b = X.P(d.b); if (a) sq(a.x, a.y); if (b) sq(b.x, b.y); },
     box: function(d, X){ var r = kDR(d, X); return r ? kSpan([{ x: r.a.x, y: r.y0 }, { x: r.b.x, y: r.y1 }].concat(r.tb ? [{ x: r.tb.x0, y: r.tb.y0 }, { x: r.tb.x1, y: r.tb.y1 }] : [])) : null; } });
   Object.assign(TYN, { prange: ['price range', 'price ranges', 'rango de precio', 'rangos de precio'], drange: ['date range', 'date ranges', 'rango de fechas', 'rangos de fechas'], range: ['date and price range', 'date and price ranges', 'rango de fecha y precio', 'rangos de fecha y precio'] });
+  // ---- a line's words, TradingView's way (Nestor, 29 Oct 2026: "i want to be able to place text in the middle of the lines and below and also
+  //      be able to move text right left and center"): Above / Middle / Below the line (tv) and Left / Centre / Right along it (ta), its
+  //      colour and size; Middle sits ON the line, which breaks under the words (gapClip) - nothing painted behind them. A vertical line's
+  //      words stay level: Top / Middle / Bottom along it, Left / on it / Right of it. They never go under the price scale. ----
+  var LTX = { trend: 1, ray: 1, extline: 1, infoline: 1, tangle: 1, arrow: 1, hline: 1, hray: 1, vline: 1, channel: 1 };
+  Object.keys(LTX).forEach(function(t){ var k = (KEYS[t] || ['color', 'width', 'dash']).slice(); ['tcol', 'tsz', 'ta', 'tv'].forEach(function(x){ if (k.indexOf(x) < 0) k.push(x); }); KEYS[t] = k; });   // remembered per tool, reset with the rest
+  NDSTY.hline = Object.assign({ c: '#f4c05a', w: 1 }, NDSTY.hline || {}, { ta: 'r', ts: 12 }); NDSTY.vline.ta = 'r'; NDSTY.hray.ta = 'l';   // where their words were before: a horizontal line's at its right, a ray's at its start
+  function kLTgeo(d, X, P0, P1, o){ var s = String(d.text || ''); if (!s || !P0 || !P1) return null; o = o || {};
+    var fs = +kE(X, d, 'tsz') || 11, tv = kE(X, d, 'tv') || 'above', ta = kE(X, d, 'ta') || 'c', L = s.split('\n'), lh = Math.round(fs * 1.25), font = fs + 'px ' + (o.family || "'DM Mono',monospace");
+    var g = KM || (KM = document.createElement('canvas').getContext('2d')); g.font = font; var w = 0; L.forEach(function(l){ w = Math.max(w, g.measureText(l).width); }); w = Math.ceil(w); var h = L.length * lh;
+    var r = { L: L, fs: fs, lh: lh, w: w, h: h, font: font, col: kE(X, d, 'tcol'), ang: 0, gap: null };
+    if (o.vert) { var x = P0.x, top = tv === 'middle' ? X.ph / 2 - h / 2 : (tv === 'below' ? X.ph - 6 - h : 6), x0 = ta === 'l' ? x - 6 - w : (ta === 'c' ? x - w / 2 : x + 6);
+      x0 = Math.max(2, Math.min(X.pw - w - 2, x0)); r.ax = x0; r.ay = top; r.rows = L.map(function(l, k){ return { s: l, dx: 0, dy: k * lh }; });
+      if (ta === 'c') r.gap = [{ x: x0 - 3, y: top - 2 }, { x: x0 + w + 3, y: top - 2 }, { x: x0 + w + 3, y: top + h + 2 }, { x: x0 - 3, y: top + h + 2 }];
+      r.bb = { x0: x0, y0: top, x1: x0 + w, y1: top + h }; return r; }
+    var a = P0, b = P1; if (b.x < a.x || (Math.abs(b.x - a.x) < 1e-6 && b.y > a.y)) { a = P1; b = P0; }   // read left to right (straight up: bottom to top)
+    var dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len, pad = 6, t0 = ta === 'l' ? pad : (ta === 'r' ? len - pad : len / 2);
+    var bx0 = ta === 'l' ? 0 : (ta === 'r' ? -w : -w / 2), by0 = tv === 'above' ? -h - 1 : (tv === 'below' ? 3 : -h / 2), px = a.x + ux * t0, py = a.y + uy * t0;
+    var cor = function(cx, cy){ return { x: px + ux * cx - uy * cy, y: py + uy * cx + ux * cy }; }, box = function(m, e){ return [cor(bx0 - m, by0 - e), cor(bx0 + w + m, by0 - e), cor(bx0 + w + m, by0 + h + e), cor(bx0 - m, by0 + h + e)]; };
+    var bb = kSpan(box(0, 0)), sx = bb.x1 > X.pw - 2 ? X.pw - 2 - bb.x1 : (bb.x0 < 2 ? 2 - bb.x0 : 0), sy = bb.y0 < 2 ? 2 - bb.y0 : (bb.y1 > X.ph - 2 ? X.ph - 2 - bb.y1 : 0);   // on the chart, never under the price scale
+    px += sx; py += sy; r.ang = Math.atan2(dy, dx); r.ax = px; r.ay = py; r.rows = L.map(function(l, k){ return { s: l, dx: bx0, dy: by0 + k * lh }; });
+    if (tv === 'middle') r.gap = box(3, 1); r.bb = kSpan(box(0, 0)); return r; }
+  function kLTdraw(g, r){ if (!r) return; g.save(); g.setLineDash([]); g.translate(r.ax, r.ay); if (r.ang) g.rotate(r.ang); g.font = r.font; g.fillStyle = r.col; g.textAlign = 'left'; g.textBaseline = 'top';
+    r.rows.forEach(function(q){ g.fillText(q.s, q.dx, q.dy); }); g.restore(); }
+  // everything this drawing paints next leaves the words' box out (Middle: the line breaks there; nothing is painted behind the words)
+  function kGapClip(g, poly){ g.beginPath(); g.rect(-1e5, -1e5, 2e5, 2e5); poly.forEach(function(q, j){ if (j) g.lineTo(q.x, q.y); else g.moveTo(q.x, q.y); }); g.closePath(); g.clip('evenodd'); }
+  // the kit's own lines: where their words run
+  function kLTk(d, X){ if (!LTX[d.type] || !d.text) return null; var a = d.a ? X.P(d.a) : null, b = d.b ? X.P(d.b) : null; if (!a) return null;
+    if (d.type === 'vline') return kLTgeo(d, X, a, a, { vert: true });
+    if (d.type === 'hray') return kLTgeo(d, X, a, { x: X.pw, y: a.y });
+    return b ? kLTgeo(d, X, a, b) : null; }
   function kPaint(g, d, X){ var k2o = K2[d.type]; if (k2o) { var C2 = kE(X, d, 'color'), W2 = kW(X, d); g.save(); g.strokeStyle = C2; g.fillStyle = C2; g.lineWidth = W2; g.setLineDash(X.pv ? [4, 3] : dash(kE(X, d, 'dash'), W2));
       try { k2o.paint(g, d, X, C2, W2); } catch (e) {} g.restore(); return; }
     var C = kE(X, d, 'color'), W = kW(X, d), t = d.type, a, b; g.save(); g.strokeStyle = C; g.fillStyle = C; g.lineWidth = W; g.setLineDash(X.pv ? [4, 3] : dash(kE(X, d, 'dash'), W));
@@ -87974,7 +88005,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     g.fillStyle = C.h; g.fillRect(cx - tw / 2 - 5, cy - bh / 2, tw + 10, bh); g.fillStyle = lum > 150 ? '#0b0a0d' : '#ffffff'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(tt, cx, cy); g.restore(); }
   // the drawing's note (More > Note), riding on it: along a ray, an arrow and a channel's base line, at the top of a vertical
   // line, above the start of a horizontal ray, above a circle, above a highlighter stroke
-  function kText(g, d, X, C){ var s = String(d.text || ''); if (!s || d.type === 'note' || (K2[d.type] && K2[d.type].tpop)) return; var a = X.P(d.a), b = d.b ? X.P(d.b) : null, x, y, al = 'center', ang = 0;
+  function kText(g, d, X, C){ var s = String(d.text || ''); if (!s || d.type === 'note' || (K2[d.type] && K2[d.type].tpop)) return; if (LTX[d.type]) { kLTdraw(g, kLTk(d, X)); return; } var a = X.P(d.a), b = d.b ? X.P(d.b) : null, x, y, al = 'center', ang = 0;
     if (d.type === 'vline') { if (!a) return; x = a.x + 5; y = 16; al = 'left'; }
     else if (d.type === 'hray') { if (!a) return; x = a.x + 4; y = a.y - 4; al = 'left'; }
     else if (d.type === 'circle') { var el = kEll(d, X); if (!el) return; x = el.x; y = el.y - el.ry - 5; }
@@ -88080,7 +88111,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if (lineT) H.push(popBtn('line', T('Line colour', 'Color de la línea'), IC.pen + cbar(v('color'))));
       if (FILLT[t]) H.push(popBtn('fill', t === 'note' ? T('Box', 'Recuadro') : ((K2[t] && K2[t].tpop) ? T('Background', 'Fondo') : T('Fill', 'Relleno')), IC.fill + cbar(v('fill'))));
       if (t === 'long' || t === 'short') { H.push(popBtn('ptgt', T('Target colour', 'Color del objetivo'), IC.fill + cbar(v('ptc')))); H.push(popBtn('pstop', T('Stop colour', 'Color del stop'), IC.fill + cbar(v('psc')))); }
-      if (t === 'rect' || t === 'note' || (K2[t] && K2[t].tpop)) H.push(popBtn('text', T('Text', 'Texto'), IC.text + cbar(v('tcol'))));
+      if (t === 'rect' || t === 'note' || (K2[t] && K2[t].tpop) || (LTX[t] && !(A.noLT && A.noLT[t]))) H.push(popBtn('text', T('Text', 'Texto'), IC.text + cbar(v('tcol'))));
       if (t === 'text') { H.push(popBtn('text', T('Text colour', 'Color del texto'), IC.text + cbar(v('color')))); H.push(popBtn('tsize', T('Text size', 'Tamaño del texto'), ['S', 'M', 'L', 'XL'][Math.max(0, Math.min(3, Math.round(v('width')) - 1))], 'stdb-tz')); }
       if (t === 'emoji') { var eNow = d ? (d.e || A.emojiNow()) : A.emojiArmed();   // the Emoji tool: a plain face until one is picked
         H.push(popBtn('emoji', T('Emoji', 'Emoji'), eNow ? esc(eNow) : IC.smile, eNow ? 'stdb-emo' : '')); }
@@ -88165,6 +88196,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
           H.push('<div class="stdb-dv"></div><div class="stdb-lb">' + esc(T('Size', 'Tamaño')) + '</div><div class="stdb-row">' + TSIZES.map(function(z){ return '<button type="button" class="stdb-ch' + (+v('tsz') === z ? ' on' : '') + '" data-ts="' + z + '">' + z + '</button>'; }).join('') + '</div>');
           if (d && (t === 'note' || (K2[t] && K2[t].txt))) H.push('<textarea data-tw rows="2" placeholder="' + esc(t === 'note' ? T('Its words (none: its price)', 'Su texto (sin texto: su precio)') : T('Text', 'Texto')) + '">' + esc(d.text || '') + '</textarea>');
           return H.join(''); }
+        if (LTX[t] && !(A.noLT && A.noLT[t])) { var vt = t === 'vline', chs = function(k3, opts){ return '<div class="stdb-row">' + opts.map(function(x){ return '<button type="button" class="stdb-ch' + (v(k3) === x[0] ? ' on' : '') + '" data-' + k3 + '="' + x[0] + '">' + esc(x[1]) + '</button>'; }).join('') + '</div>'; };
+          H.push(palHtml('tcol', T('Text', 'Texto'), v('tcol')));
+          H.push('<div class="stdb-dv"></div><div class="stdb-lb">' + esc(T('Size', 'Tamaño')) + '</div><div class="stdb-row">' + TSIZES.map(function(z){ return '<button type="button" class="stdb-ch' + (+v('tsz') === z ? ' on' : '') + '" data-ts="' + z + '">' + z + '</button>'; }).join('') + '</div>');
+          H.push('<div class="stdb-lb">' + esc(T('Position', 'Posición')) + '</div>' + chs('tv', vt ? [['above', T('Top', 'Arriba')], ['middle', T('Middle', 'En medio')], ['below', T('Bottom', 'Abajo')]] : [['above', T('Above', 'Encima')], ['middle', T('Middle', 'En medio')], ['below', T('Below', 'Debajo')]]));
+          H.push(chs('ta', vt ? [['l', T('Left', 'Izquierda')], ['c', T('On the line', 'En la línea')], ['r', T('Right', 'Derecha')]] : [['l', T('Left', 'Izquierda')], ['c', T('Centre', 'Centro')], ['r', T('Right', 'Derecha')]]));
+          if (d) H.push('<textarea data-tw rows="2" placeholder="' + esc(T('Text on the line', 'Texto en la línea')) + '">' + esc(d.text || '') + '</textarea>');
+          return H.join(''); }
         H.push(palHtml('tcol', T('Text', 'Texto'), v('tcol')));
         H.push('<div class="stdb-dv"></div><div class="stdb-lb">' + esc(T('Size', 'Tamaño')) + '</div><div class="stdb-row">' + TSIZES.map(function(z){ return '<button type="button" class="stdb-ch' + (+v('tsz') === z ? ' on' : '') + '" data-ts="' + z + '">' + z + '</button>'; }).join('') + '</div>');
         H.push('<div class="stdb-lb">' + esc(T('Position', 'Posición')) + '</div><div class="stdb-row">' + [['above', T('Above', 'Encima')], ['top', T('Top', 'Arriba')], ['middle', T('Middle', 'Centro')], ['bottom', T('Bottom', 'Abajo')], ['below', T('Below', 'Debajo')]].map(function(x){ return '<button type="button" class="stdb-ch' + (v('tv') === x[0] ? ' on' : '') + '" data-tv="' + x[0] + '">' + esc(x[1]) + '</button>'; }).join('') + '</div>');
@@ -88203,7 +88241,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
           if (t === 'rect' || t === 'channel') { H.push(tg('mid', T('Middle line', 'Línea central')));
             if (v('mid')) H.push('<div class="stdb-row" style="padding-left:34px">' + [['solid', T('Solid', 'Continua')], ['dashed', T('Dashed', 'Discontinua')], ['dotted', T('Dotted', 'Punteada')]].map(function(x){ return '<button type="button" class="stdb-ch' + (v('midDash') === x[0] ? ' on' : '') + '" data-md="' + x[0] + '">' + esc(x[1]) + '</button>'; }).join('') + '</div>'); } }
         if (d && A.alertInfo && (A.alertKind ? A.alertKind(d.type) : d.type === 'hline')) { var ai = A.alertInfo(d); if (ai.hitTxt) H.push('<div class="stdb-info">' + esc(ai.hitTxt) + '</div>'); if (ai.where && ai.on) H.push('<div class="stdb-info wr">' + esc(ai.where) + '</div>'); }
-        if (d) { if (d.type !== 'range' && d.type !== 'text' && d.type !== 'rect' && d.type !== 'note' && !(K2[d.type] && K2[d.type].tpop)) H.push('<div class="stdb-fl" style="padding:6px"><input type="text" data-note placeholder="' + esc(T('Note', 'Nota')) + '" value="' + esc(d.text || '') + '" style="flex:1;min-width:0"></div>');
+        if (d) { if (d.type !== 'range' && d.type !== 'text' && d.type !== 'rect' && d.type !== 'note' && !(K2[d.type] && K2[d.type].tpop) && !(LTX[d.type] && !(A.noLT && A.noLT[d.type]))) H.push('<div class="stdb-fl" style="padding:6px"><input type="text" data-note placeholder="' + esc(T('Note', 'Nota')) + '" value="' + esc(d.text || '') + '" style="flex:1;min-width:0"></div>');
           H.push('<div class="stdb-dv"></div><button type="button" class="stdb-it" data-mvis>' + esc(T('Visibility: ', 'Visibilidad: ') + A.visTxt(d)) + ' &rsaquo;</button>');
           H.push('<button type="button" class="stdb-it" data-clone>' + esc(T('Clone', 'Duplicar')) + '</button>'); }
         if (hasLook(t)) { H.push('<div class="stdb-dv"></div><button type="button" class="stdb-it" data-tp="reset" title="' + esc(T('The app\'s own look, on ' + (d ? 'this one and ' : '') + 'new ' + nm(t, true), 'El aspecto de la app, en ' + (d ? 'este y ' : '') + 'los nuevos ' + nm(t, true))) + '">' + esc(T('Reset to default style', 'Restablecer el estilo por defecto')) + '</button>');   // what it remembered, gone
@@ -88277,6 +88315,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   }
   window.__stDrawBar = { make: make, KEYS: KEYS, durTxt: durTxt, icons: TICON, PAL: PAL, anchor: anchor, groundOf: groundOf, magnet: MAG, snapOHLC: snapOHLC, MAGI: MAGI, FIBS: FIBS, lookOf: lookOf, applyLook: applyLook, eff: eff, same: same, parseC: parseC, mkC: mkC, withA: withA, dash: dash,
     DSTY: NDSTY, keysHtml: keysHtml, keyRows: keyRows, kit: { has: function(t){ return !!KT[t]; }, paint: kPaint, axis: kAxis, text: kText, hit: kHit, handles: kHandles, box: kBox, note: kNote, NOFF: NOFF,
+      ltx: function(t){ return !!LTX[t]; }, lineText: function(d, X, P0, P1, o){ return kLTgeo(d, X, P0, P1, o); }, ltGeo: function(d, X){ return kLTk(d, X); }, ltDraw: kLTdraw, gapClip: kGapClip,
       txt: function(t){ return (K2[t] && K2[t].txt) || null; }, ted: function(d, X){ var o = K2[d.type]; return (o && o.ted) ? o.ted(d, X) : null; }, init: function(d){ var o = K2[d.type]; if (o && o.init) o.init(d); },
       one: function(t){ return !!(K2[t] && K2[t].one); }, npts: function(t){ return (K2[t] && K2[t].n) || 2; }, hasAxis: function(t){ return !!(K2[t] && K2[t].axis); }, hasPx: function(t){ return !!(K2[t] && K2[t].px); } } };
 })();
@@ -89551,6 +89590,7 @@ window.__stAZ = (function () {
   function rShow(d,k){ var sh=d&&d.show; return !sh || sh[k]!==false; }
   function drawOne(ctx,d,w,pv){ ctx.save(); ctx.font="10px 'DM Mono',monospace";
     var C=dC(d),W=dW(d); ctx.setLineDash(pv?[4,3]:dDash(d,W));
+    var ltg=(d.text&&KIT&&KIT.ltGeo&&d.type!=='hline')?KIT.ltGeo(d,kx(pv,d)):null; if(ltg&&ltg.gap){ ctx.save(); KIT.gapClip(ctx,ltg.gap); }   /* its words on the line: the line breaks under them */
     /* Horizontal lines are drawn by Lightweight Charts itself now - see syncHLines(). Trying to
        repaint its axis label by hand took six attempts and still differed in box width, because
        every property is a separate thing to imitate: font, weight, ink colour, box, alignment,
@@ -89616,6 +89656,7 @@ window.__stAZ = (function () {
     /* The object's own note. Anchored to the shape rather than to a fixed corner, so it travels
        when the drawing is dragged. Horizontal lines carry theirs as the price line's title, which
        puts it on the axis label itself - the same place LWC writes "Entry" and "SL". */
+    if(ltg&&ltg.gap) ctx.restore();
     /* The measure tool takes no note. It already writes its own reading - pips, R and bars - and a
        second line of text above the same box competes with the number the tool exists to show. */
     if(d.text&&d.type!=='hline'&&d.type!=='range'&&d.type!=='text'&&d.type!=='emoji'){
@@ -89625,14 +89666,7 @@ window.__stAZ = (function () {
          further from horizontal it ran, the further the text drifted from it. */
       if(KH(d.type)) KIT.text(ctx,d,kx(pv,d),C);
       else if(d.type==='rect') rectText(ctx,d,C);   /* above it as before, or inside it (the toolbar's Text > Position) */
-      else if(d.type==='trend'){ var A=P(d.a),B=P(d.b);
-        if(A&&B){ var ang=Math.atan2(B.y-A.y,B.x-A.x);
-          /* Never upside down: a line drawn right-to-left has an angle past a quarter turn, and
-             the text would read backwards without flipping it. */
-          if(ang>Math.PI/2||ang<-Math.PI/2) ang+=Math.PI;
-          ctx.save(); ctx.translate((A.x+B.x)/2,(A.y+B.y)/2); ctx.rotate(ang);
-          ctx.font="11px 'DM Mono',monospace"; ctx.fillStyle=C; ctx.textAlign='center'; ctx.textBaseline='bottom';
-          ctx.fillText(String(d.text),0,-5); ctx.restore(); } }
+      else if(d.type==='trend'){ if(ltg) KIT.ltDraw(ctx,ltg); }   /* above, on or below it; left, centre or right along it (29 Oct 2026) */
       else { var _a=labelAt(d);
         if(_a){ ctx.save(); ctx.font="11px 'DM Mono',monospace"; ctx.fillStyle=C; ctx.textBaseline='bottom'; ctx.textAlign='center';
           ctx.fillText(String(d.text),_a.x,_a.y-5); ctx.restore(); } } }
@@ -90469,6 +90503,7 @@ window.__stAZ = (function () {
     RBAR=window.__stDrawBar.make({ T:L, dsty:DSTY,
       ty:function(){ var t=S&&styleType(); return t&&t!=='none'?t:null; },
       sel:function(){ return (S&&S.sel!=null&&S.drawings[S.sel])||null; },
+      noLT:{hline:1},   /* its horizontal line's words stay on its price scale */
       nsGet:function(t){ return (S&&S.nsT&&S.nsT[t])||null; }, nsSet:function(t,o){ if(!S) return; if(!S.nsT) S.nsT={}; if(o) S.nsT[t]=o; else delete S.nsT[t]; },
       store:function(){ return rStore()||{list:{},def:{}}; }, save:function(){ try{ window.__stPractice._cfgSave(); }catch(_){} },
       change:function(fin){ if(S&&S.sel!=null&&S.drawings[S.sel]){ if(fin) commit(); else persistDrawings(); } try{ syncHLines(); }catch(_){} draw(); },
@@ -93776,7 +93811,7 @@ window.__stAZ = (function () {
   // past its right end, on its run (at the right edge when extended); a ray's where it leaves the chart; a zone's inside its top right
   // corner (a channel's under its upper line). Inside the plot, or not drawn.
   function bellPos(p, d, dm){ var pw = dm.pw, ph = dm.ph, ok = function(x, y){ return (x == null || y == null || !isFinite(x) || !isFinite(y) || x < -2 || x > pw + 2 || y < -2 || y > ph + 2) ? null : { x: Math.max(9, Math.min(pw - BELLX, x)), y: Math.max(9, Math.min(ph - 9, y)) }; };
-    if (d.type === 'hline') { var y0 = yOf(p, d.price); return (y0 != null && y0 >= 0 && y0 <= ph) ? { x: Math.max(9, pw - BELLX - hlNoteW(p, d) - (alertTitle(d) ? hlTagW(p, d.price) + 2 : 0)), y: y0 } : null; }
+    if (d.type === 'hline') { var y0 = yOf(p, d.price), nr = !!alertTitle(d) && window.__stDrawBar.eff(DSTY, 'hline', d, 'ta') === 'r'; return (y0 != null && y0 >= 0 && y0 <= ph) ? { x: Math.max(9, pw - BELLX - (nr ? hlNoteW(p, d) : 0) - (alertTitle(d) ? hlTagW(p, d.price) + 2 : 0)), y: y0 } : null; }   // its words elsewhere: the bell by the price scale
     var a = Pt(p, d.a); if (!a) return null;
     if (d.type === 'hray') return (a.x < pw - BELLX - 4 && a.y >= 0 && a.y <= ph) ? { x: pw - BELLX, y: a.y } : null;
     var b = d.b ? Pt(p, d.b) : null; if (!b) return null;
@@ -93795,7 +93830,7 @@ window.__stAZ = (function () {
   var HLNC = null;
   function hlTextW(p, t){ if (!t) return 0; var lo = {}; try { lo = p.chart.options().layout || {}; } catch (e) {}
     try { HLNC = HLNC || document.createElement('canvas').getContext('2d'); HLNC.font = (lo.fontSize || 12) + 'px ' + (lo.fontFamily || 'sans-serif'); return Math.ceil(HLNC.measureText(t).width) + 16; } catch (e) { return t.length * 7 + 16; } }
-  function hlNoteW(p, d){ return hlTextW(p, alertTitle(d)); }
+  function hlNoteW(p, d){ var t = alertTitle(d); if (!t) return 0; try { var r = KIT && KIT.lineText ? KIT.lineText(d, kx(p), { x: 0, y: 0 }, { x: 2000, y: 0 }, { family: hlFam(p) }) : null; if (r) return r.w + 4; } catch (e) {} return hlTextW(p, t); }   // at its size
   /* A trade's own tag (SL, TP, BE, Entry...) on the same price as a horizontal line's note: the library puts both in the same place
      and the tag covered the note (Nestor, 22 Oct 2026: "the TP is covering the label"). The tag's width there (0: none), so the note
      is drawn just left of it (hlNoteAt) and the line's bell left of that. */
@@ -93805,11 +93840,9 @@ window.__stAZ = (function () {
   /* A horizontal line's note the way TradingView writes it (Nestor, 23 Oct 2026: "Can the labels/notes look like this without the
      background behind the text?"): the words in the line's own colour, on the line, which stops under them - no box. The price on
      the scale keeps its box. */
-  function hlNoteAt(p, g, o, pw){ var y = yOf(p, o.p); if (y == null) return; var lo = {}; try { lo = p.chart.options().layout || {}; } catch (e) {}
-    var fs = lo.fontSize || 12, w = hlTextW(p, o.t), x1 = pw - o.x - 2, x0 = x1 - w, pc = parseC(o.c);
-    // the words straight on the chart, just above their line - nothing painted behind them (Nestor, 28 Oct 2026: "the background behind the
-    // labels still shows, remove all backgrounds from text"; the line used to be cleared under them, a white bar over a zone on a light chart)
-    g.save(); g.setLineDash([]); g.fillStyle = pc.h; g.font = fs + 'px ' + (lo.fontFamily || 'sans-serif'); g.textAlign = 'center'; g.textBaseline = 'bottom'; g.fillText(o.t, (x0 + x1) / 2, y - 2); g.restore(); }
+  function hlNoteAt(p, g, o, pw){ var y = yOf(p, o.p); if (y == null || !KIT || !KIT.lineText) return; var dd = { type: 'hline', text: o.t, color: o.c };
+    if (o.tv) dd.tv = o.tv; if (o.ta) dd.ta = o.ta; if (o.ts) dd.tsz = o.ts; if (o.tc) dd.tcol = o.tc;   // its words where the member put them (TradingView's line text, 29 Oct 2026)
+    KIT.ltDraw(g, KIT.lineText(dd, kx(p), { x: 0, y: y }, { x: pw - o.x + 4, y: y }, { family: hlFam(p) })); }
   function bellAt(g, x, y, col, hit){ var pc = parseC(col), c1 = hexA(pc.h, hit ? 0.42 : 1);
     g.save(); g.translate(Math.round(x), Math.round(y)); g.scale(0.85, 0.85); g.setLineDash([]); g.lineJoin = 'round';
     var body = function(){ g.beginPath(); g.moveTo(-6.2, 3.4); g.quadraticCurveTo(-3.9, 2.3, -3.9, -0.6); g.bezierCurveTo(-3.9, -4.3, -2.1, -5.5, 0, -5.5); g.bezierCurveTo(2.1, -5.5, 3.9, -4.3, 3.9, -0.6);
@@ -94764,6 +94797,16 @@ window.__stAZ = (function () {
     L.forEach(function(l, k){ var y; if (tv === 'above') { g.textBaseline = 'bottom'; y = y0 - 5 - (n - 1 - k) * lh; } else if (tv === 'below') { g.textBaseline = 'top'; y = y1 + 5 + k * lh; }
       else if (tv === 'top') { g.textBaseline = 'top'; y = y0 + pad + k * lh; } else if (tv === 'bottom') { g.textBaseline = 'bottom'; y = y1 - pad - (n - 1 - k) * lh; }
       else { g.textBaseline = 'middle'; y = (y0 + y1) / 2 + (k - (n - 1) / 2) * lh; } g.fillText(l, x, y); }); g.restore(); }
+  // a line's words (TradingView's line text, 29 Oct 2026): where they go - the kit works it out; a horizontal line's run from the chart's left
+  // edge to just left of a trade's tag on it, in the chart's own font
+  function ltGeoOf(p, d, pv, pw){ if (!d || !d.text || !KIT || !KIT.ltx || !KIT.ltx(d.type)) return null; var X = kx(p, pv, null, d);
+    if (d.type === 'hline') { var y = yOf(p, d.price); if (y == null) return null; return KIT.lineText(d, X, { x: 0, y: y }, { x: (pw || X.pw) - hlTagW(p, d.price) + 4, y: y }, { family: hlFam(p) }); }
+    return KIT.ltGeo(d, X); }
+  function hlFam(p){ var lo = {}; try { lo = p.chart.options().layout || {}; } catch (e) {} return lo.fontFamily || 'sans-serif'; }
+  function hlMid(d){ return !!(d && d.text && window.__stDrawBar && window.__stDrawBar.eff(DSTY, 'hline', d, 'tv') === 'middle'); }
+  // a horizontal line with its words on it: drawn here (its style as the price line draws it), so it can break under them
+  function hlOwn(p, g, d, pw){ var y = yOf(p, d.price); if (y == null) return; var W = Math.max(1, Math.min(4, Math.round(dW(d)))), ds = [[], [W, W * 2], [W * 4, W * 4], [W * 6, W * 6], [W, W * 4]][hlStyle(d)] || [], yy = Math.round(y) + (W % 2 ? 0.5 : 0);
+    g.save(); g.strokeStyle = dC(d); g.lineWidth = W; g.setLineDash(ds); g.beginPath(); g.moveTo(0, yy); g.lineTo(pw, yy); g.stroke(); g.restore(); }
   // a horizontal line's style on the price scale (Lightweight Charts': 0 solid, 1 dotted, 2 dashed, 3 large dashed, 4 sparse dotted); a reached alert shows dashed
   function hlStyle(d){ var st = d.dash === 'dotted' ? 1 : (d.dash === 'dashed' ? 2 : 0); if (d.alert && d.hitAt) st = st === 0 ? 2 : (st === 2 ? 3 : 4); return st; }
   function rShow(d, k){ var sh = d && d.show; return !sh || sh[k] !== false; }
@@ -94931,7 +94974,8 @@ window.__stAZ = (function () {
     var a = Pt(p, d.a), b = Pt(p, d.b); return (a && b) ? { x: (a.x + b.x) / 2, y: Math.min(a.y, b.y) } : null; }
   function drawOne(p, g, d, pw, pv){ g.save(); g.font = "10px 'DM Mono',monospace";
     var C = dC(d), W = dW(d), a, b, x0, x1, y0, y1; g.setLineDash(pv ? [4, 3] : dDash(d, W));
-    if (d.type === 'hline') { /* a native price line with its label on the scale: syncHL */ }
+    var ltg = ltGeoOf(p, d, pv, pw); if (ltg && ltg.gap) { g.save(); KIT.gapClip(g, ltg.gap); }   // its words on the line (Middle): the line breaks under them
+    if (d.type === 'hline') { if (ltg && ltg.gap) hlOwn(p, g, d, pw); }   // a native price line (syncHL); with its words on it, drawn here, broken under them
     else if (KH(d.type)) KIT.paint(g, d, kx(p, pv, null, d));   // batch B's tools
     else if (d.type === 'trend') { a = Pt(p, d.a); b = Pt(p, d.b); if (a && b) { var tsg = trendSeg(a, b, d, pw); g.strokeStyle = C; g.lineWidth = W; g.beginPath(); g.moveTo(tsg[0].x, tsg[0].y); g.lineTo(tsg[1].x, tsg[1].y); g.stroke(); } }
     else if (d.type === 'pen') { var q = (d.pts || []).map(function(z){ return Pt(p, z); }).filter(Boolean);
@@ -94979,14 +95023,12 @@ window.__stAZ = (function () {
         if (rShow(d, 'bars')) parts.push((db < 0 ? '\u2212' : '') + Math.abs(db) + T(' bars', ' barras'));
         if (rShow(d, 'time')) parts.push(window.__stDrawBar.durTxt(d.b.t - d.a.t, T('', 'es') === 'es'));
         if (parts.length) { g.save(); g.fillStyle = C; g.textBaseline = 'middle'; g.textAlign = 'center'; g.fillText(parts.join(' · '), xmr, ybr + adir * 12); g.restore(); } } }
+    if (ltg && ltg.gap) g.restore();
     // the object's own note, riding on it (along a trend line, centred above anything else)
     if (d.text && d.type !== 'hline' && d.type !== 'range' && d.type !== 'text') {
       if (KH(d.type)) KIT.text(g, d, kx(p, pv, null, d), C);
       else if (d.type === 'rect') rectText(p, g, d, C);   // its words: above it as before, or inside it (Text > Position)
-      else if (d.type === 'trend') { var A = Pt(p, d.a), B = Pt(p, d.b);
-        if (A && B) { var ang = Math.atan2(B.y - A.y, B.x - A.x); if (ang > Math.PI / 2 || ang < -Math.PI / 2) ang += Math.PI;
-          g.save(); g.translate((A.x + B.x) / 2, (A.y + B.y) / 2); g.rotate(ang); g.font = "11px 'DM Mono',monospace"; g.fillStyle = C; g.textAlign = 'center'; g.textBaseline = 'bottom';
-          g.fillText(String(d.text), 0, -5); g.restore(); } }
+      else if (d.type === 'trend') { if (ltg) KIT.ltDraw(g, ltg); }   // above, on or below it; left, centre or right along it
       else { var la = labelAt(p, d); if (la) { g.save(); g.font = "11px 'DM Mono',monospace"; g.fillStyle = C; g.textBaseline = 'bottom'; g.textAlign = 'center'; g.fillText(String(d.text), la.x, la.y - 5); g.restore(); } } }
     g.restore(); }
   // a locked drawing, selected: a small padlock at its top right instead of handles
@@ -95126,8 +95168,8 @@ window.__stAZ = (function () {
     ax.set('ptp', d && d.tp > 0 ? { p: d.tp, t: f(d.tp), bg: pzc(d, 'ptc', 'pat', 1) } : null); }
   // horizontal lines are drawn by the chart itself, like the trade's lines, so their price label sits on the scale
   function syncHL(p){ var want = [], ov = []; dwListFor(p).forEach(function(d){ if (d && d.type === 'hline' && isFinite(d.price) && visibleOn(d, p.tf)) { var tx = alertTitle(d), tg = tx ? hlTagW(p, d.price) : 0;
-        if (tx) ov.push({ p: d.price, t: tx, c: dC(d), x: tg });   // every line's note drawn here (hlNoteAt), left of a trade's tag if one is there
-        want.push({ p: d.price, c: dC(d), w: Math.max(1, Math.min(4, Math.round(dW(d)))), t: '', s: hlStyle(d) }); }
+        if (tx) ov.push({ p: d.price, t: tx, c: dC(d), x: tg, tv: d.tv || '', ta: d.ta || '', ts: d.tsz || 0, tc: d.tcol || '' });   // every line's note drawn here (hlNoteAt), left of a trade's tag if one is there
+        want.push({ p: d.price, c: dC(d), w: Math.max(1, Math.min(4, Math.round(dW(d)))), t: '', s: hlStyle(d), nl: hlMid(d) ? 1 : 0 }); }   // words on it: the line is drawn by the chart's overlay, broken under them
       else if (d && (d.type === 'hray' || (KIT && KIT.hasPx && KIT.hasPx(d.type))) && d.a && isFinite(d.a.price) && visibleOn(d, p.tf)) want.push({ p: d.a.price, c: dC(d), w: 1, t: '', s: 0, nl: 1 }); });   // a horizontal ray: its price on the scale (its line is its own: it starts where it was put)
     var os = JSON.stringify(ov); if (os !== p._hlOvSig) { p._hlOvSig = os; p._hlOv = ov; dirty(); }
     var sig = JSON.stringify(want); if (sig === p._hlSig) return; p._hlSig = sig;

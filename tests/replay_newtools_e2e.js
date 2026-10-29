@@ -54,7 +54,7 @@
     await pick('channel'); click(X + 120, 380); mev('mousemove', X + 240, 360); click(X + 240, 360); mev('mousemove', X + 180, 320); await W(30); click(X + 180, 320); await W(80);
     var cn = last(), cy0 = R._P(cn.a).y, cy1 = R._P({ idx: cn.a.idx, price: cn.a.price + cn.off }).y;
     ok('Parallel channel: three clicks, the other line through the third', cn.type === 'channel' && !('st' in cn) && Math.abs((cy0 - cy1) - 50) < 6 && S.activeTool === 'none', [cy0 - cy1]);
-    ok('its toolbar: Templates, line, fill, width, style, Visibility, lock, delete, More', acts() === 'tpl,line,fill,width,dash,vis,lock,del,more', acts());
+    ok('its toolbar: Templates, line, fill, text, width, style, Visibility, lock, delete, More', acts() === 'tpl,line,fill,text,width,dash,vis,lock,del,more', acts());
     await pick('circle'); mev('mousedown', X - 120, 420); mev('mousemove', X - 100, 430, { held: true }); mev('mousemove', X - 80, 440, { held: true }); mev('mouseup', X - 80, 440); await W(80);
     var ci = last(), ce = K.box(ci, R._kx());
     ok('Circle: a press and a drag', ci.type === 'circle' && S.activeTool === 'none' && Math.abs((ce.y1 - ce.y0) - 40) < 3, ce);

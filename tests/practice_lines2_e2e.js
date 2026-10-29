@@ -30,7 +30,7 @@
     // Info line
     var il = await draw2('infoline', Math.round(Wd * 0.2), Math.round(H * 0.3), Math.round(Wd * 0.4), Math.round(H * 0.55)), tx = texts();
     ok('Info line: two clicks, its tag at its end - the distance and per cent, the candles and the time, the angle', il && il.type === 'infoline' && tx.some(function (t) { return /pips\s+\([+\u2212]\d+\.\d\d%\)/.test(t); }) && tx.some(function (t) { return /\d+ bars,\s+\d+[wdhm]/.test(t); }) && tx.some(function (t) { return /\u2220 [\u2212-]?\d+\.\d\u00b0/.test(t); }), tx.filter(function (t) { return /pips|bars|\u2220/.test(t); }));
-    ok('its toolbar: colour, width, style', /line,width,dash/.test(acts()), acts());
+    ok('its toolbar: colour, text, width, style', /line,text,width,dash/.test(acts()), acts());
     var A = at(il.a), B = at(il.b);
     ok('its ends are handles, its line and its tag take the mouse', (P._hit(0, A.x, A.y) || {}).part === 'a' && (P._hit(0, B.x, B.y) || {}).part === 'b' && (P._hit(0, (A.x + B.x) / 2, (A.y + B.y) / 2) || {}).part === 'body' && (P._hit(0, B.x + 20, B.y + 18) || {}).part === 'body');
     // Extended line

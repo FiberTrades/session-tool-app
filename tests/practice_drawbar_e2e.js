@@ -121,7 +121,7 @@
     // 8. a tool picked, nothing selected: the same bar at the top of the chart sets the next one's look
     document.querySelector('#stpr-tools [data-tool="trend"]').click(); await W(40);
     b = bar(); br = b.getBoundingClientRect(); acts = Array.prototype.map.call(b.querySelectorAll('[data-db]'), function (x) { return x.getAttribute('data-db'); });
-    ok('Trend line picked: the bar docks at the top of the chart: Templates, colour, width, style, More (no lock / bin yet)', shown(b) && br.top >= r.top && br.top < r.top + 60 && acts.join(',') === 'tpl,line,width,dash,more', [acts, br.top - r.top]);
+    ok('Trend line picked: the bar docks at the top of the chart: Templates, colour, text, width, style, More (no lock / bin yet)', shown(b) && br.top >= r.top && br.top < r.top + 60 && acts.join(',') === 'tpl,line,text,width,dash,more', [acts, br.top - r.top]);
     b.querySelector('[data-db="line"]').click(); await W(20); pop().querySelector('[data-pc="#4ECD8B"]').click(); DB.closePop();
     bar().querySelector('[data-db="dash"]').click(); await W(20); pop().querySelector('[data-pd="dotted"]').click(); DB.closePop();
     bar().querySelector('[data-db="more"]').click(); await W(20); tg = pop().querySelector('[data-tgl="extR"]'); tg.checked = true; tg.dispatchEvent(new Event('change', { bubbles: true })); DB.closePop(); await W(20);
