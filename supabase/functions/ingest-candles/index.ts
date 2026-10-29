@@ -197,5 +197,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json({ error: "db write failed", detail }, 500);
   }
   const written = Number(await r.json()) || 0;
+  // what each batch was and what it changed (29 Oct 2026: the MT5s kept sending ~3.5 MB of bars a minute after the write fix -
+  // which history, and from where, is read from these lines)
+  console.log(`put ${symbol} tf${tf} n=${rows.length} ${rows[0].t}-${rows[rows.length - 1].t} w=${written} tok=${String(token).slice(0, 6)}`);
   return json({ ok: true, upserted: written, sent: rows.length });
 });
