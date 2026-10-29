@@ -13,3 +13,10 @@ if os.name == 'nt':
         _k32.SetPriorityClass(_k32.GetCurrentProcess(), 0x4000)   # BELOW_NORMAL_PRIORITY_CLASS
     except Exception:
         pass
+
+# the candle store's stand-in for this runner's own reads of it (a stored close): tests/candle_stub.py (29 Oct 2026)
+try:
+    import candle_stub
+    candle_stub.install()
+except Exception:
+    pass

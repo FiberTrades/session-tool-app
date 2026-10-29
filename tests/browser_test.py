@@ -30,6 +30,9 @@ import threading
 import time
 import urllib.request
 
+import candle_stub   # the candle store's stand-in: no test reads the real candles (29 Oct 2026; ST_REAL_CANDLES=1 opts out)
+candle_stub.install()
+
 faulthandler.dump_traceback_later(int(os.environ.get('E2E_TIMEOUT') or 240), exit=True)   # a hang says where it is instead of running forever
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -110,6 +113,11 @@ class Quiet(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
+    def do_GET(self):
+        if candle_stub.handle(self):   # /__stcandles/...: the page's candle RPCs, answered from tests/fixtures/candles
+            return
+        super().do_GET()
+
     def end_headers(self):
         self.send_header('Cache-Control', 'no-store')
         super().end_headers()
@@ -130,6 +138,13 @@ class CDP:
             buf += self.s.recv(4096)
         self.buf = buf.split(b'\r\n\r\n', 1)[1]
         self.id = 0
+        # a page: the candle store's stand-in in it before its first script (candle_stub.SHIM_JS), and in the page already there
+        if '/devtools/page/' in url and candle_stub.enabled():
+            try:
+                self.call('Page.addScriptToEvaluateOnNewDocument', source=candle_stub.SHIM_JS)
+                self.call('Runtime.evaluate', expression=candle_stub.SHIM_JS)
+            except Exception:
+                pass
 
     def _read(self, n):
         while len(self.buf) < n:
