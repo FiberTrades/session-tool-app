@@ -89,11 +89,12 @@
     var wfb = win && win.document.querySelector('#stpr-favbtn');
     ok('that window\'s star shows its own chart\'s bar as on', !!wfb && wfb.getAttribute('aria-pressed') === 'true', wfb && wfb.getAttribute('aria-pressed'));
     // a tool's star pressed in that window: the favourite, not the tool (its menu's stars, and the Emoji tool's)
-    var t0 = DW.tool, ws = win && win.document.querySelector('[data-fav="hline"]'), we = win && win.document.querySelector('[data-fav="emoji"]');
-    if (ws) { ws.click(); await W(80); }
-    var hIn = (C.fav || []).indexOf('hline') >= 0; if (we) { we.click(); await W(80); }
-    ok('a star pressed in that window: Horizontal line in, the Emoji tool out, neither tool picked', !!ws && !!we && hIn && (C.fav || []).indexOf('emoji') < 0 && DW.tool === t0, [C.fav, DW.tool, t0]);
-    if (ws) { ws.click(); await W(40); } if (we) { we.click(); await W(60); }
+    var wq = function (s) { return win && win.document.querySelector(s); };   // asked afresh each time: a star repaints that window's copy of the toolbar
+    var t0 = DW.tool, ws = wq('[data-fav="hline"]'); if (ws) { ws.click(); await W(80); }
+    var hIn = (C.fav || []).indexOf('hline') >= 0, we = wq('[data-fav="emoji"]'); if (we) { we.click(); await W(80); }
+    ok('a star pressed in that window: Horizontal line in, the Emoji tool out, neither tool picked', !!ws && !!we && hIn && (C.fav || []).indexOf('emoji') < 0 && DW.tool === t0, [C.fav, DW.tool, t0, !!ws, !!we]);
+    if (ws) { wq('[data-fav="hline"]').click(); await W(60); } if (we) { wq('[data-fav="emoji"]').click(); await W(80); }
+    wfb = wq('#stpr-favbtn');
     if (wfb) { wfb.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); wfb.click(); await W(150); }
     var p1 = P._panes()[1], bars1 = p1.el.querySelectorAll('.stpr-favbar');
     ok('pressed there: that chart\'s bar goes, this window\'s chart keeps its own', !(wb && wb.classList.contains('show')) && C.favOnP[1] === false && shown(0), [C.favOnP, bars1.length, p1._fvb === wb, wb && wb.className, wb && wb.isConnected, p1._fvb && p1._fvb.className]);
