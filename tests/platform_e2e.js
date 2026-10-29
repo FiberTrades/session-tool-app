@@ -52,10 +52,12 @@
       // the trade row behind its button (Nestor, 28 Oct 2026: "can't this live in a button that when pressed the position row displays and it can be hidden away?")
       var trb = $('.ph-icons > [data-phtrb]'), trH = function () { return Math.round($('.ph-trade').getBoundingClientRect().height); }, cwH = function () { return Math.round($('#stpr-cw').getBoundingClientRect().height); };
       var trh0 = trH(), cwh0 = cwH();
+      // a busy machine (other runs beside this one) can take longer than a slide's .2 s: each step waits for what it checks (up to 4 s) and says how long it took
+      var until = async function (f, ms) { var t0 = Date.now(); while (!f() && Date.now() - t0 < (ms || 4000)) await W(50); return Date.now() - t0; };
       check('the trade row is put away to start with, its button first of the toolbar\'s icons', trb && $('.ph-icons').firstElementChild === trb && trh0 === 0 && !trb.classList.contains('on'), [trh0, trb && trb.className]);
-      trb.click(); await W(450);
+      trb.click(); var ms1 = await until(function () { return trH() >= 44 && cwH() <= cwh0 - 40; }); await W(250);
       var trh1 = trH(), cwh1 = cwH(), trsv = {}; try { trsv = JSON.parse(localStorage.getItem('st_plat') || '{}'); } catch (e) {}
-      check('...its button brings it up, the chart gives way, kept on this device', trh1 >= 44 && cwh1 <= cwh0 - 40 && trb.classList.contains('on') && trsv.phTr === true, [trh1, cwh0, cwh1, trsv.phTr]);
+      check('...its button brings it up, the chart gives way, kept on this device', trh1 >= 44 && cwh1 <= cwh0 - 40 && trb.classList.contains('on') && trsv.phTr === true, [trh1, cwh0, cwh1, trsv.phTr, ms1 + ' ms']);
       check('no squashed + in the bar: Compare is in the symbol menu on a phone', getComputedStyle($('#stpr-cmpbtn')).display === 'none', getComputedStyle($('#stpr-cmpbtn')).display);
       $('[data-phpill]').click(); await sheetAt(true); await W(200);
       check('the pill slides up the Trade Manager, Setup and Why in it', win.classList.contains('ph-open') && $('.ph-sheet #stpr-mm.pl-mm') && $('.ph-sheet [data-plsetup]') && $('.ph-sheet [data-plwhy]') && $('.ph-sheet').getBoundingClientRect().bottom <= innerHeight + 1, [win.className, !!$('.ph-sheet #stpr-mm.pl-mm'), !!$('.ph-sheet [data-plsetup]'), Math.round($('.ph-sheet').getBoundingClientRect().bottom), innerHeight]);
@@ -64,23 +66,24 @@
       $('.ph-trade [data-phplace]').click();
       for (k = 0; k < 40 && !/lots/.test($('.ph-sum') ? $('.ph-sum').textContent : ''); k++) await W(250);
       check('...the side it places: the order fills, the bar shows the trade', /BUY|SELL/.test($('.ph-sum').textContent) && /lots/.test($('.ph-sum').textContent), $('.ph-trade').textContent);
-      trb.click(); await W(450); var trdot = trb.querySelector('.ph-trd');
-      check('...put away with a trade open: its button shows a dot, green or red by the trade\'s profit', trH() === 0 && !trdot.hidden && /ph-trd (u|d|z)/.test(trdot.className), [trH(), trdot.className, trdot.hidden]);
-      trb.click(); await W(450);
+      trb.click(); var ms2 = await until(function () { return trH() === 0; }); var trdot = trb.querySelector('.ph-trd');
+      check('...put away with a trade open: its button shows a dot, green or red by the trade\'s profit', trH() === 0 && !trdot.hidden && /ph-trd (u|d|z)/.test(trdot.className), [trH(), trdot.className, trdot.hidden, ms2 + ' ms', $('.ph-trade').className, win.className.indexOf('ph-trhide') >= 0]);
+      trb.click(); await until(function () { return trH() >= 44; });
       $('[data-phgo]').click(); await sheetAt(true);
-      check('the sheet lists the open trade with Move to BE, Close 50% (and its chevron) and Close', $('.ph-pos .ph-p') && $('.ph-pos [data-tma="part"]') && $('.ph-pos [data-tma="partmenu"]') && $('.ph-pos [data-tma="close"]'), $('.ph-pos') && $('.ph-pos').textContent.slice(0, 120));
+      var ms3 = await until(function () { return $('.ph-pos .ph-p') && $('.ph-pos [data-tma="part"]') && $('.ph-pos [data-tma="partmenu"]') && $('.ph-pos [data-tma="close"]'); }, 8000);   // the position comes from the stand-in EA's next account report
+      check('the sheet lists the open trade with Move to BE, Close 50% (and its chevron) and Close', $('.ph-pos .ph-p') && $('.ph-pos [data-tma="part"]') && $('.ph-pos [data-tma="partmenu"]') && $('.ph-pos [data-tma="close"]'), [$('.ph-pos') && $('.ph-pos').textContent.slice(0, 120), ms3 + ' ms']);
       // how much to close (25 Oct 2026): the chevron's menu on screen, over the sheet; 75% picked is the button's label
       try { localStorage.removeItem('st_partPct'); } catch (e) {}
-      $('.ph-pos [data-tma="partmenu"]').click(); await W(300);
+      $('.ph-pos [data-tma="partmenu"]').click(); await until(function () { return !!$('.pl-pm'); }); await W(150);
       var pm0 = $('.pl-pm'), pq = pm0 && pm0.getBoundingClientRect(), pat = pq && document.elementFromPoint(pq.left + pq.width / 2, pq.top + pq.height / 2);
       check('...its chevron: 25 / 33 / 50 / 75 / 80 and a box, on screen over the sheet', pm0 && pm0.querySelectorAll('[data-tmpct]').length === 5 && pm0.querySelector('input') && pat && pm0.contains(pat) && pq.left >= 0 && pq.right <= innerWidth && pq.top >= 0 && pq.bottom <= innerHeight, pq && [pq.left, pq.top, pq.right, pq.bottom]);
-      pm0.querySelector('[data-tmpct="75"]').click(); await W(400);
+      pm0.querySelector('[data-tmpct="75"]').click(); await until(function () { return !$('.pl-pm') && $('.ph-pos [data-tma="part"]') && /75%/.test($('.ph-pos [data-tma="part"]').textContent); });
       // Move to BE / Close ask once in their place (Nestor, 26 Oct 2026: "i need a confirmation button so no accidents can happen")
       var pc0 = $('.ph-pos [data-tma="close"]:not([disabled])') || $('.ph-pos [data-tma="close"]'), pcOff = pc0.disabled;   // the fill's trade may not be MT5-managed here (the desk checks that gate): the question is what's tested
       pc0.disabled = false; pc0.click(); for (k = 0; k < 12 && !$('.ph-pos [data-tma="close!"]'); k++) await W(100);
       var pp0 = $('.ph-pos [data-tma="close!"]') && $('.ph-pos [data-tma="close!"]').closest('.ph-p');
       check('the sheet\'s Close asks first, in its trade\'s place: Close BUY/SELL ... ? Close / Keep, nothing sent', pp0 && pp0.querySelector('[data-tma="askno"]') && /Close (BUY|SELL) [\d.]+ EURUSD\?/.test(pp0.textContent) && !pp0.querySelector('[data-tma="tobe"]'), [pcOff, $('.ph-pos').textContent.slice(0, 160)]);
-      $('.ph-pos [data-tma="askno"]').click(); await W(300);
+      $('.ph-pos [data-tma="askno"]').click(); await until(function () { return $('.ph-pos [data-tma="tobe"]') && $('.ph-pos [data-tma="close"]') && !$('.ph-pos [data-tma="close!"]'); });
       check('...Keep: Move to BE, Close % and Close back', $('.ph-pos [data-tma="tobe"]') && $('.ph-pos [data-tma="close"]') && !$('.ph-pos [data-tma="close!"]'));
       check('...75%: the sheet\'s button says Close 75%', !$('.pl-pm') && $('.ph-pos [data-tma="part"]') && /^Close 75%$/.test($('.ph-pos [data-tma="part"]').textContent.trim()), $('.ph-pos [data-tma="part"]') && $('.ph-pos [data-tma="part"]').textContent);
       $('.ph-dim').click(); await sheetAt(false);
@@ -121,9 +124,9 @@
       check('...it swipes sideways: a finger pans it only sideways, the flick its own (not the page\'s or the chart\'s)', bcs.overflowX === 'auto' && bcs.touchAction === 'pan-x' && bcs.overscrollBehaviorX === 'contain', [bcs.overflowX, bcs.touchAction, bcs.overscrollBehaviorX]);
       var fa = function (pe) { return getComputedStyle(bar, pe).opacity; };
       if (bar.scrollWidth > bar.clientWidth + 2) {
-        bar.scrollLeft = 0; await W(400);
+        bar.scrollLeft = 0; await until(function () { return fa('::after') === '1' && fa('::before') === '0'; });
         check('...more than fits: a soft fade at the right edge, none at the left', bar.classList.contains('ph-fr') && !bar.classList.contains('ph-fl') && fa('::after') === '1' && fa('::before') === '0', [bar.className, fa('::before'), fa('::after')]);
-        bar.scrollLeft = bar.scrollWidth; await W(400); var wq = $('.ph-icons [data-phpn="wl"]').getBoundingClientRect();
+        bar.scrollLeft = bar.scrollWidth; await until(function () { return fa('::before') === '1' && fa('::after') === '0'; }); var wq = $('.ph-icons [data-phpn="wl"]').getBoundingClientRect();
         check('...swiped to the end: the Watchlist (last) on screen, the fade at the left now and none at the right', inScr(wq) && wq.right <= bar.getBoundingClientRect().right + 1 && bar.classList.contains('ph-fl') && !bar.classList.contains('ph-fr') && fa('::before') === '1' && fa('::after') === '0', [Math.round(wq.right), bar.className]);
       } else check('...all of it fits this screen: no fade', !bar.classList.contains('ph-fr') && !bar.classList.contains('ph-fl'), [bar.scrollWidth, bar.clientWidth, bar.className]);
       var pnl = $('.ph-pnl'), PN = [['wl', 'Watchlist', function () { return document.querySelectorAll('.ph-pnc .pl-wlr').length >= 2 && /EURUSD/.test(($('.ph-pnc .pl-wld') || {}).textContent || '') && !!$('.ph-pnl [data-plwladd]'); }],
