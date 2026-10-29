@@ -26,10 +26,7 @@
   // 10,000 -> 10,500 (high) -> 10,200 -> 10,000 (low, -500) -> 10,600 (back, a new high) -> 10,700 (high) -> 10,300 -> 10,100 (now, -600)
   load([tr(500), tr(-300), tr(-200), tr(600), tr(100), tr(-400), tr(-200)]);
   await draw(); await stx('overview');
-  var sub = txt('dd-sub');
-  ok('the card says where you are now: 600 (5.6%) below your high, 2 trades since it began', /600/.test(sub) && /5\.6%/.test(sub) && /2 trades since it began/.test(sub), sub);
-  var svg = document.querySelector('#dd-chart svg');
-  ok('the underwater chart is drawn, one point per trade (8 with the start)', !!svg && document.querySelectorAll('#dd-chart .zb-hit').length === 8, svg ? document.querySelectorAll('#dd-chart .zb-hit').length : 'no svg');
+  ok('the recovery chart is gone (Nestor, 29 Oct 2026: "remove the drawdown recovery graph")', !document.getElementById('dd-chart') && !document.getElementById('dd-section'), !!document.getElementById('dd-chart'));
   var rows = document.querySelectorAll('#dd-worst .history-row:not(.headers)');
   ok('two drawdowns in the table, deepest first', rows.length === 2, rows.length);
   var r0 = rows[0] ? rows[0].innerText.replace(/\s+/g, ' ') : '', r1 = rows[1] ? rows[1].innerText.replace(/\s+/g, ' ') : '';
@@ -38,8 +35,7 @@
   // at a high: the good news
   load([tr(500), tr(-300), tr(400)]);
   await draw(); await stx('overview');
-  ok('back at a high: "At your high: nothing to win back right now"', /At your high/.test(txt('dd-sub')), txt('dd-sub'));
-  ok('and the recovered dip is listed', document.querySelectorAll('#dd-worst .history-row:not(.headers)').length === 1, txt('dd-worst'));
+  ok('back at a high: the recovered dip is listed', document.querySelectorAll('#dd-worst .history-row:not(.headers)').length === 1, txt('dd-worst'));
   load([tr(200), tr(300)]);
   await draw(); await stx('overview');
   ok('never below a high: the table says so in plain words', /No drawdowns in this period/.test(txt('dd-worst')), txt('dd-worst'));
