@@ -76116,33 +76116,53 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
      ask whether anything changed before pulling 53 kB to discover that nothing did.
      Keyed on the id, not a flag, so switching account in the same tab earns its own. */
   var _authReconciledFor = null;
+  /* The plan as the server last gave it, kept per member on this device (29 Oct 2026: with Supabase down - its profiles and
+     auth answering 522 - the app hid Charts, Community and the FULL ACCESS badge as if the plan were gone). Only an answer from
+     the server changes the plan: a read that fails or hangs keeps the last one and is asked again in the background (15 s,
+     doubling to 5 minutes). */
+  var PLAN_KEYS = ['is_paid', 'plan', 'status', 'current_period_end', 'created_at', 'trial_days', 'trial_ended_at', 'referred_at', 'portal_url', 'cancel_at_period_end', 'stripe_subscription_id', 'ls_subscription_id', 'sync_token'];
+  function planCacheGet(uid) { try { var o = JSON.parse(localStorage.getItem('st_plan_' + uid) || 'null'); return (o && typeof o === 'object') ? o : null; } catch (e) { return null; } }
+  function planCacheSave(uid, row) { try { var o = { at: Date.now() }; PLAN_KEYS.forEach(function (k) { if (row[k] !== undefined) o[k] = row[k]; }); localStorage.setItem('st_plan_' + uid, JSON.stringify(o)); } catch (e) {} }
+  try { window.__stPlanCache = { get: planCacheGet, save: planCacheSave }; } catch (e) {}
+  function applyProfileRow(d) {
+    profilePaid = !!d.is_paid;
+    profilePlan = d.plan || null;
+    profileStatus = d.status || null;
+    profilePeriodEnd = d.current_period_end || null;
+    profileCreated = d.created_at || null;
+    /* trial_days is legacy: referral codes used to extend the trial and no longer do, so
+       this is null on every new account and trialDays() falls through to the standard 14.
+       Still read, because accounts referred under the old scheme keep the days they were
+       already given - taking them back would be a broken promise. */
+    profileTrialDays = (d.trial_days > 0) ? d.trial_days : null;
+    profileTrialEnded = d.trial_ended_at || null;
+    /* Written by st_redeem_code. The whole referral benefit hangs off this one flag. */
+    profileReferred = !!d.referred_at;
+    profilePortal = d.portal_url || null;
+    profileCancelAtEnd = !!d.cancel_at_period_end;
+    // Stripe first; the Lemon Squeezy id stays as a fallback so accounts that never
+    // migrated still register as subscribers rather than being offered checkout again.
+    profileSubId = d.stripe_subscription_id || d.ls_subscription_id || null;
+    profileSyncToken = d.sync_token || null;
+    try { window.STCloud.syncToken = profileSyncToken; } catch (e) {}
+    try { if (window.__stPaintMt5Token) window.__stPaintMt5Token(); } catch (e) {}
+  }
+  var _profRetryT = 0, _profFails = 0;
   function fetchProfile() {
     if (!currentUser) { renderPlanBadge(); return; }
     try { redeemPendingVip(); } catch (e) {}
-    sb.from('profiles').select('*').eq('id', currentUser.id).maybeSingle().then(function (r) {
-      if (r && r.data) {
-        profilePaid = !!r.data.is_paid;
-        profilePlan = r.data.plan || null;
-        profileStatus = r.data.status || null;
-        profilePeriodEnd = r.data.current_period_end || null;
-        profileCreated = r.data.created_at || null;
-        /* trial_days is legacy: referral codes used to extend the trial and no longer do, so
-           this is null on every new account and trialDays() falls through to the standard 14.
-           Still read, because accounts referred under the old scheme keep the days they were
-           already given - taking them back would be a broken promise. */
-        profileTrialDays = (r.data.trial_days > 0) ? r.data.trial_days : null;
-        profileTrialEnded = r.data.trial_ended_at || null;
-        /* Written by st_redeem_code. The whole referral benefit hangs off this one flag. */
-        profileReferred = !!r.data.referred_at;
-        profilePortal = r.data.portal_url || null;
-        profileCancelAtEnd = !!r.data.cancel_at_period_end;
-        // Stripe first; the Lemon Squeezy id stays as a fallback so accounts that never
-        // migrated still register as subscribers rather than being offered checkout again.
-        profileSubId = r.data.stripe_subscription_id || r.data.ls_subscription_id || null;
-        profileSyncToken = r.data.sync_token || null;
-        try { window.STCloud.syncToken = profileSyncToken; } catch (e) {}
-        try { if (window.__stPaintMt5Token) window.__stPaintMt5Token(); } catch (e) {}
-      }
+    var uid = currentUser.id, answered = false;
+    // the last known plan straight away: nothing waits on the network for it, or loses it to an outage
+    if (profilePaid === null && !profileCreated) { var c0 = planCacheGet(uid); if (c0) { applyProfileRow(c0); try { renderPlan(); } catch (e) {} try { if (window.__applyCommunityTab) window.__applyCommunityTab(); } catch (e) {} } }
+    var again = function () { _profFails++; clearTimeout(_profRetryT); var ms = Math.min(300000, 15000 * Math.pow(2, Math.min(_profFails - 1, 5)));
+      _profRetryT = setTimeout(function () { if (currentUser && currentUser.id === uid) fetchProfile(); }, ms); };
+    var tmo = setTimeout(function () { if (!answered) again(); }, 12000);   // no answer in 12 s: asked again later (a late answer still counts)
+    sb.from('profiles').select('*').eq('id', uid).maybeSingle().then(function (r) {
+      answered = true; clearTimeout(tmo);
+      if (!currentUser || currentUser.id !== uid) return;
+      if (!r || r.error) again();   // the server did not answer: the plan stays as it was
+      else { _profFails = 0; clearTimeout(_profRetryT); }
+      if (r && !r.error && r.data) { applyProfileRow(r.data); planCacheSave(uid, r.data); }
       try { renderPlan(); } catch (e) {}
       try { if (window.__applyCommunityTab) window.__applyCommunityTab(); } catch (e) {}
       // Cloud journal sync runs for EVERY signed-in account (trial included) so nobody
@@ -76157,7 +76177,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       // If they arrived via a landing-page plan button, surface that plan now (returning
       // sign-ins; brand-new users get it after induction instead).
       try { stMaybeConsumePlanIntent(); } catch (e) {}
-    });
+    }, function () { answered = true; clearTimeout(tmo); if (currentUser && currentUser.id === uid) again(); });
   }
 
   /* ============ sync engine ============ */
@@ -76891,6 +76911,22 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
   }
 
   var _acctPaintedFor = null;   // the member whose account has been fully drawn and read once in this tab
+  /* Signed in while the sign-in server is away (29 Oct 2026, Supabase answering 522): supabase-js keeps a session it could not
+     refresh because of a server error (a 5xx or no answer) and only removes one the server refused. A session still on this
+     device with none to hand out is that case: the member stays signed in - the app, its tabs and the last known plan - and the
+     session is asked for again in the background until the server is back. A real sign-out removes it, and then the gate shows. */
+  function storedAuthUser() { try { var o = JSON.parse(localStorage.getItem('sb-figozyxoyobixadhqewr-auth-token') || 'null'); var u = o && (o.user || (o.currentSession && o.currentSession.user)); return (u && u.id) ? u : null; } catch (e) { return null; } }
+  var _awayT = 0, _awayN = 0;
+  function authAway(u) {
+    currentUser = u; try { window.currentUser = u; } catch (e) {} try { window.STCloud.userId = u.id; } catch (e) {}
+    window.__stAuthAway = true; if (enforceDataOwner(u.id)) return;
+    hideGate(); accStatus(''); paintAccount(); _acctPaintedFor = u.id; fetchProfile(); awayRetry(); }
+  function awayBack(s) { window.__stAuthAway = false; clearTimeout(_awayT); _awayN = 0; currentUser = s.user; try { window.currentUser = currentUser; window.STCloud.userId = currentUser.id; } catch (e) {} try { fetchProfile(); } catch (e) {} }
+  function awayRetry() { clearTimeout(_awayT); var ms = Math.min(300000, 20000 * Math.pow(2, Math.min(_awayN++, 4)));
+    _awayT = setTimeout(function () { if (!window.__stAuthAway) return;
+      sb.auth.getSession().then(function (g) { var s = g && g.data && g.data.session; if (!window.__stAuthAway) return;
+        if (s && s.user) awayBack(s); else if (storedAuthUser()) awayRetry(); else { window.__stAuthAway = false; currentUser = null; try { window.currentUser = null; } catch (e) {} paintAccount(); showGate(); } }, awayRetry); }, ms); }
+  try { window.__stAuthAwayTest = { stored: storedAuthUser }; } catch (e) {}
   sb.auth.onAuthStateChange(function (event, session) {
     if (window.__MV) { currentUser = session ? session.user : null; try { window.STCloud.userId = currentUser ? currentUser.id : null; } catch(e){} try { mvBoot(); } catch(e){} return; }
     // AUTHORITATIVE ACCOUNT-SWITCH GUARD (in-memory — cannot be corrupted by storage tags):
@@ -76917,10 +76953,12 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
        owner. Keep the fresh session and stop; the first event for a member still does everything, and returning to
        the window has its own plan re-check (refreshProfileSoon) and journal pull (__cloudResume). */
     if (!recoveryMode && _newId && _newId === _prevId && _acctPaintedFor === _newId && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
+      if (window.__stAuthAway) { awayBack(session); return; }   // the server back: the plan read again
       currentUser = session.user;
       try { window.currentUser = currentUser; } catch (e) {}
       return;
     }
+    if (!session && event !== 'SIGNED_OUT' && !recoveryMode) { var _su = storedAuthUser(); if (_su) { if (!window.__stAuthAway || !currentUser || currentUser.id !== _su.id) authAway(_su); return; } }   // a session the server could not refresh: still signed in
     currentUser = session ? session.user : null;
     try { window.currentUser = currentUser; } catch (e) {}   // publish for out-of-scope readers (AI Meter admin gate, etc.)
     try { window.STCloud.userId = currentUser ? currentUser.id : null; if (!currentUser) window.STCloud.syncToken = null; } catch (e) {}
@@ -76943,7 +76981,9 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       if (event === 'SIGNED_OUT') {
         try { var _bb=document.getElementById('bloomberg-floater-iframe'); if(_bb) _bb.src='about:blank'; } catch(e){} // kill Bloomberg audio so it can't bleed into the landing page
         try { if (window.__stCloseExternalWins) window.__stCloseExternalWins(); } catch(e){} // close any windows the app opened (detached channel/DM/network/Bloomberg/media windows)
+        window.__stAuthAway = false; clearTimeout(_awayT);
         if (window.__userInitiatedSignOut) {
+          try { if (_prevId) localStorage.removeItem('st_plan_' + _prevId); } catch (e) {}   // this member's plan off the device too
           // REAL logout (the user pressed Sign out): wipe this account's local cache so the next
           // login on this browser can't inherit it, then LEAVE.
           //
@@ -77007,6 +77047,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
 
   sb.auth.getSession().then(function (r) {
     if (window.__MV) { currentUser = r.data && r.data.session ? r.data.session.user : null; try { window.STCloud.userId = currentUser ? currentUser.id : null; } catch(e){} try { mvBoot(); } catch(e){} return; }
+    if (!(r && r.data && r.data.session) && r && r.error && !recoveryMode) { var _su0 = storedAuthUser(); if (_su0) { authAway(_su0); return; } }   // the server could not refresh it: still signed in
     currentUser = r.data && r.data.session ? r.data.session.user : null;
     try { window.currentUser = currentUser; } catch (e) {}   // publish for out-of-scope readers (AI Meter admin gate, etc.)
     try { window.STCloud.userId = currentUser ? currentUser.id : null; if (!currentUser) window.STCloud.syncToken = null; } catch (e) {}
@@ -79908,7 +79949,9 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     if (!CL.host) clPick();
     var u = window.currentUser; if (u && u.id) sb.from('profiles').select('cloud_extra,plan_interval,is_paid').eq('id', u.id).maybeSingle()
       .then(function (r) { var d = r && !r.error && r.data; if (!d) return; CL.extra = +d.cloud_extra || 0; CL.yearly = d.plan_interval === 'year'; CL.paid = !!d.is_paid;
+        try { localStorage.setItem('st_cloudplan_' + u.id, JSON.stringify({ extra: CL.extra, yearly: CL.yearly, paid: CL.paid })); } catch (e) {}   // kept for an outage, as the plan is
         try { if (window.__stAccFill) window.__stAccFill(true); } catch (e) {} }, function () {});
+    if (u && u.id && !CL.planRead) { CL.planRead = true; try { var cp = JSON.parse(localStorage.getItem('st_cloudplan_' + u.id) || 'null'); if (cp) { CL.extra = +cp.extra || 0; CL.yearly = !!cp.yearly; CL.paid = !!cp.paid; } } catch (e) {} }
   }
   // The server a new account goes to: the active one with the most room (st_cloud_pick_host, 24 Oct 2026 - more than one
   // server). Resolves the host, false when every server is full, or null when it can't be asked (CL.host stays as it was).
