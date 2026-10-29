@@ -6284,12 +6284,17 @@ bool CE_ExportTrade(string sym,datetime openT,datetime closeT,bool full)
    // batching ~14k bars at 3000 a time), each a BLOCKING WebRequest. At 15s apiece that is a
    // ~150-second freeze of the EA's single event thread inside one OnTick, with nothing logged
    // because a successful post prints nothing. Return false once the budget is spent: the row
-   // stays queued and resumes on the next M1 bar. Server ingest is idempotent per bar
-   // timestamp, so re-sending a batch costs nothing but bandwidth.
+   // stays queued and resumes on the next M1 bar.
+   // v9.18: it really resumes now - from the batch after the last one that went in (a terminal variable per trade window and pass).
+   // It used to start again at the first timeframe: under load no export finished inside the budget, and on 29 Oct 2026 every chart
+   // of the demo re-sent the same 10 days of M1 each minute for four hours (the database ran out of disk IO).
    uint _t0=GetTickCount();
    int dg=(int)SymbolInfoInteger(sym,SYMBOL_DIGITS); if(dg<=0) dg=g_digits;
    datetime eod=PM_EndOfDay(closeT);
-   for(int ti=0;ti<6;ti++)
+   string pk="MMC_CEP_"+sym+"_"+IntegerToString((long)openT)+"_"+IntegerToString((long)closeT)+(full?"F":"P");
+   int t0i=0, i0=0;
+   if(GlobalVariableCheck(pk)){ long pv=(long)GlobalVariableGet(pk); t0i=(int)(pv/1000000); i0=(int)(pv%1000000); if(t0i<0 || t0i>5){ t0i=0; i0=0; } }
+   for(int ti=t0i;ti<6;ti++)
      {
       datetime from=(datetime)((long)openT  - CE_BACK[ti]);
       datetime to  =(datetime)((long)closeT + CE_FWD[ti]);
@@ -6298,7 +6303,7 @@ bool CE_ExportTrade(string sym,datetime openT,datetime closeT,bool full)
       MqlRates r[];
       int n=CopyRates(sym,CE_TF_PER[ti],from,to,r);
       if(n<=0) continue;                       // broker keeps nothing here — skip this TF
-      int i=0;
+      int i=(ti==t0i) ? i0 : 0;
       while(i<n)
         {
          string bars=""; int cnt=0;
@@ -6313,6 +6318,7 @@ bool CE_ExportTrade(string sym,datetime openT,datetime closeT,bool full)
          string js=StringFormat("{\"token\":\"%s\",\"symbol\":\"%s\",\"tf\":%d,\"bars\":[%s]}",
                                  g_syncTokenEff,sym,CE_TF_MIN[ti],bars);
          if(!CandlePost(js)) return false;
+         GlobalVariableSet(pk,(double)((long)ti*1000000+i));   // v9.18: this far went in
          if(GetTickCount()-_t0>CE_BUDGET_MS)
            {
             Print("Replay candles: export budget spent, resuming next bar.");
@@ -6320,6 +6326,7 @@ bool CE_ExportTrade(string sym,datetime openT,datetime closeT,bool full)
            }
         }
      }
+   GlobalVariableDel(pk);
    return true;
   }
 
@@ -6327,12 +6334,13 @@ bool CE_ExportTrade(string sym,datetime openT,datetime closeT,bool full)
 void CE_Sweep()
   {
    if(StringLen(g_syncTokenEff)==0) return;
+   if(!RuCloser()) return;   // v9.18: ONE chart per terminal works the queue (every chart did, each exporting the same trade)
    if(!FileIsExist(CE_FILE)) return;
    int h=FileOpen(CE_FILE,FILE_READ|FILE_CSV|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE,',');
    if(h==INVALID_HANDLE) return;
 
    string keep[]; int kept=0; ArrayResize(keep,0);
-   int done=0;
+   int done=0; string seen=",";
    g_ceWorked=false;
    while(!FileIsEnding(h))
      {
@@ -6344,6 +6352,8 @@ void CE_Sweep()
       datetime openT =(datetime)StringToInteger(sOpen);
       datetime closeT=(datetime)StringToInteger(sClose);
       int      stage =(int)StringToInteger(sStage);
+      if(StringFind(seen,","+sPos+",")>=0) continue;   // v9.18: queued twice (two charts at once): dropped
+      seen+=sPos+",";
 
       bool s1ready=(TimeCurrent() >= (datetime)((long)closeT + CE_READY));
       bool s2ready=(TimeCurrent() >= (datetime)((long)PM_EndOfDay(closeT) + CE_DAY_M));
