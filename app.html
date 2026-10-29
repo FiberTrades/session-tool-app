@@ -93390,13 +93390,16 @@ window.__stAZ = (function () {
   }
 
   // ---- candles ----
+  // A read the store did not answer - an error, or a time-out part way through its pages - comes back marked failed (29 Oct 2026: in the
+  // 07:45-08:30 UTC outage such a read was kept as the chart's history, empty or cut short, until the page was reloaded)
   async function fetchCandles(sym, tf, from, to){ var sb = sbc(); if (!sb) return [];
-    var rows = [], PAGE = 1000, pg = 0;
+    var rows = [], PAGE = 1000, pg = 0, bad = false;
     try { while (pg < 30) { var r = await sb.rpc('st_candles', { p_symbol: sym, p_tf: tf, p_from: Math.floor(from), p_to: Math.ceil(to) }).range(pg * PAGE, pg * PAGE + PAGE - 1);
-        var d = (r && r.data) || []; for (var k = 0; k < d.length; k++) rows.push(d[k]); if (d.length < PAGE) break; pg++; } } catch (e) {}
+        if (!r || r.error) { bad = true; break; }
+        var d = r.data || []; for (var k = 0; k < d.length; k++) rows.push(d[k]); if (d.length < PAGE) break; pg++; } } catch (e) { bad = true; }
     var out = [], last = -1e18;
     for (var i = 0; i < rows.length; i++) { var t = Number(rows[i].t); if (t - last < 30) continue; out.push({ time: t, open: +rows[i].o, high: +rows[i].h, low: +rows[i].l, close: +rows[i].c, vol: rows[i].v == null ? null : +rows[i].v }); last = t; }
-    return onGridRows(out, tf); }
+    var g = onGridRows(out, tf); if (bad) g.failed = true; return g; }
 
   // ---- the trading day ----
   // "14:30", "1430", "9:05", "9" -> minutes after midnight
@@ -93485,18 +93488,29 @@ window.__stAZ = (function () {
     var src = SRC[tf], cov = sym.tf[src]; if (!cov) return Promise.resolve(null);
     return (staticRows[key] = (async function(){ var from = Math.max(open - LOOK[tf], cov[0]), rows = await fetchCandles(sym.raw, src, from, open - 1);
       // A window that is all weekend (1m on a Monday's day: Saturday) holds nothing: reach back to the last candles before it
-      for (var wk = 0; !rows.length && from > cov[0] && wk < 4; wk++) { var f2 = Math.max(cov[0], from - MORE[tf]); rows = await fetchCandles(sym.raw, src, f2, from - 1); from = f2; }
-      return { rows: rows, from: from }; })()); }
+      for (var wk = 0; !rows.failed && !rows.length && from > cov[0] && wk < 4; wk++) { var f2 = Math.max(cov[0], from - MORE[tf]); rows = await fetchCandles(sym.raw, src, f2, from - 1); from = f2; }
+      if (rows.failed) delete staticRows[key];   // not kept: asked again next time
+      return { rows: rows, from: from, failed: !!rows.failed }; })()); }
   async function paneStatic(tf, X){
     X = X || S; var day = S.day, open = S.f.open, key = X.sym.raw + '|' + day + '|' + tf; if (staticCache[key]) return staticCache[key];
-    var src = SRC[tf], cov = X.sym.tf[src], from = open, rows = (lvData() && X.tfh && X.tfh[src]) ? X.tfh[src] : [];   // Live Charts: none stored - its EA's (9.01)
-    if (cov) { var got = await staticFetch(X.sym, day, open, tf); rows = got.rows; from = got.from; }
-    // Live Charts: listed as stored but nothing came (deleted since the symbol list was cached, 6 hours) - its EA's instead
-    var gone = !!(cov && !rows.length && lvData() && src > 1); if (gone) { (X.nost = X.nost || {})[src] = 1; if (X.tfh && X.tfh[src]) rows = X.tfh[src]; }
+    var src = SRC[tf], cov = X.sym.tf[src], from = open, rows = (lvData() && X.tfh && X.tfh[src]) ? X.tfh[src] : [], failed = false;   // Live Charts: none stored - its EA's (9.01)
+    if (cov) { var got = await staticFetch(X.sym, day, open, tf); rows = got.rows; from = got.from; failed = !!got.failed; }
+    // Live Charts: listed as stored but nothing came (deleted since the symbol list was cached, 6 hours) - its EA's instead; never
+    // because the store did not answer
+    var gone = !failed && !!(cov && !rows.length && lvData() && src > 1); if (gone) { (X.nost = X.nost || {})[src] = 1; if (X.tfh && X.tfh[src]) rows = X.tfh[src]; }
     rows = rows.filter(function(b){ return b.time + src * 60 <= open; });
-    var e = { rows: rows, from: from, full: !cov || gone || from <= cov[0], agg: aggStatic(rows, tf) };
-    staticCache[key] = e; return e;
+    var e = { rows: rows, from: from, full: failed || !cov || gone || from <= cov[0], agg: aggStatic(rows, tf), failed: failed };   // failed: read again (statHeal), not added to
+    if (!failed) staticCache[key] = e; return e;
   }
+  // A chart whose history the store did not give (29 Oct 2026, the outage): read again every 15 s and painted in when it comes, the
+  // candles on screen staying where they are
+  function statHeal(){ if (!S || !panes.length) return;
+    panes.forEach(function(p){ var e = p.hist; if (!e || !e.failed || p._heal) return; var tf = p.tf, X = PS(p), day = S.day; p._heal = true;
+      paneStatic(tf, X).then(function(n){ p._heal = false; if (!n || n.failed || !S || S.day !== day || panes.indexOf(p) < 0 || p.hist !== e || p.tf !== tf) return;
+        var before = (p.static || []).length; p.hist = n; p.static = n.agg; var k = p.static.length - before;
+        if (p.shown && k > 0) paintPane(p, false, k, getRange(p)); else paintPane(p, false);
+        try { if (lvData()) lvMergePre(X); } catch (x) {} }, function(){ p._heal = false; }); }); }
+  setInterval(statHeal, 15000);
   // Older candles for a chart scrolled to its left edge. The view moves by exactly the candles added, so nothing jumps;
   // drawings are pinned to times, so they stay where they were drawn.
   // Only when the member moved that chart (a drag, a swipe still gliding, the wheel): the chart reports passing views of
@@ -93509,8 +93523,8 @@ window.__stAZ = (function () {
     // Nestor, 19 Oct 2026: "why am i only getting 1d worth of 1m candles now? its supposed to be 1y". On a Monday the 2-day
     // chunk before the day is exactly Friday's close to Sunday's open - empty - and an empty chunk used to mark the history
     // full for good. Skip empty chunks (weekends, holidays) until candles come or the start of what is stored is reached.
-    for (var wk = 0; cov && !rows.length && from > cov[0] && wk < 6; wk++) { var f2 = Math.max(cov[0], from - MORE[p.tf]); rows = await fetchCandles(sym, src, f2, from - 1); from = f2; }
-    e.busy = false; if (!S || PS(p).sym.raw !== sym || S.day !== day || panes.indexOf(p) < 0 || p.hist !== e) return;
+    for (var wk = 0; cov && !rows.failed && !rows.length && from > cov[0] && wk < 6; wk++) { var f2 = Math.max(cov[0], from - MORE[p.tf]); rows = await fetchCandles(sym, src, f2, from - 1); from = f2; }
+    e.busy = false; if (rows.failed) return; if (!S || PS(p).sym.raw !== sym || S.day !== day || panes.indexOf(p) < 0 || p.hist !== e) return;
     var seen = {}; e.rows.forEach(function(b){ seen[b.time] = 1; }); rows = rows.filter(function(b){ return !seen[b.time]; });
     e.rows = rows.concat(e.rows); e.from = from; if (!cov || from <= cov[0]) e.full = true;
     if (!rows.length) return;
@@ -97892,7 +97906,7 @@ window.__stAZ = (function () {
   var LVB = {};   // the day's stored minutes for a symbol, a fetch kept 45 s: started early (lvPrefetch), used by liveFeed
   function lvBaseFetch(sym, f){ var k = sym.raw + '|' + f.open, o = LVB[k];
     if (!o || Date.now() - o.at > 45000) o = LVB[k] = { at: Date.now(), p: fetchCandles(sym.raw, 1, f.open, Math.min(nowS(), f.close) - 1) };
-    return o.p.then(function(b){ return b.slice(); }); }   // what came since arrives from the EA (lvHist asks the day again, lvPx a gap)
+    return o.p.then(function(b){ if (b.failed && LVB[k] === o) delete LVB[k]; return b.slice(); }); }   // what came since arrives from the EA (lvHist asks the day again, lvPx a gap); a failed read is not kept
   function lvPrefetch(raw, si){ try { if (!(S && S.live) && !LV.inl && !LV.max) return; var sym = symLive(raw) || symLive(canon(raw)); if (!sym) return;
       var side = si > 0 && S, day = side ? S.day : liveDay(sym), f = side ? S.f : dayFrame(day), n = Math.max(1, CFG.layout || 1);
       if (sym.tf[1]) lvBaseFetch(sym, f);

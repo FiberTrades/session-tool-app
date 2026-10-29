@@ -6,7 +6,7 @@
 # - in Python: urllib calls to those RPCs (a runner's stored_close) are answered here too (install(), from browser_test and lowprio).
 # The answers come from tests/fixtures/candles: a small real sample, made once by tests/fixtures/make_candle_fixtures.py - for each
 # symbol and timeframe some whole weeks of real candles. A time outside them is served from the same moment of the week inside
-# them (time of week kept, so sessions and weekends stay where they are); a symbol without a sample is another one's, scaled to its
+# them, its first week before them and its last after (time of week kept, so sessions and weekends stay where they are); a symbol without a sample is another one's, scaled to its
 # price. ST_REAL_CANDLES=1 opts a run out (the real store - one run at a time, never in parallel).
 import gzip, io, json, os, threading, urllib.parse, urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -42,28 +42,40 @@ def _source(sym):
     dg = 2 if (px or 0) >= 1000 else (3 if (px or 0) >= 20 else 5)
     return like, k, dg
 
+def _ny_off(t):
+    """New York's offset from UTC at t (s): -4 h from the second Sunday of March 02:00 to the first Sunday of November 02:00, else -5 h"""
+    import calendar, datetime
+    y = datetime.datetime.utcfromtimestamp(t).year
+    def sunday(m, n):   # the n-th Sunday of month m
+        d = datetime.date(y, m, 1); d += datetime.timedelta(days=(6 - d.weekday()) % 7 + 7 * (n - 1)); return calendar.timegm(d.timetuple())
+    return -4 * 3600 if sunday(3, 2) + 7 * 3600 <= t < sunday(11, 1) + 6 * 3600 else -5 * 3600
+
 def _series(sym, tf, frm, to):
-    """the sample's candles between frm and to (unix s, both included), each moment outside its weeks taken from the same moment of
-    the week inside them"""
+    """the sample's candles between frm and to (unix s, both included). A moment before the sample's weeks is taken from the same moment
+    of its first week, one after them from its last week (time of week kept, and no jump to prices years away at its edges)"""
+    import bisect
     src = _source(sym)
     if not src: return []
     base, k, dg = src
     e = _fix(base).get(str(int(tf)))
     if not e or not e.get('rows'): return []
-    w0, L, rows = int(e['w0']), int(e['weeks']) * WEEK, e['rows']
+    w0, rows = int(e['w0']), e['rows']; w1 = w0 + int(e['weeks']) * WEEK
     ts = [r[0] for r in rows]
     out = []
-    a = int(frm)
-    import bisect
+    a, to = int(frm), int(to)
     while a <= to:
-        seg0 = w0 + ((a - w0) // L) * L            # the copy of the sample this moment falls in
-        b = min(int(to), seg0 + L - 1); sh = seg0 - w0
+        if a < w0: sh = -((w0 - a + WEEK - 1) // WEEK) * WEEK; b = min(to, w0 + sh + WEEK - 1)      # into the first week
+        elif a >= w1: sh = ((a - w1) // WEEK + 1) * WEEK; b = min(to, w1 + sh - 1)                  # into the last week
+        else: sh = 0; b = min(to, w1 - 1)                                                            # the sample itself
         i = bisect.bisect_left(ts, a - sh); j = bisect.bisect_right(ts, b - sh)
         for r in rows[i:j]:
             t, o, h, l, c = r[0] + sh, r[1], r[2], r[3], r[4]
+            if sh: t += _ny_off(r[0]) - _ny_off(t)   # copied by New York's clock: a 4h / 1D candle stays on the 17:00 New York grid across a DST change
             if k != 1.0: o, h, l, c = (round(v * k, dg) for v in (o, h, l, c))
             out.append({'t': t, 'o': o, 'h': h, 'l': l, 'c': c, 'v': r[5] if len(r) > 5 else None})
         a = b + 1
+    if any(x['t'] < frm or x['t'] > to for x in out) or any(out[n]['t'] <= out[n - 1]['t'] for n in range(1, len(out))):
+        seen = {}; [seen.setdefault(x['t'], x) for x in out if frm <= x['t'] <= to]; out = [seen[t] for t in sorted(seen)]
     return out
 
 def candles(sym, tf, frm, to, offset=0, limit=1000):
@@ -110,6 +122,7 @@ SHIM_JS = r"""(function () {
     S.n++;
     var args = {}; try { if (init && typeof init.body === 'string') args = JSON.parse(init.body); } catch (e) {}
     var qs = ''; try { var u = new URL(url, location.href); ['offset', 'limit'].forEach(function (k) { if (u.searchParams.has(k)) qs += '&' + k + '=' + encodeURIComponent(u.searchParams.get(k)); }); } catch (e) {}
+    if (S.failIf && S.failIf(m[1], args, url)) return Promise.resolve(new Response(JSON.stringify({ code: '57014', message: 'canceling statement due to statement timeout' }), { status: 500, headers: { 'Content-Type': 'application/json' } }));   // a test: the store not answering (S.failIf)
     if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(location.origin)) return Promise.resolve(json('[]'));   // not the test server: nothing, never the real store
     return real.call(window, location.origin + '/__stcandles/' + m[1] + '?a=' + encodeURIComponent(JSON.stringify(args)) + qs)
       .then(function (r) { return r.ok ? r.text().then(json) : json('[]'); }, function () { return json('[]'); });
