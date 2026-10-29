@@ -52,7 +52,32 @@
     var ref2 = P._vpCalc(B, V, Aa, n, { vpRows: 24, vpSig: 1 }), r4 = paint();
     ok('Anchored volume profile: one click; from that candle to the last, its POC in red', av && av.type === 'avp' && DW.tool === 'none' && r4.red.some(function (y) { return Math.abs(y - (Math.round(yb(ref2.poc)) + 0.5)) < 0.6; }), [r4.red.slice(0, 3), yb(ref2.poc)]);
     ok('it reaches the last candle', hit(xb(n - 2), yb(ref2.poc)).i === DW.list.indexOf(av));
-    DW.list.push(vw, fv); var raw = JSON.stringify(DW.list.map(function (d) { return d.type; }));
+    // its rows (Nestor, 29 Oct 2026: "i need to be able to select how many blue bars i see"): TradingView's Rows layout, Row size, Value area
+    DW.list = []; var fx = await drawN('frvp', [[xb(Fa), yb(B[Fa].high)], [xb(Fb), yb(B[Fb].low)]]);
+    var fills = function () { var n0 = 0, strong = 0, styles = {}, FR = CanvasRenderingContext2D.prototype.fillRect; CanvasRenderingContext2D.prototype.fillRect = function () { n0++; var fs = String(this.fillStyle); styles[fs] = 1; var m = /rgba\([^)]*,\s*([\d.]+)\)/.exec(fs); if (m && +m[1] >= 0.5) strong++; return FR.apply(this, arguments); };
+      try { DW.ver = (DW.ver || 0) + 1; P._drawOv(0); } finally { CanvasRenderingContext2D.prototype.fillRect = FR; } return { n: n0, strong: strong, styles: Object.keys(styles) }; };
+    var more = async function () { DW.sel = DW.list.indexOf(fx); P._props(); await W(60); P._dbar().el().querySelector('[data-db="more"]').click(); await W(60); return P._dbar().pop(); };
+    var setIn = async function (attr, val) { var pp = await more(), inp = pp.querySelector('[' + attr + ']'); inp.value = String(val); inp.dispatchEvent(new Event('input', { bubbles: true })); inp.dispatchEvent(new Event('change', { bubbles: true })); await W(40); P._dbar().closePop(); DW.sel = null; P._props(); await W(60); };
+    var pp0 = await more();
+    ok('its More: Rows layout (Number of rows | Ticks per row), Row size 24, Value area 70%', pp0.querySelector('[data-vplay="rows"].on') && pp0.querySelector('[data-vplay="ticks"]') && +pp0.querySelector('[data-vprows]').value === 24 && +pp0.querySelector('[data-vpva]').value === 70, pp0.textContent.slice(0, 120));
+    P._dbar().closePop(); DW.sel = null; P._props(); await W(60);
+    var f24 = fills(); await setIn('data-vprows', 40); var f40 = fills();
+    ok('Row size 40: forty rows instead of twenty-four (an up and a down bar each)', f40.n - f24.n === 32 && fx.vpRows === 40, [f24.n, f40.n, fx.vpRows]);
+    await setIn('data-vprows', 2); var f4 = fills();
+    ok('...never fewer than 4 rows', fx.vpRows === 4 && f24.n - f4.n === 40, [fx.vpRows, f4.n]);
+    var pp1 = await more(); pp1.querySelector('[data-vplay="ticks"]').click(); await W(40); P._dbar().closePop(); DW.sel = null; P._props(); await W(60); await setIn('data-vprows', 50);
+    var hi = -Infinity, lo = Infinity; for (var L = Fa; L <= Fb; L++) { hi = Math.max(hi, B[L].high); lo = Math.min(lo, B[L].low); } var rowsT = Math.max(4, Math.min(500, Math.ceil((hi - lo) / (50 * 0.00001)))), fT = fills();
+    ok('Ticks per row, 50: as many rows as 50 ticks each take (' + rowsT + ')', fx.vpLay === 'ticks' && fT.n - f24.n === 2 * (rowsT - 24), [fT.n, f24.n, rowsT]);
+    var pp2 = await more(); pp2.querySelector('[data-vplay="rows"]').click(); await W(40); P._dbar().closePop(); DW.sel = null; P._props(); await W(60); await setIn('data-vprows', 24);
+    var s70 = fills().strong; await setIn('data-vpva', 30); var s30 = fills().strong;
+    ok('Value area 30%: fewer rows in it (the stronger ones)', fx.vpVA === 30 && s30 < s70 && s30 > 0, [s70, s30]);
+    DW.sel = DW.list.indexOf(fx); P._props(); await W(60); P._dbar().el().querySelector('[data-db="vpup"]').click(); await W(40); P._dbar().pop().querySelector('[data-pc="#E56767"]').click(); await W(40); P._dbar().closePop(); DW.sel = null; P._props(); await W(60);
+    ok('its up volume colour, changed on its toolbar', /rgba\(229,\s*103,\s*103,/.test(fx.vpUp || '') && fills().styles.some(function (st) { return /^rgba\(229,\s*103,\s*103,/.test(st); }), [fx.vpUp]);
+    var fx2 = await drawN('frvp', [[xb(Fa + 5), yb(B[Fa + 5].high)], [xb(Fb - 3), yb(B[Fb - 3].low)]]);
+    ok('remembered: the next profile starts with them', fx2.vpVA === 30 && fx2.vpRows === 24 && /^rgba\(229,/.test(fx2.vpUp || ''), [fx2.vpVA, fx2.vpRows, fx2.vpUp]);
+    DW.sel = DW.list.indexOf(fx2); P._props(); await W(60); P._dbar().el().querySelector('[data-db="more"]').click(); await W(40); P._dbar().pop().querySelector('[data-tp="reset"]').click(); await W(60); DW.sel = null; P._props();
+    ok('Reset to default style: 24 rows, 70%, the app\'s colours', !fx2.vpVA && !fx2.vpUp && !fx2.vpLay && !(C.ddef.frvp && (C.ddef.frvp.vpVA || C.ddef.frvp.vpUp)), [fx2, C.ddef.frvp]);
+    DW.list.push(vw, fv, av); var raw = JSON.stringify(DW.list.map(function (d) { return d.type; }));
     ok('all kept with the symbol\'s drawings', ['avwap', 'frvp', 'avp'].every(function (t) { return raw.indexOf('"' + t + '"') >= 0; }), raw);
   } catch (e) { out.push({ name: 'ran', ok: false, got: String(e && e.stack || e) }); }
   return JSON.stringify(out);
