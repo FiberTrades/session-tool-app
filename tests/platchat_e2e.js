@@ -197,8 +197,8 @@
       P._render();
       window.__pcShot = 'light';
     } else {
-      var chb = $('.ph-icons .ph-chb');
-      check('a phone: Chat in the bottom toolbar, on screen', !!chb && chb.getBoundingClientRect().width > 20 && chb.getBoundingClientRect().right <= innerWidth, chb && [Math.round(chb.getBoundingClientRect().right), Array.prototype.map.call(document.querySelectorAll('.ph-bar > *, .ph-icons > *'), function (x) { var r = x.getBoundingClientRect(); return (x.className || x.id || x.tagName).toString().slice(0, 14) + ':' + Math.round(r.left) + '-' + Math.round(r.right); }), getComputedStyle(document.querySelector('.ph-bar')).paddingLeft]);
+      var chb = $('.ph-icons .ph-chb'); if (chb) { var phb0 = $('.ph-bar'), cr0 = chb.getBoundingClientRect(), br0 = phb0.getBoundingClientRect(); if (cr0.right > br0.right) phb0.scrollLeft += cr0.right - br0.right + 40; await W(300); }   // the toolbar swiped to it (29 Oct 2026)
+      check('a phone: Chat in the bottom toolbar, on screen (swiped to on a narrow one)', !!chb && chb.getBoundingClientRect().width > 20 && chb.getBoundingClientRect().right <= innerWidth, chb && [Math.round(chb.getBoundingClientRect().right), Array.prototype.map.call(document.querySelectorAll('.ph-bar > *, .ph-icons > *'), function (x) { var r = x.getBoundingClientRect(); return (x.className || x.id || x.tagName).toString().slice(0, 14) + ':' + Math.round(r.left) + '-' + Math.round(r.right); }), getComputedStyle(document.querySelector('.ph-bar')).paddingLeft]);
       // the exit tile never over the chart's name and O H L C, on its side too (28 Oct 2026), chat closed or open
       var clearOf = function () { var ex = $('.ph-exit'), er = ex && ex.offsetParent ? ex.getBoundingClientRect() : null; if (!er) return true;
         return ['.pl-nm', '.stpr-ohlc'].every(function (sl) { var e = $('#stpr-win ' + sl), q = e && e.getBoundingClientRect(); return !q || !q.width || q.right <= er.left || q.left >= er.right || q.bottom <= er.top || q.top >= er.bottom; }); };
@@ -226,6 +226,16 @@
         ta.blur(); await W(500); var tr3 = sh.getBoundingClientRect();
         check('...and back to half when the box is left', !win.classList.contains('ph-chkb') && Math.abs(tr3.top - (wr2.top + wr2.height / 2)) <= 4, Math.round(tr3.top));
       }
+      // the computer's side panels as sheets too (29 Oct 2026), placed as the chat is: over the lower half with the toolbar under it; on its side a panel at the right
+      $('[data-phchatx]').click(); await W(400);
+      $('.ph-icons [data-phpn="wl"]').click(); await W(600);
+      var pq2 = $('.ph-pnl').getBoundingClientRect(), bt2 = $('.ph-bar').getBoundingClientRect().top;
+      if (!land) check('the Watchlist button: its panel over the lower half, the toolbar left under it', win.classList.contains('ph-pnon') && pq2.top >= wr2.top + wr2.height * 0.35 && Math.abs(pq2.bottom - bt2) <= 1 && pq2.width >= innerWidth - 1, [Math.round(pq2.top), Math.round(pq2.bottom), Math.round(bt2)]);
+      else { await W(300); var pe2 = P._panes()[0] && P._panes()[0].el.getBoundingClientRect();
+        check('the Watchlist button: on its side a panel at the right (320-420 px), down to the toolbar, the chart beside it', win.classList.contains('ph-pnon') && Math.abs(pq2.right - wr2.right) <= 1 && pq2.width >= 319 && pq2.width <= 421 && Math.abs(pq2.top - wr2.top) <= 1 && Math.abs(pq2.bottom - bt2) <= 1 && pe2 && pe2.right <= pq2.left + 1,
+          [Math.round(pq2.left), Math.round(pq2.width), Math.round(pq2.top), Math.round(pq2.bottom), Math.round(bt2), pe2 && Math.round(pe2.right)]); }
+      $('[data-phpnx]').click(); await W(400);
+      chb.click(); await W(1500);
       window.__pcShot = 'phone';
     }
     check('no script errors', !errs.length, errs.slice(0, 4));

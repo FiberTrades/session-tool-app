@@ -45,8 +45,8 @@
       var nm0 = $('#stpr-grid .pl-nm'), oh0 = $('#stpr-grid .stpr-ohlc');
       check('its legend: the name beside the way out, O H L C under it, then the account pill and the Session Indicator line under it', nm0 && /^Euro \/ U\.S\. Dollar · 15 · /.test(nm0.textContent) && nm0.getBoundingClientRect().left > $('.ph-exit').getBoundingClientRect().right && oh0 && oh0.getBoundingClientRect().top > nm0.getBoundingClientRect().top + 8 && $('.ph-ov [data-phsi]') && $('.ph-ov [data-phpill]') && $('.ph-ov [data-phpill]').getBoundingClientRect().top < $('.ph-ov [data-phsi]').getBoundingClientRect().top && /ON|OFF/.test($('[data-phpill]').textContent),
         [nm0 && nm0.textContent, $('.ph-ov') && $('.ph-ov').textContent]);
-      var bar = $('.ph-bar'), kids = [$('.ph-live'), $('.ph-bar #stpr-sym'), $('.ph-tf'), $('.ph-icons #stpr-drawbtn'), $('.ph-icons #stpr-undo'), $('.ph-icons #stpr-layersbtn'), $('.ph-icons #stpr-alertsbtn')];
-      check('the bottom toolbar: Live first (no logo since 29 Oct 2026), the symbol, the timeframe, drawing tools, undo, Show on chart, alerts - all on screen', kids.every(function (k) { return k && k.getBoundingClientRect().width > 0 && k.getBoundingClientRect().right <= innerWidth + 1; }) && !$('.ph-logo') && bar.firstElementChild === $('.ph-live'),
+      var bar = $('.ph-bar'), kids = [$('.ph-live'), $('.ph-bar #stpr-sym'), $('.ph-tf'), $('.ph-icons > [data-phtrb]'), $('.ph-icons #stpr-drawbtn'), $('.ph-icons #stpr-undo'), $('.ph-icons #stpr-redo')];
+      check('the bottom toolbar: Live first (no logo since 29 Oct 2026), the symbol, the timeframe, the trade row\'s button, drawing tools, undo, redo - on screen (the rest a swipe away)', kids.every(function (k) { return k && k.getBoundingClientRect().width > 0 && k.getBoundingClientRect().right <= innerWidth + 1; }) && !$('.ph-logo') && bar.firstElementChild === $('.ph-live'),
         kids.map(function (k) { return k ? Math.round(k.getBoundingClientRect().right) : null; }));
       check('above it, docked: the open trade (or None) and a square pink Execute', (/No open trade/.test($('.ph-trade').textContent) || /lots/.test($('.ph-trade').textContent)) && $('.ph-go') && parseFloat(getComputedStyle($('.ph-go')).borderRadius) <= 4 && $('.ph-trade').getBoundingClientRect().bottom <= bar.getBoundingClientRect().top + 1);
       // the trade row behind its button (Nestor, 28 Oct 2026: "can't this live in a button that when pressed the position row displays and it can be hidden away?")
@@ -108,6 +108,64 @@
       check('the timeframe opens its list above the bar', mn && mr.bottom <= bar.getBoundingClientRect().top + 1 && mn.querySelector('[data-phtfv="60"]'), mr && [mr.top, mr.bottom]);
       mn.querySelector('[data-phtfv="60"]').click(); for (k = 0; k < 40 && P._panes()[0].tf !== 60; k++) await W(150); await W(900);
       check('...1h: the chart turns to it, the button says so', P._panes()[0].tf === 60 && $('.ph-tf').textContent.indexOf('1h') === 0, [P._panes()[0].tf, $('.ph-tf').textContent]);
+      // the toolbar swiped sideways (Nestor, 29 Oct 2026: "there is room if you make the toolbar swipeable?"): every button of the computer's, full size,
+      // a soft fade at an edge with more beyond it; the side panels as sheets, Chart settings whole at 375 x 812
+      var ics = $('.ph-icons'), land = innerWidth > innerHeight, barTop = function () { return bar.getBoundingClientRect().top; };
+      var inScr = function (r) { return r.left >= -1 && r.top >= -1 && r.right <= innerWidth + 1 && r.bottom <= innerHeight + 1; };
+      var ord = Array.prototype.map.call(ics.children, function (x) { return x.id ? x.id.replace('stpr-', '') : (x.getAttribute('data-phpn') || (x.hasAttribute('data-phtrb') ? 'ticket' : (x.hasAttribute('data-phchat') ? 'chat' : (x.hasAttribute('data-phtheme') ? 'theme' : (x.hasAttribute('data-phplan') ? 'plan' : x.className))))); }).join(' ');
+      check('the toolbar\'s order: Live, the symbol, the timeframe, the ticket, draw, undo, redo, Show on chart, alerts, Chat, Chart settings, Snapshot, the theme, Check my bias, Positions & History, Today, Object tree, Watchlist',
+        ord === 'ticket drawbtn undo redo layersbtn alertsbtn chat lookbtn snapbtn theme plan tb td ot wl' && bar.children[0] === $('.ph-live') && bar.children[2] === $('.ph-tf') && bar.children[3] === ics, ord);
+      var shown = Array.prototype.filter.call(ics.children, function (x) { return getComputedStyle(x).display !== 'none'; }), szs = shown.map(function (x) { var r = x.getBoundingClientRect(), g = x.querySelector('svg'); return Math.round(r.width) + 'x' + Math.round(r.height) + '/' + (g ? Math.round(g.getBoundingClientRect().width) : 0); });
+      check('...every one full size (38 px, its icon 21 px): none squeezed', shown.length === 15 && szs.every(function (z) { return z === '38x40/21'; }), szs.join(' '));
+      var bcs = getComputedStyle(bar);
+      check('...it swipes sideways: a finger pans it only sideways, the flick its own (not the page\'s or the chart\'s)', bcs.overflowX === 'auto' && bcs.touchAction === 'pan-x' && bcs.overscrollBehaviorX === 'contain', [bcs.overflowX, bcs.touchAction, bcs.overscrollBehaviorX]);
+      var fa = function (pe) { return getComputedStyle(bar, pe).opacity; };
+      if (bar.scrollWidth > bar.clientWidth + 2) {
+        bar.scrollLeft = 0; await W(400);
+        check('...more than fits: a soft fade at the right edge, none at the left', bar.classList.contains('ph-fr') && !bar.classList.contains('ph-fl') && fa('::after') === '1' && fa('::before') === '0', [bar.className, fa('::before'), fa('::after')]);
+        bar.scrollLeft = bar.scrollWidth; await W(400); var wq = $('.ph-icons [data-phpn="wl"]').getBoundingClientRect();
+        check('...swiped to the end: the Watchlist (last) on screen, the fade at the left now and none at the right', inScr(wq) && wq.right <= bar.getBoundingClientRect().right + 1 && bar.classList.contains('ph-fl') && !bar.classList.contains('ph-fr') && fa('::before') === '1' && fa('::after') === '0', [Math.round(wq.right), bar.className]);
+      } else check('...all of it fits this screen: no fade', !bar.classList.contains('ph-fr') && !bar.classList.contains('ph-fl'), [bar.scrollWidth, bar.clientWidth, bar.className]);
+      var pnl = $('.ph-pnl'), PN = [['wl', 'Watchlist', function () { return document.querySelectorAll('.ph-pnc .pl-wlr').length >= 2 && /EURUSD/.test(($('.ph-pnc .pl-wld') || {}).textContent || '') && !!$('.ph-pnl [data-plwladd]'); }],
+        ['td', 'Today', function () { return !!$('.ph-pnc .pl-tdb') && $('.ph-pnc .pl-tdb').textContent.length > 5; }],
+        ['ot', 'Object tree', function () { return !!$('.ph-pnc .pl-otb') && $('.ph-pnc .pl-otb').textContent.length > 3; }],
+        ['tb', 'Positions & History', function () { return !!$('.ph-tbx [data-pltab="pos"].on') && !!($('.ph-tbx .pl-t') || $('.ph-tbx .pl-wait')) && !!$('.ph-tbx .pl-sum') && getComputedStyle($('.ph-tbx .pl-fold')).display === 'none'; }]];
+      for (var pi = 0; pi < PN.length; pi++) { var pnb = $('.ph-icons [data-phpn="' + PN[pi][0] + '"]'); pnb.click(); await W(450); var pq = pnl.getBoundingClientRect();
+        check('...' + PN[pi][1] + ': the computer\'s panel as a sheet, on screen above the toolbar' + (land ? ', at the right' : ', the chart above it') + ', its button lit',
+          win.classList.contains('ph-pnon') && $('.ph-pnl .ph-chh b').textContent === PN[pi][1] && inScr(pq) && pq.bottom <= barTop() + 1 && (land ? Math.abs(pq.right - innerWidth) <= 1 && pq.width <= innerWidth * 0.46 : pq.top >= innerHeight * 0.3 && pq.width >= innerWidth - 1) && pnb.classList.contains('on') && PN[pi][2](),
+          [$('.ph-pnl .ph-chh b').textContent, [Math.round(pq.left), Math.round(pq.top), Math.round(pq.right), Math.round(pq.bottom)], Math.round(barTop()), pnb.className, PN[pi][2]()]); }
+      $('.ph-tbx [data-pltab="hist"]').click(); await W(600); var hb0 = $('.ph-tbx .pl-tbb');
+      check('...its History tab: the history in the sheet (or asking MT5 for it), a wide table scrolling sideways inside it', $('.ph-tbx [data-pltab="hist"].on') && hb0 && getComputedStyle(hb0).overflowX === 'auto' && ($('.ph-tbx .lctb-t') ? $('.ph-tbx .lctb-t').scrollWidth > hb0.clientWidth : /Asking MT5/.test(hb0.textContent)), hb0 && hb0.textContent.slice(0, 100));
+      $('.ph-tbx [data-pltab="pos"]').click(); await W(300);
+      $('.ph-icons [data-phpn="tb"]').click(); await W(400);
+      check('...its lit button again closes it', !win.classList.contains('ph-pnon') && !$('.ph-icons [data-phpn="tb"]').classList.contains('on'));
+      $('.ph-icons [data-phpn="wl"]').click(); await W(300); $('.ph-icons .ph-chb').click(); await W(400);
+      check('...one sheet at a time: Chat closes the panel', win.classList.contains('ph-chaton') && !win.classList.contains('ph-pnon'), win.className);
+      $('[data-phchatx]').click(); await W(300); $('.ph-icons [data-phpn="ot"]').click(); await W(300); $('[data-phpnx]').click(); await W(300);
+      check('...or its x', !win.classList.contains('ph-pnon') && !win.classList.contains('ph-chaton'));
+      $('#stpr-lookbtn').click(); await W(450); var lkm = $('#stpr-menu.show'), lkr = lkm && lkm.getBoundingClientRect();
+      check('Chart settings: the computer\'s dialog, on screen above the toolbar, ' + (land ? 'scrolling inside on its side' : 'all of it with nothing to scroll'), lkm && lkm.querySelector('.stpr-lk') && inScr(lkr) && lkr.bottom <= barTop() + 1 && (land ? getComputedStyle(lkm).overflowY === 'auto' : lkm.scrollHeight <= lkm.clientHeight + 1),
+        lkr && [Math.round(lkr.left), Math.round(lkr.top), Math.round(lkr.right), Math.round(lkr.bottom), lkm.scrollHeight, lkm.clientHeight]);
+      $('#stpr-lookbtn').click(); await W(300);
+      $('#stpr-snapbtn').click(); await W(450); var snm = $('#stpr-menu.show'), snr = snm && snm.getBoundingClientRect();
+      check('Snapshot: its menu (copy, link, download, blur) on screen above the toolbar', snm && snm.querySelector('[data-snap="img"]') && snm.querySelector('[data-snap="dl"]') && snm.querySelector('[data-snap="edit"]') && inScr(snr) && snr.bottom <= barTop() + 1, snr && [Math.round(snr.top), Math.round(snr.bottom)]);
+      $('#stpr-snapbtn').click(); await W(300);
+      var thb = $('.ph-icons [data-phtheme]');
+      check('the theme button: the sun on the dark platform (Light theme)', !win.classList.contains('pl-lt') && thb.title === 'Light theme' && /circle/.test(thb.innerHTML), thb.title);
+      thb.click(); await W(700);
+      check('...tapped: the platform light, the moon to go back', win.classList.contains('pl-lt') && thb.title === 'Dark theme' && !/circle/.test(thb.innerHTML), [win.className.indexOf('pl-lt') >= 0, thb.title]);
+      thb.click(); await W(700);
+      check('...and dark again', !win.classList.contains('pl-lt') && thb.title === 'Light theme');
+      var pcK = window.__stPlanCheck, pcG = null; window.__stPlanCheck = { open: function (o) { pcG = o || {}; } }; await W(100);
+      $('.ph-icons [data-phplan]').click(); await W(300);
+      check('Check my bias: it opens for the chart\'s symbol', !!(pcG && /EUR/.test(pcG.sym || '')), pcG && Object.keys(pcG));
+      window.__stPlanCheck = pcK;
+      setLanguage('es'); await W(1200);
+      var tts = ['[data-phtheme]', '[data-phplan]', '[data-phpn="tb"]', '[data-phpn="td"]', '[data-phpn="ot"]', '[data-phpn="wl"]', '#stpr-lookbtn', '#stpr-snapbtn', '#stpr-redo'].map(function (q) { var b = $('.ph-icons ' + q); return b && b.title; });
+      check('in Spanish: the buttons\' names', tts.join('|') === 'Tema claro|Revisar mi sesgo|Posiciones e historial|Hoy: sesión, noticias, riesgo|Árbol de objetos|Lista|Ajustes del gráfico|Hacer una captura|Rehacer', tts);
+      $('.ph-icons [data-phpn="tb"]').click(); await W(500);
+      check('...and a panel\'s: Posiciones e historial, its tabs', $('.ph-pnl .ph-chh b').textContent === 'Posiciones e historial' && /Posiciones/.test($('.ph-tbx .pl-tabs').textContent) && /Historial/.test($('.ph-tbx .pl-tabs').textContent), [$('.ph-pnl .ph-chh b').textContent, $('.ph-tbx .pl-tabs').textContent]);
+      $('[data-phpnx]').click(); setLanguage('en'); await W(1200); bar.scrollLeft = 0; await W(200);
       // no logo in the toolbar (Nestor, 29 Oct 2026: "on a phone remove the monitor logo to make more space"), no "All pages" sheet: the exit tile is the way out
       check('no logo in the bottom toolbar and no "All pages" sheet: the exit tile is the way out', !$('.ph-logo') && !$('[data-phlogo]') && !document.querySelector('.st-navsheet-bg') && !window.__stNav && !document.querySelector('.ph-navs') && !!$('.ph-exit'), [win.className, !!window.__stNav]);
       if (!win.classList.contains('ph-full')) { window.scrollTo(0, Math.round(window.scrollY + win.getBoundingClientRect().top)); for (k = 0; k < 30 && !win.classList.contains('ph-full'); k++) await W(100); await W(600); }
