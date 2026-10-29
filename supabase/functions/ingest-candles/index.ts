@@ -107,6 +107,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST")    return json({ error: "POST only" }, 405);
   if (!SUPABASE_URL || !SERVICE_KEY) return json({ error: "server not configured" }, 500);
+  // Paused (29 Oct 2026: the database ran out of its disk IO budget, and the cloud MT5s were posting ~2.5M bars an hour into it):
+  // while the INGEST_PAUSED secret is "1" every batch is answered at once, before anything touches the database. Nothing is lost:
+  // on anything but 200 the EA keeps the batch and sends it again on a later bar (deep history and the hourly top-up keep their
+  // markers, a closed trade's export keeps its queue row). Unset the secret to resume.
+  if (Deno.env.get("INGEST_PAUSED") === "1") return json({ error: "paused", retry: true }, 503);
 
   // deno-lint-ignore no-explicit-any
   let body: any;
