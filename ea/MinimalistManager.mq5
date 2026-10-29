@@ -6679,6 +6679,13 @@ bool HB_Top(int k)
 void HB_Step(int maxPosts=2)
   {
    if(StringLen(g_syncTokenEff)==0) return;
+   // v9.18: ONE chart per terminal (the lowest chart id running this EA, as for the symbols with no chart) sends the history and the
+   // top-ups, for every chart's symbol. Every chart used to, each from its own copy of the shared progress file: a terminal with 9
+   // charts sent the same history 9 times, and the restarts of 29 Oct 2026 were followed by candle floods that ran the database out of
+   // disk IO. A chart that has just become the one (the last one was closed) starts from the progress saved, not its own old copy.
+   static bool s_hbMine=false;
+   if(!RuCloser()){ s_hbMine=false; return; }
+   if(!s_hbMine){ s_hbMine=true; g_hbLoaded=false; }
    // v9.14: the live line first. A year of history going up holds this EA's timer for 20 s or more, and the line's handshake runs on
    // that timer - a chart opened by Live Charts' "chart" command was 26 s from its first live price on the demo (24 Oct 2026). Up to
    // 20 s after the start, the history waits until the line has joined (or is off).
@@ -6687,6 +6694,8 @@ void HB_Step(int maxPosts=2)
    if(g_ceWorked) return;                                    // a closed trade's candles went this bar
    if(PositionsTotal()>0 || OrdersTotal()>0) return;         // never hold the EA up while it manages a trade
    HB_Load();
+   { string me=MQLInfoString(MQL_PROGRAM_NAME);
+     for(long c=ChartFirst(); c>=0; c=ChartNext(c)) if(ChartGetString(c,CHART_EXPERT_NAME)==me) HB_AddSymbol(ChartSymbol(c)); }   // every chart's symbol
    int posts=0;
    for(int s=0;s<g_hbSymN && posts<maxPosts;s++)
       for(int ti=5;ti>=0 && posts<maxPosts;ti--)        // D1 first: the deepest view, and the cheapest
