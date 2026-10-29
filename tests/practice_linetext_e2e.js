@@ -81,6 +81,23 @@
     ok('Middle, Right: on it, short of the price scale', r1 && Math.abs(r1.y + 7 - pane.series.priceToCoordinate(hr.a.price)) < 4 && r1.x + r1.w <= PW, [r1, PW]);
     var raw = JSON.stringify(DW.list.filter(function (d) { return d.text; }).map(function (d) { return [d.type, d.tv || '', d.ta || '']; }));
     ok('kept with the drawings', /"hray","middle","r"/.test(raw) && /"vline","below","l"/.test(raw), raw);
+
+    // off the chart (Nestor, 29 Oct 2026: "why is this label here?" - a line under the prices on show kept its words at the chart's foot,
+    // over the spread): the price scale zoomed with the mouse wheel until one line with words leaves the top and another the bottom -
+    // their words go with them, never pulled into view; back in view, back again
+    DW.list = []; DW.sel = null; P._props();
+    var hT = await drawN('hline', [[X(0.5), Y(0.12)]]); await words(hT, 'LOW TOP'); var hB = await drawN('hline', [[X(0.5), Y(0.8)]]); await words(hB, 'LOW FOOT');
+    var ph = R.height - pane.chart.timeScale().height(), yT = function () { return pane.series.priceToCoordinate(hT.price); }, yB = function () { return pane.series.priceToCoordinate(hB.price); };
+    ok('both lines on the chart: both their words', find('LOW TOP') && find('LOW FOOT') && yT() > 0 && yB() < ph, [yT(), yB(), ph]);
+    var wheel = function (dy) { var r = ch.getBoundingClientRect(); ch.dispatchEvent(new WheelEvent('wheel', { clientX: r.left + PW + 20, clientY: r.top + ph / 2, deltaY: dy, deltaMode: 0, bubbles: true, cancelable: true, view: window })); };
+    for (var z = 0; z < 30 && yT() > -20; z++) { wheel(-120); await W(40); }   // taller candles: the range shrinks round its middle, the top line goes off the top
+    var lt1 = find('LOW TOP'), lf1 = find('LOW FOOT');
+    ok('zoomed until the top line is above the chart: no words for it at the top edge (or anywhere)', yT() < 0 && !lt1, [yT(), lt1]);
+    for (z = 0; z < 30 && yB() < ph + 20; z++) { wheel(-120); await W(40); }
+    lf1 = find('LOW FOOT'); var any = cap().filter(function (q) { return /^LOW /.test(q.s); });
+    ok('...and on until the foot line is under it: no words for either, nothing at the foot', yB() > ph && !lf1 && !any.length, [yB(), ph, any]);
+    ch.dispatchEvent(new MouseEvent('dblclick', { clientX: ch.getBoundingClientRect().left + PW + 20, clientY: ch.getBoundingClientRect().top + ph / 2, bubbles: true, cancelable: true, view: window })); await W(120);
+    ok('the scale back to its fit (a double-click on it): both lines\' words back', yT() > 0 && yB() < ph && find('LOW TOP') && find('LOW FOOT'), [yT(), yB()]);
   } catch (e) { out.push({ name: 'ran', ok: false, got: String(e && e.stack || e) }); }
   return JSON.stringify(out);
 })()
