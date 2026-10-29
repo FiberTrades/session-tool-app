@@ -183,19 +183,19 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
   }
 
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/candles?on_conflict=symbol,tf,t`, {
+  // Only what changes something is written (st_candles_put, 29 Oct 2026): a new bar, a bar gaining its volume, or a recent bar
+  // that changed. Every bar used to be upserted (ON CONFLICT DO UPDATE), so each MT5 sending a symbol rewrote what another had
+  // stored - up to ~2.5M bars an hour on 29 Oct, which ran the database out of its disk IO budget.
+  const put = rows.map((x) => allV ? [x.t, x.o, x.h, x.l, x.c, x.v] : [x.t, x.o, x.h, x.l, x.c]);
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/st_candles_put`, {
     method: "POST",
-    headers: {
-      "content-type": "application/json",
-      apikey: SERVICE_KEY,
-      authorization: `Bearer ${SERVICE_KEY}`,
-      prefer: "resolution=merge-duplicates,return=minimal",
-    },
-    body: JSON.stringify(rows),
+    headers: { "content-type": "application/json", apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` },
+    body: JSON.stringify({ p_symbol: symbol, p_tf: tf, p_rows: put }),
   });
   if (!r.ok) {
     const detail = (await r.text()).slice(0, 300);
-    return json({ error: "db upsert failed", detail }, 500);
+    return json({ error: "db write failed", detail }, 500);
   }
-  return json({ ok: true, upserted: rows.length });
+  const written = Number(await r.json()) || 0;
+  return json({ ok: true, upserted: written, sent: rows.length });
 });
