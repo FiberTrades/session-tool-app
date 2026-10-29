@@ -542,7 +542,7 @@
     // one Replay on a computer (Nestor, 25 Oct 2026: "why have 2 relay buttons now? i like the one on the chart better"): no switch above the
     // chart, Replay's own header has Live, asking first as the top bar's Replay does
     var lvb = $('#stpr-lvback');
-    check('in Replay: no Live | Replay switch above, a Live button in Replay\'s top bar', getComputedStyle($('#lc-mode')).display === 'none' && lvb && getComputedStyle(lvb).display !== 'none' && lvb.closest('.plat-top') && /Live/.test(lvb.textContent), [getComputedStyle($('#lc-mode')).display, lvb && getComputedStyle(lvb).display]);
+    check('in Replay: no Live | Replay switch above, a Live button in Replay\'s top bar', !$('#lc-mode') && lvb && getComputedStyle(lvb).display !== 'none' && lvb.closest('.plat-top') && /Live/.test(lvb.textContent), [!!$('#lc-mode'), lvb && getComputedStyle(lvb).display]);
     check('...and no prop firm progress under the chart (Statistics and Accounts have it)', getComputedStyle($('#lc-pfp')).display === 'none');
     lvb.click(); await W(200);
     check('...Live asks first: Switch to Live?', $('#lc-ask-bg') && /Switch to Live\?/.test($('#lc-ask-bg').textContent), $('#lc-ask-bg') && $('#lc-ask-bg').textContent.slice(0, 60));

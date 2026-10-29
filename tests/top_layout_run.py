@@ -173,13 +173,13 @@ def phone(W, H):
         return res
     new = session(W, H, True, 'app.html', run)
     old = session(W, H, True, '_top_old.html', run)
-    # Phones keep their top (logo, title, docked TV); the tabs sit as a row of icon boxes under the title again (25 Oct 2026, after a day
-    # as a bottom bar), the info row under them.
+    # Phones keep their top (logo, title, docked TV); under the title the info row, then the tab icons (29 Oct 2026).
     for st in ('off', 'on'):
         diff = {k: [old[st][k], new[st][k]] for k in ('h1',) if old[st][k] != new[st][k]}
         t, h = new[st]['tabs'], new[st]['h1']
-        if not (t['t'] >= h['b'] and t['h'] <= 60 and new[st]['meta']['t'] >= t['b']): diff['row'] = [h, t, new[st]['meta']]
-        check('%d phone, TV %s: the top as before, the tab row under the title' % (W, st), not diff, diff)
+        m = new[st]['meta']   # 29 Oct 2026: symbol / session / date / time under the title, the tab icons under them
+        if not (m['t'] >= h['b'] and t['t'] >= m['b'] and t['h'] <= 60): diff['row'] = [h, m, t]
+        check('%d phone, TV %s: the top as before, the info row under the title, then the tab icons' % (W, st), not diff, diff)
     check('%d phone: the TV docked where it was' % W, old['on']['tv'] == new['on']['tv'] and new['on']['tv'] is not None, [old['on']['tv'], new['on']['tv']])
     check('%d phone: no size buttons on the full-width docked TV' % W, not new['btns'], new['btns'])
 

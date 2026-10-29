@@ -16,10 +16,10 @@
     ok('a member signed in: the Charts tab shows (called Charts) with Live (st-lc-on)', getComputedStyle(tab).display !== 'none' && /Charts/.test(tab.textContent) && document.body.classList.contains('st-charts-on') && document.body.classList.contains('st-lc-on') && window.__stLcAllowed(), tab.textContent);
     var fr = document.getElementById('lp-front'); if (fr) fr.style.display = 'none';
     tab.click(); await W(1500);
-    var mode = document.getElementById('lc-mode'), win = document.getElementById('stpr-win');
-    // on a computer the switch above goes (25 Oct 2026: Live's top bar has Replay, Replay's header has Live); the member has Live (lcm-ok)
-    var pgl = document.getElementById('page-livecharts'), deskNow = pgl.classList.contains('lcm-desk');
-    ok('the tab opens on Live, Live and Replay the member\'s (on a computer no switch above: Replay is in the chart\'s top bar)', mode && !mode.hidden && pgl.classList.contains('lcm-ok') && (deskNow ? getComputedStyle(mode).display === 'none' : getComputedStyle(mode).display !== 'none') && mode.querySelector('[data-lcm="live"]').classList.contains('on') && win.parentNode.id === 'lc-host' && win.classList.contains('lc'), [mode && mode.hidden, pgl.className, win.className]);
+    var win = document.getElementById('stpr-win');
+    // no switch above the chart on any device (29 Oct 2026): Live's top bar has Replay, Replay's header has Live; the member has Live (lcm-ok)
+    var pgl = document.getElementById('page-livecharts');
+    ok("the tab opens on Live, Live and Replay the member's (no switch above the chart: Replay is in the chart)", !document.getElementById('lc-mode') && pgl.classList.contains('lcm-ok') && !pgl.classList.contains('lcm-replay') && win.parentNode.id === 'lc-host' && win.classList.contains('lc'), [pgl.className, win.className]);
     ok('...the page titled Charts', document.getElementById('header-mode').textContent === 'Charts', document.getElementById('header-mode').textContent);
     ok('the Academy has no Back Testing box', !document.getElementById('vault-hub-practice'));
     ok('Settings has no "Live Charts for everyone" switch any more', !document.getElementById('admin-lcall') && !document.getElementById('admin-lcall-btn'));

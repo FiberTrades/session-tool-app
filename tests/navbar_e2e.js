@@ -34,9 +34,11 @@
     for (var ml = 0; ml < 2; ml++) {
       try { setLanguage(ml ? 'es' : 'en'); } catch (e) {}
       await W(500);
-      var ms = metaState(), rb = row.getBoundingClientRect(), mb = meta.getBoundingClientRect();
-      ok((ml ? 'ES' : 'EN') + ': the four in one row right under the tab icons, small and whole', !ms.two && ms.tops.every(function (t) { return t === ms.tops[0]; }) && ms.cut === 0
-         && mb.top - rb.bottom >= 0 && mb.top - rb.bottom <= 30 && ms.vfs >= 11 && ms.vfs <= 12.5 && ms.lfs <= 9, { meta: ms, gap: Math.round(mb.top - rb.bottom) });
+      // under the page title, above the tab icons (29 Oct 2026, Nestor: "move them back above")
+      var ms = metaState(), rb = row.getBoundingClientRect(), mb = meta.getBoundingClientRect(), hb = document.querySelector('.header h1').getBoundingClientRect();
+      ok((ml ? 'ES' : 'EN') + ': the four in one row under the title, above the tab icons, small and whole', !ms.two && ms.tops.every(function (t) { return t === ms.tops[0]; }) && ms.cut === 0
+         && mb.top - hb.bottom >= 20 && mb.top - hb.bottom <= 48 && rb.top - mb.bottom >= 8 && rb.top - mb.bottom <= 30 && ms.vfs >= 11 && ms.vfs <= 12.5 && ms.lfs <= 9,
+         { meta: ms, titleToRow: Math.round(mb.top - hb.bottom), rowToTabs: Math.round(rb.top - mb.bottom) });
     }
     try { setLanguage('en'); } catch (e) {}
     await W(400);

@@ -62,23 +62,23 @@
     // ---- one Charts tab: Live | Replay (Nestor, 19 Oct 2026: TradingView's Replay; a confirm on every swap) ----
     for (var rk0 = 0; rk0 < 80 && !(P._s() && P._s().live); rk0++) await W(150);   // live loaded first
     var chipKeep = chipSeen.slice();   // the label's own check (below) is about loading Live; this swap to Replay and back is not
-    var lcm = document.getElementById('lc-mode'), mbtn = function (m) { return lcm.querySelector('[data-lcm="' + m + '"]'); }, askEl = function () { return document.getElementById('lc-ask-bg'); };
+    var rpb = document.getElementById('stpr-lvrp'), lvb = document.getElementById('stpr-lvback'), shown = function (b) { return !!b && getComputedStyle(b).display !== 'none'; }, askEl = function () { return document.getElementById('lc-ask-bg'); };   // no switch over the charts (29 Oct 2026): Replay in Live's header, Live in Replay's
     await W(800);
-    check('the switch over the charts: Live (on, green) | Replay (TradingView\'s rewind icon), and the line under it', !lcm.hidden && mbtn('live').classList.contains('on') && !mbtn('replay').classList.contains('on') && mbtn('replay').querySelector('svg.lc-rw') && /Replay/.test(mbtn('replay').textContent) && /MT5 prices/.test(document.getElementById('lc-msub').textContent), lcm.textContent);
-    mbtn('replay').click(); await W(150);
+    check("no switch over the charts; Live's own header has Replay (TradingView's rewind icon), no Live button", !document.getElementById('lc-mode') && shown(rpb) && rpb.querySelector('svg') && /Replay/.test(rpb.textContent) && !shown(lvb), [!!document.getElementById('lc-mode'), shown(rpb), shown(lvb)]);
+    rpb.click(); await W(150);
     check('Replay asks first: "Switch to Replay?" - live charts stop, practice trades only - Stay on Live / Switch to Replay', askEl() && /Switch to Replay\?/.test(askEl().textContent) && /nothing is sent to MT5/.test(askEl().textContent) && /Stay on Live/.test(askEl().textContent), askEl() && askEl().textContent);
     askEl().querySelector('[data-lca="0"]').click(); await W(300);
-    check('...Stay on Live: nothing changes', !askEl() && P._s() && P._s().live && mbtn('live').classList.contains('on'));
-    mbtn('replay').click(); await W(150); askEl().querySelector('[data-lca="1"]').click();
+    check('...Stay on Live: nothing changes', !askEl() && P._s() && P._s().live && shown(rpb));
+    rpb.click(); await W(150); askEl().querySelector('[data-lca="1"]').click();
     for (var rk = 0; rk < 80 && !(P._s() && !P._s().live && P._panes().length && P._panes()[0].n); rk++) await W(150);
     await W(800);
     var rch = document.getElementById('stpr-chip');
-    check('Switch to Replay: a past day in the same window (REPLAY label, its day and play bar), the switch on Replay, MT5\'s Toolbox put away', P._s() && !P._s().live && win.parentNode.id === 'lc-host' && win.classList.contains('lcp') && rch.textContent === 'Replay' && mbtn('replay').classList.contains('on') && getComputedStyle(document.getElementById('lc-tb')).display === 'none' && getComputedStyle(document.querySelector('.stpr-cb')).display !== 'none', [rch.textContent, win.className]);
-    mbtn('live').click(); await W(150);
+    check('Switch to Replay: a past day in the same window (REPLAY label, its day and play bar), a green Live in its header, MT5\'s Toolbox put away', P._s() && !P._s().live && win.parentNode.id === 'lc-host' && win.classList.contains('lcp') && rch.textContent === 'Replay' && shown(lvb) && !shown(rpb) && getComputedStyle(document.getElementById('lc-tb')).display === 'none' && getComputedStyle(document.querySelector('.stpr-cb')).display !== 'none', [rch.textContent, win.className]);
+    lvb.click(); await W(150);
     check('Live asks too: "Switch to Live?" - Stay in Replay / Switch to Live', askEl() && /Switch to Live\?/.test(askEl().textContent) && /Stay in Replay/.test(askEl().textContent), askEl() && askEl().textContent);
     askEl().querySelector('[data-lca="1"]').click();
     for (rk = 0; rk < 80 && !(P._s() && P._s().live && LC.state().fresh); rk++) await W(250);
-    check('...Switch to Live: the live charts again, the switch on Live', P._s() && P._s().live && win.classList.contains('lc') && mbtn('live').classList.contains('on'), P._s() && P._s().live);
+    check('...Switch to Live: the live charts again, Replay back in its header', P._s() && P._s().live && win.classList.contains('lc') && shown(rpb) && !shown(lvb), P._s() && P._s().live);
     chipSeen.splice(0, chipSeen.length); Array.prototype.push.apply(chipSeen, chipKeep);
     var st = null;
     for (var k = 0; k < 100; k++) { await W(200); st = LC.state(); if (st.live && st.panes === 2) break; }
@@ -91,8 +91,8 @@
     // MT5's Toolbox is joined under the window's live bar since 20 Oct 2026, and fits on the page with it ("make sure that toolbox also fits on the page when i click on charts")
     var tbw = document.getElementById('lc-tb');
     check('the whole window fits the screen under the tabs (charts, the live bar, the clock and MT5\'s Toolbox), scrolled into place', wr.height <= window.innerHeight - tbs.height && wr.bottom <= window.innerHeight + 2 && wr.top >= tbs.bottom - 2 && tbw.parentNode === win && (tbw.hidden || tbw.getBoundingClientRect().bottom <= window.innerHeight + 2), [Math.round(tbs.bottom), Math.round(wr.top), Math.round(lvr.bottom), Math.round(wr.bottom), window.innerHeight, tbw.hidden]);
-    check('the replay\'s own controls are not there (no Replay either); the live bar is', !document.getElementById('stpr-rand') && getComputedStyle(document.querySelector('.stpr-cb')).display === 'none'
-      && getComputedStyle(document.getElementById('stpr-lvrp')).display === 'none' &&getComputedStyle(document.getElementById('stpr-lvbar')).display !== 'none');
+    check('the replay\'s own controls are not there, Replay is in Live\'s header (it asks first, 29 Oct 2026); the live bar is', !document.getElementById('stpr-rand') && getComputedStyle(document.querySelector('.stpr-cb')).display === 'none'
+      && getComputedStyle(document.getElementById('stpr-lvrp')).display !== 'none' && getComputedStyle(document.getElementById('stpr-lvbar')).display !== 'none');
 
     // ---- the line: joined, the EA says hi, the charts ask for the day's minutes, prices flow ----
     for (k = 0; k < 120; k++) { await W(250); st = LC.state(); if (st.ea && st.gotHist && st.fresh) break; }
@@ -220,8 +220,12 @@
     await W(200);
     check('Close trade: Sending... until MT5 answers, then "Closed HH:MM" (pressed, not pressable again)', sending && TM.last(990077) && TM.last(990077).ok && /^Closed \d\d:\d\d$/.test(tb('close').textContent) && tb('close').disabled, [sending, TM.last(990077), tb('close').textContent]);
 
-    // ---- no Replay in Live Charts (Nestor, 18 Oct 2026: Back Testing stays in the Academy tab, nothing live near it) ----
-    check('no Replay button in Live Charts', getComputedStyle(document.getElementById('stpr-lvrp')).display === 'none');
+    // ---- Replay from Live Charts only after asking (18 Oct 2026: nothing live is ever taken for practice; 29 Oct 2026: the switch above
+    //      the chart went, Live's header has Replay, which asks first) ----
+    var rpq = document.getElementById('stpr-lvrp'); rpq.click(); await W(150);
+    var rpa = document.getElementById('lc-ask-bg'), rpAsked = !!rpa && /Switch to Replay\?/.test(rpa.textContent);
+    if (rpa) rpa.querySelector('[data-lca="0"]').click(); await W(200);
+    check('Live\'s header has Replay, and it asks first; Stay on Live keeps the live charts', getComputedStyle(rpq).display !== 'none' && rpAsked && P._s() && P._s().live, [getComputedStyle(rpq).display, rpAsked, P._s() && P._s().live]);
 
     // ---- switching the symbol: every chart turns to gold (Nestor, 18 Oct 2026: "then all the charts turn to gold") ----
     document.getElementById('stpr-sym').click(); await W(120);
@@ -594,11 +598,7 @@
       !!opened && opened[0] === 'livecharts.html?sym=EURUSD' && opened[1] === 'stlivecharts' && P._stage().on && P._s() === s0 && LC.state().live && !!satW && inDoc(satW.document) === P._panes().length && inDoc(document) === 0
       && !!satW.document.getElementById('stpr-mm') && !!satW.document.getElementById('lc-tb') && !!away && /open in its own window/.test(away.textContent), [opened, P._stage(), P._s() === s0, satW && inDoc(satW.document), inDoc(document), away && away.textContent]);
     check("...that window shows Live Charts alone (the app's own bar and tabs are not there)", satW.document.body.querySelectorAll('.tabs, #page-livecharts').length === 0 && satW.document.getElementById('stpr-bg').classList.contains('popped') && /Live Charts/.test(satW.document.title), satW.document.title);
-    await W(900); var lvBtn = document.querySelector('#lc-mode [data-lcm="live"]'), rpBtn = document.querySelector('#lc-mode [data-lcm="replay"]');
-    check('...while it is in its own window the switch here says Live, not Replay (22 Oct 2026: "this screen says replay??")', lvBtn && lvBtn.classList.contains('on') && !rpBtn.classList.contains('on'), [lvBtn && lvBtn.className, rpBtn && rpBtn.className]);
-    var fz = 0, f0 = satW.focus; satW.focus = function () { fz++; };
-    lvBtn.click(); await W(200); satW.focus = f0;
-    check('...and Live pressed brings that window to the front (no Switch to Live? question)', fz > 0 && !document.getElementById('lc-ask-bg'), [fz, !!document.getElementById('lc-ask-bg')]);
+    await W(900);   // no switch in the tab any more (29 Oct 2026): while Live Charts is in its own window the tab shows the card above
     var ek = satW.document.createEvent('Event'); ek.initEvent('keydown', true, true); ek.key = 'o'; ek.code = 'KeyO'; document.body.dispatchEvent(ek); await W(100);
     var ex1 = !!P._s().exec, ek2 = satW.document.createEvent('Event'); ek2.initEvent('keydown', true, true); ek2.key = 'o'; ek2.code = 'KeyO'; satW.document.body.dispatchEvent(ek2); await W(100);
     var ex2 = !!P._s().exec, ek3 = satW.document.createEvent('Event'); ek3.initEvent('keydown', true, true); ek3.key = 'Escape'; satW.document.body.dispatchEvent(ek3); await W(100);
