@@ -92252,6 +92252,10 @@ window.__stAZ = (function () {
   .stpr-win.pl-lt .stpr-favbar button { color: #131722; }
   @media (hover: hover) { .stpr-win.pl-lt .stpr-favbar button:hover { background: #f0f3fa; color: #131722; } }
   #stpr-favbtn.on, #stpr-favbtn[aria-pressed="true"] { color: #f5b300; }
+  /* up over the platform's top bar (29 Oct 2026): the same floating bar, in the top bar's empty stretch (favSpan keeps it there), level with it */
+  .stpr-win.plat .plat-top > .stpr-favbar.up { top: 50%; transform: translateY(-50%); z-index: 40; }
+  .stpr-win.plat.plsat > #stpr-tb2.plat-top { position: relative; }
+  .stpr-favbar.fv-away { opacity: .3; } .stpr-favbar.fv-ghost { pointer-events: none; }
   @media (max-width: 760px) { .stpr-favbar { display: none !important; } }
   /* its order confirm */
   .stpr-cmo-r { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 9px 0; border-bottom: 1px solid var(--border, #2a2e39); font-size: 13px; }
@@ -93733,7 +93737,7 @@ window.__stAZ = (function () {
      zoom) put its whole old block back over the PC's. Now each setting carries the time it was last changed (_kt) and each one goes the
      way of the newer; they are read again when the app comes back into view; and the ones that belong to the device stay its own (how
      many charts, full screen, the chart in hand). */
-  var CFG_LOCAL = { recent: 1, max: 1, layout: 1, lv: 1, lsz: 1, lvCol: 1, act: 1, savedAt: 1, _kt: 1, _kt0: 1, favOn: 1, favPos: 1, favOnP: 1, favPosP: 1 };   // the Favourites toolbar's place and showing: this screen's
+  var CFG_LOCAL = { recent: 1, max: 1, layout: 1, lv: 1, lsz: 1, lvCol: 1, act: 1, savedAt: 1, _kt: 1, _kt0: 1, favOn: 1, favPos: 1, favOnP: 1, favPosP: 1, favDockW: 1 };   // the Favourites toolbar's place, showing and docking: this screen's
   function cfgKt(){ if (!CFG._kt || typeof CFG._kt !== 'object') { var prev = null; try { prev = JSON.parse(localStorage.getItem(LS_CFG) || 'null'); } catch (e) {} CFG._kt = {}; CFG._kt0 = (prev && prev.savedAt) || CFG.savedAt || 0; } return CFG._kt; }
   // what this save changed, against the last one stored here: those settings are stamped now
   function cfgStamp(){ var kt = cfgKt(), now = Date.now(), cur = cfgPractice(), prev = null; try { prev = JSON.parse(localStorage.getItem(LS_CFG) || 'null'); } catch (e) {} if (!prev) return;
@@ -96587,20 +96591,36 @@ window.__stAZ = (function () {
   function favIn(d){ var a = actPane(), mine = panes.filter(function(q){ return q.el && q.el.ownerDocument === d; }); return (a && mine.indexOf(a) >= 0) ? a : (mine[0] || null); }
   // the chart the star button means: the chart in the window it was pressed in (a chart window's own), else this window's active chart
   function favPane(){ var d = null; try { d = UI.w && UI.w.document; } catch (e) {} return (d && d !== SD && favIn(d)) || favIn(SD) || actPane(); }
-  function favSet(p, on){ if (!p) return; if (!CFG.favOnP || typeof CFG.favOnP !== 'object') CFG.favOnP = {}; CFG.favOnP[p.i] = !!on; save(); favPaint(); try { satBar(); } catch (e) {} }
+  function favSet(p, on){ if (!p) return; if (!CFG.favOnP || typeof CFG.favOnP !== 'object') CFG.favOnP = {}; var d = p.el && p.el.ownerDocument;
+    if (d && favDocked(d)) panes.forEach(function(q){ if (q.el && q.el.ownerDocument === d) CFG.favOnP[q.i] = !!on; }); else CFG.favOnP[p.i] = !!on;   // up in the top bar: that window's one bar
+    save(); favPaint(); try { satBar(); } catch (e) {} }
   function favLit(id){ return DW.tool === id; }
   // a tool on the bar picks it; the Emoji tool's picker opens under that bar's smiley (e: the bar), not over the far corner of the chart
   function favUse(id, e){ flyShut(); setTool(id, id === 'emoji' ? e : null); }
-  function favEl(p){ var e = p._fvb; if (e && e.isConnected && e.parentNode === p.el) return e;
-    var doc = p.el.ownerDocument; e = p._fvb = doc.createElement('div'); e.className = 'stpr-favbar'; e.setAttribute('role', 'toolbar'); p.el.appendChild(e);
-    e.addEventListener('click', function(ev){ if (Date.now() - (e._drop || 0) < 400) return; var b = ev.target && ev.target.closest && ev.target.closest('[data-fvt]'); if (b) { DW.at = p; favUse(b.getAttribute('data-fvt'), e); } });
+  // ---- up over the top bar (Nestor, 29 Oct 2026: "i wanna be able to move the favourite bar up here" - "not docking it i just want to be
+  //      able to drag it there if i want to"): the same floating bar, its grip dragged up over the platform's top bar, sits where it is let
+  //      go in the top bar's empty stretch - never over its buttons - and stays there (this screen's: favDockW, 'm' this window, 'p<i>'
+  //      chart i's own window: { x: from the stretch's left }); dragged back down into a chart it floats there again. A desk only. ----
+  function favTop(d){ return d ? d.querySelector('.stpr-win.plat:not(.plph) > .plat-top') : null; }   // that window's top bar, when it has the platform's
+  function favWk(d){ if (d === SD) return 'm'; var p = panes.filter(function(q){ return q.el && q.el.ownerDocument === d; })[0]; return p ? 'p' + p.i : null; }
+  function favUpAt(d){ var k = favWk(d), o = CFG.favDockW; return (k && o && typeof o === 'object' && o[k] && typeof o[k] === 'object') ? o[k] : null; }
+  function favDocked(d){ var top = favTop(d); return !!(favUpAt(d) && top && top._fvNoRoom !== top.clientWidth); }   // (a stretch too short for it: in its chart at that width)
+  function favDockSet(d, at, p, pos){ var k = favWk(d); if (!k) return; if (!CFG.favDockW || typeof CFG.favDockW !== 'object') CFG.favDockW = {}; if (!CFG.favOnP || typeof CFG.favOnP !== 'object') CFG.favOnP = {};
+    CFG.favDockW[k] = at || false;
+    if (at) panes.forEach(function(q){ if (q.el && q.el.ownerDocument === d) CFG.favOnP[q.i] = true; });   // that window's one bar, whichever of its charts is active
+    else if (p) { CFG.favOnP[p.i] = true; if (pos) { if (!CFG.favPosP || typeof CFG.favPosP !== 'object') CFG.favPosP = {}; CFG.favPosP[p.i] = pos; } if (p._fvb) p._fvb.classList.remove('show'); }   // floating again: in the chart it was let go over, there
+    save(); favPaint(); try { satBar(); } catch (e) {} }
+  // where the bar may sit in a top bar: its empty stretch (.pl-sp), clear of the buttons either side; null when it is narrower than the bar
+  function favSpan(top, e){ var sp = top.querySelector(':scope > .pl-sp'); if (!sp || !sp.offsetWidth) return null; var tr = top.getBoundingClientRect(), zf = top.offsetWidth ? tr.width / top.offsetWidth : 1, sr = sp.getBoundingClientRect();
+    var lo = (sr.left - tr.left) / zf + 4, hi = (sr.right - tr.left) / zf - e.offsetWidth - 4; return hi >= lo ? { lo: lo, hi: hi, zf: zf, tl: tr.left } : null; }
+  var FVDROP = 0;   // when it was last let go up there
+  function favInner(F){ return '<span class="fv-grip" title="' + esc(T('Drag to move (up over the top bar too)', 'Arrastra para moverla (también arriba, sobre la barra superior)')) + '">' + FV_GRIP + '</span>'
+      + (F.length ? F.map(function(id){ var n = TOOLN[id], nm = n ? T(n[0], n[1]) : id; return '<button type="button" data-fvt="' + id + '"' + (favLit(id) ? ' class="on"' : '') + ' title="' + esc(nm) + '" aria-label="' + esc(nm) + '">' + TIC[id] + '</button>'; }).join('')
+        : '<span class="fv-empty">' + T('Star a tool (<b>★</b>) to add it here', 'Marca una herramienta con la estrella (<b>★</b>) para añadirla aquí') + '</span>'); }
+  function favWire(e, paneOf, up){
+    e.addEventListener('click', function(ev){ if (Date.now() - (e._drop || 0) < 400) return; var b = ev.target && ev.target.closest && ev.target.closest('[data-fvt]'); if (b) { DW.at = paneOf(); favUse(b.getAttribute('data-fvt'), e); } });
     e.addEventListener('pointerdown', function(ev){ var g = ev.target && ev.target.closest && ev.target.closest('.fv-grip'), bt = !g && ev.target && ev.target.closest && ev.target.closest('[data-fvt]'); if (!g && !bt) return;
-      if (g) { ev.preventDefault(); ev.stopPropagation();   // its grip: anywhere inside its chart, the place kept
-        var r = e.getBoundingClientRect(), wr = p.el.getBoundingClientRect(), dx = ev.clientX - r.left, dy = ev.clientY - r.top; e.classList.add('drag'); try { g.setPointerCapture(ev.pointerId); } catch (x) {}
-        var mv = function(m){ var l = Math.max(0, Math.min(wr.width - r.width, m.clientX - wr.left - dx)), t = Math.max(0, Math.min(wr.height - r.height, m.clientY - wr.top - dy)); e.style.left = Math.round(l) + 'px'; e.style.top = Math.round(t) + 'px'; };
-        var up = function(){ g.removeEventListener('pointermove', mv); g.removeEventListener('pointerup', up); g.removeEventListener('pointercancel', up); e.classList.remove('drag');
-          if (!CFG.favPosP || typeof CFG.favPosP !== 'object') CFG.favPosP = {}; CFG.favPosP[p.i] = { l: parseFloat(e.style.left) || 0, t: parseFloat(e.style.top) || 0 }; save(); };
-        g.addEventListener('pointermove', mv); g.addEventListener('pointerup', up); g.addEventListener('pointercancel', up); return; }
+      if (g) { ev.preventDefault(); ev.stopPropagation(); if (up) favDragUp(e, g, ev); else favDragFloat(e, paneOf(), g, ev); return; }
       // a tool dragged along the bar: into its new place in the list (a press without a move picks it)
       var D = e.ownerDocument, x0 = ev.clientX, moved = false;
       var mv2 = function(m){ if (!moved && Math.abs(m.clientX - x0) < 6) return; moved = true; bt.classList.add('fvmove'); var sib = Array.prototype.filter.call(e.querySelectorAll('[data-fvt]'), function(b){ return b !== bt; }), bef = null;
@@ -96609,21 +96629,68 @@ window.__stAZ = (function () {
       var up2 = function(){ D.removeEventListener('pointermove', mv2, true); D.removeEventListener('pointerup', up2, true); D.removeEventListener('pointercancel', up2, true); bt.classList.remove('fvmove'); if (!moved) return; e._drop = Date.now();
         var ord = Array.prototype.map.call(e.querySelectorAll('[data-fvt]'), function(b){ return b.getAttribute('data-fvt'); }), rest = (CFG.fav || []).filter(function(id){ return ord.indexOf(id) < 0; });
         CFG.fav = ord.concat(rest); save(); favPaint(); try { satBar(); } catch (x) {} };
-      D.addEventListener('pointermove', mv2, true); D.addEventListener('pointerup', up2, true); D.addEventListener('pointercancel', up2, true); });
+      D.addEventListener('pointermove', mv2, true); D.addEventListener('pointerup', up2, true); D.addEventListener('pointercancel', up2, true); }); }
+  // the bar up in a top bar, under the mouse (dx: the grip's offset in it), kept inside the stretch; false when the stretch has no room
+  function favUpMove(top, e, cx, dx){ var s = favSpan(top, e); if (!s) return false; var x = Math.max(s.lo, Math.min(s.hi, (cx - s.tl) / s.zf - dx)); e.style.left = Math.round(x) + 'px'; e._fx = x - s.lo; return true; }
+  // its grip: anywhere inside its chart, the place kept; up over the window's top bar it moves up there (its empty stretch), and stays when let go
+  function favDragFloat(e, p, g, ev){ var D = e.ownerDocument, r = e.getBoundingClientRect(), wr = p.el.getBoundingClientRect(), dx = ev.clientX - r.left, dy = ev.clientY - r.top, top = favTop(D), ub = null, over = false, inTop = false;
+    e.classList.add('drag'); try { g.setPointerCapture(ev.pointerId); } catch (x) {}
+    var mv = function(m){ var tr = top && top.offsetWidth ? top.getBoundingClientRect() : null, o = !!(tr && m.clientY >= tr.top - 4 && m.clientY <= tr.bottom + 2 && m.clientX >= tr.left && m.clientX <= tr.right);
+      inTop = o; if (o) { if (!ub) { ub = favUpEl(D, top); ub._sig = null; favUpFill(ub); ub.classList.add('drag'); } ub.classList.add('show'); o = favUpMove(top, ub, m.clientX, dx / ((favSpan(top, ub) || {}).zf || 1)); if (!o) ub.classList.remove('show'); }
+      else if (ub) ub.classList.remove('show');
+      if (o !== over) { over = o; e.classList.toggle('fv-away', o); }
+      var l = Math.max(0, Math.min(wr.width - r.width, m.clientX - wr.left - dx)), t = Math.max(0, Math.min(wr.height - r.height, m.clientY - wr.top - dy)); e.style.left = Math.round(l) + 'px'; e.style.top = Math.round(t) + 'px'; };
+    var up = function(m){ g.removeEventListener('pointermove', mv); g.removeEventListener('pointerup', up); g.removeEventListener('pointercancel', up); e.classList.remove('drag', 'fv-away'); if (ub) ub.classList.remove('drag');
+      if (inTop && m && m.type === 'pointerup') { FVDROP = Date.now(); favDockSet(D, { x: over && ub ? Math.round(ub._fx || 0) : 0 }); return; }   // (no room there: remembered, and it says so)
+      if (ub) ub.classList.remove('show');
+      if (!CFG.favPosP || typeof CFG.favPosP !== 'object') CFG.favPosP = {}; CFG.favPosP[p.i] = { l: parseFloat(e.style.left) || 0, t: parseFloat(e.style.top) || 0 }; save(); };
+    g.addEventListener('pointermove', mv); g.addEventListener('pointerup', up); g.addEventListener('pointercancel', up); }
+  // up there, its grip: along the stretch it moves there; down into one of the window's charts the bar follows the mouse, floating there when let go
+  function favDragUp(e, g, ev){ var D = e.ownerDocument, top = favTop(D), r = e.getBoundingClientRect(), dx = ev.clientX - r.left, dy = ev.clientY - r.top, zf = ((top && favSpan(top, e)) || {}).zf || 1, gh = null, at = null, moved = false, x0 = e.style.left;
+    e.classList.add('drag'); try { g.setPointerCapture(ev.pointerId); } catch (x) {}
+    var paneAt = function(x, y){ return panes.filter(function(q){ if (!q.el || q.el.ownerDocument !== D || !q.el.offsetWidth) return false; var b = q.el.getBoundingClientRect(); return x >= b.left && x <= b.right && y >= b.top && y <= b.bottom; })[0] || null; };
+    var mv = function(m){ if (!moved && Math.abs(m.clientX - ev.clientX) + Math.abs(m.clientY - ev.clientY) < 4) return; moved = true; var p = paneAt(m.clientX, m.clientY);
+      if (p !== at) { if (gh) { gh.remove(); gh = null; } at = p; e.classList.toggle('fv-away', !!p);
+        if (p) { gh = e.cloneNode(true); gh.className = 'stpr-favbar show drag fv-ghost'; gh.removeAttribute('role'); gh.style.left = gh.style.top = ''; p.el.appendChild(gh); } }
+      if (gh) { var wr = p.el.getBoundingClientRect(), z = p.el.offsetWidth ? wr.width / p.el.offsetWidth : 1, l = Math.max(0, Math.min(p.el.offsetWidth - gh.offsetWidth, (m.clientX - wr.left - dx) / z)), t = Math.max(0, Math.min(p.el.offsetHeight - gh.offsetHeight, (m.clientY - wr.top - dy) / z)); gh.style.left = Math.round(l) + 'px'; gh.style.top = Math.round(t) + 'px'; }   // (a zoomed page: on-screen to its own px)
+      else if (top) favUpMove(top, e, m.clientX, dx / zf); };
+    var up = function(m){ g.removeEventListener('pointermove', mv); g.removeEventListener('pointerup', up); g.removeEventListener('pointercancel', up); e.classList.remove('drag', 'fv-away');
+      var p = at, pos = gh ? { l: parseFloat(gh.style.left) || 0, t: parseFloat(gh.style.top) || 0 } : null; if (gh) { gh.remove(); gh = null; }
+      if (!(m && m.type === 'pointerup') || !moved) { e.style.left = x0; return; }
+      if (p && pos) { favDockSet(D, false, p, pos); return; }
+      if (!CFG.favDockW || typeof CFG.favDockW !== 'object') CFG.favDockW = {}; var k = favWk(D); if (k) { CFG.favDockW[k] = { x: Math.round(e._fx || 0) }; save(); } };   // along the stretch: there
+    g.addEventListener('pointermove', mv); g.addEventListener('pointerup', up); g.addEventListener('pointercancel', up); }
+  function favUpEl(d, top){ var e = d.querySelector('.stpr-favbar.up'); if (e && e.parentNode === top) return e; if (e) e.remove();
+    e = d.createElement('div'); e.className = 'stpr-favbar up'; e.setAttribute('role', 'toolbar'); top.appendChild(e); favWire(e, function(){ return favIn(d); }, true); return e; }
+  function favUpFill(e){ var F = favIds(), sig = F.join(',') + '|' + L() + '|' + F.map(function(id){ return favLit(id) ? 1 : 0; }).join(''); if (e._sig !== sig) { e._sig = sig; e.innerHTML = favInner(F); } }
+  // each window's bar up over its top bar: where it was left in the stretch (kept inside it as the window narrows); a stretch too short for
+  // it, in the window's chart at that width (a note when it was just let go there), up there again when there is room
+  function favDockPaint(){ try { plTopFit(); } catch (x) {} popDocs().forEach(function(d){ try { satTopFit(d); } catch (x) {} });   // the stretch as the top bar now leaves it
+    allDocs().forEach(function(d){ var top = favTop(d), e = d.querySelector('.stpr-favbar.up'), at = favUpAt(d), on = !!(S && top && at && favOn(favIn(d)));
+      if (!on) { if (e && e.classList.contains('show') && !e.classList.contains('drag')) e.classList.remove('show'); return; }
+      e = favUpEl(d, top); favUpFill(e); e.classList.add('show'); var s = favSpan(top, e);
+      if (!s) { var fresh = top._fvNoRoom !== top.clientWidth; top._fvNoRoom = top.clientWidth; e.classList.remove('show'); panes.forEach(function(p){ if (p.el && p.el.ownerDocument === d) try { favBar(p); } catch (x) {} });
+        if (fresh && Date.now() - FVDROP < 2000) { FVDROP = 0; flash(T('No room over this window\'s top bar: it stays in the chart. A wider window has room for it up there.', 'No hay sitio sobre la barra superior de esta ventana: se queda en el gráfico. En una ventana más ancha cabe arriba.'), 4000); } return; }
+      top._fvNoRoom = null; e.style.left = Math.round(Math.max(s.lo, Math.min(s.hi, s.lo + (+at.x || 0)))) + 'px';
+      panes.forEach(function(p){ if (p.el && p.el.ownerDocument === d && p._fvb && p._fvb.classList.contains('show')) p._fvb.classList.remove('show'); }); }); }   // up there: none in its charts
+  function favEl(p){ var e = p._fvb; if (e && e.isConnected && e.parentNode === p.el) return e;
+    var doc = p.el.ownerDocument; e = p._fvb = doc.createElement('div'); e.className = 'stpr-favbar'; e.setAttribute('role', 'toolbar'); p.el.appendChild(e); favWire(e, function(){ return p; }, false);
     return e; }
   var FV_GRIP = '<svg viewBox="0 0 6 14" fill="currentColor"><circle cx="1.5" cy="2" r="1.1"/><circle cx="4.5" cy="2" r="1.1"/><circle cx="1.5" cy="7" r="1.1"/><circle cx="4.5" cy="7" r="1.1"/><circle cx="1.5" cy="12" r="1.1"/><circle cx="4.5" cy="12" r="1.1"/></svg>';
-  function favBar(p){ var e = p._fvb; if (!S || !p.el || !favOn(p)) { if (e) e.classList.remove('show'); return; } e = favEl(p);
+  function favBar(p){ var e = p._fvb; if (!S || !p.el || !favOn(p) || favDocked(p.el.ownerDocument)) { if (e) e.classList.remove('show'); return; } e = favEl(p);   // its window's bar up over the top bar: none here
     var F = favIds(), sig = F.join(',') + '|' + L() + '|' + F.map(function(id){ return favLit(id) ? 1 : 0; }).join('');
-    if (e._sig !== sig) { e._sig = sig; e.innerHTML = '<span class="fv-grip" title="' + esc(T('Drag to move', 'Arrastra para moverla')) + '">' + FV_GRIP + '</span>'
-      + (F.length ? F.map(function(id){ var n = TOOLN[id], nm = n ? T(n[0], n[1]) : id; return '<button type="button" data-fvt="' + id + '"' + (favLit(id) ? ' class="on"' : '') + ' title="' + esc(nm) + '" aria-label="' + esc(nm) + '">' + TIC[id] + '</button>'; }).join('')
-        : '<span class="fv-empty">' + T('Star a tool (<b>★</b>) to add it here', 'Marca una herramienta con la estrella (<b>★</b>) para añadirla aquí') + '</span>'); }
-    var first = !e.classList.contains('show'); e.classList.add('show');
-    if (first) { var P0 = (CFG.favPosP || {})[p.i], W0 = p.el.clientWidth, H0 = p.el.clientHeight, bw = e.offsetWidth, bh = e.offsetHeight;
-      var l = P0 ? P0.l : (W0 - 60 - bw) / 2, t = P0 ? P0.t : 40;   // first time: centred over the chart, under its name and prices
-      e.style.left = Math.round(Math.max(0, Math.min(W0 - bw, l))) + 'px'; e.style.top = Math.round(Math.max(0, Math.min(H0 - bh, t))) + 'px'; } }
+    if (e._sig !== sig) { e._sig = sig; e.innerHTML = favInner(F); }
+    e.classList.add('show'); favFit(p, e);
+    if (!p._fvRO || p._fvRoEl !== p.el) { try { if (p._fvRO) p._fvRO.disconnect(); var V = p.el.ownerDocument.defaultView; if (V.ResizeObserver) { p._fvRO = new V.ResizeObserver(function(){ try { if (p._fvb && p._fvb.classList.contains('show')) favFit(p, p._fvb); } catch (x) {} }); p._fvRO.observe(p.el); p._fvRoEl = p.el; } } catch (x) {} } }   // its chart resized: placed again
+  // where the bar sits in its chart: where it was left (favPosP - a wish, kept), or centred under the chart's name the first time, always
+  // wholly inside the chart: a chart made narrower (a wider side panel, a smaller window, another layout) holds it in, and when there is room
+  // again it goes back to where it was left (Nestor, 29 Oct 2026: "this gets cut off when i widen the chat column")
+  function favFit(p, e){ if (e.classList.contains('drag')) return; var P0 = (CFG.favPosP || {})[p.i], W0 = p.el.clientWidth, H0 = p.el.clientHeight, bw = e.offsetWidth, bh = e.offsetHeight; if (!W0 || !bw) return;
+    var l = P0 ? P0.l : (W0 - 60 - bw) / 2, t = P0 ? P0.t : 40, L0 = Math.round(Math.max(0, Math.min(W0 - bw, l))) + 'px', T0 = Math.round(Math.max(0, Math.min(H0 - bh, t))) + 'px';
+    if (e.style.left !== L0) e.style.left = L0; if (e.style.top !== T0) e.style.top = T0; }
   function favPaint(){ favMig(); var m0 = favIn(SD), on = favOn(m0), fb = $('stpr-favbtn'), tt = on ? T('Hide favourite drawing tools toolbar', 'Ocultar la barra de herramientas favoritas') : T('Show favourite drawing tools toolbar', 'Mostrar la barra de herramientas favoritas');
     if (fb) { fb.classList.toggle('on', on); fb.setAttribute('aria-pressed', on ? 'true' : 'false'); if (fb.title !== tt) { fb.title = tt; fb.setAttribute('aria-label', tt); } }   // this window's active chart's
-    panes.forEach(function(p){ try { favBar(p); } catch (e) {} }); }
+    panes.forEach(function(p){ try { favBar(p); } catch (e) {} }); try { favDockPaint(); } catch (e) {} }
   var FLYW = null;   // the window a tools group's list is open in (each chart window its own, 21 Oct 2026)
   function flyShut(){ var any = false; SD.querySelectorAll('#stpr-tools .stpr-tg.open').forEach(function(s){ s.classList.remove('open', 'away'); var c = s.querySelector('[data-tgrp]'); if (c) c.setAttribute('aria-expanded', 'false'); any = true; }); FLYW = null; return any; }
   function flyOpen(g){ var s = SD.querySelector('#stpr-tools .stpr-tg[data-grp="' + g + '"]'); if (!s) return; var by = UI.w || window, was = s.classList.contains('open') && FLYW === by; flyShut(); if (was) return;   // open in another window: it opens here instead
@@ -97510,7 +97577,7 @@ window.__stAZ = (function () {
       MENU_BTNS.forEach(function(id){ [tm, lf].forEach(function(c){ var mb = c && c.querySelector('#' + id); if (mb) mb.setAttribute('aria-expanded', (menuFor && MENUD === d && MENUA === id) ? 'true' : 'false'); }); });   // the main window's open menu is not this window's
       var lb = tm.querySelector('#stpr-layersbtn'); if (lb) lb.classList.toggle('dot', layersOffIn(d));
       var nb = tm.querySelector('#stpr-newsbtn'); if (nb) nb.classList.toggle('on', newsOnIn(d));
-      var fbp = (lf && lf.querySelector('#stpr-favbtn')) || tm.querySelector('#stpr-favbtn'); if (fbp) { var fon = favOn(favIn(d)); fbp.classList.toggle('on', fon); fbp.setAttribute('aria-pressed', fon ? 'true' : 'false'); } }); }   // a chart window's star: its own chart's bar
+      var fbp = (lf && lf.querySelector('#stpr-favbtn')) || tm.querySelector('#stpr-favbtn'); if (fbp) { var fon = favOn(favIn(d)); fbp.classList.toggle('on', fon); fbp.setAttribute('aria-pressed', fon ? 'true' : 'false'); } if (plat) try { satTopFit(d); } catch (e) {} }); }   // a chart window's star: its own chart's bar
   // a chart in a window of its own while Live is the platform: the same look - its top bar (the chart's symbol, its timeframe, the Session
   // Indicator, the tools there, the theme, full screen) and the drawing tools down the left; no Trade Manager, no Positions (Nestor, 25 Oct
   // 2026: "any extra new windows opened in new windows they need the same feel but you can remove the trade manager and the toolbox from the
@@ -97761,7 +97828,7 @@ window.__stAZ = (function () {
     on(w, 'mousemove', dwMove); on(w, 'mouseup', dwUp); on(w, 'keyup', WH.kup);
     on(d, 'pointerdown', function(){ UI.w = w; }, true); on(d, 'keydown', function(e){ UI.w = w; WH.key(e); });
     on(d, 'pointerup', WH.handOff, true); on(d, 'pointercancel', WH.handOff, true); ohWire(d, on);
-    on(d.documentElement, 'mouseleave', WH.execOff); on(w, 'blur', WH.execOff);
+    on(d.documentElement, 'mouseleave', WH.execOff); on(w, 'blur', WH.execOff); on(w, 'resize', function(){ try { favDockPaint(); } catch (x) {} });   // its docked Favourites bar: room again
     d.getElementById('stpr-win').addEventListener('click', WH.win);
     var pm = d.getElementById('stpr-menu'); pm.addEventListener('change', WH.mchg); pm.addEventListener('click', lookClick); pm.addEventListener('input', lookInput); pm.addEventListener('change', WH.mchg2); pm.addEventListener('keydown', WH.mkey);
     // its toolbar: a copy of this window's, kept the same (satBar); a press there is the same press here, its menu opening there
@@ -99540,7 +99607,7 @@ window.__stAZ = (function () {
         chartMenu(p, xy.x, xy.y); return; }   // the bare chart: the chart's own menu (26 Oct 2026)
       if (!(DW.multi && DW.multi.indexOf(h.i) >= 0)) { DW.sel = h.i; DW.multi = null; } DW.at = p; updDel(); showCtx(p, xy.x, xy.y); }, true);
     window.addEventListener('keyup', WH.kup = function(e){ if (e.key === 'Control' && DW.snap) { DW.snap = null; dirty(); } });
-    window.addEventListener('resize', WH.rsz = function(){ try { cmpBtnPlace(); } catch (e) {} if (LOG.open) logTop(); stripThumb(); placeMM(); lcFit(); });
+    window.addEventListener('resize', WH.rsz = function(){ try { cmpBtnPlace(); } catch (e) {} if (LOG.open) logTop(); stripThumb(); placeMM(); lcFit(); try { favDockPaint(); } catch (e) {} });   // (a docked Favourites bar: room again)
     window.addEventListener('orientationchange', function(){ setTimeout(function(){ try { placeMM(); } catch (e) {} }, 300); });
     // Execution mode ends when the mouse leaves the window - off the app, onto another monitor - or the app loses the focus,
     // as the EA disarms it when the cursor leaves the chart (Nestor, 17 Oct 2026: "when the mouse goes off the screen to a
@@ -99963,12 +100030,20 @@ window.__stAZ = (function () {
     if (b._st !== on) { b._st = on; b.innerHTML = on ? PL_BACKIC : b._ic; }
     var t = on ? T('Back to the app window', 'Volver a la ventana de la app') : T('Open in a new window', 'Abrir en una ventana nueva'); if (b.title !== t) { b.title = t; b.setAttribute('aria-label', t); } }
   function plTopFit(){ try { plPopSync(); } catch (e) {} var E = PL.el, win = $('stpr-win'), top = E.top; if (!PL.on || PL.ph || !top || !win) return; var w = top.clientWidth; if (!w) return;
-    var pb = top.querySelector('.pl-plan'), k = w + '|' + (PL.rp ? 'rp|' + ((S && S.playing) ? 1 : 0) + ($('stpr-dayt') || {}).textContent : '') + win.classList.contains('pl-notm') + '|' + (pb ? pb.hidden : '') + '|' + (E.tfs._h || '') + '|' + E.si.className + '|' + document.documentElement.lang + '|' + Array.prototype.filter.call(top.children, function(c){ return c.offsetWidth > 0; }).length;   // a button that shows later (Record) fits again
-    if (PL.ptK === k) return; PL.ptK = k; var n = 0; for (var i = 1; i <= 7; i++) win.classList.remove('pt' + i);
-    var over = function(){ if (top.scrollWidth > top.clientWidth + 1) return true; var tr = top.getBoundingClientRect(), lim = tr.right - (parseFloat(getComputedStyle(top).paddingRight) || 0) + 0.5, mx = 0;
-      Array.prototype.forEach.call(top.querySelectorAll(':scope > *, :scope > #stpr-tb2 > *'), function(k){ var r = k.getBoundingClientRect(); if (r.width && r.right > mx) mx = r.right; }); return mx > lim; };   // every item inside the bar's padding
+    var pb = top.querySelector('.pl-plan'), k = w + '|' + (PL.rp ? 'rp|' + ((S && S.playing) ? 1 : 0) + ($('stpr-dayt') || {}).textContent : '') + win.classList.contains('pl-notm') + '|' + (pb ? pb.hidden : '') + '|' + (E.tfs._h || '') + '|' + E.si.className + '|' + document.documentElement.lang + '|' + ptKids(top);   // a button that shows later (Record) fits again
+    if (PL.ptK === k) return; PL.ptK = k; PL.pt = ptFit(win, top); try { favDockPaint(); } catch (e) {} }   // (the Favourites bar up there: its stretch changed)
+  function ptKids(top){ return Array.prototype.filter.call(top.querySelectorAll(':scope > *, :scope > .stpr-tbm > *'), function(c){ return c.offsetWidth > 0 && !c.classList.contains('stpr-favbar'); }).length; }   // (the Favourites bar up there sits in the stretch: not one)
+  // the top bar's items narrowed step by step (pt1 - pt7: shorter words, then fewer buttons) until every one is inside its padding
+  function ptFit(win, top){ var n = 0; for (var i = 1; i <= 7; i++) win.classList.remove('pt' + i);
+    var over = function(){ if (top.scrollWidth > top.clientWidth + 1) return true; var tr = top.getBoundingClientRect(), zf = top.offsetWidth ? tr.width / top.offsetWidth : 1, lim = tr.right - (parseFloat(getComputedStyle(top).paddingRight) || 0) * zf + 0.5, mx = 0;   /* (the page zoomed: boxes on screen, the padding not) */
+      Array.prototype.forEach.call(top.querySelectorAll(':scope > *, :scope > #stpr-tb2 > *, :scope > .stpr-tbm > *'), function(k){ var r = k.getBoundingClientRect(); if (r.width && r.right > mx) mx = r.right; }); return mx > lim; };   // every item inside the bar's padding
     while (over() && n < 7) { n++; win.classList.add('pt' + n); }
-    PL.pt = n; }
+    return n; }
+  // a chart's own window with the platform's look: its top bar narrowed the same way (it had nothing: its icons ran off its right end)
+  function satTopFit(d){ var win = d.getElementById('stpr-win'), top = favTop(d); if (!win || !top) return; var w = top.clientWidth; if (!w) return;
+    var tm = top.querySelector('.stpr-tbm'), tf = d.querySelector('.pl-sattfs'), sy = d.querySelector('.pl-ssym'), si = d.querySelector('.pl-satsi');
+    var k = w + '|' + (tm ? String(tm._h || '').length + ':' + tm.childElementCount : '') + '|' + (tf ? tf._h || '' : '') + '|' + (sy ? sy._h || '' : '') + '|' + (si ? si.className : '') + '|' + d.documentElement.lang + '|' + ptKids(top);
+    if (top._ptK === k) return; top._ptK = k; ptFit(win, top); try { favDockPaint(); } catch (e) {} }
   function plClick(e){ if (!PL.on || PL.ph) return; var t = e.target, b; if (!t || !t.closest) return; if (plRulesClick(t)) return;
     if (t.closest('[data-pltdgo]')) { var tb0 = document.querySelector('.tab[data-page="bias"]'); if (tb0) tb0.click(); return; }
     if ((b = t.closest('[data-plr]'))) { var st = plSt(), k = b.getAttribute('data-plr'), nx = plPn() === k ? '' : k; if (PL.rp) st.rpn = nx; else st.pn = nx; plSave(); plClasses(); platPaint(); plRightFit(); plSideSync(); dirty(); return; }   // its own panel; the open one's icon closes the column
