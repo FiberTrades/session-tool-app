@@ -112,6 +112,7 @@
     // ================= Part 2: what each Post button hands over =================
     var posts = [];
     window.STCommunity.postToChannel = async function (ch, en, es, rep) { var id = uuid(++seq); posts.push({ ch: ch, rep: rep || null, id: id, en: String(en) }); await W(30); return { id: id }; };
+    var realRule = window.__stLocaliseRuleLine;
     window.__stLocaliseRuleLine = async function (a, b) { return [a, b]; };
     buildBiasMessageMaybeTranslated = async function () { return buildBiasMessage(); };
     buildReviewMessageMaybeTranslated = async function () { return buildReviewMessage(); };
@@ -154,6 +155,36 @@
     switchBiasSlot(0); data.bias.postedOn = ymd; data.bias.copiedAt = yd.toISOString(); data.bias.direction = 'Bearish'; renderBiasPreview(); await W(100);
     btn.click(); await W(900);
     ok('a bias posted yesterday is not replaced by today\'s', posts.length === 5 && posts[4].rep === null, posts.map(function (p) { return p.rep; }));
+
+    // ---- a slow translator never holds "Posting..." up (29 Oct 2026: it waited seconds on a copy only the clipboard uses) ----
+    var slow = 0, realBuild = buildBiasMessageMaybeTranslated, realPc = window.STCommunity.postToChannel;
+    buildBiasMessageMaybeTranslated = async function () { slow++; await W(3000); return buildBiasMessage(); };
+    var sent = null; window.STCommunity.postToChannel = async function (ch, en, es, rep) { sent = performance.now(); return realPc(ch, en, es, rep); };
+    data.bias.direction = 'Bullish'; renderBiasPreview(); await W(100);
+    var t0 = performance.now(); btn.click(); await W(900);
+    ok('the post goes at once, not after the translated copy', sent !== null && sent - t0 < 500 && slow === 0, [sent && Math.round(sent - t0), slow]);
+    window.STCommunity.postToChannel = async function () { throw new Error('offline'); };
+    data.bias.direction = 'Bearish'; renderBiasPreview(); await W(100);
+    btn.click(); await W(5200);
+    ok('the translated copy is built only when the post did not go (for the clipboard)', slow === 1, slow);
+    window.STCommunity.postToChannel = realPc; buildBiasMessageMaybeTranslated = realBuild;
+    // the rule line: never more than 2.5 s, remembered for its text, and a failed translation is not remembered
+    var realTr = window.stTranslateText, keepMem = localStorage.getItem('st_rule_tr'), RULE = 'poner en BE mis entradas';
+    localStorage.removeItem('st_rule_tr');
+    var lbl = function (lang) { return (window.__stBuildInLang(lang, function () { return t('savedbias.rule'); }) + '            ').slice(0, 12); };
+    var mEn = 'EUR/USD\n' + lbl('en') + RULE, mEs = 'EUR/USD\n' + lbl('es') + RULE;
+    window.stTranslateText = async function (x, f, to) { await W(4000); return to === 'en' ? 'put my entries at BE' : x; };
+    t0 = performance.now(); var r1 = await realRule(mEn, mEs), dt = performance.now() - t0;
+    ok('a slow rule translation lets the post go after 2.5 s, as built', dt < 3000 && r1[0] === mEn && r1[1] === mEs && !localStorage.getItem('st_rule_tr'), [Math.round(dt), r1]);
+    window.stTranslateText = async function (x, f, to) { return x; };   // every engine failed: the text comes back as it was
+    await realRule(mEn, mEs);
+    ok('a failed translation is not remembered', !localStorage.getItem('st_rule_tr'), localStorage.getItem('st_rule_tr'));
+    window.stTranslateText = async function (x, f, to) { return to === 'en' ? 'put my entries at BE' : x; };
+    var r2 = await realRule(mEn, mEs);
+    window.stTranslateText = async function () { await W(10000); return null; };
+    t0 = performance.now(); var r3 = await realRule(mEn, mEs); dt = performance.now() - t0;
+    ok('the rule\'s translation is remembered: the next post does not ask again', /put my entries at BE/.test(r2[0]) && r3[0] === r2[0] && r3[1] === r2[1] && dt < 100, [Math.round(dt), r3[0]]);
+    window.stTranslateText = realTr; try { if (keepMem === null) localStorage.removeItem('st_rule_tr'); else localStorage.setItem('st_rule_tr', keepMem); } catch (e) {}
 
     // ---- review ----
     posts.length = 0;

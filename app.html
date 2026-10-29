@@ -23267,7 +23267,7 @@ try {
     });
   }
   doBiasCopyAndProceed._go = async function (btn) {
-    const msg = await withTranslatingButton(btn, () => buildBiasMessageMaybeTranslated());
+    // (the clipboard's translated copy is built only if the post does not go: it held "Posting..." up by seconds - 29 Oct 2026)
     // Posted in both languages: the boxed summary is built from options the app already
     // translates, so the reader gets "En rango" rather than a translator's "Alcance".
     // The clipboard fallback keeps the poster's own language, which is what they can read.
@@ -23278,7 +23278,7 @@ try {
     // Today's earlier post of this bias, if there is one: this post takes its place (12 Oct 2026).
     const _biasOld = (data.bias.postedId && (data.bias.postedOn === todayDateStr() || _biasPostState(data.bias) === 'changed')) ? data.bias.postedId : null;
     // No "Posted to community" pop-up: the button turns into "Posted 07:53" (Nestor, 28 Sep 2026).
-    try{ _postedRow = await window.STCommunity.postToChannel('pre-session-bias', _biasEn, _biasEs, _biasOld); }catch(e){ _postedRow = null; try{ await _stClipQuick(msg); }catch(_){} }
+    try{ _postedRow = await window.STCommunity.postToChannel('pre-session-bias', _biasEn, _biasEs, _biasOld); }catch(e){ _postedRow = null; try{ await _stClipQuick(await withTranslatingButton(btn, () => buildBiasMessageMaybeTranslated())); }catch(_){} }
     const nowIso = new Date().toISOString();
     data.bias.copiedAt = nowIso;
     // What went out, for the Posted button (only when it really posted; the clipboard fallback keeps the old button).
@@ -27226,7 +27226,7 @@ try {
       const _rel = _stPostLock(btn); if (!_rel) return;   // one post at a time
       try {
       jumpToDiscord('review');
-      const msg = await withTranslatingButton(btn, () => buildReviewMessageMaybeTranslated());
+      // (the clipboard's translated copy only if the post does not go - 29 Oct 2026)
       // Both languages, then the free-text rule line localised: see the bias post.
       const _revSrc = window.__stBuildInLang('en', buildReviewMessage);   // also what the Posted button compares against
       const [_revEn, _revEs] = await window.__stLocaliseRuleLine(
@@ -27235,7 +27235,7 @@ try {
       let _revRow = null;
       // No "Posted to community" pop-up: the button says Posted (Nestor, 28 Sep 2026).
       const _revOld = _stPostedGet(_reviewPostKey());   // this review's earlier post: the new one takes its place
-      try{ _revRow = await window.STCommunity.postToChannel('post-session-review', _revEn, _revEs, _revOld && _revOld.id); }catch(e){ _revRow = null; try{ await _stClipQuick(msg); }catch(_){} }
+      try{ _revRow = await window.STCommunity.postToChannel('post-session-review', _revEn, _revEs, _revOld && _revOld.id); }catch(e){ _revRow = null; try{ await _stClipQuick(await withTranslatingButton(btn, () => buildReviewMessageMaybeTranslated())); }catch(_){} }
       if (_revRow && _revRow.id) { _stPostedSet(_reviewPostKey(), _revRow.id, _revSrc); try { saveData(); } catch (e) {} }
       const hasTrades = (data.review.trades || []).length > 0;
       if (hasTrades) await performReviewSave({ skipBackupModal: true });
@@ -38207,7 +38207,16 @@ try {
       if (!raw || !raw.trim()) return out;                      // no rule set this week
       // 'auto' source: the member may have typed the rule in either language, and assuming the
       // wrong one mangles a rule that was already correct.
-      const [en, es] = await Promise.all([tr(raw, 'auto', 'en'), tr(raw, 'auto', 'es')]);
+      // Remembered for its text (the week's rule is the same every day), and a slow translator never holds the post up: after
+      // 2.5 s the bodies go as built (29 Oct 2026: three translations in a row took 7.7 s).
+      let mem = {}; try { mem = JSON.parse(localStorage.getItem('st_rule_tr') || '{}') || {}; } catch (e) { mem = {}; }
+      const k = raw.trim().slice(0, 300);
+      let en = mem[k] && mem[k].en, es = mem[k] && mem[k].es;
+      if (!en || !es) {
+        const late = new Promise(res => setTimeout(() => res([null, null]), 2500));
+        [en, es] = await Promise.race([Promise.all([tr(raw, 'auto', 'en'), tr(raw, 'auto', 'es')]), late]);
+        if (en && es && en.trim() && es.trim() && (en.trim() !== k || es.trim() !== k)) { try { const ks = Object.keys(mem); if (ks.length >= 20) delete mem[ks[0]]; mem[k] = { en: en, es: es }; localStorage.setItem('st_rule_tr', JSON.stringify(mem)); } catch (e) {} }
+      }
       if (en && en.trim()) { hitEn.lines[hitEn.i] = lblEn + en.trim(); out[0] = hitEn.lines.join('\n'); }
       if (hitEs && es && es.trim()) { hitEs.lines[hitEs.i] = lblEs + es.trim(); out[1] = hitEs.lines.join('\n'); }
     } catch (e) { /* leave both bodies as built */ }
