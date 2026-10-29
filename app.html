@@ -94825,7 +94825,7 @@ window.__stAZ = (function () {
       var pc = p.el.querySelector('.stpr-pc'), r = (pc || p.el).getBoundingClientRect(), aw = 0;
       try { aw = p.chart.priceScale('right').width() || 0; } catch (e) {}
       var x1 = r.left - gr.left + r.width - aw, x0 = Math.max(r.left - gr.left, x1 - 250), y0 = r.top - gr.top + head;
-      lvIdeas(PS(p).sym).forEach(function(x){ lvLevels(x).forEach(function(o){ var y = p.series.priceToCoordinate(o.price);
+      lvMyIdeas(PS(p).sym).forEach(function(x){ lvLevels(x).forEach(function(o){ var y = p.series.priceToCoordinate(o.price);
         if (y != null && isFinite(y)) out.push({ x: x0, y: y0 + y - 12, w: x1 - x0, h: 24 }); }); }); });
     return out; }
   /* the Charts platform's trade tags are page elements over the chart (plTags), so the chart's own picture misses them: drawn in as they
@@ -97594,7 +97594,44 @@ window.__stAZ = (function () {
     openMenu(anchor, lvAccHtml(false), 'acct'); clearTimeout(LV.accTm);
     LV.accTm = setTimeout(function(){ if (menuFor !== 'acct') return; var any = lvAccs().some(function(o){ return o.at >= LV.accT0 - 500; }); if (!any) return; var m = $('stpr-menu'); if (m) m.innerHTML = lvAccHtml(true); }, 1500); }
   function lvAccPick(lg){ closeMenu(); if (!S || !S.live) return; var cur = lvOwnEA(); LV.tmF = null; CFG.lvLg = String(lg); save();
-    if (cur && String(cur.lg) === String(lg)) return; goLive(S.sym.raw); }
+    if (cur && String(cur.lg) === String(lg)) return; if (!lvAccSwap()) goLive(S.sym.raw); }
+  /* Another account to trade with, the charts kept (Nestor, 29 Oct 2026: "why when you change between lead account and follow accounts
+     or just other accounts in the charts, the charts have to reload?" - each pick ran goLive: every chart made again, its history
+     fetched again, the drawings laid again, "Loading your live chart..." in between). Now, as TradingView changes a broker's feed, the
+     charts, their drawings, indicators and view stay where they are and only the data source moves to that account's EA: its own
+     candles from the warm cache when it was on screen before (the minutes since then asked for), else the ones on screen until its
+     own land (all asked for at once); its price from the hub at once when the hub is that account, else from its first tick; its
+     broker's name for the symbol (EURUSD.x) and its digits. The marks, positions, Trade Manager and Toolbox follow it. A chart on the
+     store's 5-minute candles (no EA had it) still starts again: its minutes have to come from the start. */
+  var LVW = { k: [] };   // the warm cache: each account's last candles per symbol and day (and its Toolbox), the 16 latest
+  function lvWKey(F, ea){ return String((ea && ea.lg) || '') + '|' + (ea && ea.hub ? 'hub|' : '') + F.sym.raw + '|' + S.day; }
+  function lvWPut(k, v){ LVW[k] = v; LVW.k = LVW.k.filter(function(x){ return x !== k; }).concat([k]); while (LVW.k.length > 16) delete LVW[LVW.k.shift()]; }
+  function lvAccSwap(){ if (!S || !S.live) return false; var moves = [];
+    allFeeds().forEach(function(F){ var ea = eaFor(F.sym), o = F.ea; if (!ea || (o && o.raw === ea.raw && String(o.lg || '') === String(ea.lg || '') && !o.hub === !ea.hub)) return; moves.push({ F: F, ea: ea }); });
+    if (!moves.length) { lcAcctSync(); lvTm(); LV.sig = ''; render(); return true; }
+    if (moves.some(function(m){ return m.F.baseTf !== 1 && vNum(m.ea.v) >= 9.00; })) return false;
+    var tb0 = tbEA(); if (tb0) lvWPut('tb|' + tb0, { acct: TB.acct, hist: TB.hist });
+    S.exec = false; S.pv = null; if (LV.hold) LV.hold = null; LV.ord = null;   // an order being aimed, held or just sent was the other account's: never carried over
+    lvMMOff();   // the panel: the old EA's values set aside, the new one's put in below
+    var h = hubEA();
+    moves.forEach(function(m){ var F = m.F, ea = m.ea, o = F.ea;
+      if (o) lvWPut(lvWKey(F, o), { base: F.base, pre: F.pre || [], tfh: F.tfh || null, digits: F.digits });
+      var c = LVW[lvWKey(F, ea)];
+      F.ea = ea; F.parts = {}; F.tfp = {}; F.tfa = {}; F.clockOff = 0; F.histAt = 0;
+      if (c) { F.base = c.base.slice(); F.pre = c.pre.slice(); F.tfh = Object.assign({}, c.tfh || F.tfh || {}); F.tfOld = null; F.gotHist = true; }
+      else { F.base = F.base.slice(); F.pre = (F.pre || []).slice(); F.tfh = Object.assign({}, F.tfh || {}); F.tfOld = {}; Object.keys(F.tfh).forEach(function(t){ F.tfOld[t] = 1; }); F.gotHist = false; }   // tfOld: asked of the new EA again (lvTfAsk)
+      if (ea.raw && F.sym.name !== ea.raw) F.sym = Object.assign({}, F.sym, { name: ea.raw });   // what this broker calls it
+      var dg = +ea.dg || (c && c.digits) || F.digits;
+      if (dg && dg !== F.digits) { F.digits = dg; panes.forEach(function(q){ if (PS(q) === F) try { q.series.applyOptions({ priceFormat: { type: 'price', precision: dg, minMove: Math.pow(10, -dg) } }); } catch (e) {} }); }
+      var q = WL.q[ea.raw]; if (h && String(h.lg) === String(ea.lg) && q && q.b > 0 && Date.now() - (q.at || 0) < 10000) { F.px = { b: q.b, a: q.a, sp: q.a >= q.b ? q.a - q.b : null, t: nowS() }; F.at = q.at; }   // the hub is that account: its price now
+      if (c) { lvMergePre(F);   // its minutes before the day under the 1-minute charts again, its other timeframes' history
+        panes.forEach(function(q2){ var tf = SRC[q2.tf]; if (PS(q2) !== F || tf === 1 || !F.tfh[tf] || (F.sym.tf[tf] && !(F.nost && F.nost[tf]))) return; lvSetStatic(q2, F.tfh[tf].filter(function(b){ return b.time + tf * 60 <= S.f.open; }), false); });
+        var last = F.base.length ? F.base[F.base.length - 1].time : 0; lvHist(F, last ? Math.max(3, Math.ceil((nowS() - last) / 60) + 3) : 0); }   // only the minutes since it was here
+      else lvHist(F); });
+    TB.rid = ''; TB.tk = null; var tc = LVW['tb|' + tbEA()]; TB.acct = tc ? tc.acct : null; TB.hist = tc ? tc.hist : null; tbPaint();   // the Toolbox: that account's
+    lvMMApply(); LV.sig = ''; lvCloudAll(); lcAcctSync(); lvTm(); render();
+    try { window.__stLiveLine.tickle(); } catch (e) {}   // the line watches that account's EA now: the other's stops sending
+    return true; }
   try { localStorage.removeItem('st_fill_snd'); } catch (e) {}   // the sound once picked from a file (gone 18 Oct 2026): its copy in this browser goes too
   // ---- MT5's Toolbox under Live Charts (Nestor, 18 Oct 2026: "yes like you would have in MT5, look at the photo attached, maybe you
   //      should copy that and add the small history tab ... i would like to see the commissions like in MT5 history"). Trade: the
@@ -98159,13 +98196,13 @@ window.__stAZ = (function () {
   function lvTfAsk(){ var ln = window.__stLiveLine; if (!lvData() || !ln || !ln.hist || (ln.joined && !ln.joined())) return;
     var now = Date.now(), want = null;
     panes.forEach(function(q){ if (want) return; var X = PS(q), src = SRC[q.tf]; if (src === 1 || !X.ea || vNum(X.ea.v) < 9.01 || (X.sym.tf[src] && !(X.nost && X.nost[src]))) return;
-      X.tfh = X.tfh || {}; X.tfa = X.tfa || {}; if (X.tfh[src] || now - (X.tfa[src] || 0) < 20000) return; want = { X: X, src: src }; });
+      X.tfh = X.tfh || {}; X.tfa = X.tfa || {}; if ((X.tfh[src] && !(X.tfOld && X.tfOld[src])) || now - (X.tfa[src] || 0) < 20000) return; want = { X: X, src: src }; });
     if (!want) return; want.X.tfa[want.src] = now; ln.hist(want.X.ea.raw, 5000, want.src, want.X.ea.hub, want.X.ea.hub ? null : want.X.ea.lg); }   // all it gives (D1: about 20 years), once per timeframe
   function lvBarsTf(F, p){ var tf = +p.tf; if (!(SRC[tf] === tf) || (F.sym.tf[tf] && !(F.nost && F.nost[tf]))) return;
     var acc = (F.tfp = F.tfp || {})[tf] || (F.tfp[tf] = { rows: [], parts: {} });
     String(p.rows || '').split(';').forEach(function(r){ var b = parseBar(r); if (b) acc.rows.push(b); });
     acc.parts[p.i] = 1; if (Object.keys(acc.parts).length < (+p.of || 1)) return;
-    delete F.tfp[tf]; if (lvClockOff(acc.rows, tf, null)) { F.clockOff = Date.now(); return; }   // see lvClockOff: asked again in 20 s
+    delete F.tfp[tf]; if (F.tfOld) delete F.tfOld[tf]; if (lvClockOff(acc.rows, tf, null)) { F.clockOff = Date.now(); return; }   // see lvClockOff: asked again in 20 s
     var m = {}; acc.rows.forEach(function(b){ m[b.time] = b; });
     (F.tfh = F.tfh || {})[tf] = Object.keys(m).map(Number).sort(function(a, b){ return a - b; }).map(function(t){ return m[t]; });
     panes.forEach(function(q){ if (PS(q) === F && SRC[q.tf] === tf) lvSetStatic(q, F.tfh[tf].filter(function(b){ return b.time + tf * 60 <= S.f.open; }), false); });
@@ -98232,6 +98269,9 @@ window.__stAZ = (function () {
     if (force) setTimeout(function(){ if (S) panes.forEach(function(p){ viewPane(p, true); }); }, 80);
     liveHeader(); liveBar(); lvBadges(); paintMM(); panes.forEach(function(p){ try { drawOv(p); } catch (e) {} }); alertTick(); }   // + the EA's panel (orders, 18 Oct 2026)
   // the member's open trades on a symbol, from the live feed (the Session Live cards)
+  // the open trades a chart shows (its lines, the Trade Manager's rows): the account it trades with only (lvMarkLgs, as the marks - 29 Oct
+  // 2026: another account picked, its trades take their place); a trade without a login, or no account known yet, shows as before
+  function lvMyIdeas(sym){ var lgs = lvMarkLgs(); return lvIdeas(sym).filter(function(i){ var lg = i.r && i.r.login; return !lgs.length || lg == null || lg === '' || lgs.indexOf(String(lg)) >= 0; }); }
   function lvIdeas(sym){ sym = sym || (S && S.sym); var out = []; if (!sym) return out; try { var L0 = (window.__stLive && window.__stLive.openIdeas) ? window.__stLive.openIdeas() : [];
       L0.forEach(function(idea){ var r = idea && (idea.main || idea); if (!r || !r.symbol || canon(r.symbol) !== sym.key) return; var tk = r.tick || {}; if (!(isFinite(tk.op) && isFinite(tk.rpx))) return;
         out.push({ r: r, tk: tk, long: r.direction !== 'short', at: Math.floor((r.openedAt || Date.parse(r.opened_at) || 0) / 1000) }); }); } catch (e) {} return out; }
@@ -98288,14 +98328,14 @@ window.__stAZ = (function () {
     LTR.open = open;
     var due = !LTR.at || now - LTR.at > 120000; if (LTR.soon && LTR.soon.length && now >= LTR.soon[0]) { LTR.soon.shift(); due = true; }
     if (due && !LTR.busy) lvTrLoad(u); }
-  function lvSig(){ return JSON.stringify(feeds().map(function(F){ return lvIdeas(F.sym).map(lvLevels); })); }
+  function lvSig(){ return JSON.stringify(feeds().map(function(F){ return lvMyIdeas(F.sym).map(lvLevels); })); }
   // A trade's SL, TP, BE line and T / P steps can be dragged (18 Oct 2026): each carries its key (lt|ticket|kind|step); one being
   // dragged or sent sits where it was let go (LT) until MT5's next figures move it there
   var LT = { k: null, price: 0, wait: false, at: 0 };
   function ltKey(r, o){ if (o.color === '#5F5F6E') return null; var t = String(o.title || ''), m, b = 'lt|' + r.ticket + '|';
     if (/^SL/.test(t)) return b + 'sl|'; if (t === 'TP') return b + 'tp|'; if (t === 'BE') return b + 'be|';
     if ((m = /^T(\d+)$/.exec(t))) return b + 'ts|' + (m[1] - 1); if ((m = /^P(\d+)/.exec(t))) return b + 'pc|' + (m[1] - 1); return null; }
-  function liveLines(p){ var hd = !showOn(p, 'marks'); p._plLv = []; p._plHide = hd; lvIdeas(PS(p).sym).forEach(function(x){ lvLevels(x).forEach(function(o){ var k = ltKey(x.r, o), mv = k && LT.k === k && LT.price > 0;
+  function liveLines(p){ var hd = !showOn(p, 'marks'); p._plLv = []; p._plHide = hd; lvMyIdeas(PS(p).sym).forEach(function(x){ lvLevels(x).forEach(function(o){ var k = ltKey(x.r, o), mv = k && LT.k === k && LT.price > 0;
     if (PL.on) { var pr = mv ? LT.price : o.price, c = plLineC(o); p._plLv.push({ x: x, o: o, k: k, price: pr, c: c }); addLine(p, pr, c, o.lineStyle, '', k, hd); return; }   // the platform: its tags (plTags)
     addLine(p, mv ? LT.price : o.price, o.color, o.lineStyle, mv && LT.wait ? o.title + T(' · sending…', ' · enviando…') : o.title, k, hd); }); }); }
   // let go: a confirm box by the line, then the command to MT5 (the EA does what the same drag does there)
@@ -98312,7 +98352,7 @@ window.__stAZ = (function () {
       (q._plLv || []).forEach(function(o){ if (o.k === k) { hit = true; o.price = pr; } });
       if (hit) { try { drawOv(q); } catch (e) {} } }); }
   function ltDrop(k, p){
-    var a = k.split('|'), tk = a[1], kind = a[2], ix = a[3] === '' ? null : +a[3], x = lvIdeas(PS(p).sym).filter(function(o){ return String(o.r.ticket) === tk; })[0];
+    var a = k.split('|'), tk = a[1], kind = a[2], ix = a[3] === '' ? null : +a[3], x = lvMyIdeas(PS(p).sym).filter(function(o){ return String(o.r.ticket) === tk; })[0];
     if (!x || LT.k !== k || !(LT.price > 0)) { LT.k = null; linesAll(); return; }
     var TM = window.__stTM, st = TM ? TM.state(x.r) : 'line';
     if (st !== 'on') { LT.k = null; linesAll(); eaMsg(TM ? TM.whyTxt(st) : '', { k: 'cmd', head: T('Not sent to MT5', 'No enviado a MT5'), red: true }); return; }
@@ -98332,7 +98372,7 @@ window.__stAZ = (function () {
         setTimeout(function(){ if (LT.k === k && !LT.wait) { LT.k = null; linesAll(); } }, 15000); }); }, sg, isFinite(mAt) ? plSg(mAt, plCur()) : ''); }
   // the open trades on this symbol: what each is, MT5's state and Close trade
   function lvTm(){ var el = $('stpr-lvtm'); if (!el) return; var h = '';
-    if (S && S.live && window.__stTM) h = lvIdeas(S.sym).map(function(x){ var r = x.r, R = isFinite(+x.tk.r) ? +x.tk.r : NaN;
+    if (S && S.live && window.__stTM) h = lvMyIdeas(S.sym).map(function(x){ var r = x.r, R = isFinite(+x.tk.r) ? +x.tk.r : NaN;
       // no side / symbol / R label in front (Nestor, 19 Oct 2026: "i dont need this, i have the toolbox to get this information")
       return '<div class="stpr-lvtr" data-tk="' + esc(String(r.ticket)) + '" data-side="' + (x.long ? 'buy' : 'sell') + '">' + window.__stTM.row(r) + '</div>'; }).join('');
     if (el._h !== h) { el.innerHTML = h; el._h = h; } }
@@ -99843,7 +99883,7 @@ window.__stAZ = (function () {
     _newsActuals: newsActuals, _newsState: function(){ return NEWS; }, _newsEvery: newsEvery, _newsTick: newsTick,
     _newsCard: function(i, k){ var p = panes[i || 0]; if (!p) return null; var h = k == null ? null : (p._news || [])[k]; newsCard(p, h || null); return h ? (p.card ? p.card.textContent : '') : null; },
     _dwAdopt: function(raw, list){ dwAdopt('L|' + raw, list, Date.now()); },   // a list from the server (tbSync's test)
-    _lvTr: function(rows){ LTR.rows = (rows || []).map(lvTrNorm).filter(Boolean); LTR.at = Date.now(); if (S && S.live) render(); }, _lvTrList: function(){ return S ? lvTrList(S).map(function(x){ return x.ticket; }) : []; }, _lvMarkLgs: lvMarkLgs, _tmAt: function(i, x, y){ return tmAt(panes[i || 0], x, y); }, _rtGo: function(i){ rtGo(panes[i || 0]); }, _rtOff: function(i){ return rtOff(panes[i || 0]); }, _tmCardText: function(i, tk){ var p = panes[i || 0], x = p && lvTrList(PS(p)).filter(function(q){ return q.ticket === String(tk); })[0]; if (!x) return null; var c = document.createElement('div'); tmCard(p, { g: { list: [x] }, x: 100, top: 100, bot: 110, above: true }, c); return c.textContent; }, _tmk: function(i){ var p = panes[i || 0]; return p ? p._tmk : null; }, _arw: function(i){ var p = panes[i || 0]; return (p && p.series.__stArw) ? p.series.__stArw.items : []; } };
+    _lvTr: function(rows){ LTR.rows = (rows || []).map(lvTrNorm).filter(Boolean); LTR.at = Date.now(); if (S && S.live) render(); }, _lvTrList: function(){ return S ? lvTrList(S).map(function(x){ return x.ticket; }) : []; }, _lvMyIdeas: function(){ return S ? lvMyIdeas(S.sym).map(function(i){ return String(i.r.ticket); }) : []; }, _lvMarkLgs: lvMarkLgs, _tmAt: function(i, x, y){ return tmAt(panes[i || 0], x, y); }, _rtGo: function(i){ rtGo(panes[i || 0]); }, _rtOff: function(i){ return rtOff(panes[i || 0]); }, _tmCardText: function(i, tk){ var p = panes[i || 0], x = p && lvTrList(PS(p)).filter(function(q){ return q.ticket === String(tk); })[0]; if (!x) return null; var c = document.createElement('div'); tmCard(p, { g: { list: [x] }, x: 100, top: 100, bot: 110, above: true }, c); return c.textContent; }, _tmk: function(i){ var p = panes[i || 0]; return p ? p._tmk : null; }, _arw: function(i){ var p = panes[i || 0]; return (p && p.series.__stArw) ? p.series.__stArw.items : []; } };
 })();
 </script>
 

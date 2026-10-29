@@ -106,6 +106,9 @@ def handle(handler):
     q = dict(urllib.parse.parse_qsl(u.query)); fn = u.path.rsplit('/', 1)[-1]
     try: args = json.loads(q.get('a') or '{}')
     except Exception: args = {}
+    try: lag = float(os.environ.get('ST_STUB_MS') or 0) / 1000.0   # ST_STUB_MS=400: answer as slowly as the real store (a timing test)
+    except ValueError: lag = 0
+    if lag > 0: import time; time.sleep(lag)
     body = json.dumps(answer(fn, args, int(q.get('offset') or 0), int(q.get('limit') or 1000))).encode()
     handler.send_response(200); handler.send_header('Content-Type', 'application/json'); handler.send_header('Content-Length', str(len(body)))
     handler.end_headers(); handler.wfile.write(body)
