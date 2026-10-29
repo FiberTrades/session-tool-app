@@ -11,7 +11,8 @@
     await W(800);
     var html = await fetch('/app.html?x=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.text(); });
     ok('the calendar hands every read of the figures to the charts', /window\.__stPractice\._newsActuals\(rows\)/.test(html));
-    ok('Live Charts\' clock asks for figures every second it runs', /\n    newsTick\(\);   \/\/ a release's figure as it lands\n    lvTrTick\(\);/.test(html));
+    // \r?: a Windows checkout serves app.html with CRLF line ends (29 Oct 2026: the check failed on every such copy; the clock still asks)
+    ok('Live Charts\' clock asks for figures every second it runs', /\r?\n    newsTick\(\);   \/\/ a release's figure as it lands\r?\n    lvTrTick\(\);/.test(html));
 
     var P = window.__stPractice, C = P._cfg(); C.layout = 1; C.tfs = [15, 60, 240, 5]; C.syms = []; C.mini = false; C.max = false;
     window.__stLcForce = true;
