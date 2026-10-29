@@ -31,9 +31,9 @@
       window.scrollTo(0, Math.round(window.scrollY + win.getBoundingClientRect().top)); for (var k2 = 0; k2 < 30 && !win.classList.contains('ph-full'); k2++) await W(100); await W(700);
       var wr = win.getBoundingClientRect();
       ok('scrolled to it: Replay fills the screen', win.classList.contains('ph-full') && Math.abs(wr.width - innerWidth) < 2 && Math.abs(wr.height - innerHeight) < 2 && Math.abs(wr.top) < 1, [win.className, Math.round(wr.top), Math.round(wr.width), Math.round(wr.height)]);
-      var bar = ['.ph-logo', '.ph-live', '.ph-bar #stpr-sym', '.ph-tf', '.ph-icons #stpr-drawbtn', '.ph-icons #stpr-undo', '.ph-icons #stpr-layersbtn', '.ph-icons #stpr-alertsbtn'];
+      var bar = ['.ph-live', '.ph-bar #stpr-sym', '.ph-tf', '.ph-icons #stpr-drawbtn', '.ph-icons #stpr-undo', '.ph-icons #stpr-layersbtn', '.ph-icons #stpr-alertsbtn'];
       ok('no Chat in the toolbar in Replay (as on a computer)', !vis0($('.ph-chb')));
-      ok('the bottom toolbar: the logo, REPLAY, the symbol, the timeframe, the tools - all on screen', bar.every(function (s) { return onScr($(s)); }) && /REPLAY/.test($('.ph-live').textContent), bar.filter(function (s) { return !onScr($(s)); }));
+      ok('the bottom toolbar: REPLAY (no logo since 29 Oct 2026), the symbol, the timeframe, the tools - all on screen', bar.every(function (s) { return onScr($(s)); }) && /REPLAY/.test($('.ph-live').textContent), bar.filter(function (s) { return !onScr($(s)); }));
       var rr = ['.ph-rpr #stpr-daybtn', '.ph-rpr #stpr-back', '.ph-rpr #stpr-play', '.ph-rpr #stpr-fwd', '.ph-rpr #stpr-speed', '.ph-rpr #stpr-goto'];
       ok('over the trade\'s bar: the day, back, Play, step, the speed and Go to, all on screen', rr.every(function (s) { return onScr($(s)); }), rr.filter(function (s) { return !onScr($(s)); }));
       ok('under them: back to the open, the three sessions, Today; the progress bar along the top edge', vis0($('.ph-rps #stpr-ses')) && $('.ph-rps #stpr-ses').querySelectorAll('[data-ses]').length === 3 && vis0($('.ph-rps #stpr-today')) && vis0($('.ph-rpk .stpr-track')));
