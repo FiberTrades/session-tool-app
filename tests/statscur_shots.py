@@ -12,7 +12,7 @@ SERVE = sys.argv[2] if len(sys.argv) > 2 else ROOT
 TAG = 'before' if len(sys.argv) > 2 else 'after'
 os.makedirs(SHOTS, exist_ok=True)
 SRC = open(os.path.join(HERE, 'statscur_e2e.js'), encoding='utf-8').read()
-REDRAW = ("(async function(){ var W = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }; try { window.__scD.accounts[1].currency = 'USD'; } catch (e) {}"
+REDRAW = ("(async function(){ var W = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }; var st = document.createElement('style'); st.textContent = '#st-offline-bar { display: none !important; }'; document.head.appendChild(st); try { window.__scD.accounts[1].currency = 'USD'; } catch (e) {}"
           " data.viewScope = 'lifetime'; try { renderTradesStats(); } catch (e) {} await W(400); var b = document.querySelector('.stx-tab[data-stx=\"overview\"]'); if (b) b.click(); await W(500); return 1; })()")
 RECT = ("JSON.stringify((function(sel){ var e = document.querySelector(sel); if (!e) return null; e.scrollIntoView({ block: 'start' }); var r = e.getBoundingClientRect();"
         " return { x: r.left + scrollX, y: r.top + scrollY, w: r.width, h: r.height }; })('%s'))")
