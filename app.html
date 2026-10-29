@@ -96296,35 +96296,45 @@ window.__stAZ = (function () {
   function impCls(imp){ var s = String(imp || '').toLowerCase(); return /holiday/.test(s) ? 'hol' : (/high/.test(s) ? 'high' : 'med'); }
   function impRank(e){ var c = impCls(e.impact); return c === 'high' ? 2 : (c === 'med' ? 1 : 0); }
   // Economic events as TradingView marks them (Nestor, 28 Oct 2026, who loves its markers: "country-flag circles on the time axis, with a
-  // red ring for high impact"): each release a round flag of its country at its time, along the bottom of the plot, ringed in its impact's
-  // colour; releases on the same candle overlap a little, highest impact in front, a "+n" past three; hover or tap one for the card
-  var NFLAG = { USD: '1f1fa-1f1f8', EUR: '1f1ea-1f1fa', GBP: '1f1ec-1f1e7', JPY: '1f1ef-1f1f5', CHF: '1f1e8-1f1ed', AUD: '1f1e6-1f1fa', CAD: '1f1e8-1f1e6', NZD: '1f1f3-1f1ff', CNY: '1f1e8-1f1f3' }, NFI = {};
-  function nFlag(ccy){ var c = NFLAG[String(ccy || '').toUpperCase()]; if (!c) return null; var im = NFI[c];
-    if (!im) { im = NFI[c] = new Image(); im.onload = function(){ im._ok = true; dirty(); }; im.src = new URL('vendor/flags-twemoji-15.1.0/' + c + '.svg', document.baseURI).href; }   // the emoji set's flags, from this site
+  // red ring for high impact"; 29 Oct, beside TradingView's: "the ones above from tradingview look much clearer and better"): each release
+  // a round flag of its country (circle-flags, art made for circles) at its time, a little above the time axis: the flag, a white gap, a
+  // thin ring in its impact's colour. Releases on one candle sit side by side, highest impact first, "+n" past three; groups that would
+  // touch are nudged apart, never stacked. Each flag is drawn once at its size in device pixels and copied pixel for pixel: no blur.
+  var NFLAG = { USD: 'us', EUR: 'eu', GBP: 'gb', JPY: 'jp', CHF: 'ch', AUD: 'au', CAD: 'ca', NZD: 'nz', CNY: 'cn' }, NFI = {}, NFC = {};
+  function nFlagImg(c){ var im = NFI[c]; if (!im) { im = NFI[c] = new Image(); im.onload = function(){ im._ok = true; dirty(); };
+      im.src = new URL('vendor/circle-flags-2.8.0/' + c + '.svg', document.baseURI).href; }   // from this site
     return im._ok ? im : null; }
+  function nFlagBmp(ccy, D, dpr){ var c = NFLAG[String(ccy || '').toUpperCase()]; if (!c) return null; var px = Math.round(D * dpr), k = c + '|' + px; if (NFC[k]) return NFC[k];
+    var im = nFlagImg(c); if (!im) return null; var cv = document.createElement('canvas'); cv.width = px; cv.height = px; var cx = cv.getContext('2d');
+    cx.imageSmoothingQuality = 'high'; cx.drawImage(im, 0, 0, px, px); return (NFC[k] = cv); }
   function nImp(e){ var s2 = String(e && e.impact || '').toLowerCase(); return /high/.test(s2) ? 2 : (/med/.test(s2) ? 1 : 0); }   // red, orange, grey (low and holidays)
   function drawNews(p, g, pw, ph){
     if (p.tf > 240 || !NEWS.rows.length) return;
-    var R = 9, OFF = 11, MAX = 3, COL = ['#8a8794', '#f4a531', '#f23645'], groups = {};
+    var sm = PL.ph || phone(), FD = sm ? 13 : 15, GAP = 2, RING = 1.75, OR = FD / 2 + GAP + RING, STEP = 2 * OR + 3, MAX = 3, COL = ['#9598a1', '#f7931a', '#f23645'], groups = {}, G = [];
+    var dpr = 1; try { dpr = (p.el.ownerDocument.defaultView || window).devicePixelRatio || 1; } catch (e) {}
     var ccyOk = window.__stNewsCcyOk || function(){ return true; };   // only the calendar's countries (19 Oct 2026)
     NEWS.rows.forEach(function(e){ var t = Math.floor(Date.parse(e.at) / 1000); if (!(t >= 0) || t > S.now || !ccyOk(e.currency)) return; var k = keyOf(Math.max(p.tf, PS(p).baseTf), t); (groups[k] = groups[k] || []).push(e); });
-    Object.keys(groups).forEach(function(k){ var x = xOfT(p, +k); if (x == null) return; x = Math.round(x);
-      var list = groups[k].sort(function(a, b){ return nImp(b) - nImp(a); }), n = list.length, shown = Math.min(n, MAX), extra = n - shown, cnt = shown + (extra > 0 ? 1 : 0),
-        w = (shown - 1) * OFF + (extra > 0 ? 26 : 0), x0 = x - ((shown - 1) * OFF) / 2, y = ph - 4 - R;   // w: the hit's width, the "+n" in it
-      if (x0 + w < -R || x0 > pw + R) return;
-      if (extra > 0) newsMore(g, x0 + (shown - 1) * OFF + R + 6, y, 7, extra);   // "+n" just past the last flag, clear of it
-      for (var q = shown - 1; q >= 0; q--) newsFlag(g, x0 + q * OFF, y, R, list[q].currency, COL[nImp(list[q])]);
-      p._news.push({ x: x, y: y, hw: w / 2 + R, e: list[0], list: list, n: n }); });
+    Object.keys(groups).forEach(function(k){ var x = xOfT(p, +k); if (x == null) return;
+      var list = groups[k].sort(function(a, b){ return nImp(b) - nImp(a); }), n = list.length, shown = Math.min(n, MAX), cnt = shown + (n > shown ? 1 : 0);
+      G.push({ x: x, list: list, n: n, shown: shown, w: (cnt - 1) * STEP + 2 * OR }); });
+    // left to right: a group that would touch the one before moves right, never on top of it
+    G.sort(function(a, b){ return a.x - b.x; }); var lastR = -1e9;
+    G.forEach(function(q){ var l = q.x - q.w / 2; if (l < lastR + 3) l = lastR + 3; q.l = l; lastR = l + q.w; });
+    var y = Math.round((ph - 6 - OR) * dpr) / dpr;
+    G.forEach(function(q){ if (q.l + q.w < -OR || q.l > pw + OR) return;
+      for (var i = 0; i < q.shown; i++) newsFlag(g, q.l + OR + i * STEP, y, FD, GAP, RING, q.list[i].currency, COL[nImp(q.list[i])], dpr);
+      if (q.n > q.shown) newsMore(g, q.l + OR + q.shown * STEP, y, OR, q.n - q.shown);
+      p._news.push({ x: q.l + q.w / 2, y: y, hw: q.w / 2 + 2, e: q.list[0], list: q.list, n: q.n }); });
   }
-  // one release: its country's flag in a circle, a dark gap, the ring in its impact's colour (a currency without a flag: its letters)
-  function newsFlag(g, x, y, R, ccy, col){ var im = nFlag(ccy); g.save(); g.setLineDash([]);
-    g.beginPath(); g.arc(x, y, R + 1, 0, Math.PI * 2); g.fillStyle = '#131722'; g.fill();
-    g.save(); g.beginPath(); g.arc(x, y, R - 1.5, 0, Math.PI * 2); g.clip();
-    if (im) { var D = (R - 1.5) * 2 * 36 / 24; g.drawImage(im, x - D / 2, y - D / 2, D, D); }
-    else { g.fillStyle = '#2a2e39'; g.fillRect(x - R, y - R, 2 * R, 2 * R); g.fillStyle = '#d1d4dc'; g.font = "700 6.5px 'AppNum','DM Mono',monospace"; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(ccy || '?').slice(0, 3), x, y + 0.5); }
-    g.restore(); g.beginPath(); g.arc(x, y, R - 0.5, 0, Math.PI * 2); g.lineWidth = 2; g.strokeStyle = col; g.stroke(); g.restore(); }
-  function newsMore(g, x, y, R, n){ g.save(); g.setLineDash([]); g.beginPath(); g.arc(x, y, R, 0, Math.PI * 2); g.fillStyle = '#2a2e39'; g.fill(); g.lineWidth = 1.5; g.strokeStyle = '#131722'; g.stroke();
-    g.fillStyle = '#d1d4dc'; g.font = "700 8px 'AppNum','DM Mono',monospace"; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('+' + (n > 9 ? '9' : n), x, y + 0.5); g.restore(); }
+  // one release: the ring in its impact's colour, a white gap, its country's flag (a currency without one: its letters)
+  function newsFlag(g, x, y, FD, GAP, RING, ccy, col, dpr){ x = Math.round(x * dpr) / dpr; var r0 = FD / 2, bm = nFlagBmp(ccy, FD, dpr);
+    g.save(); g.setLineDash([]);
+    g.beginPath(); g.arc(x, y, r0 + GAP, 0, Math.PI * 2); g.fillStyle = '#ffffff'; g.fill();
+    if (bm) { var px = bm.width / dpr, lx = Math.round((x - r0) * dpr) / dpr, ty = Math.round((y - r0) * dpr) / dpr; g.imageSmoothingEnabled = false; g.drawImage(bm, lx, ty, px, px); }
+    else { g.beginPath(); g.arc(x, y, r0, 0, Math.PI * 2); g.fillStyle = '#2a2e39'; g.fill(); g.fillStyle = '#ffffff'; g.font = "700 6px 'AppNum','DM Mono',monospace"; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(ccy || '?').slice(0, 3), x, y + 0.5); }
+    g.beginPath(); g.arc(x, y, r0 + GAP + RING / 2, 0, Math.PI * 2); g.lineWidth = RING; g.strokeStyle = col; g.stroke(); g.restore(); }
+  function newsMore(g, x, y, R, n){ x = Math.round(x); g.save(); g.setLineDash([]); g.beginPath(); g.arc(x, y, R - 1, 0, Math.PI * 2); g.fillStyle = '#ffffff'; g.fill(); g.lineWidth = 1.5; g.strokeStyle = '#9598a1'; g.stroke();
+    g.fillStyle = '#131722'; g.font = "700 9px 'AppNum','DM Mono',monospace"; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('+' + (n > 9 ? '9' : n), x, y + 0.5); g.restore(); }
   function newsAt(p, x, y){ return newsAt0(p, x, y) || tmAt(p, x, y); }   // a news disc first, else a trade's arrow (Live Charts)
   // a trade's arrow under the mouse: drawn by __stArrows (the library's size and gap from the candle), so measured the same way
   function tmAt(p, x, y){ if (!S || !S.live || !showOn(p, 'hist') || !(p._tmk && p._tmk.length)) return null;
