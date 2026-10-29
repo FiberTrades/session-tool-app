@@ -120,10 +120,15 @@ window.__stGifHold = (function(){
       localStorage.setItem(KEY, JSON.stringify(o));
     }catch(_){}
   }
+  function winOf(w){ try{ return (w.ownerDocument && w.ownerDocument.defaultView) || window; }catch(_){ return window; } }   // the window the GIF is in (Live Charts' own window too, 29 Oct 2026)
   function arm(w){
     if(!w || w.__stgifT) return;
-    w.__stgifT = setTimeout(function(){ try{ w.classList.add('stgif-ready'); markSeen(w); }catch(_){} }, 10000);
+    w.__stgifT = winOf(w).setTimeout(function(){ try{ w.classList.add('stgif-ready'); markSeen(w); }catch(_){} }, 10000);
   }
+  function obsOf(w){ var v = winOf(w); if(v === window) return obs || (obs = mkObs(window)); return v.__stGifObs || (v.__stGifObs = mkObs(v)); }
+  function mkObs(v){ var IO = v.IntersectionObserver || window.IntersectionObserver, o = new IO(function(entries){
+      entries.forEach(function(en){ if(!en.isIntersecting) return; o.unobserve(en.target); arm(en.target); });   // seen once is all this needs to know
+    }, { threshold: 0.25 }); return o; }
   return function(w){
     try{
       if(!w || w.__stgifSeen) return;
@@ -136,16 +141,7 @@ window.__stGifHold = (function(){
       try{ reduce = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); }catch(_){}
       if(reduce){ w.classList.add('stgif-ready'); return; }
       if(!window.IntersectionObserver){ arm(w); return; }   // very old browser: time from load
-      if(!obs){
-        obs = new IntersectionObserver(function(entries){
-          entries.forEach(function(en){
-            if(!en.isIntersecting) return;
-            obs.unobserve(en.target);     // seen once is all this needs to know
-            arm(en.target);
-          });
-        }, { threshold: 0.25 });
-      }
-      obs.observe(w);
+      obsOf(w).observe(w);   // in the GIF's own window: an observer of another window never sees it
     }catch(_){ try{ w.classList.add('stgif-ready'); }catch(__){} }
   };
 })();
@@ -256,7 +252,7 @@ window.__stGifPlay = (function(){
    Bound to the GIF rather than the message row (which IS the hover target on desktop) because a
    phone has no skimming - every touch is deliberate - and the row already owns taps for replies and
    menus. Not capturing and not stopping propagation: the lightbox handlers already ignore GIFs. */
-document.addEventListener('click', function(e){
+function __stGifTap(e){
   try{
     if(window.matchMedia && window.matchMedia('(hover: hover)').matches) return;
     var t = e.target;
@@ -264,7 +260,8 @@ document.addEventListener('click', function(e){
     if(!w || !w.classList.contains('stgif-ready')) return;   // still playing its ten seconds
     window.__stGifPlay.replay(w);
   }catch(_){}
-});
+}
+document.addEventListener('click', __stGifTap);
 /* ONE listener for every GIF the app will ever render. `load` does not bubble, but it is visible to
    a capture-phase listener on document - which is why this needs no MutationObserver on the message
    list, and why it covers all three chat surfaces (channels, DMs, the detached DM window) at once.
@@ -273,7 +270,7 @@ document.addEventListener('click', function(e){
    leaves the GIF playing the way it always did rather than dropping a blank box over a message.
    drawImage on a cross-origin image taints the canvas, which only matters to getImageData and
    toDataURL - neither is called - so storage URLs need no CORS header. */
-document.addEventListener('load', function(e){
+function __stGifLoad(e){
   try{
     var img = e.target;
     if(!img || img.tagName !== 'IMG') return;
@@ -291,7 +288,18 @@ document.addEventListener('load', function(e){
        seconds on screen. Until then the canvas stays display:none and the GIF plays. */
     window.__stGifHold(w);
   }catch(_){}
-}, true);
+}
+document.addEventListener('load', __stGifLoad, true);
+/* The same rule where the chat goes: Live Charts' own window (Nestor, 29 Oct 2026: "these GIFs just keep playing forever, add the
+   limit same as in community"). That window's document gets the listeners above, and the GIFs already there - loaded where no
+   listener heard them, or moved over before their ten seconds began - are painted and held again. */
+window.__stGifWire = function(doc){ try{ if(!doc || doc === document || doc.__stGifWired) return; doc.__stGifWired = 1; doc.addEventListener('load', __stGifLoad, true); doc.addEventListener('click', __stGifTap); }catch(_){} };
+window.__stGifSweep = function(root){
+  try{ Array.prototype.forEach.call((root || document).querySelectorAll('.stgif'), function(w){
+    if(w.classList.contains('stgif-ready') || w.__stgifT) return;   // held already, or its ten seconds are running
+    var img = w.querySelector('img'); if(!img || !img.complete || !img.naturalWidth) return;
+    w.__stgifSeen = 0; __stGifLoad({ target: img }); }); }catch(_){}
+};
 /* Single place that opens a chart. Converts a TradingView snapshot link to the raw
    .png (the /x/ page cannot be zoomed) and shows it in the app's own viewer, which
    has click-to-zoom and grab-to-drag. Falls back to a new tab if the viewer is not
@@ -58245,7 +58253,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
         '.stgif>canvas{position:absolute;left:0;top:0;width:100%;height:100%;border-radius:8px;display:none;}' +
         '.stgif.stgif-ready>canvas{display:block;}' +
         '.stgif.stgif-ready:hover>canvas,.dc-msg:hover .stgif.stgif-ready>canvas,.dcx-msg:hover .stgif.stgif-ready>canvas{display:none;}' +
-        '.stgif-badge{position:absolute;left:6px;bottom:6px;background:rgba(0,0,0,.72);color:#fff;font-family:monospace;font-size:9px;letter-spacing:.12em;padding:2px 5px;border-radius:4px;pointer-events:none;transition:opacity .12s;}' +
+        '.stgif-badge{position:absolute;left:6px;bottom:6px;background:rgba(0,0,0,.72);color:#fff;font-family:monospace;font-size:9px;line-height:1.3;letter-spacing:.12em;padding:2px 5px;border-radius:4px;pointer-events:none;transition:opacity .12s;}' +
         '.stgif.stgif-ready:hover .stgif-badge,.dc-msg:hover .stgif.stgif-ready .stgif-badge,.dcx-msg:hover .stgif.stgif-ready .stgif-badge{opacity:0;}' +
         /* No hover, no hold: on a touchscreen the still frame would just be a GIF that never
            plays, so phones keep the behaviour they already have. */
@@ -58959,7 +58967,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
         '.stgif>canvas{position:absolute;left:0;top:0;width:100%;height:100%;border-radius:8px;display:none;}' +
         '.stgif.stgif-ready>canvas{display:block;}' +
         '.stgif.stgif-ready:hover>canvas,.dc-msg:hover .stgif.stgif-ready>canvas,.dcx-msg:hover .stgif.stgif-ready>canvas{display:none;}' +
-        '.stgif-badge{position:absolute;left:6px;bottom:6px;background:rgba(0,0,0,.72);color:#fff;font-family:monospace;font-size:9px;letter-spacing:.12em;padding:2px 5px;border-radius:4px;pointer-events:none;transition:opacity .12s;}' +
+        '.stgif-badge{position:absolute;left:6px;bottom:6px;background:rgba(0,0,0,.72);color:#fff;font-family:monospace;font-size:9px;line-height:1.3;letter-spacing:.12em;padding:2px 5px;border-radius:4px;pointer-events:none;transition:opacity .12s;}' +
         '.stgif.stgif-ready:hover .stgif-badge,.dc-msg:hover .stgif.stgif-ready .stgif-badge,.dcx-msg:hover .stgif.stgif-ready .stgif-badge{opacity:0;}' +
         /* No hover, no hold: on a touchscreen the still frame would just be a GIF that never
            plays, so phones keep the behaviour they already have. */
@@ -62399,7 +62407,8 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       var s = platSlot(); if (!s) return; var d = s.ownerDocument, out = d !== document;
       try { window.__stChatDoc = out ? d : null; } catch (e) {}   // the Community works in that document while the chat is there
       if (host.parentNode !== s) s.appendChild(host);
-      if (out) css(d);
+      if (out) { css(d); try { window.__stGifWire(d); } catch (e) {} }
+      try { if (window.__stGifSweep) window.__stGifSweep(host); } catch (e) {}   // GIFs held after their ten seconds, here and in Live Charts' own window
       if (D() !== hostDoc) { hostDoc = D(); if (!host.hidden) toLatest(); }   // into Live Charts' own window or back (with the platform, or here): a moved element forgets its scroll
     }
     // the Community's look in that window, which was opened without it (its own sheets are made when the Community first opens)
