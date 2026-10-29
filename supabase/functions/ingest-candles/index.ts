@@ -11,11 +11,24 @@
 //     supabase functions deploy ingest-candles --no-verify-jwt
 // Requires public.candles (see supabase/candles_setup.sql).
 //
-// Body: { token, symbol, tf, bars:[[t,o,h,l,c,v], …] }   (t = bar open, unix secs UTC; v = MT5 tick volume, EA 9.00+)
+// Body: { token, symbol, tf, bars:[[t,o,h,l,c,v], …], feed? }   (t = bar open, unix secs UTC; v = MT5 tick volume, EA 9.00+)
+//
+// Per-broker candles (29 Oct 2026, supabase/candles_feed.sql): EA 9.19 says its MT5 server ("feed": "FTMO-Server4"), and its bars go
+// to public.candles_feed under that feed - every broker keeps its own series, checked against its own bars. A body without a feed
+// (EAs before 9.19) goes to the legacy public.candles as before.
 // ─────────────────────────────────────────────────────────────────────────────
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const MAX_BARS = 5000;   // reject oversized batches (the EA chunks to ~3000)
+// the feed id of an MT5 server name, as st_feed_id() in SQL: "FTMO-Server4" -> "ftmo-server4"
+function feedId(x: unknown): string {
+  return (typeof x === "string" ? x : "").trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").slice(0, 40);
+}
+// where a feed's bars are read: its own rows, or the legacy table
+function storeUrl(feed: string, symbol: string, tf: number, cols: string, lo: number, hi: number, limit: number): string {
+  return `${SUPABASE_URL}/rest/v1/${feed ? "candles_feed" : "candles"}?select=${cols}${feed ? `&feed=eq.${encodeURIComponent(feed)}` : ""}` +
+    `&symbol=eq.${encodeURIComponent(symbol)}&tf=eq.${tf}&t=gte.${lo}&t=lte.${hi}&limit=${limit}`;
+}
 
 // Storage guard (15 Oct 2026). EA 8.95 fills a year of M1 and M5 per symbol - about 50 MB of M1 each - and the project is
 // on the free plan, whose database holds 500 MB (over it, everything goes read-only, members' journals included). Past
@@ -36,7 +49,7 @@ async function dbBytes(): Promise<number> {
 // Why a batch can't be from a sound clock, or "" when it can. Brokers sit whole or half hours from UTC, so a bar of 5
 // minutes or more opens on its own boundary (an hour or more: on the half hour at least). The newest 300 bars are also
 // compared with the stored ones nearby: the same candle stored k minutes away (k != 0), for most of them, is a shifted copy.
-async function clockOff(symbol: string, tf: number, rows: Array<Record<string, number | string>>): Promise<string> {
+async function clockOff(symbol: string, tf: number, rows: Array<Record<string, number | string>>, feed: string): Promise<string> {
   const step = (tf >= 60 ? 30 : tf) * 60;
   if (tf >= 5 && rows.some((x) => Number(x.t) % step !== 0)) return "bar off its timeframe boundary";
   if (rows.some((x) => Number(x.t) > Date.now() / 1000 + tf * 60)) return "bar from the future";
@@ -44,8 +57,7 @@ async function clockOff(symbol: string, tf: number, rows: Array<Record<string, n
   if (last.length < 3) return "";
   const lo = Number(last[0].t) - 3600, hi = Number(last[last.length - 1].t) + 3600;
   try {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/candles?select=t,o,h,l,c&symbol=eq.${encodeURIComponent(symbol)}&tf=eq.${tf}&t=gte.${lo}&t=lte.${hi}&limit=1000`,
-      { headers: { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` } });
+    const r = await fetch(storeUrl(feed, symbol, tf, "t,o,h,l,c", lo, hi, 1000), { headers: { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` } });
     if (!r.ok) return "";
     const have: Array<{ t: number; o: number; h: number; l: number; c: number }> = await r.json();
     const at: Record<string, number[]> = {};
@@ -80,14 +92,13 @@ function onNyGrid(t: number, tf: number): boolean {
   const s = tf * 60;
   return (((ny - 17 * 3600) % s) + s) % s === 0;
 }
-async function offGrid(symbol: string, tf: number, rows: Array<Record<string, number | string>>): Promise<Array<Record<string, number | string>>> {
+async function offGrid(symbol: string, tf: number, rows: Array<Record<string, number | string>>, feed: string): Promise<Array<Record<string, number | string>>> {
   if (tf !== 240 && tf !== 1440) return rows;
   const on = rows.filter((x) => onNyGrid(Number(x.t), tf));
   if (on.length) return on;   // all on the grid, or the batch has the grid's own: those
   const ts = rows.map((x) => Number(x.t)), lo = Math.min(...ts) - 7 * 86400, hi = Math.max(...ts) + 7 * 86400;
   try {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/candles?select=t&symbol=eq.${encodeURIComponent(symbol)}&tf=eq.${tf}&t=gte.${lo}&t=lte.${hi}&limit=500`,
-      { headers: { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` } });
+    const r = await fetch(storeUrl(feed, symbol, tf, "t", lo, hi, 500), { headers: { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` } });
     if (!r.ok) return rows;
     const have: Array<{ t: number }> = await r.json();
     return have.some((x) => onNyGrid(Number(x.t), tf)) ? [] : rows;
@@ -121,6 +132,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const symbol = body?.symbol;
   const tf     = Number(body?.tf);
   const bars   = body?.bars;
+  const feed   = feedId(body?.feed);   // "" = an EA before 9.19: the legacy table
   if (!token || typeof token !== "string") return json({ error: "missing token" }, 401);
   if (!symbol || typeof symbol !== "string" || !tf || !Array.isArray(bars))
     return json({ error: "missing symbol / tf / bars" }, 400);
@@ -157,10 +169,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
   // late: his cloud 70K's 12, the demo's 2, and months of 1/2/12/17-minute copies beside the real candles. Such a batch is
   // refused whole (the EA is told ok, so it moves on): a 5-minute-or-longer bar off its boundary, a bar from the future, or
   // a batch that repeats the candles already stored a few minutes away.
-  const bad = await clockOff(symbol, tf, rows);
+  const bad = await clockOff(symbol, tf, rows, feed);
   if (bad) return json({ ok: true, upserted: 0, rejected: rows.length, reason: bad });
   const nOff = rows.length;
-  rows = await offGrid(symbol, tf, rows);
+  rows = await offGrid(symbol, tf, rows, feed);
   if (!rows.length) return json({ ok: true, upserted: 0, rejected: nOff, reason: "4h / 1D bars off the New York-close grid" });
   if (tf <= 5) {
     const edge = Date.now() / 1000 - DEEP_AGE, deep = rows.filter((x) => Number(x.t) < edge).length;
@@ -170,10 +182,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
       let volSet = 0;
       if (allV) {
         try {
-          const vr = await fetch(`${SUPABASE_URL}/rest/v1/rpc/st_candles_set_v`, {
+          const vr = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${feed ? "st_candles_set_v_feed" : "st_candles_set_v"}`, {
             method: "POST",
             headers: { "content-type": "application/json", apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` },
-            body: JSON.stringify({ p_symbol: symbol, p_tf: tf, p_rows: rows.filter((x) => Number(x.t) < edge).map((x) => [x.t, x.v]) }),
+            body: JSON.stringify({ ...(feed ? { p_feed: feed } : {}), p_symbol: symbol, p_tf: tf, p_rows: rows.filter((x) => Number(x.t) < edge).map((x) => [x.t, x.v]) }),
           });
           if (vr.ok) volSet = Number(await vr.json()) || 0;
         } catch { /* the volume waits for the next ask */ }
@@ -187,10 +199,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
   // that changed. Every bar used to be upserted (ON CONFLICT DO UPDATE), so each MT5 sending a symbol rewrote what another had
   // stored - up to ~2.5M bars an hour on 29 Oct, which ran the database out of its disk IO budget.
   const put = rows.map((x) => allV ? [x.t, x.o, x.h, x.l, x.c, x.v] : [x.t, x.o, x.h, x.l, x.c]);
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/st_candles_put`, {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${feed ? "st_candles_put_feed" : "st_candles_put"}`, {
     method: "POST",
     headers: { "content-type": "application/json", apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` },
-    body: JSON.stringify({ p_symbol: symbol, p_tf: tf, p_rows: put }),
+    body: JSON.stringify({ ...(feed ? { p_feed: feed } : {}), p_symbol: symbol, p_tf: tf, p_rows: put }),
   });
   if (!r.ok) {
     const detail = (await r.text()).slice(0, 300);
@@ -199,20 +211,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const written = Number(await r.json()) || 0;
   // what each batch was and what it changed (29 Oct 2026: the MT5s kept sending ~3.5 MB of bars a minute after the write fix -
   // which history, and from where, is read from these lines)
-  console.log(`put ${symbol} tf${tf} n=${rows.length} ${rows[0].t}-${rows[rows.length - 1].t} w=${written} tok=${String(token).slice(0, 6)}`);
-  // ONE-OFF (29 Oct 2026, removed after the repair): while CANDLES_FIX = "SYMBOL|from|to|compare" or "...|apply", a batch of that
-  // symbol (M1-H1) inside [from, to) also goes to st_candles_fix_hl: highs/lows the 18:37-19:53 widening rule took from another
-  // broker come back where the incoming open AND close equal the stored ones (the FTMO demo re-sending; compare = count only).
-  const fix = (Deno.env.get("CANDLES_FIX") || "").split("|");
-  if (fix.length === 4 && fix[0] === symbol && tf <= 60) {
-    try {
-      const fr = await fetch(`${SUPABASE_URL}/rest/v1/rpc/st_candles_fix_hl`, {
-        method: "POST",
-        headers: { "content-type": "application/json", apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` },
-        body: JSON.stringify({ p_symbol: symbol, p_tf: tf, p_rows: put, p_from: Number(fix[1]), p_to: Number(fix[2]), p_apply: fix[3] === "apply" }),
-      });
-      console.log(`fix ${symbol} tf${tf} ${fix[3]} ${rows[0].t}-${rows[rows.length - 1].t} ${fr.ok ? JSON.stringify(await fr.json()) : "HTTP " + fr.status}`);
-    } catch (e) { console.log(`fix ${symbol} tf${tf} failed ${String(e)}`); }
-  }
+  console.log(`put ${feed || "legacy"} ${symbol} tf${tf} n=${rows.length} ${rows[0].t}-${rows[rows.length - 1].t} w=${written} tok=${String(token).slice(0, 6)}`);
   return json({ ok: true, upserted: written, sent: rows.length });
 });
