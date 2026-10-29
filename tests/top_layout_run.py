@@ -124,7 +124,8 @@ def desk(W, H):
               all(x['h1']['h'] <= x['h1fs'] * 1.1 and x['meta']['l'] >= x['h1']['l'] and (x['tv'] is None or x['tv']['l'] > x['h1']['r']) and (x['tvOn'] or x['meta']['l'] > x['h1']['r']) for x in (es['on'], es['off'])),
               {'on': [es['on']['h1fs'], es['on']['h1'], es['on']['tv']], 'off': [es['off']['h1'], es['off']['meta']]})
     ti = on['tabsI']   # slimmer, more readable tabs (24 Oct 2026): 12.5px labels, every tab the same size, nothing cut off, the active one pink
-    check(tag + 'tabs: 12.5px labels, all the same size, nothing cut off', ti['fs'] == '12.5px' and max(ti['ws']) - min(ti['ws']) <= 1 and max(ti['hs']) - min(ti['hs']) <= 1 and ti['over'] == 0, ti)
+    # 12px since 29 Oct 2026 (Nestor: "make the icons slightly bigger and the font slightly smaller"; 12.5px before)
+    check(tag + 'tabs: 12px labels, all the same size, nothing cut off', ti['fs'] == '12px' and max(ti['ws']) - min(ti['ws']) <= 1 and max(ti['hs']) - min(ti['hs']) <= 1 and ti['over'] == 0, ti)
     check(tag + 'tabs: shorter boxes, the active one outlined pink', max(ti['hs']) <= 46 and ti['act'].replace(' ', '') in ('rgb(244,114,182)',), ti)
     if W >= 1100:
         tv = on['tv']
@@ -155,7 +156,7 @@ def desk(W, H):
         check(tag + 'TV on again: back in its slot', g['on2']['tv'] and g['on2']['tvOn'] and g['on2']['tabs']['t'] == on['tabs']['t'], [g['on2']['tv'], g['on2']['tabs']])
         if W == 1500:
             check('1500: Session News about 613px with the TV on', abs(on['news']['t'] - 613) <= 24, on['news'])
-            check('1500: Session News about 479px with the TV off', abs(off['news']['t'] - 479) <= 24, off['news'])
+            check('1500: Session News about 505px with the TV off', abs(off['news']['t'] - 505) <= 24, off['news'])   # 479 on 24 Oct; the 88px title and the taller tab boxes since
     else:
         tv = on['tv']
         check(tag + 'TV docked under the header, above the tabs', tv and on['tvIn'].find('container') >= 0 and tv['t'] >= on['meta']['b'] and tv['b'] <= on['tabs']['t'], [on['tvIn'], tv, on['meta'], on['tabs']])

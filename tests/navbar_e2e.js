@@ -76,6 +76,21 @@
     ok('no extra page padding for a bottom bar', pb <= 90, pb);
     document.querySelector('.container > .tabs .tab[data-page="trades"]').click(); await W(600);
     ok('tapping the Statistics box opens Statistics', document.querySelector('.tab[data-page="trades"]').classList.contains('active') && document.getElementById('page-trades').classList.contains('active'), (document.querySelector('.page.active') || {}).id);
+    // no swiping between the tabs (29 Oct 2026, Nestor: "stop swiping left and right changes tabs"): a quick flick either way leaves the tab.
+    // The harness hides the set-up dialog but leaves it marked open, and the old swipe stood down for an open dialog: clear that first, or
+    // this would pass with the swipe still there (it fails on the build before 29 Oct)
+    document.querySelectorAll('.modal-bg.show').forEach(function (m) { m.classList.remove('show'); });
+    var flick = async function (dx) {
+      var el = document.querySelector('.page.active') || document.body, y = Math.round(innerHeight * 0.6), x0 = Math.round(innerWidth / 2 - dx / 2);
+      var t0 = new Touch({ identifier: 7, target: el, clientX: x0, clientY: y }), t1 = new Touch({ identifier: 7, target: el, clientX: x0 + dx, clientY: y });
+      el.dispatchEvent(new TouchEvent('touchstart', { touches: [t0], targetTouches: [t0], changedTouches: [t0], bubbles: true, cancelable: true }));
+      el.dispatchEvent(new TouchEvent('touchmove', { touches: [t1], targetTouches: [t1], changedTouches: [t1], bubbles: true, cancelable: true }));
+      el.dispatchEvent(new TouchEvent('touchend', { touches: [], targetTouches: [], changedTouches: [t1], bubbles: true, cancelable: true }));
+      await W(500);
+    };
+    await flick(-220); var afterL = (document.querySelector('.page.active') || {}).id;
+    await flick(220); var afterR = (document.querySelector('.page.active') || {}).id;
+    ok('a flick left or right does not change the tab (tapping does)', afterL === 'page-trades' && afterR === 'page-trades', [afterL, afterR]);
     var bg0 = getComputedStyle(row).backgroundColor;
     all8(); document.querySelector('.tab[data-page="livecharts"]').click(); await W(800);
     // Charts opens as a page like the others since 26 Oct 2026 (Nestor: "like community chat"): the row stays; only the chart's full screen covers it

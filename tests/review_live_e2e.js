@@ -32,15 +32,39 @@
     var ms = $('#meta-session'), un = document.createElement('span'); un.className = 'ms-u'; ms.appendChild(un);
     var fu = parseFloat(getComputedStyle(un).fontSize), fb = parseFloat(getComputedStyle(ms).fontSize); un.remove();
     ok('the countdown\'s h / m / s: 1 px bigger than .62 of the row', Math.abs(fu - (fb * 0.62 + 1)) < 0.05, [fu, fb]);
-    // Charts: the green "Session live" label as far from the tab row (a band of its own there) as from what follows it (a computer)
+    // SESSION turns into ● SESSION LIVE during the session; the line under the tabs is gone (29 Oct 2026, Nestor: "turn session into
+    // session live during the session? so the label turns green from grey, with the pulsing dot"; "make sure the dot is in the middle")
+    var p2 = function (n) { return String(n).padStart(2, '0'); }, hm = function (d) { return p2(d.getHours()) + ':' + p2(d.getMinutes()); }, now = new Date();
+    var s0 = (data.settings.sessions && data.settings.sessions[0]) ? JSON.parse(JSON.stringify(data.settings.sessions[0])) : { name: 'London' }, sKeep = data.settings.sessions;
+    s0.start = hm(new Date(+now - 16 * 60000)); s0.end = hm(new Date(+now + 104 * 60000)); data.settings.sessions = [s0];   // a real live window: the head clock's own countdown
+    for (var k = 0; k < 44 && !ms.classList.contains('is-live'); k++) await W(500);
+    var cell = $('.meta-cell-ses'), offL = cell.querySelector('.msl-off'), onL = cell.querySelector('.msl-on'), dot = onL.querySelector('.msl-dot');
+    ok('no separate "Session live" line under the tabs', !$('#session-live-pill'));
+    // the row with the live label, and the same moment with the plain label (the class taken off and put back at once): every cell in place
+    var rects = function () { return Array.prototype.map.call(document.querySelectorAll('.meta .meta-cell'), function (c) { var b = c.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.width), Math.round(b.top)]; }); };
+    var rLive = rects(); ms.classList.remove('is-live'); var rPlain = rects(); ms.classList.add('is-live');
+    var same = rLive.every(function (r, i) { return Math.abs(r[0] - rPlain[i][0]) <= 1 && Math.abs(r[1] - rPlain[i][1]) <= 1 && Math.abs(r[2] - rPlain[i][2]) <= 1; });
+    ok('live: the Session cell\'s label reads ● SESSION LIVE in green over the countdown, and no cell in the row moves or resizes for it',
+      ms.classList.contains('is-live') && vis(onL) && getComputedStyle(offL).visibility === 'hidden' && /session live|sesión en vivo/i.test(onL.textContent) && getComputedStyle(onL).color === getComputedStyle(ms).color && /left|quedan/.test(ms.textContent) && same,
+      { cls: ms.className, label: onL.textContent, colour: getComputedStyle(onL).color, live: rLive, plain: rPlain });
+    // the dot's middle on the middle of the capitals: the text's baseline (a 0-height mark on it) less half the font's capital height
+    var tx = onL.querySelector('[data-i18n]'), mk = document.createElement('i'); mk.style.cssText = 'display:inline-block;width:0;height:0;vertical-align:baseline'; tx.appendChild(mk);
+    var base = mk.getBoundingClientRect().bottom; mk.remove();
+    var cx = document.createElement('canvas').getContext('2d'), cs = getComputedStyle(tx); cx.font = cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
+    var cap = cx.measureText('S').actualBoundingBoxAscent, db = dot.getBoundingClientRect(), off = (db.top + db.bottom) / 2 - (base - cap / 2);
+    ok('the dot sits on the middle of the capitals (within 0.6 px)', Math.abs(off) <= 0.6, { off: Math.round(off * 100) / 100, dot: [db.top, db.bottom], base: base, cap: cap, font: cx.font });
+    // the greeting moves up into the room the line had: as far under the tab buttons on Review as on Charts, and not cramped
+    var gap = function () { var tbb = Math.max.apply(null, Array.prototype.map.call(document.querySelectorAll('.container > .tabs .tab'), function (t) { return t.getBoundingClientRect().bottom; })); var g = $('.page.active .st-asst'); return g ? Math.round(g.getBoundingClientRect().top - tbb) : -1; };
+    window.scrollTo(0, 0); await W(200); var gReview = gap();
     window.__stLcForce = true; window.__stPlatOff = false;
-    document.querySelector('.tab[data-page="livecharts"]').click(); for (var k = 0; k < 40 && !$('#page-livecharts.active'); k++) await W(150); window.scrollTo(0, 0); await W(800); updateSessionLiveBanner(); await W(200);
-    if (innerWidth >= 821) {
-      var pill = $('#session-live-pill'), pr = pill.getBoundingClientRect(), nx = pill.nextElementSibling, tbb = Math.max.apply(null, Array.prototype.map.call(document.querySelectorAll('.container > .tabs .tab'), function (t) { return t.getBoundingClientRect().bottom; }));   // the tab buttons are the edge (the row is black)
-      while (nx && !(nx.getBoundingClientRect().height > 0)) nx = nx.nextElementSibling;
-      var gw = $('#page-livecharts.active .st-asst-wrap'), up = pr.top - tbb, dn = gw ? gw.getBoundingClientRect().top - pr.bottom : (nx ? nx.getBoundingClientRect().top - pr.bottom : -1);
-      ok('Charts: the "Session live" label as far from the tab buttons as from the greeting', vis(pill) && up >= 16 && Math.abs(up - dn) <= 1, [Math.round(up), Math.round(dn)]);
-    }
+    document.querySelector('.tab[data-page="livecharts"]').click(); for (k = 0; k < 40 && !$('#page-livecharts.active'); k++) await W(150); window.scrollTo(0, 0); await W(800); updateSessionLiveBanner(); await W(200);
+    window.scrollTo(0, 0); await W(200); var gCharts = gap();
+    ok('live: the greeting right under the tab buttons with room to breathe, the same on Review and Charts', gReview >= 16 && Math.abs(gReview - gCharts) <= 12, [gReview, gCharts]);
+    // and out of the session: SESSION again, grey
+    s0.start = hm(new Date(+now - 180 * 60000)); s0.end = hm(new Date(+now - 120 * 60000)); data.settings.sessions = [s0];
+    for (k = 0; k < 44 && ms.classList.contains('is-live'); k++) await W(500);
+    ok('out of the session: the label is SESSION again (grey), no live label', !ms.classList.contains('is-live') && !vis(onL) && getComputedStyle(offL).visibility !== 'hidden' && /^session$|^sesión$/i.test(offL.textContent.trim()), [ms.className, getComputedStyle(offL).visibility, vis(onL)]);
+    data.settings.sessions = sKeep;
   } catch (e) { ok('test ran', false, String(e && e.stack || e)); }
   return out;
 })()
