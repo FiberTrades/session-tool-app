@@ -12,7 +12,7 @@
 --   - it brings the tick volume a stored bar lacks (EA 9.00+; the volume profile);
 --   - it is recent - opened within max(2 bars, 3 hours) - and its values changed: the newest bars may have been sent unfinished;
 -- Otherwise a closed bar already stored keeps its prices and its volume: the first MT5 to send it wins (before, the last one did).
--- (A rule widening an older bar's high/low to the incoming range ran from 18:59 to ~20:00 UTC on 29 Oct and was taken out: the
+-- (A rule widening an older bar's high/low to the incoming range ran from 18:37 to 19:53 UTC on 29 Oct and was taken out: the
 -- table is shared across brokers, and it mixed another broker's highs and lows into stored wicks. Migration candles_put_no_widen.)
 -- Rows that change nothing are filtered out BEFORE the insert, so they are not even locked: ON CONFLICT DO UPDATE ... WHERE false
 -- still locks (and so writes) the row it skips.
