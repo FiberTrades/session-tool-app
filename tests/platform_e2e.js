@@ -468,9 +468,23 @@
     var mmF = $('#stpr-mm');
     check('OneFunded picked: the Trade Manager shows its own Risk, Stop, Take profit, Break-even (as its EA reported them), "Change these on its MT5 panel for now"', /OneFunded 10K · 27007659/.test(mmF.textContent) && /Risk70\.00/.test(mmF.textContent.replace(/\s+/g, '')) && /2\.0 – 4\.0/.test(mmF.textContent) && /3\.0 R/.test(mmF.textContent) && /Change these on its MT5 panel for now/.test(mmF.textContent), mmF.textContent.slice(0, 200));
     var xf = mmF.querySelector('.pl-x');
-    check('...Execute off: "Trades come from FTMO 70K"', xf && xf.disabled && /Trades come from FTMO 70K/.test(xf.textContent), xf && xf.textContent);
+    check('...Execute locked and grey: "Copies FTMO 70K: trade on the Lead"', xf && xf.disabled && xf.classList.contains('fol') && xf.textContent === 'Copies FTMO 70K: trade on the Lead' && getComputedStyle(xf).cursor === 'not-allowed', xf && xf.textContent);
     pm = await accMenu(); rowOf('90001234').click(); await W(800);
     check('...the 70K picked again: its own Trade Manager, Execute', /FTMO 70K/.test($('#stpr-mm .pl-mh').textContent) && $('#stpr-mm .pl-x').textContent === 'Execute', $('#stpr-mm .pl-mh').textContent);
+    // ---- a Follow with its own live line (EA 9.16) is never traded from here either (29 Oct 2026, Nestor: "when an account is the follow
+    //      account trading on that account should not be allowed"): Execute locked, the O key arms nothing, nothing is sent ----
+    var tmA = window.__stTM.acct, opens = []; window.__stTM.acct = function (o) { if (o && o.a === 'open') opens.push(o.login); return tmA.apply(this, arguments); };
+    LVc.set[rawc + '|1515070952'].copy_role = 'follow'; LVc.set[rawc + '|1515070952'].copy_lead = '90001234';
+    pm = await accMenu(); rowOf('1515070952').click(); await W(900);
+    var xd = $('#stpr-mm .pl-x');
+    check('a Follow with its own live line picked (FTMO Demo copies FTMO 70K): Execute locked and grey, "Copies FTMO 70K: trade on the Lead"', P._cfg().lvLg === '1515070952' && xd && xd.disabled && xd.classList.contains('fol') && xd.textContent === 'Copies FTMO 70K: trade on the Lead' && !$('#stpr-mm [data-plbrk]'), [P._cfg().lvLg, xd && xd.textContent]);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: String(P._cfg().mm.key || 'O').toLowerCase(), bubbles: true })); await W(300);
+    check('...its O key arms nothing (no execution lines, so no chart click places anything); it says why, in amber, not red', !P._s().exec && /Copies FTMO 70K: trade on the Lead\./.test(document.getElementById('stpr-win').textContent), P._s().exec);
+    var xd2 = $('#stpr-mm .pl-x'); try { xd2.disabled = false; xd2.click(); } catch (e) {} await W(300);
+    check('...even a forced press of Execute arms nothing; no order of any kind was sent', !P._s().exec && !opens.length, [P._s().exec, opens]);
+    LVc.set[rawc + '|1515070952'].copy_role = 'off'; LVc.set[rawc + '|1515070952'].copy_lead = ''; window.__stTM.acct = tmA;
+    pm = await accMenu(); rowOf('90001234').click(); await W(900);
+    check('...the 70K picked again: Execute back', $('#stpr-mm .pl-x').textContent === 'Execute' && !$('#stpr-mm .pl-x').disabled);
     leadR = 'off'; LVc.set[rawc + '|90001234'].copy_role = 'off'; window.__stCopyWish._clear(); cwCalls = []; await W(300);
     pm = await accMenu();
     check('the Lead off: the copier\'s row says "LEAD OFF" (amber), the 70K no LEAD', chipOf('27007659') === 'LEAD OFF' && rowOf('27007659').querySelector('.stpr-twc.off') && chipOf('90001234') === '', [chipOf('27007659'), chipOf('90001234')]);
