@@ -32,9 +32,26 @@
     load(); await draw(); await stx('overview');
 
     // the money figures: each currency on its own
-    ok('balance: £70,285.00 · $10,054.00, never one sum', /£70,285\.00 · \$10,054\.00/.test(txt('kpi-balance')) && !/80,3/.test(txt('kpi-balance')), txt('kpi-balance'));
+    var rows = function (id) { return Array.prototype.map.call(document.querySelectorAll('#' + id + ' .zk-cr'), function (r) { return r.innerText.replace(/\s+/g, ' ').trim(); }); };
+    var b2 = rows('kpi-balance');
+    ok('balance: a row a currency - £70,285.00 +0.41% from £70,000.00 start, then $10,054.00 +0.54% from $10,000.00 start; never one sum', b2.length === 2 && /£70,285\.00 \+0\.41% from £70,000\.00 start/.test(b2[0]) && /\$10,054\.00 \+0\.54% from \$10,000\.00 start/.test(b2[1]) && !/80,3/.test(txt('kpi-balance')), b2);
+    // nothing in a money card touches its chart, and everything stays inside its card (29 Oct 2026: the second figure ran under the sparkline)
+    var hit = function (a, b) { return a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5; };
+    var clear = function (vid, sid) { var v = document.getElementById(vid), c = v && v.closest('.zc'), cr = c && c.getBoundingClientRect(), sv = document.getElementById(sid), vr = sv && sv.getBoundingClientRect(), bad = [];
+      Array.prototype.forEach.call(v ? v.querySelectorAll('.zk-cr, .zk-cr > *') : [], function (e) { var r = e.getBoundingClientRect(); if (!r.width) return; if (vr && hit(r, vr)) bad.push('over the chart: ' + e.textContent); if (r.right > cr.right + 0.5 || r.left < cr.left - 0.5) bad.push('outside the card: ' + e.textContent); if (e.scrollWidth > e.clientWidth + 1 && e.tagName !== 'SMALL') bad.push('cut: ' + e.textContent); });
+      var lb = sv && sv.querySelector('.zk-vl'), lr = lb && lb.getBoundingClientRect(); if (lr && (lr.right > cr.right + 0.5 || lr.top < cr.top - 0.5)) bad.push('label outside: ' + lb.textContent);
+      return bad; };
+    ['balance', 'pnl', 'costs'].forEach(function (k) { var bd = clear('kpi-' + k, 'zk-v-' + k); ok(k + ' card: its rows clear of its chart and inside the card', bd.length === 0 && document.querySelectorAll('#kpi-' + k + ' .zk-cr').length === 2, bd); });
+    ok('the cards\' charts say their currency (the curve\'s): in £', ['balance', 'pnl', 'costs'].every(function (k) { var l = document.querySelector('#zk-v-' + k + ' .zk-vl'); return l && l.textContent === 'in £'; }), ['balance', 'pnl', 'costs'].map(function (k) { var l = document.querySelector('#zk-v-' + k + ' .zk-vl'); return l && l.textContent; }));
     ok('net P&L: £285.00 and $54.00 side by side', /£285\.00/.test(txt('kpi-pnl')) && /\$54\.00/.test(txt('kpi-pnl')) && !/339/.test(txt('kpi-pnl')), txt('kpi-pnl'));
-    ok('costs: £15.00 · $6.00', /£15\.00 · \$6\.00/.test(txt('kpi-costs')), txt('kpi-costs'));
+    var c2 = rows('kpi-costs');
+    ok('costs: £15.00 (£7.50 a trade), then $6.00 ($3.00 a trade)', c2.length === 2 && /£15\.00 £7\.50 a trade/.test(c2[0]) && /\$6\.00 \$3\.00 a trade/.test(c2[1]), c2);
+    var p2 = rows('kpi-pnl');
+    ok('net P&L: a row a currency, each with its costs under it', p2.length === 2 && /£285\.00 after £15\.00 costs/.test(p2[0]) && /\$54\.00 after \$6\.00 costs/.test(p2[1]), p2);
+    var wlb = ['wl-win-detail', 'wl-loss-detail', 'wl-be-detail'].map(function (id) { var e = document.getElementById(id), c = e && e.parentNode.getBoundingClientRect(), r = e && e.getBoundingClientRect(); return e ? (e.scrollWidth <= e.clientWidth + 1 && r.right <= c.right + 0.5) : true; });
+    ok('the win / loss cards\' per-currency averages fit their boxes', wlb.every(Boolean), wlb);
+    var wlc = Array.prototype.map.call(document.querySelectorAll('#wl-win-detail .wl-cur, #wl-loss-detail .wl-cur'), function (e) { return [e.textContent, e.getClientRects().length]; });
+    ok('...each average whole on its line (never a sign on one line and its figure on the next)', wlc.length === 4 && wlc.every(function (x) { return x[1] === 1; }), wlc);
     var wl = (document.getElementById('wl-win-detail') || document.querySelector('[id^="wl-win"]') || {}).innerText || '';
     var wlAll = Array.prototype.map.call(document.querySelectorAll('[id^="wl-"]'), function (e) { return e.innerText; }).join(' | ').replace(/\s+/g, ' ');
     ok('average win per currency: £490.00 · $96.00', /£490\.00 · \+?\$96\.00/.test(wlAll), wlAll.slice(0, 400));
@@ -55,9 +72,10 @@
     ok('$ picked: the curve in $, from $10,000 to $10,054', g && g.cur === 'USD' && Math.round(g.values[0]) === 10000 && Math.round(g.values[g.values.length - 1]) === 10054 && g.values.length === 3, g && [g.cur, g.values]);
     sw = document.getElementById('eq-cur');
     ok('...and the switch shows $ picked', sw && sw.querySelector('button[data-eqcur="USD"]').getAttribute('aria-pressed') === 'true');
-    ok('the drawdown card follows it: $42 below the high (not £)', /\$42\.00/.test(txt('dd-sub')) && !/£/.test(txt('dd-sub')), txt('dd-sub'));
-    ok('the balance card\'s line: from $10,000.00 start', /\$10,000\.00/.test(txt('zk-s-balance')), txt('zk-s-balance'));
-    ok('the money figures stay split while $ is picked', /£70,285\.00 · \$10,054\.00/.test(txt('kpi-balance')), txt('kpi-balance'));
+    // (the drawdown card it also followed went on 29 Oct 2026, 125b912e)
+    ok('the cards\' charts follow it: in $', ['balance', 'pnl', 'costs'].every(function (k) { var l = document.querySelector('#zk-v-' + k + ' .zk-vl'); return l && l.textContent === 'in $'; }));
+    b2 = rows('kpi-balance');
+    ok('the money figures stay a row a currency while $ is picked', b2.length === 2 && /£70,285\.00/.test(b2[0]) && /\$10,054\.00/.test(b2[1]) && clear('kpi-balance', 'zk-v-balance').length === 0, b2);
     // the hover read-out in the picked currency
     var chart = document.getElementById('equity-chart'), rb = chart.getBoundingClientRect();
     chart.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: rb.right - 4, clientY: rb.top + rb.height / 2 }));
@@ -79,6 +97,7 @@
       ok('phone: the switch sits inside its card', r2 && rc && r2.right <= rc.right + 1 && r2.left >= rc.left - 1 && r2.width > 30, r2 && rc && [r2.left, r2.right, rc.left, rc.right]);
       var kb = document.getElementById('kpi-balance'), kc = kb && kb.closest('.zc');
       ok('phone: the split balance fits its card', kb && kc && kb.getBoundingClientRect().right <= kc.getBoundingClientRect().right + 1, kb && kc && [kb.getBoundingClientRect().right, kc.getBoundingClientRect().right, kb.scrollWidth, kb.clientWidth]);
+      ['balance', 'pnl', 'costs'].forEach(function (k) { var bd = clear('kpi-' + k, 'zk-v-' + k); ok('phone: ' + k + ' card clear of its chart, inside its card', bd.length === 0, bd); });
     }
 
     // one account in view: its own currency, no switch

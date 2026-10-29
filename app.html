@@ -4636,6 +4636,15 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .zc.zk .stat-value.dual .dual-primary { display: block; font-size: 23px; text-align: left; }
   .zc.zk .stat-value.dual .dual-secondary { display: block; margin-top: 7px; font-size: 10px; letter-spacing: 0.06em; }
   .zk-viz { grid-area: z; width: 76px; height: 48px; display: block; overflow: visible; }
+  /* more than one currency: a row each, sized so two or three fit beside the chart (29 Oct 2026) */
+  .zc.zk .stat-value.zk-multi { align-self: center; display: flex; flex-direction: column; gap: 8px; min-width: 0; white-space: normal; font-size: 17px; }
+  .zc.zk .stat-value.zk-multi.zk-m3 { gap: 6px; font-size: 15px; }
+  .zk-cr { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; row-gap: 2px; min-width: 0; }
+  .zk-cv { white-space: nowrap; } .zk-cv.good { color: var(--good, #4ECD8B); } .zk-cv.bad { color: var(--bad, #E56767); }
+  .zk-cp { font-size: 11px; letter-spacing: .02em; color: var(--text-dim); white-space: nowrap; } .zk-cp.good { color: var(--good, #4ECD8B); } .zk-cp.bad { color: var(--bad, #E56767); }
+  .zk-cr small { flex-basis: 100%; font-size: 10px; letter-spacing: 0.06em; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .zk-viz .zk-vl { font: 9px 'AppNum', 'DM Mono', monospace; letter-spacing: .06em; fill: var(--text-dim); }
+  .wl-cur { white-space: nowrap; }
   .zk-s { grid-area: s; align-self: start; min-width: 0; font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.06em; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .zk-s:empty { display: none; }
   /* chart cards */
@@ -17629,6 +17638,11 @@ try {
     if (!ks.length) return fmtMoney(0, opts);
     return ks.map(c => fmtMoney(m[c], Object.assign({}, opts || {}, { cur: c }))).join(' · ');
   }
+  // the money cards with more than one currency: a row each - its figure, then its small print (Nestor, 29 Oct 2026, of "£69,388.00 ·
+  // $10,000.00" on one line running into the sparkline: "this looks messed up, fix this")
+  function statCurRows(m, row) { const main = accCur(null), ks = Object.keys(m || {}).sort((a, b) => (a === main ? -1 : b === main ? 1 : a.localeCompare(b)));
+    return ks.map(c => '<span class="zk-cr">' + row(c, m[c]) + '</span>').join(''); }
+  function statCurCls(el, n, extra) { el.className = 'stat-value ' + (extra || '') + ' zk-multi' + (n > 2 ? ' zk-m3' : ''); }
   function avgBy(list, fn, wt) { const s = moneyBy(list, fn), n = moneyBy(list, wt), out = {}; Object.keys(s).forEach(c => { if (n[c] > 0) out[c] = s[c] / n[c]; }); return out; }
   function baselineIn(cur) { return scopeAccountsList().reduce((s, a) => s + (accCur(a) === cur ? accBaseline(a) : 0), 0); }
   function paidOutIn(cur) { return scopeAccountsList().reduce((s, a) => s + (accCur(a) === cur ? accPaidOut(a) : 0), 0); }
@@ -28907,9 +28921,12 @@ try {
     // Account Balance KPI — just the £ amount. The lifetime % change moved out of here
     // and into the equity chart subtitle below where it sits next to the curve it summarises.
     const balEl = document.getElementById('kpi-balance');
-    if (_multi) { const _bal = {}; _curs.forEach(c => { _bal[c] = baselineIn(c) - paidOutIn(c); }); allTime.forEach(t => { const c = tradeCur(t); _bal[c] = (_bal[c] || 0) + (tradeGross(t) - tradeCosts(t)) * tradeCopies(t); }); balEl.textContent = fmtMoneyBy(_bal, { noSign: true }); }
-    else balEl.textContent = fmtMoney(balance, { noSign: true, cur: _c1 });
-    balEl.className = 'stat-value medium';
+    if (_multi) { const _bal = {}; _curs.forEach(c => { _bal[c] = baselineIn(c) - paidOutIn(c); }); allTime.forEach(t => { const c = tradeCur(t); _bal[c] = (_bal[c] || 0) + (tradeGross(t) - tradeCosts(t)) * tradeCopies(t); });
+      balEl.innerHTML = statCurRows(_bal, (c, v) => { const b0 = baselineIn(c), pc = b0 > 0 ? (v - b0) / b0 * 100 : null, fm0 = x => escHtmlGlobal(fmtMoney(x, { noSign: true, cur: c }));
+        return '<span class="zk-cv">' + fm0(v) + '</span>' + (pc == null ? '' : '<span class="zk-cp ' + (pc > 0.004 ? 'good' : pc < -0.004 ? 'bad' : '') + '">' + (pc >= 0 ? '+' : '\u2212') + Math.abs(pc).toFixed(2) + '%</span>')
+          + (b0 > 0 ? '<small>' + escHtmlGlobal(zT('from ' + fmtMoney(b0, { noSign: true, cur: c }) + ' start', 'desde ' + fmtMoney(b0, { noSign: true, cur: c }) + ' inicial')) + '</small>' : ''); });
+      statCurCls(balEl, _curs.length, 'medium'); }
+    else { balEl.textContent = fmtMoney(balance, { noSign: true, cur: _c1 }); balEl.className = 'stat-value medium'; }
     // Equity chart subtitle now appends the lifetime % change (gain/loss vs starting balance).
     // Hidden when there's no starting balance set (would be undefined). Coloured good/bad
     // so a glance at the chart card tells you the trajectory at a glance.
@@ -28934,15 +28951,24 @@ try {
         subEl.style.color = 'var(--text)';   // white — make the captured stat stand out
       }
     }
-    document.getElementById('kpi-costs').textContent = _fm(t => tradeCosts(t) * tradeCopies(t), all, { noSign: true });
+    const _cEl = document.getElementById('kpi-costs');
+    if (_multi) { const _cn = all.reduce((s, t) => s + tradeCopies(t), 0), _ca = avgBy(all, t => tradeCosts(t) * tradeCopies(t), t => tradeCopies(t));
+      _cEl.innerHTML = statCurRows(moneyBy(all, t => tradeCosts(t) * tradeCopies(t)), (c, v) => '<span class="zk-cv">' + escHtmlGlobal(fmtMoney(v, { noSign: true, cur: c })) + '</span>'
+        + (_cn && _ca[c] != null ? '<small>' + escHtmlGlobal(zT(fmtMoney(_ca[c], { noSign: true, cur: c }) + ' a trade', fmtMoney(_ca[c], { noSign: true, cur: c }) + ' por operación')) + '</small>' : ''));
+      statCurCls(_cEl, _curs.length, 'medium'); }
+    else { _cEl.textContent = _fm(t => tradeCosts(t) * tradeCopies(t), all, { noSign: true }); _cEl.className = 'stat-value medium'; }
 
     // Net / Gross P&L paired cell — toggle state from data.settings.pnlView
     function renderPnlCell() {
       const mode = data.settings.pnlView === 'gross' ? 'gross' : 'net';
       const val  = mode === 'gross' ? grossSum : netSum;
       const pnlEl = document.getElementById('kpi-pnl');
-      pnlEl.textContent = _fm(t => (mode === 'gross' ? tradeGross(t) : tradeGross(t) - tradeCosts(t)) * tradeCopies(t), all);
-      pnlEl.className = 'stat-value' + (val > 0 ? ' good' : val < 0 ? ' bad' : '');
+      if (_multi) { const _pc = moneyBy(all, t => tradeCosts(t) * tradeCopies(t));
+        pnlEl.innerHTML = statCurRows(moneyBy(all, t => (mode === 'gross' ? tradeGross(t) : tradeGross(t) - tradeCosts(t)) * tradeCopies(t)), (c, v) => '<span class="zk-cv ' + (v > 0 ? 'good' : v < 0 ? 'bad' : '') + '">' + escHtmlGlobal(fmtMoney(v, { cur: c })) + '</span>'
+          + '<small>' + escHtmlGlobal(mode === 'gross' ? zT('before ' + fmtMoney(_pc[c] || 0, { noSign: true, cur: c }) + ' costs', 'antes de ' + fmtMoney(_pc[c] || 0, { noSign: true, cur: c }) + ' de costes') : zT('after ' + fmtMoney(_pc[c] || 0, { noSign: true, cur: c }) + ' costs', 'tras ' + fmtMoney(_pc[c] || 0, { noSign: true, cur: c }) + ' de costes')) + '</small>');
+        statCurCls(pnlEl, _curs.length, ''); }
+      else { pnlEl.textContent = _fm(t => (mode === 'gross' ? tradeGross(t) : tradeGross(t) - tradeCosts(t)) * tradeCopies(t), all);
+        pnlEl.className = 'stat-value' + (val > 0 ? ' good' : val < 0 ? ' bad' : ''); }
       // Highlight active toggle option
       document.querySelectorAll('#kpi-pnl-cell .pnl-toggle-opt').forEach(el => {
         el.classList.toggle('active', el.dataset.mode === mode);
@@ -29130,24 +29156,29 @@ try {
     if (winCountEl)  winCountEl.textContent  = winCopies;
     if (lossCountEl) lossCountEl.textContent = lossCopies;
     if (beCountEl)   beCountEl.textContent   = beCopies;
+    // several currencies: the averages under the R, each figure whole on its line (29 Oct 2026: "· −" ended a line, "$42.00" began the next)
+    const _wlCur = (m, o) => { const main = accCur(null); return Object.keys(m || {}).sort((a, b) => (a === main ? -1 : b === main ? 1 : a.localeCompare(b))).map(c => '<span class="wl-cur">' + escHtmlGlobal(fmtMoney(m[c], Object.assign({}, o || {}, { cur: c }))) + '</span>').join(' · '); };
     const winDetailEl  = document.getElementById('wl-win-detail');
     const lossDetailEl = document.getElementById('wl-loss-detail');
     const beDetailEl   = document.getElementById('wl-be-detail');
     if (winDetailEl) {
       winDetailEl.innerHTML = winCopies > 0
         ? `${t('wvl.total')} +${totalWinR.toFixed(2)}R<br>`
-          + `${t('wvl.avg_per_win').replace(/\{R\}/g, '+' + (totalWinR/winCopies).toFixed(2) + 'R · ' + (_multi ? fmtMoneyBy(avgBy(wins, x => (tradeNetPL(x) || 0) * tradeCopies(x), x => tradeCopies(x))) : fmtMoney(totalWinCash/winCopies, { cur: _c1 })))}`
+          + (_multi ? `${t('wvl.avg_per_win').replace(/\{R\}/g, '+' + (totalWinR/winCopies).toFixed(2) + 'R')}<br>` + _wlCur(avgBy(wins, x => (tradeNetPL(x) || 0) * tradeCopies(x), x => tradeCopies(x)))
+            : `${t('wvl.avg_per_win').replace(/\{R\}/g, '+' + (totalWinR/winCopies).toFixed(2) + 'R · ' + fmtMoney(totalWinCash/winCopies, { cur: _c1 }))}`)
         : t('wvl.no_wins');
     }
     if (lossDetailEl) {
       lossDetailEl.innerHTML = lossCopies > 0
         ? `${t('wvl.total')} ${totalLossRActual.toFixed(2)}R<br>`
-          + `${t('wvl.avg_per_loss').replace(/\{R\}/g, (totalLossRActual/lossCopies).toFixed(2) + 'R · ' + (_multi ? fmtMoneyBy(avgBy(losses, x => (tradeNetPL(x) || 0) * tradeCopies(x), x => tradeCopies(x))) : fmtMoney(totalLossCash/lossCopies, { cur: _c1 })))}`
+          + (_multi ? `${t('wvl.avg_per_loss').replace(/\{R\}/g, (totalLossRActual/lossCopies).toFixed(2) + 'R')}<br>` + _wlCur(avgBy(losses, x => (tradeNetPL(x) || 0) * tradeCopies(x), x => tradeCopies(x)))
+            : `${t('wvl.avg_per_loss').replace(/\{R\}/g, (totalLossRActual/lossCopies).toFixed(2) + 'R · ' + fmtMoney(totalLossCash/lossCopies, { cur: _c1 }))}`)
         : t('wvl.no_losses');
     }
     if (beDetailEl) {
       beDetailEl.innerHTML = beCopies > 0
-        ? `${t('wvl.zerorcontrib')}<br>${t('wvl.costs_lbl')} -${_fm(x => (parseFloat(x.costs) || 0) * tradeCopies(x), bes, { noSign: true })}`
+        ? (_multi ? `${t('wvl.zerorcontrib')}<br>${t('wvl.costs_lbl')} ` + _wlCur(moneyBy(bes, x => -(parseFloat(x.costs) || 0) * tradeCopies(x)))
+            : `${t('wvl.zerorcontrib')}<br>${t('wvl.costs_lbl')} -${_fm(x => (parseFloat(x.costs) || 0) * tradeCopies(x), bes, { noSign: true })}`)
         : t('wvl.no_bes');
     }
     // (L/S and R/C pie-detail population removed — those .pie-detail elements were dropped when
@@ -30005,10 +30036,11 @@ try {
       return { lab: dd.toLocaleDateString(loc, { day: 'numeric', month: 'short' }), full: dd.toLocaleDateString(loc, { weekday: 'short', day: 'numeric', month: 'short' }), v: byDay[k], n: byDayN[k] }; });
     // the stat cards
     let base = 0; try { base = zc ? baselineIn(zc) : getScopedBaseline(); } catch (e) {}
-    set('zk-v-balance', zSpark([0].concat(cumNet), Z_G)); txt('zk-s-balance', base > 0 ? zT('from ' + fm(base) + ' start', 'desde ' + fm(base) + ' inicial') : '');
-    set('zk-v-pnl', zMiniBars(daily.slice(-12).map(d => d.v)));
+    const zl = zc ? '<text class="zk-vl" x="76" y="-6" text-anchor="end">' + escHtmlGlobal(zT('in ', 'en ') + fmtMoney(0, { noSign: true, cur: zc }).replace(/[\d.,\s]/g, '')) + '</text>' : '';   // which currency the chart is (the curve's switch)
+    set('zk-v-balance', zSpark([0].concat(cumNet), Z_G) + zl); txt('zk-s-balance', zc ? '' : base > 0 ? zT('from ' + fm(base) + ' start', 'desde ' + fm(base) + ' inicial') : '');
+    set('zk-v-pnl', zMiniBars(daily.slice(-12).map(d => d.v)) + zl);
     const fmC = zc ? fmtMoneyBy(moneyBy(all, t => tradeCosts(t) * cp(t)), { noSign: true }) : fm(costs);   // the costs, per currency
-    txt('zk-s-pnl', n ? (data.settings && data.settings.pnlView === 'gross' ? zT('before ' + fmC + ' costs', 'antes de ' + fmC + ' de costes') : zT('after ' + fmC + ' costs', 'tras ' + fmC + ' de costes')) : '');
+    txt('zk-s-pnl', zc ? '' : n ? (data.settings && data.settings.pnlView === 'gross' ? zT('before ' + fmC + ' costs', 'antes de ' + fmC + ' de costes') : zT('after ' + fmC + ' costs', 'tras ' + fmC + ' de costes')) : '');
     set('zk-v-wr', zGauge([[w, Z_G], [b, Z_B], [l, Z_R]])); txt('zk-s-wr', n ? w + ' W · ' + b + ' BE · ' + l + ' L' : '');
     const pf = lossR > 0 ? winR / lossR : (winR > 0 ? Infinity : 0);
     set('zk-v-pf', zRing(pf === Infinity ? 1 : pf / (pf + 1), pf >= 1 ? Z_G : Z_R)); const r1 = v => v.toFixed(v >= 10 ? 0 : 1);
@@ -30021,7 +30053,7 @@ try {
     set('zk-v-rleft', potR > 0 ? zRing(capR / potR, Z_A, Math.round(capR / potR * 100) + '%') : zRing(0, Z_A, ''));
     const fmCt = zc ? fmtMoneyBy(avgBy(all, t => tradeCosts(t) * cp(t), t => cp(t)), { noSign: true }) : fm(costs / n);
     const grossM = zc ? allM.reduce((s, t) => s + tradeGross(t) * cp(t), 0) : gross, costsM = zc ? allM.reduce((s, t) => s + tradeCosts(t) * cp(t), 0) : costs;
-    set('zk-v-costs', zPair(Math.max(0, grossM), costsM, Z_G, Z_R)); txt('zk-s-costs', n ? zT(fmCt + ' a trade', fmCt + ' por operación') : '');
+    set('zk-v-costs', zPair(Math.max(0, grossM), costsM, Z_G, Z_R) + zl); txt('zk-s-costs', zc ? '' : n ? zT(fmCt + ' a trade', fmCt + ' por operación') : '');
     // the timing charts: weekday, session, entry hour
     const dayName = d => new Date(2024, 0, 7 + d).toLocaleDateString(loc, { weekday: 'short' }).replace('.', '');
     const dowDays = [1, 2, 3, 4, 5].concat([6, 0].filter(d => all.some(t => t.dayOfWeek === d)));
