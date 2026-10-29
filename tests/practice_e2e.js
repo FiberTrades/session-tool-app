@@ -3,7 +3,9 @@
   // day (17:00 New York to 17:00 New York) with Asia / London / New York; SL and TP before the press, the SL / TP button and
   // the lines dragged; pips / points / R; 1-4 charts with 1m..1Y each and Trade Replay's timeframe pill; drawings and news
   // from Trade Replay; the date in the crosshair; no black chart after a jump; the automatic symbol list.
-  // Real EUR/USD candles of Thu 1 Oct 2026 from the shared candles table, on this PC's London clock.
+  // Real EUR/USD candles of Wed 14 Oct 2026, on this PC's London clock: a day inside the candle store's stand-in (tests/fixtures/candles,
+  // its 1-minute sample the week of 12-16 Oct 2026), so the day and the history before it are the same real candles every run (29 Oct
+  // 2026: on 1 Oct the stand-in served another day's prices and every price check here missed). Its prices below are that day's.
   // Run: python tests/browser_test.py tests/practice_e2e.js   (maximise / new window: practice_window_e2e.js)
   var W = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
   var out = [], ok = function (name, cond, got) { out.push({ name: name, ok: !!cond, got: got === undefined ? null : got }); };
@@ -30,10 +32,10 @@
     var P = window.__stPractice;
     try { Object.keys(localStorage).filter(function (k) { return /^st_practice/.test(k); }).forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
     var C = P._cfg(); C.layout = 1; C.tfs = [5, 60, 15, 240]; C.stopPx = { EURUSD: 0.0012 }; C.stopUnit = 'pips'; C.tgtUnit = 'R'; C.tgtR = 2; C.tgtOn = true;
-    var openDay = async function () { await P.open({ symbol: 'EURUSD', day: '2026-10-01' }); for (var k = 0; k < 100 && !(P._s() && P._panes().length && P._panes()[0].n); k++) await W(100); };
+    var openDay = async function () { await P.open({ symbol: 'EURUSD', day: '2026-10-14' }); for (var k = 0; k < 100 && !(P._s() && P._panes().length && P._panes()[0].n); k++) await W(100); };
     var S = function () { return P._s(); }, pane = function (i) { return P._panes()[i || 0]; };
     var hhmm = function (t) { var d = new Date(t * 1000); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
-    var stepTo = function (s) { var g = 0; while (S() && g++ < 400) { if (new Date(S().now * 1000).getDate() === 1 && hhmm(S().now) >= s) break; P._step(); } };
+    var stepTo = function (s) { var g = 0; while (S() && g++ < 400) { if (new Date(S().now * 1000).getDate() === 14 && hhmm(S().now) >= s) break; P._step(); } };
     var playOut = function () { var g = 0; while (S() && S().pos && g++ < 400) P._step(); };
     var lastBar = function (i) { var pb = P._paneBars(i || 0); return pb.data[pb.real - 1]; };
 
@@ -45,11 +47,11 @@
 
     // the whole day, Asia first
     ok('the day runs 17:00 New York to 17:00 New York (22:00 to 22:00 here) and starts at the open', hhmm(S().f.open) === '22:00' && hhmm(S().f.close) === '22:00' && S().now === S().f.open, [hhmm(S().f.open), hhmm(S().now)]);
-    ok('the 5m chart shows the 3 hours before, ending just before 22:00 on 30 Sep', lastBar().time + 300 <= S().f.open && hhmm(lastBar().time) >= '21:40', hhmm(lastBar().time));
+    ok('the 5m chart shows the 3 hours before, ending just before 22:00 on 13 Oct', lastBar().time + 300 <= S().f.open && hhmm(lastBar().time) >= '21:40', hhmm(lastBar().time));
     var ses = document.querySelectorAll('#stpr-ses [data-ses]');
     ok('Asia, London and New York, Asia lit', ses.length === 3 && ses[0].classList.contains('on'));
     ok('no sign over the future (the old practice EA panel is gone; the Minimalist Manager panel is checked below)', !document.getElementById('stpr-ea') && !/hidden/i.test(document.getElementById('stpr-cw').textContent));
-    ok('the crosshair says the date: "Thu 1 Oct \'26  08:15"', pane().chart.options().localization.timeFormatter(Date.parse('2026-10-01T07:15:00Z') / 1000) === "Thu 1 Oct '26  08:15", pane().chart.options().localization.timeFormatter(Date.parse('2026-10-01T07:15:00Z') / 1000));
+    ok('the crosshair says the date: "Wed 14 Oct \'26  08:15"', pane().chart.options().localization.timeFormatter(Date.parse('2026-10-14T07:15:00Z') / 1000) === "Wed 14 Oct '26  08:15", pane().chart.options().localization.timeFormatter(Date.parse('2026-10-14T07:15:00Z') / 1000));
     document.querySelector('#stpr-ses [data-ses="london"]').click(); await W(150);
     ok('London jumps to 08:00: the last 5m candle is 07:55, London lit', hhmm(lastBar().time) === '07:55' && document.querySelector('#stpr-ses [data-ses="london"]').classList.contains('on'), hhmm(lastBar().time));
 
@@ -82,7 +84,7 @@
     await P._tf(0, 5); await W(300); P._jump('london'); await W(300);   // the jump re-fits the chart on the next frames
     // news: a release shows once its candle has come; the card tells the numbers
     P._step();   // the 08:00 candle prints
-    P._news([{ at: '2026-10-01T07:00:00Z', currency: 'EUR', title: 'Test PMI', impact: 'High', forecast: '50.1', previous: '49.8', actual: '51.0' }, { at: '2026-10-01T12:30:00Z', currency: 'USD', title: 'Later release', impact: 'High', forecast: '1', previous: '1', actual: '2' }]);
+    P._news([{ at: '2026-10-14T07:00:00Z', currency: 'EUR', title: 'Test PMI', impact: 'High', forecast: '50.1', previous: '49.8', actual: '51.0' }, { at: '2026-10-14T12:30:00Z', currency: 'USD', title: 'Later release', impact: 'High', forecast: '1', previous: '1', actual: '2' }]);
     await W(300);
     for (var zz = 0; zz < 100 && !(P._xOfT(0, 1790838000) < pane().el.clientWidth - 70); zz++) await W(100);   // a busy headless browser can be slow to apply the jump's view
     P._render();
@@ -92,10 +94,10 @@
     var card = pane().el.querySelector('.strp-newscard');
     ok('hovering it shows the card with Actual / Forecast / Previous', card && card.style.display === 'block' && /EUR · Test PMI/.test(card.textContent) && /51\.0/.test(card.textContent), card && card.textContent);
     // ONE disc per candle (Nestor, 19 Oct 2026: "can you just have 1 news dot instead of 4 blocking the view of the candle?")
-    P._news([{ at: '2026-10-01T07:00:00Z', currency: 'USD', title: 'Core CPI y/y', impact: 'Medium', forecast: '3.1%', previous: '3.1%', actual: '3.0%' },
-      { at: '2026-10-01T07:00:00Z', currency: 'USD', title: 'CPI m/m', impact: 'High', forecast: '0.3%', previous: '0.4%', actual: '0.2%' },
-      { at: '2026-10-01T07:00:00Z', currency: 'USD', title: 'Core CPI m/m', impact: 'High', forecast: '0.3%', previous: '0.3%', actual: '0.3%' },
-      { at: '2026-10-01T07:00:00Z', currency: 'USD', title: 'CPI y/y', impact: 'High', forecast: '2.9%', previous: '2.9%', actual: '2.8%' }]);
+    P._news([{ at: '2026-10-14T07:00:00Z', currency: 'USD', title: 'Core CPI y/y', impact: 'Medium', forecast: '3.1%', previous: '3.1%', actual: '3.0%' },
+      { at: '2026-10-14T07:00:00Z', currency: 'USD', title: 'CPI m/m', impact: 'High', forecast: '0.3%', previous: '0.4%', actual: '0.2%' },
+      { at: '2026-10-14T07:00:00Z', currency: 'USD', title: 'Core CPI m/m', impact: 'High', forecast: '0.3%', previous: '0.3%', actual: '0.3%' },
+      { at: '2026-10-14T07:00:00Z', currency: 'USD', title: 'CPI y/y', impact: 'High', forecast: '2.9%', previous: '2.9%', actual: '2.8%' }]);
     await W(100); P._render(); var cpiDraw = P._drawOv(0); hits = pane()._news || [];
     ok('four releases on one candle: ONE disc (red, the highest), with a 4 on it - not four stacked over the candle', hits.length === 1 && hits[0].n === 4 && hits[0].list.length === 4 && /High/.test(hits[0].e.impact), hits.map(function (h) { return [h.n, h.e.title, h.y]; }));
     if (hits[0]) { var fx0 = hits[0].spots ? hits[0].spots[0].x : hits[0].x; (document.elementFromPoint(r.left + fx0, r.top + hits[0].y) || ch).dispatchEvent(new MouseEvent('mousemove', { clientX: r.left + fx0, clientY: r.top + hits[0].y, bubbles: true })); await W(30); }   // its first flag (each flag its own hover since 29 Oct 2026)
@@ -107,7 +109,7 @@
     // the Minimalist Manager panel (17 Oct 2026): the EA's rows beside the chart, execution mode, the confirm box, and the
     // EA's break-even, partial closes, pending orders, daily limit, ON / OFF and folding
     stepTo('08:20');
-    ok('price after the 08:15 candle (the clock at 08:20) is 1.13147', near(lastBar().close, 1.13147), lastBar());
+    ok('price after the 08:15 candle (the clock at 08:20) is 1.12024', near(lastBar().close, 1.12024), lastBar());
     var mmEl = document.getElementById('stpr-mm'), cw = document.getElementById('stpr-cw');
     var mmIn = function (k) { return mmEl.querySelector('[data-mmi="' + k + '"]'); }, mmBtn = function (k) { return mmEl.querySelector('[data-mm="' + k + '"]'); };
     var setIn = function (k, v) { var el = mmIn(k); el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); };
@@ -128,26 +130,26 @@
     // execution mode: Execute, the stop follows the mouse (held at Max SL), a click asks, Enter places
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', bubbles: true })); await W(50);   // the key arms it, as in MT5: no Execute button on a computer (17 Oct 2026)
     var find = function (k) { return P._lines(0).filter(function (l) { return l.k === k; })[0]; };
-    ok('Execute: execution mode on, the preview a buy with a 12-pip stop to start', S().exec && S().pv && S().pv.dir === 1 && find('pvsl') && near(find('pvsl').p, 1.13027, 1e-9) && find('pvtp') && near(find('pvtp').p, 1.13387, 1e-9) && /Execution mode on: click the chart where your stop goes\. Press O again to leave\./.test(mmEl.querySelector('.stpr-mm-fn').textContent) && /Press O again to leave/.test(document.getElementById('stpr-tr').textContent) && mmEl.querySelector('.stpr-mm-fn').classList.contains('on'), P._lines(0));
+    ok('Execute: execution mode on, the preview a buy with a 12-pip stop to start', S().exec && S().pv && S().pv.dir === 1 && find('pvsl') && near(find('pvsl').p, 1.11904, 1e-9) && find('pvtp') && near(find('pvtp').p, 1.12264, 1e-9) && /Execution mode on: click the chart where your stop goes\. Press O again to leave\./.test(mmEl.querySelector('.stpr-mm-fn').textContent) && /Press O again to leave/.test(document.getElementById('stpr-tr').textContent) && mmEl.querySelector('.stpr-mm-fn').classList.contains('on'), P._lines(0));
     ch = pane().el.querySelector('.stpr-pc'); r = ch.getBoundingClientRect(); var x = r.left + r.width * 0.5;
     var pev = function (t, price, btn) { ch.dispatchEvent(new PointerEvent(t, { clientX: x, clientY: r.top + P._yOf(0, price), bubbles: true, cancelable: true, pointerId: 7, pointerType: 'mouse', button: btn || 0 })); };
-    pev('pointermove', 1.13227); await W(60);
+    pev('pointermove', 1.12104); await W(60);
     ok('the mouse 8 pips above price: a sell with an 8-pip stop', S().pv.dir === -1 && near(S().pv.rd, 0.0008, 0.00002), S().pv);
-    pev('pointermove', 1.13447); await W(60);
+    pev('pointermove', 1.12324); await W(60);
     ok('30 pips above: held at Max SL, 12 pips', S().pv.dir === -1 && near(S().pv.rd, 0.0012, 1e-9), S().pv);
-    pev('pointerdown', 1.13267); await W(60);
+    pev('pointerdown', 1.12144); await W(60);
     var p = S().pos;
-    ok('the click places it at once, as the EA does (no box to answer): SELL at 1.13147, stop 1.13267, target 1.12907; execution mode ends', p && p.dir === -1 && near(p.entry, 1.13147) && near(p.sl, 1.13267, 1e-9) && near(p.tp, 1.12907, 1e-9) && !S().exec && !document.getElementById('stpr-cf'), p && { e: p.entry, sl: p.sl, tp: p.tp });
-    ok('the BE line is parked just inside the target, as the EA parks it (5 pips)', p && near(p.be, 1.12957, 1e-9) && find('be'), p && p.be);
+    ok('the click places it at once, as the EA does (no box to answer): SELL at 1.12024, stop 1.12144, target 1.11784; execution mode ends', p && p.dir === -1 && near(p.entry, 1.12024) && near(p.sl, 1.12144, 1e-9) && near(p.tp, 1.11784, 1e-9) && !S().exec && !document.getElementById('stpr-cf'), p && { e: p.entry, sl: p.sl, tp: p.tp });
+    ok('the BE line is parked just inside the target, as the EA parks it (5 pips)', p && near(p.be, 1.11834, 1e-9) && find('be'), p && p.be);
     // the BE line dragged to 1R, and a partial: P1 closes 50% at 1R
-    P._setLine('be', 1.13027);
+    P._setLine('be', 1.11904);
     mmBtn('pcadd').click(); await W(30);
     ok('Add P1: a P1 50% line on the open trade', S().pos.pc.length === 1 && S().pos.pc[0].pct === 50 && find('pc0') && mmIn('pc:0').value === '50', S().pos.pc);
-    P._setLine('pc0', 1.13027);
+    P._setLine('pc0', 1.11904);
     S().playing = true;   // as if playing: the close must not stop it (21 Oct 2026)
     playOut();
     var d1 = S().done, stillPlaying = S().playing; S().playing = false;
-    ok('break-even at 1R and P1 at 1R, then the target at 09:39: +1.50R in 2 parts, the stop at the entry', d1 && d1.why === 'tp' && near(d1.r, 1.5, 0.001) && d1.parts === 2 && near(d1.sl, 1.13147, 1e-9) && hhmm(d1.exitTs) === '09:39', d1);
+    ok('break-even at 1R and P1 at 1R, then the target at 13:30: +1.50R in 2 parts, the stop at the entry', d1 && d1.why === 'tp' && near(d1.r, 1.5, 0.001) && d1.parts === 2 && near(d1.sl, 1.12024, 1e-9) && hhmm(d1.exitTs) === '13:30', d1);
     ok('the result card says it', /TARGET HIT IN 2 PARTS/.test(document.getElementById('stpr-tr').textContent) && /\+1\.50R/.test(document.getElementById('stpr-tr').textContent), document.getElementById('stpr-tr').textContent.slice(0, 120));
     // 21 Oct 2026 (Nestor: "I dont want to have to press those buttons that appear after ive taken a trade"): the replay carries on,
     // the result is one line with no buttons, Space plays and pauses
@@ -166,15 +168,15 @@
     S().done = null; P._render(); await openDay(); stepTo('08:20');
     mmBtn('ord').click(); await W(30);
     ok('Order type Limit', /Limit/.test(mmBtn('ord').textContent) && P._mm().ord === 'limit');
-    P._exec(true); P._setLine('pvent', 1.13200); P._aim(1.13150); P._fire(); await W(30);
+    P._exec(true); P._setLine('pvent', 1.12077); P._aim(1.12027); P._fire(); await W(30);
     ok('a Buy Limit above price is refused, as the broker refuses it', !S().pend && !S().pos, S().pend);
     mmBtn('ord').click(); await W(30);
-    P._exec(true); P._setLine('pvent', 1.13100); P._aim(1.13200);
+    P._exec(true); P._setLine('pvent', 1.11977); P._aim(1.12077);
     ok('the preview names it: SELL STOP on the entry line', P._lines(0).some(function (l) { return l.k === 'pvent' && /SELL STOP/.test(l.title); }), P._lines(0));
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await W(30);   // Enter places it, as a click does
-    ok('it waits: SELL STOP 1.13100 with a Cancel order button', S().pend && S().pend.kind === 'stop' && near(S().pend.entry, 1.13100) && /SELL STOP/.test(document.getElementById('stpr-tr').textContent) && document.querySelector('#stpr-tr [data-a="cancel"]'), S().pend);
+    ok('it waits: SELL STOP 1.11977 with a Cancel order button', S().pend && S().pend.kind === 'stop' && near(S().pend.entry, 1.11977) && /SELL STOP/.test(document.getElementById('stpr-tr').textContent) && document.querySelector('#stpr-tr [data-a="cancel"]'), S().pend);
     var g2 = 0; while (S().pend && g2++ < 200) P._step();
-    ok('it fills when price comes down to 1.13100: a sell from there', S().pos && S().pos.dir === -1 && near(S().pos.entry, 1.13100) && !S().pend, S().pos && S().pos.entry);
+    ok('it fills when price comes down to 1.11977: a sell from there', S().pos && S().pos.dir === -1 && near(S().pos.entry, 1.11977) && !S().pend, S().pos && S().pos.entry);
     P._close(); S().done = null; mmBtn('ord').click(); await W(30);
     ok('back to Market', P._mm().ord === 'market');
     // the execution key, the daily limit, ON / OFF and folding
@@ -230,7 +232,7 @@
       if (lb.time >= now) leak.push(i + ': starts in the future'); if (pp.tf <= 1440 && lb.time >= S().f.open && !near(lb.high, hi, 1e-9)) leak.push(i + ' high ' + lb.high + ' vs ' + hi); });
     ok('every chart ends at now: no candle and no high from the future (5m, 1h, 1D, 1W)', !leak.length, leak);
     var dlb = lastBar(2);
-    ok('the 1D candle is the day so far (opened 22:00 on 30 Sep)', hhmm(dlb.time) === '22:00' && new Date(dlb.time * 1000).getDate() === 30, hhmm(dlb.time));
+    ok('the 1D candle is the day so far (opened 22:00 on 13 Oct)', hhmm(dlb.time) === '22:00' && new Date(dlb.time * 1000).getDate() === 13, hhmm(dlb.time));
 
     // the black chart: zoom away and switch auto-fit off, then Show the rest
     P._panes().forEach(function (pp) { pp.chart.priceScale('right').applyOptions({ autoScale: false }); pp.chart.timeScale().setVisibleLogicalRange({ from: 0, to: 20 }); });
@@ -266,7 +268,7 @@
     // a stop-out and Gold
     S().exec = false; S().pv = null; stepTo('08:20'); P._place(1); playOut();
     ok('a buy there is stopped out: -1.00R', S().done && S().done.why === 'sl' && near(S().done.r, -1, 0.001), S().done);
-    await P.open({ symbol: 'XAUUSD', day: '2026-10-01' }); for (var k = 0; k < 60 && !(S() && S().sym.key === 'XAUUSD'); k++) await W(100);
+    await P.open({ symbol: 'XAUUSD', day: '2026-10-14' }); for (var k = 0; k < 60 && !(S() && S().sym.key === 'XAUUSD'); k++) await W(100);
     ok('Gold loads (2 decimals)', S() && S().sym.key === 'XAUUSD' && S().digits === 2, S() && { digits: S().digits });
     ok('no practice trade in the journal', !((getAllLifetimeTrades() || []).some(function (t) { return t && t.practice; })));
     P.close(); await W(200);
