@@ -433,6 +433,8 @@ void AimSeed(bool now=false)
    else Print("Session Terminal: no take profit on ",_Symbol," in this account's history - the target slippage starts at ",DoubleToString(AimSlip(_Symbol),1)," pips");
   }
 double AimNetPx(){ AimSeed(true); return AimSlip(_Symbol)*g_pip; }   // v9.17: MT5's TP at the EA's trigger - this far past the aim (was + 1 pip)
+void   WhySet(ulong id,string why);   // v9.18: below, with the Follow rule - why a position closed, for every chart's close event
+void   WhyDrop(ulong id);
 ulong  g_aimTk=0, g_aimClosing=0; uint g_aimAt=0;
 double g_aimPx=0.0; int g_aimDir=0;   // the price a close at the aim was sent at, and its side: learnt from the fill when it lands
 // v9.16: an open trade's aimed target reached by the price it closes at: closed at market, once a second at most; how far short the fill
@@ -460,11 +462,11 @@ void AimTick()
       double trig=aim+d*AimSlip(_Symbol)*g_pip;
       if(d*(px-trig)<-g_point*0.5) continue;                         // not there yet
       if(tk==g_aimTk && GetTickCount()-g_aimAt<1000) continue;        // one try a second
-      g_aimTk=tk; g_aimAt=GetTickCount(); g_aimClosing=tk; g_aimPx=px; g_aimDir=d;
+      g_aimTk=tk; g_aimAt=GetTickCount(); g_aimClosing=tk; g_aimPx=px; g_aimDir=d; WhySet(tk,"tp");
       trade.LogLevel(LOG_LEVEL_NO); bool ok=trade.PositionClose(tk); trade.LogLevel(LOG_LEVEL_ERRORS);
       // v9.17: MT5's TP sits at the same trigger - if it is closing the trade (the position frozen while it fills, 10029) or closed it
       // first (10036, or gone), there is nothing to say; the TP's fill is learnt when it lands
-      if(!ok && (trade.ResultRetcode()==TRADE_RETCODE_POSITION_CLOSED || trade.ResultRetcode()==TRADE_RETCODE_FROZEN || !PositionSelectByTicket(tk))){ g_aimClosing=0; g_aimPx=0.0; continue; }
+      if(!ok && (trade.ResultRetcode()==TRADE_RETCODE_POSITION_CLOSED || trade.ResultRetcode()==TRADE_RETCODE_FROZEN || !PositionSelectByTicket(tk))){ g_aimClosing=0; g_aimPx=0.0; WhyDrop(tk); continue; }
       // the fill: the result's price, else its deal's (a demo on 27 Oct 2026 answered 0.00000 for a close that filled at the aim);
       // still unknown, it is learnt when the close itself comes in (OnTradeTransaction)
       double fill=ok ? trade.ResultPrice() : 0.0;
@@ -472,7 +474,7 @@ void AimTick()
       if(ok && fill>0){ AimLearn(_Symbol,d*(px-fill)/g_pip); g_aimPx=0.0; }
       Print("Session Terminal: target ",DoubleToString(aim,g_digits)," reached (",(d>0?"bid ":"ask "),DoubleToString(px,g_digits),") - closed at market: ",
             ok ? (fill>0 ? DoubleToString(fill,g_digits) : "filled, price to follow") : "refused ("+IntegerToString((int)trade.ResultRetcode())+")",", next trigger ",DoubleToString(AimSlip(_Symbol),1)," pips past the aim");
-      if(!ok){ g_aimClosing=0; g_aimPx=0.0; }
+      if(!ok){ g_aimClosing=0; g_aimPx=0.0; WhyDrop(tk); }
      }
   }
 
@@ -2402,7 +2404,7 @@ void MonitorPartials()
          double cut=(g_volStep>0) ? NormalizeDouble(MathFloor(raw/g_volStep+1e-9)*g_volStep,g_volDigits) : raw;
          bool all=(cut>=vol-1e-9) || (vol-cut<g_volMin-1e-9);
          bool done;
-         if(all){ g_pcClosing=posid; done=trade.PositionClose(tk); if(!done) g_pcClosing=0; }
+         if(all){ g_pcClosing=posid; WhySet(posid,"pc"); done=trade.PositionClose(tk); if(!done){ g_pcClosing=0; WhyDrop(posid); } }
          else done=trade.PositionClosePartial(tk,cut);
          if(!done)
            {
@@ -8120,6 +8122,13 @@ void CopySetRole(ENUM_COPY_ROLE r)
 // the app and, as the close's reason ("fol"), on the phone. Copies are never touched.
 ulong g_folTk[]; long g_folTry[]; ulong g_folDone[];
 bool FolDone(ulong id){ for(int i=0;i<ArraySize(g_folDone);i++) if(g_folDone[i]==id) return true; return false; }
+// Why a position closed, for every chart: each chart's EA sends a close event for every close on the account and the server keeps the
+// first to arrive, so a reason only the closing chart knew ("fol", "pc", the aimed target's "tp") mostly reached the phone as "ea" - seen on
+// the demo's 9 charts, 29 Oct 2026. The chart that decides leaves it in a temporary terminal variable (gone with MT5) every chart reads.
+string WhyKey(ulong id){ return "MMC_WHY_"+IntegerToString((long)id); }
+void   WhySet(ulong id,string why){ string k=WhyKey(id); GlobalVariableTemp(k); GlobalVariableSet(k,(why=="fol") ? 1.0 : (why=="pc") ? 2.0 : 3.0); }
+void   WhyDrop(ulong id){ GlobalVariableDel(WhyKey(id)); }
+string WhyGet(ulong id){ string k=WhyKey(id); if(!GlobalVariableCheck(k)) return ""; double v=GlobalVariableGet(k); return (v==1.0) ? "fol" : (v==2.0) ? "pc" : (v==3.0) ? "tp" : ""; }
 bool FolTryNow(ulong tk,long nowUtc)
   {
    int n=ArraySize(g_folTk), at=-1;
@@ -8145,6 +8154,7 @@ void FolTick()
       if(!FolTryNow(tk,nowUtc)) continue;
       ulong id=(ulong)PositionGetInteger(POSITION_IDENTIFIER); double vol=PositionGetDouble(POSITION_VOLUME);
       int n=ArraySize(g_folDone); if(n>=32){ ArrayRemove(g_folDone,0,1); n--; } ArrayResize(g_folDone,n+1); g_folDone[n]=id;   // its close event says why
+      WhySet(id,"fol");                                                                  // ...on every chart's
       if(trade.PositionClose(tk))
         {
          string m="Closed "+sy+" "+DoubleToString(vol,2)+": this account copies "+lead+", trade on the Lead.";
@@ -8808,6 +8818,7 @@ void OnTimer()
    uint _nowMs=GetTickCount();
    if(s_lastSec!=0 && _nowMs-s_lastSec<1000) return;
    s_lastSec=_nowMs;
+   static uint s_whyGc=0; if(s_whyGc==0 || _nowMs-s_whyGc>3600000){ s_whyGc=_nowMs; GlobalVariablesDeleteAll("MMC_WHY_",TimeLocal()-6*3600); }   // v9.18: old close reasons
    AsideTick(false);                        // v9.08: the VPS copy reports; any other copy asks whether to stand aside
    if(g_aside){ CpRoleSync(); DrawInfoReadout(); AccountLabel(false); if(g_flashMsg!="" && GetTickCount64()>=g_flashUntil) DrawHint(); ChartRedraw(); return; }   // v9.10: + CpRoleSync
    if(SyncPositionLines()) ChartRedraw();   // v8.87: a stop / target moved outside the EA, in a quiet market or with the EA off
@@ -9062,6 +9073,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
       // v8.87: "pc" when the partial-close ladder took the last of it.
       string _why=(g_pcClosing!=0 && posId==g_pcClosing) ? "pc" : LiveCloseReason(dealTicket);
       if(FolDone(posId)) _why="fol";   // v9.18: closed because this account is a Follow
+      { string _sw=WhyGet(posId); if(_sw!="") _why=_sw; }   // v9.18: the reason the closing chart left for all of them
       if(g_pcClosing!=0 && posId==g_pcClosing) g_pcClosing=0;
       if(g_aimClosing!=0 && posId==g_aimClosing)   // v9.16: closed at its aimed target - a take profit
         {
