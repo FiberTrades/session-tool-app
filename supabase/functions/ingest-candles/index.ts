@@ -200,5 +200,19 @@ Deno.serve(async (req: Request): Promise<Response> => {
   // what each batch was and what it changed (29 Oct 2026: the MT5s kept sending ~3.5 MB of bars a minute after the write fix -
   // which history, and from where, is read from these lines)
   console.log(`put ${symbol} tf${tf} n=${rows.length} ${rows[0].t}-${rows[rows.length - 1].t} w=${written} tok=${String(token).slice(0, 6)}`);
+  // ONE-OFF (29 Oct 2026, removed after the repair): while CANDLES_FIX = "SYMBOL|from|to|compare" or "...|apply", a batch of that
+  // symbol (M1-H1) inside [from, to) also goes to st_candles_fix_hl: highs/lows the 18:37-19:53 widening rule took from another
+  // broker come back where the incoming open AND close equal the stored ones (the FTMO demo re-sending; compare = count only).
+  const fix = (Deno.env.get("CANDLES_FIX") || "").split("|");
+  if (fix.length === 4 && fix[0] === symbol && tf <= 60) {
+    try {
+      const fr = await fetch(`${SUPABASE_URL}/rest/v1/rpc/st_candles_fix_hl`, {
+        method: "POST",
+        headers: { "content-type": "application/json", apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` },
+        body: JSON.stringify({ p_symbol: symbol, p_tf: tf, p_rows: put, p_from: Number(fix[1]), p_to: Number(fix[2]), p_apply: fix[3] === "apply" }),
+      });
+      console.log(`fix ${symbol} tf${tf} ${fix[3]} ${rows[0].t}-${rows[rows.length - 1].t} ${fr.ok ? JSON.stringify(await fr.json()) : "HTTP " + fr.status}`);
+    } catch (e) { console.log(`fix ${symbol} tf${tf} failed ${String(e)}`); }
+  }
   return json({ ok: true, upserted: written, sent: rows.length });
 });
