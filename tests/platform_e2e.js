@@ -45,8 +45,8 @@
       var nm0 = $('#stpr-grid .pl-nm'), oh0 = $('#stpr-grid .stpr-ohlc');
       check('its legend: the name beside the way out, O H L C under it, then the account pill and the Session Indicator line under it', nm0 && /^Euro \/ U\.S\. Dollar · 15 · /.test(nm0.textContent) && nm0.getBoundingClientRect().left > $('.ph-exit').getBoundingClientRect().right && oh0 && oh0.getBoundingClientRect().top > nm0.getBoundingClientRect().top + 8 && $('.ph-ov [data-phsi]') && $('.ph-ov [data-phpill]') && $('.ph-ov [data-phpill]').getBoundingClientRect().top < $('.ph-ov [data-phsi]').getBoundingClientRect().top && /ON|OFF/.test($('[data-phpill]').textContent),
         [nm0 && nm0.textContent, $('.ph-ov') && $('.ph-ov').textContent]);
-      var bar = $('.ph-bar'), kids = [$('.ph-logo'), $('.ph-live'), $('.ph-bar #stpr-sym'), $('.ph-tf'), $('.ph-icons #stpr-drawbtn'), $('.ph-icons #stpr-undo'), $('.ph-icons #stpr-layersbtn'), $('.ph-icons #stpr-alertsbtn')];
-      check('the bottom toolbar: the logo first, Live, the symbol, the timeframe, drawing tools, undo, Show on chart, alerts - all on screen', kids.every(function (k) { return k && k.getBoundingClientRect().width > 0 && k.getBoundingClientRect().right <= innerWidth + 1; }) && !!$('.ph-logo svg'),
+      var bar = $('.ph-bar'), kids = [$('.ph-live'), $('.ph-bar #stpr-sym'), $('.ph-tf'), $('.ph-icons #stpr-drawbtn'), $('.ph-icons #stpr-undo'), $('.ph-icons #stpr-layersbtn'), $('.ph-icons #stpr-alertsbtn')];
+      check('the bottom toolbar: Live first (no logo since 29 Oct 2026), the symbol, the timeframe, drawing tools, undo, Show on chart, alerts - all on screen', kids.every(function (k) { return k && k.getBoundingClientRect().width > 0 && k.getBoundingClientRect().right <= innerWidth + 1; }) && !$('.ph-logo') && bar.firstElementChild === $('.ph-live'),
         kids.map(function (k) { return k ? Math.round(k.getBoundingClientRect().right) : null; }));
       check('above it, docked: the open trade (or None) and a square pink Execute', (/No open trade/.test($('.ph-trade').textContent) || /lots/.test($('.ph-trade').textContent)) && $('.ph-go') && parseFloat(getComputedStyle($('.ph-go')).borderRadius) <= 4 && $('.ph-trade').getBoundingClientRect().bottom <= bar.getBoundingClientRect().top + 1);
       // the trade row behind its button (Nestor, 28 Oct 2026: "can't this live in a button that when pressed the position row displays and it can be hidden away?")
@@ -108,9 +108,8 @@
       check('the timeframe opens its list above the bar', mn && mr.bottom <= bar.getBoundingClientRect().top + 1 && mn.querySelector('[data-phtfv="60"]'), mr && [mr.top, mr.bottom]);
       mn.querySelector('[data-phtfv="60"]').click(); for (k = 0; k < 40 && P._panes()[0].tf !== 60; k++) await W(150); await W(900);
       check('...1h: the chart turns to it, the button says so', P._panes()[0].tf === 60 && $('.ph-tf').textContent.indexOf('1h') === 0, [P._panes()[0].tf, $('.ph-tf').textContent]);
-      // the logo: out of full screen, as the top-left tile; no "All pages" sheet any more (Nestor, 28 Oct 2026: "remove these options for the tabs on phone")
-      $('.ph-logo').click(); await W(800);
-      check('the logo: out of full screen, the page and its tab icons back; no "All pages" sheet', !win.classList.contains('ph-full') && !document.querySelector('.st-navsheet-bg') && !window.__stNav && !document.querySelector('.ph-navs') && getComputedStyle($('.container > .tabs')).display !== 'none', [win.className, !!window.__stNav]);
+      // no logo in the toolbar (Nestor, 29 Oct 2026: "on a phone remove the monitor logo to make more space"), no "All pages" sheet: the exit tile is the way out
+      check('no logo in the bottom toolbar and no "All pages" sheet: the exit tile is the way out', !$('.ph-logo') && !$('[data-phlogo]') && !document.querySelector('.st-navsheet-bg') && !window.__stNav && !document.querySelector('.ph-navs') && !!$('.ph-exit'), [win.className, !!window.__stNav]);
       if (!win.classList.contains('ph-full')) { window.scrollTo(0, Math.round(window.scrollY + win.getBoundingClientRect().top)); for (k = 0; k < 30 && !win.classList.contains('ph-full'); k++) await W(100); await W(600); }
       $('.ph-exit').click(); await W(800);
       check('the way out: the page as it was (at its top), the tab icons a tap away', !win.classList.contains('ph-full') && !document.body.classList.contains('st-phfull') && window.scrollY === 0 && getComputedStyle($('.container > .tabs')).display !== 'none', [win.className, window.scrollY]);
@@ -325,6 +324,20 @@
     var cCom = htd[10] && getComputedStyle(htd[10]).color, cPro = htd[12] && getComputedStyle(htd[12]).color;
     check('History: the commission (-8.75) red, the profit (200.00) green', cCom === 'rgb(242, 54, 69)' && cPro === 'rgb(8, 153, 129)', [cCom, cPro, hr0 && hr0.textContent.slice(0, 120)]);
     $('[data-pltab="pos"]').click(); await W(200);
+
+    // ---- in Spanish (Nestor, 29 Oct 2026: "when in spanish should these TFs be also in spanish?"): TradingView's - W is S, 1Y is 1A, All is Todo;
+    //      D, M, YTD, h and m stay - and Spread stays Spread (Margen is margin) ----
+    if (typeof setLanguage === 'function') {
+      setLanguage('es'); await W(1500); try { P._platSync && P._platSync(); } catch (e) {} await W(600);
+      var tfT = Array.prototype.map.call(document.querySelectorAll('.pl-tfs [data-pltf]'), function (b) { return b.textContent; }), rgT = Array.prototype.map.call(document.querySelectorAll('.plat-foot [data-plrg]'), function (b) { return b.textContent; });
+      check('Spanish: the top bar\'s timeframes with S for the week, D for the day', tfT.indexOf('S') >= 0 && tfT.indexOf('D') >= 0 && tfT.indexOf('W') < 0 && tfT.indexOf('1h') >= 0, tfT);
+      check('...the ranges: 1D 5D 1M 3M 6M YTD 1A Todo', rgT.join(' ') === '1D 5D 1M 3M 6M YTD 1A Todo', rgT);
+      var cdbEs = document.querySelector('#stpr-grid .stpr-cdb'), sprEs = document.querySelector('#stpr-mm') && document.querySelector('#stpr-mm').textContent;
+      check('...and Spread as Spread, on the chart and under the prices (never Margen)', (!cdbEs || cdbEs.hidden || /^Spread /.test(cdbEs.textContent)) && /spread \d/.test(sprEs) && !/margen \d/i.test(sprEs), [cdbEs && cdbEs.textContent, (sprEs.match(/(spread|margen) [\d.]+/i) || [''])[0]]);
+      setLanguage('en'); await W(1500); try { P._platSync && P._platSync(); } catch (e) {} await W(600);
+      var tfE = Array.prototype.map.call(document.querySelectorAll('.pl-tfs [data-pltf]'), function (b) { return b.textContent; }), rgE = Array.prototype.map.call(document.querySelectorAll('.plat-foot [data-plrg]'), function (b) { return b.textContent; });
+      check('...back in English: W, 1Y and All again', tfE.indexOf('W') >= 0 && rgE.join(' ') === '1D 5D 1M 3M 6M YTD 1Y All', [tfE, rgE]);
+    }
 
     // ---- Check my bias in the top bar (window.__stPlanCheck; Check my plan until 27 Oct 2026) ----
     var pc0 = window.__stPlanCheck, pcGot = null; window.__stPlanCheck = { open: function (o) { pcGot = o || {}; } }; await W(1000);
