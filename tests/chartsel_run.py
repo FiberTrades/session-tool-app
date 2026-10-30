@@ -63,6 +63,8 @@ def run(view, w, h, mob):
         time.sleep(1.5); shot('candles_front')
         c.eval("(function(){ var p = window.__stPractice._panes()[0], pc = p.el.querySelector('.stpr-pc'), r = pc.getBoundingClientRect(); pc.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + r.width * 0.3, clientY: r.top + r.height * 0.5, button: 2 })); setTimeout(function(){ var b = p.el.querySelector('.stpr-ctx [data-act=cfront]'); if (b) b.click(); }, 300); return 1; })()")
         time.sleep(1.5); shot('drawings_front')
+        c.eval("(function(){ window.__stPractice._layout(4); return 1; })()"); time.sleep(5); shot('layout4')
+        c.eval("(function(){ window.__stPractice._layout(8); return 1; })()"); time.sleep(5); shot('layout8')
     finally:
         try: subprocess.run(['taskkill', '/PID', str(proc.pid), '/T', '/F'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception: proc.kill()

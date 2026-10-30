@@ -97,6 +97,20 @@
       kids0 = nk; seen++; DW.list.splice(DW.list.indexOf(dd), 1); }
     P._render(); await W(300);
     check('every drawing tool (' + seen + ') stays behind the candles when they are in front', seen > 20 && !bad.length, [seen, bad, types.join(',')]);
+    // the legends fit their charts (30 Oct 2026: "top row icons are not fitting the chart and also the OCHL they dont fit the smaller
+    // charts"): on 4 and on 8 charts, nothing of a legend past its chart's price scale, its name and buttons on one row
+    var fits = function () { return P._panes().map(function (q) { var tl = q.el, nm = q.el.querySelector('.pl-nm'), pill = tl.querySelector('.stpr-tfpill'); if (!nm) return 'no legend';
+        var r0 = q.el.getBoundingClientRect(), dm = q._kdm || { pw: q.el.clientWidth - 60 }, lim = r0.left + dm.pw, mx = 0;
+        Array.prototype.forEach.call(tl.querySelectorAll('.pl-nm, .stpr-tfpill, .stpr-sympill, .stpr-ohlc'), function (x) { if (!x.offsetWidth) return; var r = x.getBoundingClientRect(); if (r.right > mx) mx = r.right; });
+        var cy = function (x) { var r = x.getBoundingClientRect(); return (r.top + r.bottom) / 2; }, row = nm && nm.offsetWidth ? !Array.prototype.some.call(tl.querySelectorAll('.stpr-tfpill, .stpr-sympill'), function (x) { return x.offsetWidth && Math.abs(cy(x) - cy(nm)) > 10; }) : true;
+        return (mx <= lim + 0.5 && row) ? 'ok' : ('over ' + Math.round(mx - lim) + ' row ' + row + ' ' + q.el.className); }); };
+    P._layout(4); for (k = 0; k < 80 && !(P._panes().length === 4 && P._panes()[3].bars && P._panes()[3].bars.length); k++) await W(250); await W(1500);
+    var f4 = fits(); window.__selShot4 = 1;
+    check('4 charts: every legend fits its chart, its name and buttons on one row', f4.every(function (x) { return x === 'ok'; }), f4);
+    P._layout(8); for (k = 0; k < 80 && !(P._panes().length === 8 && P._panes()[7].bars && P._panes()[7].bars.length); k++) await W(250); await W(1500);
+    var f8 = fits();
+    check('8 charts: every legend fits its chart', f8.every(function (x) { return x === 'ok'; }), f8);
+    P._layout(2); for (k = 0; k < 60 && P._panes().length !== 2; k++) await W(250); await W(800); ps = P._panes();
     // Copy trading (Nestor, 30 Oct 2026: "the copy trading panel... looks messy! can you improve its look?"): the Trade with list's tags
     // open each group; stand-ins only, as platform_e2e.js
     var CWs = {}, rawc = P._s().sym.raw, LVc = P._lv(), Lc = window.__stLiveLine;
