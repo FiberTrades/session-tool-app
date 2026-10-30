@@ -88,7 +88,7 @@
     var msg = plain(buildReviewMessage());
     var lines = msg.split('\n');
     var tradeLines = lines.filter(function (l) { return /^\S*\s*\d+\.\s/.test(l.trim()) || /^\d+\./.test(l.trim()); });
-    check('review post: "1 trade - copied to 2 accounts"', /Yes \(1 trade - copied to 2 accounts\)/.test(msg), lines.filter(function (l) { return /Traded/.test(l); }));
+    check('review post: "1 trade - on 2 accounts" (the Lead and its copy)', /Yes \(1 trade - on 2 accounts\)/.test(msg), lines.filter(function (l) { return /Traded/.test(l); }));
     check('review post: the trade is written once, "(2 accounts)"', (msg.match(/\(2 accounts\)/g) || []).length === 1, tradeLines);
     check('review post: Losses 1', /Losses:\s+1\b/.test(msg), lines.filter(function (l) { return /Losses/.test(l); }));
     check('review post: Net R -1.00R, % of both accounts together (-570 / 80,000 = -0.71%)', /-1\.00R \| -0\.71%/.test(msg), lines.filter(function (l) { return /Net R/.test(l); }));
@@ -114,7 +114,7 @@
     var r1 = cs.length ? tradeRforMath(cs[0]) : null;
     check('series: its R once (-1.00R)', r1 !== null && Math.abs(r1 + 1) < 0.005, r1);
     var greet = plain(_seriesGreetingHTML());
-    check('series greeting: "1 trade in (copied to 2 accounts), 1 loss"', /1 trade in \(copied to 2 accounts\), 1 loss\b/.test(greet), greet.slice(0, 200));
+    check('series greeting: "1 trade in (on 2 accounts), 1 loss"', /1 trade in \(on 2 accounts\), 1 loss\b/.test(greet), greet.slice(0, 200));
     check('all accounts: every surface reads 1 trade (filterByScope)', filterByScope(getAllLifetimeTrades()).length === 1, filterByScope(getAllLifetimeTrades()).length);
     check('CSV export still lists both real trades (filterByScopeRaw)', filterByScopeRaw(getAllLifetimeTrades()).length === 2, filterByScopeRaw(getAllLifetimeTrades()).length);
     data.viewScope = 'acc_10';
