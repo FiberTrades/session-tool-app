@@ -512,7 +512,7 @@
     check('...no button inside a row, no paragraph under them; one "Copy trading…" at the bottom', !pm.querySelector('.stpr-tw button, [data-cpact]') && !pm.querySelector('.stpr-wlf') && /^Copy trading…$/.test(($('#stpr-menu [data-cpsheet]') || {}).textContent || ''), pm.textContent);
     check('...the account copying it is in the list (it keeps no live line)', rOne && rOne.hasAttribute('data-lvfol'));
     var sh = await sheet();
-    check('Copy trading: the Lead (Stop being the Lead), copying it (OneFunded 10K, Stop copying), not copying (FTMO Demo, Copy 70K’s trades)', sh && crow('90001234') && crow('90001234').querySelector('[data-cpact="off|90001234"]') && crow('27007659').querySelector('[data-cpact="off|27007659"]') && /Copy 70K’s trades/.test(crow('1515070952').textContent) && /Lead.*Copying it.*Not copying/.test(sh.textContent), sh && sh.textContent);
+    check('Copy trading: the Lead (Stop being the Lead), copying it (OneFunded 10K, Stop copying), not copying (FTMO Demo, Copy 70K’s trades)', sh && crow('90001234') && crow('90001234').querySelector('[data-cpact="off|90001234"]') && crow('27007659').querySelector('[data-cpact="off|27007659"]') && /Copy 70K’s trades/.test(crow('1515070952').textContent) && /LEAD.*COPYING 70K.*NOT COPYING/.test(sh.textContent), sh && sh.textContent);
     crow('90001234').querySelector('[data-cpact="off|90001234"]').click(); await W(200);
     check('Stop being the Lead asks first: "OneFunded 10K will stop copying FTMO 70K. Stop?" Keep / Stop - nothing sent yet', /OneFunded 10K will stop copying FTMO 70K\. Stop\?/.test($('#stpr-menu').textContent) && $('#stpr-menu [data-cpyes]') && !cwCalls.length, $('#stpr-menu').textContent);
     $('#stpr-menu [data-cpno]').click(); await W(200);
@@ -550,7 +550,7 @@
     pm = await accMenu();
     check('the Lead off: the copier\'s row says "LEAD OFF" (amber), the 70K no LEAD', chipOf('27007659') === 'LEAD OFF' && rowOf('27007659').querySelector('.stpr-twc.off') && chipOf('90001234') === '', [chipOf('27007659'), chipOf('90001234')]);
     sh = await sheet(); var wn = $('#stpr-menu .stpr-cpwarn');
-    check('...Copy trading says it first, with the fix: "OneFunded 10K copies FTMO 70K, but FTMO 70K isn\'t the Lead, so nothing is copied." - Make FTMO 70K the Lead', wn && /OneFunded 10K copies FTMO 70K, but FTMO 70K isn’t the Lead, so nothing is copied\./.test(wn.textContent) && wn.querySelector('[data-cpact="lead|90001234"]') && /No Lead yet/.test(sh.textContent), wn && wn.textContent);
+    check('...Copy trading says it first, with the fix: "OneFunded 10K copies FTMO 70K, but FTMO 70K isn\'t the Lead, so nothing is copied." - Make FTMO 70K the Lead', wn && /OneFunded 10K copies FTMO 70K, but FTMO 70K isn’t the Lead, so nothing is copied\./.test(wn.textContent) && wn.querySelector('[data-cpact="lead|90001234"]') && /NO LEAD YET/.test(sh.textContent), wn && wn.textContent);
     wn.querySelector('[data-cpact="lead|90001234"]').click(); await W(200);
     check('...Make FTMO 70K the Lead asks first', /Make FTMO 70K the Lead\?/.test($('#stpr-menu').textContent) && !cwCalls.length, $('#stpr-menu').textContent);
     $('#stpr-menu [data-cpyes]').click(); await W(300);
