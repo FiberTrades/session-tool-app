@@ -49,6 +49,9 @@
     var sels = lt ? Array.prototype.map.call(lt.querySelectorAll('select[data-login]'), function (s) { return s.getAttribute('data-login') + '=' + s.value; }) : [];
     check('import: one account picker per MT5 login', sels.length === 2, sels);
     check('import: each login pre-set to its remembered account', sels.join(',') === '541419576=acc_70,1514778904=acc_10', sels);
+    // each row says whose trade it is: the account it goes to and its broker login (30 Oct 2026)
+    var accs = Array.prototype.map.call(document.querySelectorAll('.mt5-trade-row .mt5-acc'), function (b) { return b.textContent; });
+    check('import: each trade row names its account and broker login', accs.length >= 2 && accs.every(function (x) { return /(541419576|1514778904)$/.test(x) && /\u00b7/.test(x); }), accs);
     var df = document.getElementById('mt5-date-filter');
     if (df && Array.prototype.some.call(df.options, function (o) { return o.value === '__all__'; })) { df.value = '__all__'; df.dispatchEvent(new Event('change')); await W(200); }
     _mt5SelectedIds = new Set(TK);
