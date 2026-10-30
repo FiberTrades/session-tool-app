@@ -95059,6 +95059,10 @@ window.__stAZ = (function () {
     if (d.pts.length > 1) pendDone(); else { DW.pending = null; setTool('none'); dirty(); } }   // the point at the mouse goes; two points or more are kept
 
   // ---- a chart's geometry: time <-> logical position <-> pixels, between and beyond its candles ----
+  // risk / reward from the prices as their tags show them (the symbol's digits): a 20-pip target on a 4-pip stop reads 5, never 5.01 from
+  // an unrounded live price (Nestor, 30 Oct 2026: "why is risk/reward 5.01? instead of just 5R?"); 2.5, 1.33 as they come
+  function rrTxt(e, sl, tp, dg){ dg = dg || 5; var q = function(v){ return +(+v).toFixed(dg); }, sd = Math.abs(q(e) - q(sl)), td = Math.abs(q(tp) - q(e)); if (!(sd > 0) || !(tp > 0)) return '-';
+    return (Math.round(td / sd * 100) / 100).toFixed(2).replace(/\.?0+$/, ''); }
   function paneDims(p){ var w = p.el.clientWidth, h = p.el.clientHeight, psw = 0, th = 28;
     try { psw = p.chart.priceScale('right').width(); } catch (e) {} try { th = p.chart.timeScale().height(); } catch (e) {}
     if (!(psw > 4 && psw < 220)) psw = 56; if (!(th > 10 && th < 90)) th = 28;
@@ -95140,7 +95144,7 @@ window.__stAZ = (function () {
           g.beginPath(); if (g.roundRect) g.roundRect(rx, y - 9, tw, 18, 4); else g.rect(rx, y - 9, tw, 18); g.fill(); g.fillStyle = '#ffffff'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(txt, cxm, y + 0.5); g.textAlign = 'left'; };
         if (tagsOn) tag(T('Target: ', 'Objetivo: ') + d.tp.toFixed(dg) + ' (' + fmtUs(XF, td, su) + ' ' + uLbl(su) + ')', pz.yt + (pz.yt < pz.ye ? -12 : 12), pzc(d, 'ptc', 'pmt', 0.95));
         if (tagsOn) tag(T('Stop: ', 'Stop: ') + d.sl.toFixed(dg) + ' (' + fmtUs(XF, sd, su) + ' ' + uLbl(su) + ')', pz.ys + (pz.ys > pz.ye ? 12 : -12), pzc(d, 'psc', 'pms', 0.95));
-        if (tagsOn && Math.abs(pz.ys - pz.yt) > 40) tag(T('Risk/reward ', 'Riesgo/beneficio ') + (sd > 0 ? (td / sd).toFixed(2) : '-'), pz.ye + (pz.yt < pz.ye ? 14 : -14), 'rgba(42,40,51,0.92)'); } }
+        if (tagsOn && Math.abs(pz.ys - pz.yt) > 40) tag(T('Risk/reward ', 'Riesgo/beneficio ') + rrTxt(d.a.price, d.sl, d.tp, dg), pz.ye + (pz.yt < pz.ye ? 14 : -14), 'rgba(42,40,51,0.92)'); } }
     // The measure: the distance in the stop's unit, in R of the stop, and in this chart's candles. Neutral colour on
     // purpose, as in Trade Replay: it reports a distance, not a verdict.
     // TradingView's price range, not a box (Nestor, 17 Oct 2026: "can the measure object look more like this instead of looking
@@ -95255,7 +95259,7 @@ window.__stAZ = (function () {
       g.beginPath(); if (g.roundRect) g.roundRect(rx, y - 9, tw, 18, 4); else g.rect(rx, y - 9, tw, 18); g.fill(); g.fillStyle = '#ffffff'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(txt, cxm, y + 0.5); g.textAlign = 'left'; };
     if (yT != null) tag(T('Target: ', 'Objetivo: ') + o.tp.toFixed(dg) + ' (' + fmtUs(XF, td, su) + ' ' + uLbl(su) + ')', yT + (yT < yE ? -12 : 12), posC('pat', 0.95));
     tag(T('Stop: ', 'Stop: ') + o.sl.toFixed(dg) + ' (' + fmtUs(XF, sd, su) + ' ' + uLbl(su) + ')', yS + (yS > yE ? 12 : -12), posC('pas', 0.95));
-    if (yT != null && Math.abs(yS - yT) > 40) tag(T('Risk/reward ', 'Riesgo/beneficio ') + (sd > 0 ? (td / sd).toFixed(2) : '-'), yE + (yT < yE ? 14 : -14), 'rgba(42,40,51,0.92)'); }
+    if (yT != null && Math.abs(yS - yT) > 40) tag(T('Risk/reward ', 'Riesgo/beneficio ') + rrTxt(o.e, o.sl, o.tp, dg), yE + (yT < yE ? 14 : -14), 'rgba(42,40,51,0.92)'); }
   function drawZones(p, g, dm){
     var mine = PS(p) === S, list = S.live ? [] : (!mine ? [] : S.trades.filter(function(t){ return t.sl && t.exitTs <= S.now; }).map(function(t){ return { e: t.entry, sl: t.sl0 || t.sl, now: t.sl, tp: t.tp, a: t.entryTs, b: t.exitTs, r: t.r }; }));
     if (S.pos && mine) list.push({ e: S.pos.entry, sl: S.pos.rd > 0 ? S.pos.entry - S.pos.dir * S.pos.rd : S.pos.sl, now: S.pos.sl, tp: S.pos.tp, a: S.pos.entryTs, b: S.now, r: null });   // the original stop, after break-even too
@@ -99771,15 +99775,18 @@ window.__stAZ = (function () {
     if (!PL.dl || Date.now() - PL.dl.at > 15000) { var acc = null, k = window.__stLCAcct, ps = null; try { if (k && k.id) acc = (data.accounts || []).filter(function(y){ return y && y.id === k.id; })[0] || null; } catch (e) {}
       try { ps = acc ? window.__stPropStatus(acc) : null; } catch (e) {} PL.dl = { at: Date.now(), fdl: (ps && ps.rules && +ps.rules.firmDailyLossLimit) || 0 }; }
     if (!(PL.dl.fdl > 0)) return null; var start = (+a.bal || 0) - today; return Math.max(0, PL.dl.fdl - Math.max(0, start - (+a.eq || 0))); }
+  // when the trade opened, in the member's own time (MT5's own time is its server's): today as 08:13:52, another day as 29 Oct 08:13 (Nestor, 30 Oct 2026: "I need to see the time of entry in this row")
+  function plOpenTxt(idea, r){ var ms = idea ? (+idea.openedAt || Date.parse(idea.opened_at) || 0) : 0; if (!(ms > 0)) return tbTime(+r[2]); var d = new Date(ms), n = new Date(), p2t = function(v){ return (v < 10 ? '0' : '') + v; };
+    var hm = p2t(d.getHours()) + ':' + p2t(d.getMinutes()); return d.toDateString() === n.toDateString() ? hm + ':' + p2t(d.getSeconds()) : d.getDate() + ' ' + d.toLocaleString(T('en-GB', 'es-ES'), { month: 'short' }) + ' ' + hm; }
   function plPos(rows, cur){ if (!rows.length) return '<p class="pl-wait">' + esc(T('No open positions.', 'Sin posiciones abiertas.')) + '</p>';
-    var TM = window.__stTM, h = '<table class="pl-t"><tr><th>' + [T('Symbol', 'Símbolo'), T('Side', 'Lado'), T('Lots', 'Lotes'), T('Entry', 'Entrada'), T('Price', 'Precio'), 'Stop', T('Target', 'Objetivo'), 'P&amp;L', 'R', ''].join('</th><th>') + '</th></tr>';
+    var TM = window.__stTM, h = '<table class="pl-t"><tr><th>' + [T('Symbol', 'Símbolo'), T('Side', 'Lado'), T('Time', 'Hora'), T('Lots', 'Lotes'), T('Entry', 'Entrada'), T('Price', 'Precio'), 'Stop', T('Target', 'Objetivo'), 'P&amp;L', 'R', ''].join('</th><th>') + '</th></tr>';
     rows.forEach(function(r){ var tk = r[0], idea = plIdea(tk), R = (idea && idea.tick && isFinite(+idea.tick.r)) ? +idea.tick.r : NaN, pr = +r[9] || 0, buy = /buy/i.test(String(r[3]));
       var ok = !!(TM && idea && TM.state(idea) === 'on'), bz = TM && TM.busy(tk), dis = (ok && !bz) ? '' : ' disabled';
       var ask = !!(TM && TM.partAsking && TM.partAsking(tk)), act = ask ? '' : '<button type="button" class="pl-ab" data-tma="tobe" data-tmk="' + esc(tk) + '"' + dis + '>' + esc(bz && bz.a === 'tobe' ? T('Sending…', 'Enviando…') : T('Move to BE', 'Mover a BE')) + '</button>';
       act += (TM && TM.partHtml ? TM.partHtml(tk, { dis: !!dis, side: buy ? 'BUY' : 'SELL', lots: r[4], sym: r[1] }) : '');   // Close 50% (EA 9.15); while it asks, the question has the cell
       if (!ask) act += ''
         + '<button type="button" class="pl-ab x" data-tma="close" data-tmk="' + esc(tk) + '"' + dis + '>' + esc(bz && bz.a === 'close' ? T('Closing…', 'Cerrando…') : T('Close', 'Cerrar')) + '</button>';
-      h += '<tr><td><b>' + esc(r[1]) + '</b></td><td><span class="pl-side ' + (buy ? 'b' : 's') + '">' + (buy ? 'BUY' : 'SELL') + '</span></td><td>' + esc(r[4]) + '</td><td>' + esc(r[5]) + '</td><td>' + esc(r[8]) + '</td><td>' + (+r[6] ? esc(r[6]) : '—') + '</td><td>' + (+r[7] ? esc(r[7]) : '—') + '</td>'
+      h += '<tr><td><b>' + esc(r[1]) + '</b></td><td><span class="pl-side ' + (buy ? 'b' : 's') + '">' + (buy ? 'BUY' : 'SELL') + '</span></td><td class="pl-tm">' + esc(plOpenTxt(idea, r)) + '</td><td>' + esc(r[4]) + '</td><td>' + esc(r[5]) + '</td><td>' + esc(r[8]) + '</td><td>' + (+r[6] ? esc(r[6]) : '—') + '</td><td>' + (+r[7] ? esc(r[7]) : '—') + '</td>'
         + '<td class="' + (pr > 0 ? 'u' : (pr < 0 ? 'd' : '')) + '"><b>' + plSg(pr, cur) + '</b></td><td class="' + (R > 0 ? 'u' : (R < 0 ? 'd' : '')) + '">' + (isFinite(R) ? plR(R) : '—') + '</td><td class="pl-act">' + act + '</td></tr>'; });
     return h + '</table>'; }
   function plOrd(rows){ if (!rows.length) return '<p class="pl-wait">' + esc(T('No pending orders.', 'Sin órdenes pendientes.')) + '</p>';
