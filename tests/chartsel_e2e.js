@@ -76,7 +76,11 @@
     // for the screenshots: a box over chart 1's last candles, candles in front
     var B = ps[0].bars, n0 = Math.max(0, B.length - 40), lo = Infinity, hi = -Infinity; for (k = n0; k < B.length; k++) { lo = Math.min(lo, B[k].low); hi = Math.max(hi, B[k].high); }
     var DW = P._dr(); DW.list.push({ type: 'rect', a: { t: B[n0].time, price: hi }, b: { t: B[B.length - 1].time, price: lo + (hi - lo) * 0.3 }, live: true }); P._render(); await W(400);
+    var hl = { type: 'hline', price: +(lo + (hi - lo) * 0.6).toFixed(5), live: true }; DW.list.push(hl); P._render(); await W(600);
+    var hlVis = function () { var L = ps[0].hl || []; return L.map(function (l) { return l.options().lineVisible; }).join(); };
+    check('a horizontal line: drawn by the chart itself, over the candles, while drawings are in front', hlVis() === 'true', hlVis());
     menu(ps[0]); await W(400); it = item(ps[0]); if (it) it.click(); await W(1500);
+    check('...candles in front: the chart\'s own line hidden (its price label stays), the line drawn under the candles', hlVis() === 'false', hlVis());
     // Copy trading (Nestor, 30 Oct 2026: "the copy trading panel... looks messy! can you improve its look?"): the Trade with list's tags
     // open each group; stand-ins only, as platform_e2e.js
     var CWs = {}, rawc = P._s().sym.raw, LVc = P._lv(), Lc = window.__stLiveLine;
