@@ -81,6 +81,22 @@
     check('a horizontal line: drawn by the chart itself, over the candles, while drawings are in front', hlVis() === 'true', hlVis());
     menu(ps[0]); await W(400); it = item(ps[0]); if (it) it.click(); await W(1500);
     check('...candles in front: the chart\'s own line hidden (its price label stays), the line drawn under the candles', hlVis() === 'false', hlVis());
+    // every drawing tool (Nestor, 30 Oct 2026: "check all objects for this same issue just in case"): with candles in front, nothing of a
+    // drawing may sit over the candles - no chart price line drawn by the library, no element added over the chart; its paint on the
+    // drawings layer, whose chart area is hidden on top and painted under the candles
+    var types = {}; $$('[data-tool]').forEach(function (b) { var t = b.getAttribute('data-tool'); if (t && !/^(none|cursor|cross|dot|arrow|eraser|demo)$/.test(t)) types[t] = 1; });
+    types = Object.keys(types);
+    var pane0 = ps[0], tm = function (k) { return B[Math.max(0, B.length - 1 - k)].time; }, mid = (hi + lo) / 2, sp = (hi - lo) || 0.001;
+    var kids0 = pane0.el.querySelectorAll('*').length, bad = [], seen = 0;
+    for (var ti = 0; ti < types.length; ti++) { var ty = types[ti];
+      var dd = { type: ty, live: true, a: { t: tm(30), price: hi }, b: { t: tm(10), price: lo + sp * 0.3 }, c: { t: tm(2), price: mid }, price: mid, text: 'Ab', pts: [{ t: tm(30), price: hi }, { t: tm(20), price: lo }, { t: tm(10), price: mid }, { t: tm(2), price: hi }], emoji: '\ud83d\ude00' };
+      DW.list.push(dd); P._render(); await W(160);
+      var lv = (pane0.hl || []).concat(pane0.lines || []).filter(function (l) { try { return l.options().lineVisible; } catch (e) { return false; } }).length;
+      var nk = pane0.el.querySelectorAll('*').length;
+      if (lv || nk > kids0) bad.push(ty + (lv ? ' (a library line)' : '') + (nk > kids0 ? ' (+' + (nk - kids0) + ' elements)' : ''));
+      kids0 = nk; seen++; DW.list.splice(DW.list.indexOf(dd), 1); }
+    P._render(); await W(300);
+    check('every drawing tool (' + seen + ') stays behind the candles when they are in front', seen > 20 && !bad.length, [seen, bad, types.join(',')]);
     // Copy trading (Nestor, 30 Oct 2026: "the copy trading panel... looks messy! can you improve its look?"): the Trade with list's tags
     // open each group; stand-ins only, as platform_e2e.js
     var CWs = {}, rawc = P._s().sym.raw, LVc = P._lv(), Lc = window.__stLiveLine;
