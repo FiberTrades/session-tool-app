@@ -2444,7 +2444,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     .header > .brand-row { margin-bottom: 26px; }
     .header > h1 { font-size: clamp(80px, 7.6vw, 88px); line-height: 1; margin: 0; white-space: nowrap; }   /* 88px from ~1160px wide (Nestor, 26 Oct 2026: "a little bigger"), a touch less on a small laptop so the longest title stays one line */
     .header > .meta { display: flex; flex-wrap: wrap; gap: 14px 44px; margin: 30px 0 0; padding: 0; }
-    .header > .meta .meta-cell { align-items: flex-start; text-align: left; gap: 7px; }
+    .header > .meta .meta-cell { align-items: center; text-align: center; gap: 7px; }   /* each title centred over its value (Nestor, 30 Oct 2026: "align the titles with the row underneath in the center") */
     .header > .meta .meta-value { font-size: 15px; }
     .tabs { margin-top: 26px; }
     .st-asst { margin: 20px 0 24px; }
@@ -2459,7 +2459,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     body:not(.mentor-viewing) .header.tv-on { grid-template-columns: minmax(0, 1fr) auto; column-gap: 40px; }
     body:not(.mentor-viewing) .header.tv-on > .brand-row { grid-column: 1; }
     body:not(.mentor-viewing) .header.tv-on > .meta { grid-column: 1; grid-row: 3; align-self: start; display: flex; flex-wrap: wrap; gap: 14px min(72px, 4.6vw); margin: 30px 0 0; }   /* from the title's left edge, about 72px between the cells, ending well short of the TV (Nestor: "compact this a little more and is perfect") */
-    body:not(.mentor-viewing) .header.tv-on > .meta .meta-cell { align-items: flex-start; text-align: left; gap: 7px; }
+    body:not(.mentor-viewing) .header.tv-on > .meta .meta-cell { align-items: center; text-align: center; gap: 7px; }
     body:not(.mentor-viewing) .header.tv-on > .meta .meta-value { font-size: 15px; }
   }
   /* TV in its slot (1100px and wider): part of the header, scrolls with the page, under the sticky tabs */
@@ -4252,8 +4252,6 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .msl-dot { display: inline-block; width: 0.68em; height: 0.68em; margin-right: 0.7em; border-radius: 50%; background: var(--good); box-shadow: 0 0 0.7em var(--good);
     vertical-align: 0.01em; vertical-align: calc(0.5cap - 0.34em); animation: session-live-pulse 1.8s ease-in-out infinite; }
   @media (prefers-reduced-motion: reduce) { .msl-dot { animation: none; } }
-  @media (min-width: 901px) and (max-width: 1099px) { .header > .meta .meta-cell-ses .msl-on { left: 0; transform: none; } }
-  @media (min-width: 1100px) { body:not(.mentor-viewing) .header.tv-on > .meta .meta-cell-ses .msl-on { left: 0; transform: none; } }
   .session-live-label { font-family: 'AppNum', 'DM Mono', monospace; font-size: 12px; letter-spacing: 0.28em; text-transform: uppercase; color: var(--good); }
   .session-live-dismiss { position: absolute; top: 12px; right: 14px; background: transparent; border: none; color: var(--text-dim); font-size: 16px; line-height: 1; cursor: pointer; padding: 4px; font-family: 'AppNum', 'DM Mono', monospace; transition: color 150ms; }
   .session-live-dismiss:hover { color: var(--text); }
@@ -19366,6 +19364,10 @@ try {
         }
         if (g) { g.rows.push(r); _copyTk[String(r.ticket)] = 1; } else { out.push({ main: r, rows: [r] }); delete _copyTk[String(r.ticket)]; }
       });
+      // the idea's main row is one with its live prices (30 Oct 2026: a copy opened 10 ms before the Lead became the main row, had no prices
+      // yet, and the chart drew no Entry / Stop / Target for the trade)
+      var tkOk = function (r) { return r && r.tick && isFinite(r.tick.op) && isFinite(r.tick.rpx); };
+      out.forEach(function (g) { if (g.rows.length < 2 || tkOk(g.main)) return; var b = g.rows.filter(tkOk)[0]; if (!b) return; _copyTk[String(g.main.ticket)] = 1; delete _copyTk[String(b.ticket)]; g.main = b; });
       return out;
     }
     function _allRows() { return Object.keys(rows).map(function (k) { return rows[k]; }); }
@@ -81069,7 +81071,10 @@ window.__stTM = (function () {
   }
   document.addEventListener('click', function (e) { if (!PM) return; var t = e.target; if ((t && t.closest && (t.closest('.pl-pm') || t.closest('[data-tma="partmenu"]')))) return; closePct(); }, true);
   document.addEventListener('keydown', function (e) { if (PM && e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); closePct(); } }, true);
-  document.addEventListener('click', function (e) { var b = e.target && e.target.closest && e.target.closest('[data-tma]'); if (!b) return; e.preventDefault(); e.stopPropagation(); if (b.disabled) return;
+  // the trade's buttons in any window: the app's, and Live Charts' window and the chart windows wire it too (30 Oct 2026: Move to BE did
+  // nothing in Live Charts' window - its clicks never reached here)
+  document.addEventListener('click', tmClick, true);
+  function tmClick(e) { var b = e.target && e.target.closest && e.target.closest('[data-tma]'); if (!b) return; e.preventDefault(); e.stopPropagation(); if (b.disabled) return;
     var a = b.getAttribute('data-tma'), k = String(b.getAttribute('data-tmk'));
     if (a === 'partmenu') { openPct(b, k); return; }
     if (a === 'part') { delete ASK[k]; CONF[k] = { at: Date.now(), p: partPct() }; delete done[k + '|part']; if (last[k] && last[k].a === 'part') delete last[k]; emit(); setTimeout(function () { if (CONF[k] && Date.now() - CONF[k].at >= 8000) { delete CONF[k]; emit(); } }, 8100); return; }
@@ -81078,8 +81083,8 @@ window.__stTM = (function () {
     if (a === 'askno') { delete ASK[k]; emit(); return; }
     if (a === 'tobe!' || a === 'close!') { delete ASK[k]; a = a.slice(0, -1); }
     var pc = 50; if (a === 'part!') { pc = CONF[k] ? CONF[k].p : partPct(); delete CONF[k]; a = 'part'; }
-    var r = tradeOf(k); if (r) send(r, a, a === 'part' ? pc : undefined); }, true);
-  return { send: send, acct: acct, ack: ack, state: state, row: row, whyTxt: whyTxt, partHtml: partHtml, partAsking: partAsking, partPct: partPct, setPartPct: setPartPct, on: function (f) { subs.push(f); }, last: function (k) { return last[String(k)] || null; }, busy: function (k) { return busy[String(k)] || null; }, _hmac: hmac };
+    var r = tradeOf(k); if (r) send(r, a, a === 'part' ? pc : undefined); }
+  return { click: tmClick, pct: function (e) { if (!PM) return; var t = e.target; if ((t && t.closest && (t.closest('.pl-pm') || t.closest('[data-tma="partmenu"]')))) return; closePct(); }, send: send, acct: acct, ack: ack, state: state, row: row, whyTxt: whyTxt, partHtml: partHtml, partAsking: partAsking, partPct: partPct, setPartPct: setPartPct, on: function (f) { subs.push(f); }, last: function (k) { return last[String(k)] || null; }, busy: function (k) { return busy[String(k)] || null; }, _hmac: hmac };
 })();
 </script>
 <script>
@@ -96537,10 +96542,14 @@ window.__stAZ = (function () {
     var nd = newsDims(), FD = nd.FD, GAP = nd.GAP, RING = nd.RING, OR = nd.OR, STEP = 2 * OR + 3, MAX = 3, COL = ['#9598a1', '#f7931a', '#f23645'], groups = {}, G = [];
     var dpr = 1; try { dpr = (p.el.ownerDocument.defaultView || window).devicePixelRatio || 1; } catch (e) {}
     var ccyOk = window.__stNewsCcyOk || function(){ return true; };   // only the calendar's countries (19 Oct 2026)
-    NEWS.rows.forEach(function(e){ var t = Math.floor(Date.parse(e.at) / 1000); if (!(t >= 0) || t > S.now || !ccyOk(e.currency)) return; var k = keyOf(Math.max(p.tf, PS(p).baseTf), t); (groups[k] = groups[k] || []).push(e); });
+    // Live: the rest of today's releases too, at their time, faded until they come out (Nestor, 30 Oct 2026: "i need at least the days news
+    // on the chart otherwise how am i going to know there are incoming news!"); Replay: only what had come out by the replay's moment
+    var dEnd = 0; if (S.live) { var de = new Date(S.now * 1000); de.setHours(24, 0, 0, 0); dEnd = de.getTime() / 1000; }
+    NEWS.rows.forEach(function(e){ var t = Math.floor(Date.parse(e.at) / 1000); if (!(t >= 0) || (t > S.now && !(S.live && t < dEnd)) || !ccyOk(e.currency)) return; var k = keyOf(Math.max(p.tf, PS(p).baseTf), t); (groups[k] = groups[k] || []).push(e); });
     Object.keys(groups).forEach(function(k){ var x = xOfT(p, +k); if (x == null) return;
       var list = groups[k].sort(function(a, b){ return nImp(b) - nImp(a); }), n = list.length, shown = Math.min(n, MAX), cnt = shown + (n > shown ? 1 : 0);
-      G.push({ x: x, list: list, n: n, shown: shown, w: (cnt - 1) * STEP + 2 * OR }); });
+      var up = list.every(function(e){ return Date.parse(e.at) / 1000 > S.now; });
+      G.push({ x: x, list: list, n: n, shown: shown, up: up, w: (cnt - 1) * STEP + 2 * OR }); });
     // left to right: a group that would touch the one before moves right, never on top of it; then right to left: a group whose release is
     // on screen keeps all its flags on screen (29 Oct 2026: a group at the latest candles went half under the price scale) and clear of the
     // logo, the » chip and Spread - nudged right of the logo, left of the chip and Spread, its neighbours moved aside, never stacked or hidden
@@ -96550,10 +96559,10 @@ window.__stAZ = (function () {
     for (var gi = G.length - 1; gi >= 0; gi--) { var q = G[gi], lim = Math.min(lastL - 3, inP(q) ? HI : 1e9); if (q.l + q.w > lim) q.l = lim - q.w; lastL = q.l; }
     var y = Math.round(row.y * dpr) / dpr; g.save(); g.beginPath(); g.rect(0, 0, pw, ph); g.clip();
     G.forEach(function(q){ if (!inP(q) && (q.l < LO - 1 || q.l + q.w > HI + 1)) return;   // a release off the chart's edge: not under the logo, the chip or Spread
-      var spots = [];
+      var spots = []; g.globalAlpha = q.up ? 0.55 : 1;   // still to come: faded
       for (var i = 0; i < q.shown; i++) { var fx = q.l + OR + i * STEP; newsFlag(g, fx, y, FD, GAP, RING, q.list[i].currency, COL[nImp(q.list[i])], dpr); spots.push({ x: fx, i: i }); }
       if (q.n > q.shown) { var mx = q.l + OR + q.shown * STEP; newsMore(g, mx, y, OR, q.n - q.shown); spots.push({ x: mx, i: -1 }); }
-      p._news.push({ x: q.l + q.w / 2, y: y, r: OR, spots: spots, e: q.list[0], list: q.list, n: q.n }); });
+      g.globalAlpha = 1; p._news.push({ x: q.l + q.w / 2, y: y, r: OR, spots: spots, e: q.list[0], list: q.list, n: q.n }); });
     g.restore();
   }
   // one release: the ring in its impact's colour, a white gap, its country's flag (a currency without one: its letters)
@@ -97263,7 +97272,8 @@ window.__stAZ = (function () {
     return true; }
   // the window-wide handlers of this window, in that one too (mouse, keys, right-click, its timeframe buttons)
   function wireWin(w, i){ var d = w.document, L = [], on = function(t, ev, fn, op){ t.addEventListener(ev, fn, op); L.push([t, ev, fn, op]); };   // window-wide: undone when it is let go (satLetGo)
-    on(d, 'pointerdown', actDown, true); on(d, 'mousedown', dwDown, true); on(d, 'dblclick', WH.dbl, true); on(d, 'contextmenu', WH.ctx, true); on(d, 'paste', WH.paste, true);
+    on(d, 'pointerdown', actDown, true); on(d, 'mousedown', dwDown, true);
+    if (d !== document) { on(d, 'click', function(e){ try { var TMw = window.__stTM; if (TMw && TMw.pct) TMw.pct(e); if (TMw && TMw.click) TMw.click(e); } catch (x) {} }, true); }   // Move to BE, Close 50%, Close in this window too on(d, 'dblclick', WH.dbl, true); on(d, 'contextmenu', WH.ctx, true); on(d, 'paste', WH.paste, true);
     on(w, 'mousemove', dwMove); on(w, 'mouseup', dwUp); on(w, 'keyup', WH.kup);
     on(d, 'pointerdown', function(){ UI.w = w; }, true); on(d, 'keydown', function(e){ UI.w = w; WH.key(e); });
     on(d, 'pointerup', WH.handOff, true); on(d, 'pointercancel', WH.handOff, true); ohWire(d, on);
@@ -98320,7 +98330,10 @@ window.__stAZ = (function () {
   // 2026: another account picked, its trades take their place); a trade without a login, or no account known yet, shows as before
   function lvMyIdeas(sym){ var lgs = lvMarkLgs(); return lvIdeas(sym).filter(function(i){ var lg = i.r && i.r.login; return !lgs.length || lg == null || lg === '' || lgs.indexOf(String(lg)) >= 0; }); }
   function lvIdeas(sym){ sym = sym || (S && S.sym); var out = []; if (!sym) return out; try { var L0 = (window.__stLive && window.__stLive.openIdeas) ? window.__stLive.openIdeas() : [];
-      L0.forEach(function(idea){ var r = idea && (idea.main || idea); if (!r || !r.symbol || canon(r.symbol) !== sym.key) return; var tk = r.tick || {}; if (!(isFinite(tk.op) && isFinite(tk.rpx))) return;
+      var lgs = lvMarkLgs(), tkOk = function(x){ return x && x.tick && isFinite(x.tick.op) && isFinite(x.tick.rpx); };
+      L0.forEach(function(idea){ var rows = (idea && idea.rows) || [idea && (idea.main || idea)];   // the chart's own account's row with its prices, else any with them (a copy opened first has none yet)
+        var r = rows.filter(function(x){ return tkOk(x) && (!lgs.length || lgs.indexOf(String(x.login)) >= 0); })[0] || rows.filter(tkOk)[0] || (idea && (idea.main || idea));
+        if (!r || !r.symbol || canon(r.symbol) !== sym.key) return; var tk = r.tick || {}; if (!(isFinite(tk.op) && isFinite(tk.rpx))) return;
         out.push({ r: r, tk: tk, long: r.direction !== 'short', at: Math.floor((r.openedAt || Date.parse(r.opened_at) || 0) / 1000) }); }); } catch (e) {} return out; }
   function lvLevels(x){ try { return (window.__stLiveBox && window.__stLiveBox.levels) ? window.__stLiveBox.levels(x.r) : []; } catch (e) { return []; } }
   // ---- The member's closed trades on the live chart (Nestor, 19 Oct 2026: "how come i dont see the trade mark around 10:01 of the trade
@@ -98740,7 +98753,8 @@ window.__stAZ = (function () {
   // that window's window-wide handlers: this window's own, in that one too (as a chart window's, wireWin)
   // (each only while this app window still draws that one: a closed or reloaded app window's never act there - stageLetGo)
   function stageWire(w){ stageUnwire(); var d = w.document, L = [], on = function(t, ev, fn, op){ if (!fn) return; var g = function(){ if (LV.sat !== w || LV.bye) return; return fn.apply(this, arguments); }; t.addEventListener(ev, g, op); L.push([t, ev, g, op]); };
-    on(d, 'pointerdown', actDown, true); on(d, 'mousedown', dwDown, true); on(d, 'dblclick', WH.dbl, true); on(d, 'contextmenu', WH.ctx, true); on(d, 'paste', WH.paste, true);
+    on(d, 'pointerdown', actDown, true); on(d, 'mousedown', dwDown, true);
+    if (d !== document) { on(d, 'click', function(e){ try { var TMw = window.__stTM; if (TMw && TMw.pct) TMw.pct(e); if (TMw && TMw.click) TMw.click(e); } catch (x) {} }, true); }   // Move to BE, Close 50%, Close in this window too on(d, 'dblclick', WH.dbl, true); on(d, 'contextmenu', WH.ctx, true); on(d, 'paste', WH.paste, true);
     on(d, 'touchstart', WH.tst, { passive: false, capture: true }); on(d, 'touchmove', WH.tmv, { passive: false, capture: true }); on(d, 'touchend', WH.tend, { passive: false, capture: true });
     on(w, 'mousemove', dwMove); on(w, 'mouseup', dwUp); on(w, 'keyup', WH.kup); on(w, 'resize', WH.rsz); on(w, 'blur', WH.execOff);
     on(d, 'pointerdown', function(){ UI.w = w; }, true); on(d, 'keydown', function(){ UI.w = w; }, true); on(d, 'keydown', WH.key);
@@ -99794,10 +99808,12 @@ window.__stAZ = (function () {
     var today = plToday(), dl = plDayLeft(a, today), opl = 0; pos.forEach(function(r){ opl += +r[9] || 0; });
     if (today == null && tbEA() && Date.now() - PL.hReq > 30000) { PL.hReq = Date.now(); setTimeout(function(){ try { if (PL.on && !(TB.hist && TB.hist.by === tbEA())) tbHistReq(); } catch (e) {} }, 400); }
     var cl = function(v){ return v > 0 ? 'u' : (v < 0 ? 'd' : ''); };
-    var sum = '<span>' + esc(T('Open P&L', 'P&L abierto')) + '<b class="' + cl(opl) + '">' + (a ? plSg(opl, cur) : '—') + '</b></span>'
+    var eqd = a ? (+a.eq || 0) - (+a.bal || 0) : 0;   // Balance and Equity first, as MT5's own line (Nestor, 30 Oct 2026: "where is the equity in here? i need it!" "and the balance like in MT5")
+    var sum = (a ? '<span>' + esc(T('Balance', 'Balance')) + '<b>' + plMoney(a.bal, cur) + '</b></span><span>' + esc(T('Equity', 'Fondos')) + '<b class="' + cl(eqd) + '">' + plMoney(a.eq, cur) + '</b></span>' : '')
+      + '<span>' + esc(T('Open P&L', 'P&L abierto')) + '<b class="' + cl(opl) + '">' + (a ? plSg(opl, cur) : '—') + '</b></span>'
       + '<span>' + esc(T('Today', 'Hoy')) + '<b class="' + (today == null ? '' : cl(today)) + '">' + (today == null ? '—' : plSg(today, cur)) + '</b></span>'
       + (dl != null ? '<span>' + esc(T('Daily loss left', 'Pérdida diaria restante')) + '<b>' + plMoney(dl, cur) + '</b></span>' : '')
-      + (a ? '<span>' + esc(T('Margin', 'Margen')) + '<b>' + plMoney(a.mg, cur) + '</b></span><span>' + esc(T('Free margin', 'Margen libre')) + '<b>' + plMoney(a.fm, cur) + '</b></span>' : '');
+      + (a ? '<span>' + esc(T('Margin', 'Margen')) + '<b>' + plMoney(a.mg, cur) + '</b></span><span>' + esc(T('Free margin', 'Margen libre')) + '<b>' + plMoney(a.fm, cur) + '</b></span>' + (+a.ml > 0 ? '<span>' + esc(T('Margin level', 'Nivel de margen')) + '<b>' + tbNum(a.ml, 2) + '%</b></span>' : '') : '');
     if (st.tab === 'acct') st.tab = 'pos';   // the Account tab left on a device: Positions
     var tab = st.tab, tb = function(k, en, es2, n){ return '<button type="button" data-pltab="' + k + '" class="' + (tab === k && !fo ? 'on' : '') + '">' + esc(T(en, es2)) + (n != null ? ' <i>' + n + '</i>' : '') + '</button>'; };
     var ft = fo ? T('Open the panel', 'Abrir el panel') : T('Fold the panel', 'Plegar el panel');
@@ -100333,7 +100349,9 @@ window.__stAZ = (function () {
     + '@media (max-width:600px){.stpc-ov{align-items:flex-end;padding:0}.stpc{border-radius:14px 14px 0 0;max-height:92vh}.stpc-row{grid-template-columns:96px 1fr}.stpc-hd small{display:none}}';
   CSS += '.stpc-charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:14px}.stpc-charts.one{grid-template-columns:1fr}'
     + '.stpc-ch{margin:0;display:flex;flex-direction:column;gap:6px;min-width:0}.stpc-ch small{font-family:"AppNum","DM Mono",monospace;font-size:10.5px;letter-spacing:.14em;color:#8a8794}'
-    + '.stpc-ch a{display:block;color:#c9c6d2;text-decoration:none}.stpc-ch img{display:block;width:100%;height:auto;border-radius:8px;border:1px solid #2a2833;background:#0d0c11}'
+    + '.stpc-ch a{display:block;color:#c9c6d2;text-decoration:none}.stpc-ch img{display:block;width:100%;height:auto;aspect-ratio:16/10;object-fit:cover;object-position:center;border-radius:8px;border:1px solid #2a2833;background:#0d0c11;cursor:zoom-in}'   /* every picture the same size (Nestor, 30 Oct 2026: "why is one taller than the other?"); the whole chart on a click */
+    + '.stpc-lb{position:fixed;inset:0;z-index:2;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(0,0,0,.82);cursor:zoom-out}.stpc-lb img{max-width:92vw;max-height:88vh;object-fit:contain;border-radius:8px}'
+    + '.stpc-lb button{position:absolute;top:16px;right:20px;border:0;background:transparent;color:#fff;font-size:34px;line-height:1;cursor:pointer}'
     + '.stpc-ch .stpc-url{display:block;font-size:12px;word-break:break-all;color:#a19eab}.stpc-ch p{margin:0;font-size:12.5px;line-height:1.5;color:#b8b5c4}';
   function css(doc) { if (doc.getElementById('stpc-css')) return; var st = doc.createElement('style'); st.id = 'stpc-css'; st.textContent = CSS; (doc.head || doc.body).appendChild(st); }
   var CUR = null;
@@ -100388,10 +100406,15 @@ window.__stAZ = (function () {
     function render() { bd.innerHTML = biasBlock(); }
     function close() { try { win.removeEventListener('keydown', key, true); } catch (e) {} ov.remove(); if (CUR === close) CUR = null; }
     CUR = close;
-    function key(e) { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } }
+    function key(e) { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); var lb = ov.querySelector('.stpc-lb'); if (lb) lb.remove(); else close(); } }   // a picture open: it closes first
     win.addEventListener('keydown', key, true);
     ov.addEventListener('click', function (e) {
       var t = e.target; if (t === ov) { close(); return; }
+      var lb0 = t && t.closest && t.closest('.stpc-lb'); if (lb0) { lb0.remove(); return; }   // the picture open: a click anywhere closes it
+      // a chart's picture opens big here, as the app's other pictures do, never in the browser (Nestor, 30 Oct 2026: "when i click on these
+      // images i dont want them to open on a browser"); in this window, a chart window's too
+      var pim = t && t.closest && t.closest('.stpc-ch a'), pi = pim && pim.querySelector('img'); if (pi) { e.preventDefault();
+        var lb = doc.createElement('div'); lb.className = 'stpc-lb'; lb.innerHTML = '<img alt=""><button type="button" aria-label="' + esc(T('Close', 'Cerrar')) + '">\u00d7</button>'; lb.querySelector('img').src = pi.currentSrc || pi.src; ov.appendChild(lb); return; }
       var b = t && t.closest && t.closest('[data-pc],[data-pc-bias]'); if (!b) return;
       if (b.hasAttribute('data-pc-bias')) { var bi = +b.getAttribute('data-pc-bias'); if (slots[bi] && bi !== bsel) { bsel = bi; render(); } return; }
       if (b.getAttribute('data-pc') === 'openbias') { close(); try { if (doc !== document) window.focus(); var tb = document.querySelector('.tab[data-page="bias"]'); if (tb) tb.click(); } catch (x) {} return; }

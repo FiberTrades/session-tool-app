@@ -82,6 +82,13 @@
     var floor = Math.max(60, Math.round(lb + 10)) + (days.length ? 15 : 0), ses = calls.filter(function (c) { return /^(Asia|London|New York)\b/.test(c.t) && c.b === 'bottom'; });
     var tops = ses.map(function (c) { return [c.t, Math.round(c.y - (parseFloat(c.f) || 10))]; }), inBox = ses.every(function (c) { return !c.box || (c.box.b >= -1.5 && (c.y - (parseFloat(c.f) || 10) < floor + 0.5 || Math.abs(c.y - (c.box.t - 3)) < 1.1)); });   // above its box, or (no room there) on the first line under the legend; none for a box off the top
     check('the session boxes\' names start under the legend (and the weekday names): none over the O H L C line', ses.length >= 1 && tops.every(function (t) { return t[1] >= floor - 0.5; }) && inBox && days.every(function (d) { return d.y >= floor - 15 - 0.5; }), { floor: floor, legend: Math.round(lb), tops: tops, inBox: inBox, boxes: ses.map(function (c) { return c.box && [Math.round(c.box.t), Math.round(c.box.b), Math.round(c.y)]; }), days: days.length });
+    // Live: the rest of today's releases show before they come out (30 Oct 2026: "i need at least the days news on the chart"); tomorrow's don't
+    var nowS = P._s().now; P._news([{ at: iso(nowS + 120), currency: 'EUR', title: 'German Prelim GDP q/q', impact: 'Medium', forecast: '0.1%', previous: '0.2%', actual: '' },
+      { at: iso(nowS + 2 * 86400), currency: 'USD', title: 'Tomorrow NFP', impact: 'High', forecast: '', previous: '', actual: '' }]);
+    try { p.chart.timeScale().scrollToPosition(8, false); } catch (e) {} await W(300);
+    for (k = 0; k < 10; k++) { P._drawOv(0); await W(100); }
+    var titles = (p._news || []).map(function (n) { return n.list.map(function (e) { return e.title; }).join('+'); });
+    check('Live: a release still to come today is on the chart already; one days away is not', titles.indexOf('German Prelim GDP q/q') >= 0 && !titles.some(function (t) { return /Tomorrow/.test(t); }), titles.length ? titles : { tf: p.tf, now: nowS, last: B[B.length-1].time, xl: xOf(B[B.length-1].time), pw: pw(), rows: (P._s().live), lr: JSON.stringify(p.chart.timeScale().getVisibleLogicalRange()), n: B.length });
     window.__stNewsCcyOk = ok0; P._news([]);
     check('no errors', errs.length === 0, errs.slice(0, 3));
   } catch (e) { results.push({ name: 'test ran', ok: false, got: String(e && e.stack || e) }); }

@@ -110,6 +110,11 @@
     check('...the Trade Manager complete there: Setup, Why, Execute', sq('#stpr-mm [data-plsetup]') && sq('#stpr-mm [data-plwhy]') && vis(sq('#stpr-mm .pl-x')), [!!sq('#stpr-mm [data-plsetup]'), !!sq('#stpr-mm [data-plwhy]'), !!sq('#stpr-mm .pl-x')]);
     check('...no tab row there (it is its own window), and nothing of the top bar pushed out', sd && !sd.querySelector('.tabs') && Array.prototype.every.call(sd.querySelectorAll('.plat-top > *'), function (e) { var r = e.getBoundingClientRect(); return r.width === 0 || r.right <= satW.innerWidth + 1; }));
     check('...the chart window opened before goes with it, still in the platform\'s look', P._pops()[1] && P._pops()[1].ready && cwin.classList.contains('plsat') && P._panes()[1].el.ownerDocument === cd, P._pops()[1] && P._pops()[1].ready);
+    // the trade's buttons (Move to BE, Close 50%, Close) answer in Live Charts' window too (30 Oct 2026: Move to BE did nothing there)
+    var tmw = window.__stTM, tmc0 = tmw && tmw.click, tmHit = 0; if (tmw) tmw.click = function (e) { var b = e.target && e.target.closest && e.target.closest('[data-tma]'); if (b) tmHit++; };
+    var tb0 = sd && sd.createElement('button'); if (tb0) { tb0.type = 'button'; tb0.setAttribute('data-tma', 'askno'); tb0.setAttribute('data-tmk', '1'); sd.body.appendChild(tb0); tb0.click(); tb0.remove(); }
+    if (tmw) tmw.click = tmc0;
+    check('...a trade button clicked in Live Charts window reaches the trade actions (Move to BE, Close 50%, Close)', tmHit === 1, tmHit);
     // the theme from that window: the platform there and the chart window light, the app's tab untouched
     sq('.plat-top [data-pltheme]').click(); await W(1200);
     check('the sun there: that window\'s platform light, and the chart window with it', sw.classList.contains('pl-lt') && cwin.classList.contains('pl-lt'), [sw.className, cwin.className]);

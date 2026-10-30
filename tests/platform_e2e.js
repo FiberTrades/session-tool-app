@@ -285,7 +285,7 @@
     var pl = window.__stPbLines ? window.__stPbLines(jt) : [], plt = pl.map(function (x) { return x.label + ': ' + x.text; }).join(' / ');
     check('a setup changed after the close: the stats keep the pick at entry, the trade says so', window.__stSetupOf(jt) === 'High/Low + Mitigation + Aggression' && /At entry: High\/Low \+ Mitigation \+ Aggression · changed after the close/.test(plt) && /Why: Took the Asia high/.test(plt), plt);
     data.currentSeries = data.currentSeries.filter(function (x) { return x !== jt; });
-    check('the summary along the tabs: Open P&L, Today, Margin, Free margin', /Open P&L/.test($('.pl-sum').textContent) && /Free margin/.test($('.pl-sum').textContent), $('.pl-sum').textContent);
+    check('the summary along the tabs: Balance, Equity (as MT5), Open P&L, Today, Margin, Free margin', /^Balance.+Equity.+Open P&L/.test($('.pl-sum').textContent) && /Open P&L/.test($('.pl-sum').textContent) && /Free margin/.test($('.pl-sum').textContent), $('.pl-sum').textContent);
     check('Chart settings is a gear with teeth, beside the sun / moon (Nestor, 26 Oct 2026: "looks like a sun and its confusing")', /^M12\.22 2h/.test($('.plat-top #stpr-lookbtn svg path').getAttribute('d')) && $('.plat-top .pl-theme svg'), $('.plat-top #stpr-lookbtn').innerHTML.slice(0, 80));
     // the top bar never overflows (25 Oct 2026): every item inside it, the sun and full screen in the row, at this width too
     var top0 = $('.plat-top'), thr = $('.pl-theme').getBoundingClientRect(), tpr = top0.getBoundingClientRect();
