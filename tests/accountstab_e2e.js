@@ -106,7 +106,11 @@
     mvb.click(); await W(200);
     var sv = document.querySelector('[data-sacc-clf="server"]'), pw = document.querySelector('[data-sacc-clf="pw"]');
     ok('...opens its form: server, password, trading from the app, and to close MT5 on the PC', sv && pw && /Close MT5 on your PC/.test(item(a2.id).textContent));
-    sv.value = 'FTMO-Demo'; pw.value = 'not-a-real-password'; document.querySelector('[data-sacc-clgo="1514994373"]').click(); await W(400);
+    // what's typed survives the panel repainting (30 Oct 2026: clicking outside the fields wiped them, so the form could never be sent)
+    sv.value = 'FTMO-Demo'; pw.value = 'not-a-real-password'; document.body.click(); if (document.activeElement) document.activeElement.blur(); window.__stAccFill(true); await W(100); window.__stAccFill(); await W(100); window.renderSettingsAccountsList(); await W(250);
+    sv = document.querySelector('[data-sacc-clf="server"]'); pw = document.querySelector('[data-sacc-clf="pw"]');
+    ok('...what you typed stays through every repaint of the panel', sv && pw && sv.value === 'FTMO-Demo' && pw.value === 'not-a-real-password', sv && sv.value);
+    document.querySelector('[data-sacc-clgo="1514994373"]').click(); await W(400);
     ok('...Start it in the cloud asks the server for that login', calls.some(function (c) { return c[0] === 'add' && c[1] === '1514994373' && c[2] === 'FTMO-Demo'; }), calls);
     var rmb = item(a2.id).querySelector('[data-sacc-clrm]');
     ok('a cloud account: Remove from the cloud', !!rmb);

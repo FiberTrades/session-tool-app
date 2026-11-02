@@ -80803,7 +80803,19 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
         a.name = nm; delete a._nameAuto; changed = true; } });
     if (changed) { try { saveData(); } catch (e) {} setTimeout(redraw, 0); }
   }
-  window.__stAccFill = function (keep) {
+  // what's typed in the cloud forms survives every repaint of the panel (Nestor, 30 Oct 2026, moving Aurora's account: "as soon as you
+  // click outside those fields the information gets deleted so its impossible to click on connect to the cloud"): the panel repainted
+  // the moment the focus left a field, and the forms come back empty
+  function keepForms(fn) { var SEL = '[data-sacc-clf], [data-sacc-af]', key = function (i) { return i.hasAttribute('data-sacc-clf') ? 'c' + i.getAttribute('data-sacc-clf') : 'a' + i.getAttribute('data-sacc-af'); }, vals = {}, n = 0, ae = document.activeElement, foc = null, st = 0, en = 0;
+    document.querySelectorAll(SEL).forEach(function (i) { vals[key(i)] = i.type === 'checkbox' ? i.checked : i.value; n++; if (i === ae) { foc = key(i); try { st = i.selectionStart; en = i.selectionEnd; } catch (e) {} } });
+    var out = fn(); if (!n) return out;
+    document.querySelectorAll(SEL).forEach(function (i) { var k = key(i); if (!(k in vals)) return; if (i.type === 'checkbox') i.checked = vals[k]; else if (i.value !== vals[k]) i.value = vals[k];
+      if (k === foc && document.activeElement !== i) { try { i.focus(); i.setSelectionRange(st, en); } catch (e) {} } });
+    return out; }
+  (function wrapList() { var r = window.renderSettingsAccountsList; if (typeof r !== 'function') { setTimeout(wrapList, 500); return; } if (r._keep) return;
+    var f = function () { var a = arguments, me = this; return keepForms(function () { return r.apply(me, a); }); }; f._keep = 1; window.renderSettingsAccountsList = f; })();
+  window.__stAccFill = function (keep) { return keepForms(function () { return accFill0(keep); }); };
+  function accFill0(keep) {
     heads(); try { autoFill(); } catch (e) {}
     var wrap = document.getElementById('settings-accounts-list'); if (!wrap) return;
     var it = wrap.querySelector('.sacc-item.open'), acc = it && accById(it.getAttribute('data-account-id'));
@@ -80818,7 +80830,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     put('stage', stageHtml(acc));
     rulesFill(it, acc);
     payoutsFill(it, acc);
-  };
+  }
   function redraw() { try { window.renderSettingsAccountsList(); } catch (e) {} }
   function openSettings() { var bg = document.getElementById('settings-modal-bg'); if (!(bg && bg.classList.contains('show'))) { var g = document.getElementById('settings-gear'); if (g) g.click(); }
     var n = document.querySelector('#settings-modal-bg .settings-nav-item[data-section="accounts"]'); if (n && !n.classList.contains('active')) n.click(); }
