@@ -54,7 +54,7 @@
     var mn = document.getElementById('strp-menu');
     ok('Chart settings: Practice Replay\'s menu (styles, scales, candles)', mn.classList.contains('show') && /Chart basic styles/i.test(mn.textContent) && /Scales/i.test(mn.textContent) && /Candles/i.test(mn.textContent) && /same settings as the Charts tab/.test(mn.textContent), mn.textContent.slice(0, 120));
     ok('it fits in the replay (scrolls inside when tall)', mn.getBoundingClientRect().bottom <= document.querySelector('.strp-card').getBoundingClientRect().bottom + 1, [mn.getBoundingClientRect().bottom, document.querySelector('.strp-card').getBoundingClientRect().bottom]);
-    ok('Trade Replay keeps its own look until something is changed (text #c0c0c0, size 12)', S.chart.options().layout.textColor === '#c0c0c0' && S.chart.options().layout.fontSize === 12, [S.chart.options().layout.textColor, S.chart.options().layout.fontSize]);
+    ok('Trade Replay starts with the other charts\' scales until something is changed (text #9a97a3, size 11; 2 Nov 2026)', S.chart.options().layout.textColor === '#9a97a3' && S.chart.options().layout.fontSize === 11, [S.chart.options().layout.textColor, S.chart.options().layout.fontSize]);
     mn.querySelector('[data-lksw="up"]').click(); await W(30);
     mn = document.getElementById('strp-menu'); mn.querySelector('.stpr-lkp [data-lkcol="#2962ff"]').click(); await W(40);
     ok('picking the up colour (blue): the candles change and Practice Replay has it too', S.series.options().upColor === '#2962ff' && PR._cfg().look.up === '#2962ff' && mn.classList.contains('show'), [S.series.options().upColor, PR._cfg().look]);

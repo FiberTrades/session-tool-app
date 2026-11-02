@@ -47,6 +47,7 @@ FAKE_JS = r"""(function () {
   var USER = { id: '%s', email: 'e2e@example.test', user_metadata: {}, app_metadata: {} };
   var SESSION = { user: USER, access_token: 'fake', refresh_token: 'fake', expires_at: 4102444800, token_type: 'bearer' };
   var SEED = %s;
+  var ROW = { data: SEED, updated_at: '2026-10-29T08:00:00.000000+00:00' };
   try { if (!localStorage.getItem('__e2eNoSeed') && !localStorage.getItem('sb-figozyxoyobixadhqewr-auth-token')) localStorage.setItem('sb-figozyxoyobixadhqewr-auth-token', JSON.stringify(SESSION)); } catch (e) {}   // signed in on this device (unless the test says not)
   var mode = function () { try { return localStorage.getItem('__e2eMode') || 'ok'; } catch (e) { return 'ok'; } };
   window.__e2eProf = 0; window.__e2eSess = 0;
@@ -61,14 +62,18 @@ FAKE_JS = r"""(function () {
         if (m === 'noplan') return Promise.resolve({ data: { id: USER.id, is_paid: false, plan: null, status: null, created_at: '2026-01-01T00:00:00Z' }, error: null });
         return Promise.resolve({ data: { id: USER.id, is_paid: true, plan: 'bundle', status: 'active', created_at: '2026-01-01T00:00:00Z', current_period_end: '2026-12-01T00:00:00Z' }, error: null }); }
       if (m === 'down') return Promise.resolve({ data: null, error: ERR, status: 522 });
-      if (table === 'journals' && st.op === 'select') return Promise.resolve({ data: st.single ? { user_id: USER.id, data: SEED, updated_at: '2026-10-29T08:00:00.000000+00:00', content_score: 5 } : [], error: null });
+      if (table === 'journals' && st.op === 'select') return Promise.resolve({ data: st.single ? { user_id: USER.id, data: ROW.data, updated_at: ROW.updated_at, content_score: 5 } : [], error: null });
+      // a write is taken, as the real table takes it. (This used to answer "no row" to everything, instantly: the journal's guarded write reads that as
+      // "refused, the cloud moved on", merges and writes again - with an answer that never waits, for ever, in promises alone, so the page never got to
+      // anything else. That was the hang of the "back" and "no plan" checks: the stand-in's, not the app's.)
+      if (table === 'journals' && (st.op === 'update' || st.op === 'upsert')) { if (st.val && st.val.updated_at) { ROW.updated_at = st.val.updated_at; if (st.val.data) ROW.data = st.val.data; } return Promise.resolve({ data: st.single ? { updated_at: ROW.updated_at } : [], error: null }); }
       return Promise.resolve({ data: st.single ? null : [], error: null });
     }
     var p = new Proxy({}, { get: function (t, k) {
       if (k === 'then') return function (a, b) { return run().then(a, b); };
       if (k === 'catch') return function (f) { return run().catch(f); };
       if (k === 'finally') return function (f) { return run().finally(f); };
-      if (k === 'upsert' || k === 'insert' || k === 'update' || k === 'delete') return function () { st.op = k; return p; };
+      if (k === 'upsert' || k === 'insert' || k === 'update' || k === 'delete') return function (v) { st.op = k; st.val = v; return p; };
       if (k === 'maybeSingle' || k === 'single') return function () { st.single = true; return p; };
       if (typeof k === 'symbol') return undefined;
       return function () { return p; };

@@ -118,7 +118,7 @@
       [document.getElementById('stpr-chip').className, document.getElementById('stpr-when').textContent]);
     var cd = document.querySelectorAll('#lc-host .stpr-cdb');
     var cdl = [P._axl(0), P._axl(1)].filter(Boolean).map(function (o) { return { textContent: o.t }; });   // the chart's own label on its price scale (19 Oct 2026)
-    check('each chart: the spread alone bottom right ("Spread 0.7p"), the candle\'s time left under the price on the scale (MM:SS)', cd.length === 2 && /^Spread 0\.7p$/.test(cd[0].textContent) && /^Spread 0\.7p$/.test(cd[1].textContent) && cdl.length === 2 && /^\d\d:\d\d$/.test(cdl[0].textContent) && /^0[01]:\d\d$/.test(cdl[1].textContent), [cd.length, cd[0] && cd[0].textContent, cdl.length, cdl[0] && cdl[0].textContent, cdl[1] && cdl[1].textContent]);
+    check('each chart: no Spread label on Live (2 Nov 2026: the Trade Manager has it), the candle\'s time left under the price on the scale (MM:SS)', Array.prototype.every.call(cd, function (x) { return x.hidden; }) && cdl.length === 2 && /^\d\d:\d\d$/.test(cdl[0].textContent) && /^0[01]:\d\d$/.test(cdl[1].textContent), [cd.length, cd[0] && cd[0].textContent, cdl.length, cdl[0] && cdl[0].textContent, cdl[1] && cdl[1].textContent]);
     check('the candle timer takes the price label\'s place on the scale (no last-price label while it counts)', P._lvv().length === 2 && P._lvv().every(function (v) { return v === false; }), P._lvv());
     // ---- the Assistant's line above the charts (19 Oct 2026): fixed sentences, the first that applies ----
     var lg = document.querySelector('#page-livecharts .bias-greeting[data-greeting-context="livecharts"]');
@@ -247,8 +247,6 @@
     await W(1500);
     var gp = P._paneBars(1), gl = gp.data[gp.real - 1], gpx = LC.state().px;
     check('the charts\' last candle is gold\'s forming one at its live price', gl && Math.abs(gl.close - gpx.b) < 0.5, [gl && gl.close, gpx && gpx.b]);
-    cd = document.querySelectorAll('#lc-host .stpr-cdb');
-    check('the badges show gold\'s spread (7.0 pts)', /Spread 7\.0 pts$/.test(cd[0].textContent) && /Spread 7\.0 pts$/.test(cd[1].textContent), [cd[0].textContent, cd[1].textContent]);
     check('the EUR/USD trade\'s lines are not on the gold charts', P._lines(0).length === 0, P._lines(0));
     // a gold trade on an EA whose "Manage trades from Session Terminal" is off: shown, buttons off, and how to switch it on
     var nowG = Math.floor(Date.now() / 1000), gop = LC.state().px.b;

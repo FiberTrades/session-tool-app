@@ -26,7 +26,6 @@
     if (phoneNow) { window.scrollTo(0, Math.round(window.scrollY + win.getBoundingClientRect().top)); for (k = 0; k < 30 && !win.classList.contains('ph-full'); k++) await W(100); await W(900); }
     var p = P._panes()[0], el = p.el, er = function () { return el.getBoundingClientRect(); }, ts = p.chart.timeScale();
     var pw = function () { return el.clientWidth - p.chart.priceScale('right').width(); }, ph = function () { return el.clientHeight - ts.height(); };
-    for (k = 0; k < 40 && !(p.cdb && !p.cdb.hidden && p.cdb.offsetWidth); k++) await W(250);
     // the Session Indicator on (its sessions and weekday names)
     if (phoneNow) { if (!$('.ph-si.on') && $('[data-phsi]')) { $('[data-phsi]').click(); await W(600); } } else { var si0 = $('.plat-top .pl-si'); if (si0 && si0.classList.contains('off')) { $('.plat-top [data-plsi]').click(); await W(600); } }
     var rel = function (node) { if (!node || !node.getClientRects().length) return null; var r = node.getBoundingClientRect(), o = er(); return { l: r.left - o.left, r: r.right - o.left, t: r.top - o.top, b: r.bottom - o.top, w: r.width, h: r.height }; };
@@ -44,12 +43,12 @@
     put(); for (k = 0; k < 20 && !(p._news && p._news.length >= 3); k++) { P._drawOv(0); await W(100); } await W(200); P._drawOv(0);
     var N = p._news || [], sp1 = spr(), lg1 = logo(), same = function (a, b) { return !a && !b || (a && b && Math.abs(a.l - b.l) < 0.6 && Math.abs(a.t - b.t) < 0.6 && Math.abs(a.w - b.w) < 0.6); };
     check('three groups of flags (the first candles, a USD and a GBP release on one middle candle - two flags, a candle under Spread)', N.length === 3 && N.some(function (h) { return h.n === 2 && h.spots.length === 2; }), N.map(function (h) { return [Math.round(h.x), h.n, h.spots.length]; }));
-    check('the Spread label and the TradingView logo where they were, news on', sp0 && sp1 && same(sp0, sp1) && same(lg0, lg1), [sp0, sp1, lg0, lg1]);
-    var midS = sp1 ? (sp1.t + sp1.b) / 2 : null;
-    check('the flags\' row on the Spread label\'s row: centred on it', midS != null && N.every(function (h) { return Math.abs(h.y - midS) <= 1; }), [midS, N.map(function (h) { return h.y; })]);
+    check('no Spread label on Live (2 Nov 2026: the Trade Manager has it), the TradingView logo where it was, news on', !sp0 && !sp1 && same(lg0, lg1), [sp0, sp1, lg0, lg1]);
+    var midS = ph() - 8 - 7.5;
+    check('the flags\' row: the chart\'s bottom line', N.every(function (h) { return Math.abs(h.y - midS) <= 1; }), [midS, N.map(function (h) { return h.y; })]);
     var clear = function (a) { return function (h) { return !a || (h.spots || []).every(function (s) { return s.x + h.r <= a.l + 0.5 || s.x - h.r >= a.r - 0.5; }); }; };
     check('...no flag under the logo: nudged right of it', !!lg1 && N.every(clear(lg1)) && N.some(function (h) { return h.spots[0].x - h.r < lg1.r + 12; }), [lg1 && Math.round(lg1.r), N.map(function (h) { return Math.round(h.spots[0].x - h.r); })]);
-    check('...none under Spread', !!sp1 && N.every(clear(sp1)), [sp1 && Math.round(sp1.l), N.map(function (h) { return Math.round(h.spots[h.spots.length - 1].x + h.r); })]);
+    check('...all of them inside the plot', N.every(function (h) { return h.spots[h.spots.length - 1].x + h.r <= pw() + 0.5; }), [pw(), N.map(function (h) { return Math.round(h.spots[h.spots.length - 1].x + h.r); })]);
     check('...none stacked: the groups side by side', N.slice().sort(function (a, b) { return a.spots[0].x - b.spots[0].x; }).every(function (h, i, a) { return !i || a[i - 1].spots[a[i - 1].spots.length - 1].x + a[i - 1].r <= h.spots[0].x - h.r + 0.5; }));
     // every flag's card: the arrow under it, on that flag's centre, the card inside the plot
     var ch = el.querySelector('.stpr-pc') || el, cardOK = [], hov = function (x, y) { var o = er(), cx = o.left + x, cy = o.top + y; (document.elementFromPoint(cx, cy) || ch).dispatchEvent(new MouseEvent('mousemove', { clientX: cx, clientY: cy, bubbles: true })); };

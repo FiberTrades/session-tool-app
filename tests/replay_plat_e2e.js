@@ -111,9 +111,9 @@
     ok('Play plays, its button says Pause', P._s().playing === true && /Pause/.test($('#stpr-play').textContent), $('#stpr-play').textContent);
     $('#stpr-play').click(); await W(200);
     ok('and pauses', !P._s().playing);
-    var sp0 = $('#stpr-speed').textContent; $('#stpr-speed').click(); await W(150);
+    var sp0 = $('#stpr-speed').textContent; $('#stpr-speed').click(); await W(150); $('#stpr-menu [data-spd="1"]').click(); await W(150);
     ok('the speed button changes the speed', $('#stpr-speed').textContent !== sp0, [sp0, $('#stpr-speed').textContent]);
-    $('#stpr-speed').click(); for (var z = 0; z < 8 && P._cfg().speed; z++) { $('#stpr-speed').click(); await W(60); }
+    $('#stpr-speed').click(); await W(100); $('#stpr-menu [data-spd="0"]').click(); await W(60);
     var lon = $('#stpr-ses [data-ses="london"]'); lon.click(); await W(1500);
     var sesAt = (P._s().f.ses.filter(function (x) { return x.id === 'london'; })[0] || {}).at;
     ok('a session along the bottom jumps there', sesAt && P._s().now >= sesAt && $('#stpr-ses [data-ses="london"]').classList.contains('on'), [P._s().now, sesAt]);
