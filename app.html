@@ -1029,6 +1029,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .st-wk-chip.flag { color: rgb(232,207,99); border-color: rgba(232,207,99,.48); background: rgba(232,207,99,.08); }
   .st-wk-chip b { font-weight: 700; }
   .st-wk-chip span { color: var(--text-mid); }
+  .st-wk-chip.flag { white-space: normal; height: auto; min-height: 30px; padding-top: 6px; padding-bottom: 6px; line-height: 1.35; max-width: 100%; }
   .st-wk-none { padding-top: 7px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 11px; color: var(--text-dim); }
   .st-wk-lines { display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 12px; align-items: baseline; }
   .st-wk-ll { font-family: 'AppNum', 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--text-dim); }
@@ -30298,13 +30299,21 @@ try {
     // The same rule checks the server works out (weekly-summary RULE_CHIPS): only nudges that mean the rule was crossed count.
     const RULES = [['session', ['outside', 'finished']], ['trades', ['limit', 'ea_trades']], ['daily', ['daily_hit']], ['risk', ['big_risk', 'widen', 'ea_risk']],
       ['stop', ['no_stop', 'ea_sl']], ['news', ['news_open', 'news_hold']], ['bias', ['against_bias', 'no_bias']]];
+    // Which nudges were behind a rule's flag, and on how many days each (the card says what happened, not just which rule).
+    function hitsIn(dayKeys, ks) {
+      const nl = (data && data.nudgeLog) || {}, out = {};
+      ks.forEach(rl => { const n = dayKeys.filter(k => Object.keys(nl[k] || {}).some(x => x.indexOf('sample:') !== 0 && String(nl[k][x] && nl[k][x].rule) === rl)).length; if (n) out[rl] = n; });
+      return out;
+    }
     // A stored summary without its numbers: worked out from this journal, as the server would have.
     function weekCard(wk) {
       const days7 = [0, 1, 2, 3, 4, 5, 6].map(i => plus(wk, i));
       let list = [];
       try { list = (typeof getTradesWithLog === 'function') ? getTradesWithLog() : getAllLifetimeTrades(); } catch (e) {}
       try { list = _noSep(list); } catch (e) {}
-      const ts = list.filter(t => t && t.result && days7.indexOf(dKey(t.date)) >= 0);
+      // A trade and its copies are ONE trade here, as everywhere with more than one account in view (Nestor, 1 Nov 2026: "I only took 2 trades, the 3rd one was a copy trade"): one result, R once, one day's count.
+      let ts = list.filter(t => t && t.result && days7.indexOf(dKey(t.date)) >= 0);
+      try { ts = _ideaMerge(ts); } catch (e) {}
       const rOf = t => { try { return tradeRforMath(t); } catch (e) { return 0; } }, r2 = v => Math.round(v * 100) / 100;
       const wins = ts.filter(t => t.result === 'Win').length, losses = ts.filter(t => t.result === 'Lose').length, wl = wins + losses;
       const best = ts.slice().sort((a, b) => rOf(b) - rOf(a))[0];
@@ -30315,7 +30324,7 @@ try {
       const rr = (Array.isArray(data.accounts) ? data.accounts : []).filter(a => a && !a.separate).map(a => a.riskRules || {});
       const on = (mode, amt, pct) => mode === 'pct' ? parseFloat(pct) > 0 : mode === 'amount' ? parseFloat(amt) > 0 : (parseFloat(amt) > 0 || parseFloat(pct) > 0);
       const set = { trades: rr.some(r => parseFloat(r.maxTrades) > 0), daily: rr.some(r => on(r.maxLossMode, r.maxLossAmount, r.maxLossPct) || on(r.firmDailyMode, r.firmDailyAmount, r.firmDailyPct)), risk: rr.some(r => on(r.maxRiskMode, r.maxRiskAmount, r.maxRiskPct)) };
-      const rules = RULES.map(([id, ks]) => ({ id: id, flagged: days7.filter(k => Object.keys(nl[k] || {}).some(x => x.indexOf('sample:') !== 0 && ks.indexOf(String(nl[k][x] && nl[k][x].rule)) >= 0)).length }))
+      const rules = RULES.map(([id, ks]) => ({ id: id, flagged: days7.filter(k => Object.keys(nl[k] || {}).some(x => x.indexOf('sample:') !== 0 && ks.indexOf(String(nl[k][x] && nl[k][x].rule)) >= 0)).length, hits: hitsIn(days7, ks) }))
         .filter(c => c.flagged > 0 || !(c.id in set) || set[c.id]);
       return { week: wk, netR: r2(ts.reduce((a, t) => a + rOf(t), 0)), trades: ts.length, wins: wins, losses: losses, bes: ts.length - wl,
         winRate: wl ? Math.round(wins / wl * 100) : null, daysTraded: new Set(ts.map(t => dKey(t.date))).size, plannedDays: planned,
@@ -30370,11 +30379,29 @@ try {
       const tile = (l, v, cls, sub) => '<div class="st-wk-tile"><div class="st-wk-l">' + esc(l) + '</div><div class="st-wk-v' + (cls ? ' ' + cls : '') + '">' + v + '</div><div class="st-wk-s">' + sub + '</div></div>';
       const LBL = { session: T('In session', 'En sesión'), trades: T('Trades per day', 'Operaciones por día'), daily: T('Daily loss', 'Pérdida diaria'), risk: T('Risk per trade', 'Riesgo por operación'),
         stop: T('Stop loss', 'Stop loss'), news: T('Red news', 'Noticias rojas'), bias: T('With your bias', 'Con tu sesgo') };
+      /* To watch says what the app saw, not the rule's name (Nestor, 1 Nov 2026: "Why does it say with your bias when i think it means i went against my bias?").
+         Each line is what that nudge itself measured, so a bias chip is "against" only when a trade really opposed a posted bias, and "no bias" when none was posted. */
+      const SAW = { outside: T('Traded outside your session', 'Operaste fuera de tu sesión'), finished: T('Traded after ending your session', 'Operaste tras terminar tu sesión'),
+        limit: T('Went over your trades a day', 'Superaste tus operaciones al día'), ea_trades: T('Raised the EA trade limit', 'Subiste el límite de operaciones del EA'),
+        daily_hit: T('Reached your daily loss limit', 'Llegaste a tu pérdida diaria'),
+        big_risk: T('Risked over your max per trade', 'Arriesgaste más de tu máximo'), widen: T('Risk grew on an open trade', 'Creció el riesgo de una operación abierta'), ea_risk: T('Raised the EA risk', 'Subiste el riesgo del EA'),
+        no_stop: T('No stop seen on a trade', 'Operación sin stop a la vista'), ea_sl: T('Widened the EA max stop', 'Ampliaste el stop máximo del EA'),
+        news_open: T('Opened just before red news', 'Abriste justo antes de noticia roja'), news_hold: T('Held a trade into red news', 'Seguías dentro con noticia roja'),
+        against_bias: T('Traded against your bias', 'Operaste contra tu sesgo'), no_bias: T('Traded with no bias posted', 'Operaste sin sesgo publicado') };
+      // a summary from before the card kept this, and no journal record of it either: an honest "the app reminded you"
+      const REMIND = { session: T('Session reminder', 'Aviso de sesión'), trades: T('Trades a day reminder', 'Aviso de operaciones al día'), daily: T('Daily loss reminder', 'Aviso de pérdida diaria'),
+        risk: T('Risk reminder', 'Aviso de riesgo'), stop: T('Stop loss reminder', 'Aviso de stop loss'), news: T('Red news reminder', 'Aviso de noticias rojas'), bias: T('Bias reminder', 'Aviso de sesgo') };
       const rules = (c.rules || []).filter(x => LBL[x.id]);
       const kept = rules.filter(x => !x.flagged), watch = rules.filter(x => x.flagged);
-      const chip = x => x.flagged
-        ? '<span class="st-wk-chip flag"><b>!</b>' + esc(LBL[x.id]) + '<span>· ' + x.flagged + ' ' + esc(x.flagged === 1 ? T('day', 'día') : T('days', 'días')) + '</span></span>'
-        : '<span class="st-wk-chip ok"><b>✓</b>' + esc(LBL[x.id]) + '</span>';
+      const dayWord = n => n + ' ' + (n === 1 ? T('day', 'día') : T('days', 'días'));
+      const flagChip = (label, n) => '<span class="st-wk-chip flag"><b>!</b>' + esc(label) + '<span>· ' + esc(dayWord(n)) + '</span></span>';
+      const chip = x => {
+        if (!x.flagged) return '<span class="st-wk-chip ok"><b>✓</b>' + esc(LBL[x.id]) + '</span>';
+        let hits = x.hits;
+        if (!hits) { const rl = RULES.filter(q => q[0] === x.id)[0]; hits = rl ? hitsIn([0, 1, 2, 3, 4, 5, 6].map(i => plus(row.week_key, i)), rl[1]) : {}; }
+        const keys = Object.keys(hits).filter(k => SAW[k]);
+        return keys.length ? keys.map(k => flagChip(SAW[k], hits[k])).join('') : flagChip(REMIND[x.id] || LBL[x.id], x.flagged);
+      };
       const st = status(c);
       const best = c.best ? '★ ' + fR(c.best.r) + ' ' + wd(c.best.key) : '';
       const lines = (c.highlight || c.focus)

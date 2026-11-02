@@ -49,7 +49,7 @@
   var groups = [].map.call(el.querySelectorAll('.st-wk-group'), function (g) { return txt(g); });
   ok('rules in two groups: Kept (daily loss, stop loss, red news, with your bias) then To watch (in session, trades per day, risk per trade, 1 day each)', groups.length === 2
     && /^Kept/i.test(groups[0]) && /Daily loss/.test(groups[0]) && /Stop loss/.test(groups[0]) && /Red news/.test(groups[0]) && /With your bias/.test(groups[0])
-    && /^To watch/i.test(groups[1]) && chips.filter(function (c) { return c[0] === 'flag'; }).map(function (c) { return c[1].replace(/\s+/g, ' '); }).join('|') === '!In session · 1 day|!Trades per day · 1 day|!Risk per trade · 1 day', [groups, chips]);
+    && /^To watch/i.test(groups[1]) && chips.filter(function (c) { return c[0] === 'flag'; }).map(function (c) { return c[1].replace(/\s+/g, ' '); }).join('|') === '!Session reminder · 1 day|!Trades a day reminder · 1 day|!Risk reminder · 1 day', [groups, chips]);
   ok('never a red chip', !el.querySelector('.st-wk-chip.bad, .st-wk-chip.red'));
   var lines = txt(el.querySelector('.st-wk-lines'));
   ok('then the two lines, labelled: Highlight, then Focus', /^Highlight .*\+4\.72R helped close the week.* Focus Next week, keep an eye on your session times\.$/i.test(lines), lines);
@@ -85,8 +85,50 @@
   tiles = [].map.call(el.querySelectorAll('.st-wk-tile'), function (x) { return txt(x); });
   chips = [].map.call(el.querySelectorAll('.st-wk-chip'), function (x) { return [x.className.replace('st-wk-chip ', ''), txt(x).replace(/^([!✓]) /, '$1')]; });
   ok('no stored numbers: worked out from the journal (+1.00R, 3 trades 1 W · 1 L · 1 BE, 50%, 3 / 5)', /\+1\.00R/.test(tiles[0]) && /3/.test(tiles[1]) && /1 W · 1 L · 1 BE/.test(tiles[1]) && /50\s*%/.test(tiles[2]) && /3\s*\/\s*5/.test(tiles[3]), tiles);
-  ok('its rule checks: trades per day amber on 1 day; daily loss and risk per trade not shown (not set)', chips.some(function (c) { return c[0] === 'flag' && /Trades per day · 1 day/.test(c[1]); }) && !chips.some(function (c) { return /Daily loss|Risk per trade/.test(c[1]); }), chips);
+  ok('its rule checks: trades per day amber on 1 day; daily loss and risk per trade not shown (not set)', chips.some(function (c) { return c[0] === 'flag' && /Went over your trades a day · 1 day/.test(c[1]); }) && !chips.some(function (c) { return /Daily loss|Risk per trade/.test(c[1]); }), chips);
   ok('and the text it was stored with, as its summary', /Summary Old text\./i.test(txt(el.querySelector('.st-wk-lines'))), txt(el.querySelector('.st-wk-lines')));
+  // A trade and its copies are ONE trade (Nestor, 1 Nov 2026: "I only took 2 trades, the 3rd one was a copy trade"): his real week of 26 Oct, with the app's card and the server's.
+  var acc2 = newAccountBlank('TTT', 5000, 'prop'); acc2.kind = 'prop';
+  data.accounts = [acc, acc2];
+  var WK = [
+    { id: 'a1', accountId: acc.id, symbol: 'EUR/USD', date: '2026-10-26T12:00:00.000Z', openTs: '2026-10-26T09:29:07+00:00', result: 'Win', r: 5, risk: 500, actualGross: 2420.04, costs: 62.48 },
+    { id: 'a2', accountId: acc.id, symbol: 'EUR/USD', date: '2026-10-30T12:00:00.000Z', openTs: '2026-10-30T08:13:52+00:00', result: 'BE', r: 5, risk: 500, actualGross: 12.4, costs: 62.45, ideaId: '1900728' },
+    { id: 'a3', accountId: acc2.id, symbol: 'EUR/USD', date: '2026-10-30T12:00:00.000Z', openTs: '2026-10-30T08:13:52+00:00', result: 'BE', r: 4.44, risk: 49.95, actualGross: 13.32, costs: 0, ideaId: '1900728' }];
+  var NL = { '2026-10-30': { 'against_bias:1900728': { at: '08:13', rule: 'against_bias', text: 'This long is against your bearish HTF bias on EUR/USD.' } } };
+  data.currentSeries = JSON.parse(JSON.stringify(WK)); data.history = []; rebuildSeriesByDate(); data.nudgeLog = NL; data.settings.tradingDays = [1, 2, 3, 5];
+  var appC = window.__stWeekly.card('2026-10-26');
+  var fri = function (c) { return c.days.filter(function (d) { return d.key === '2026-10-30'; })[0]; };
+  ok('the app\'s card: 2 trades, 1 W 0 L 1 BE, not 3', appC.trades === 2 && appC.wins === 1 && appC.losses === 0 && appC.bes === 1, appC);
+  ok('the app\'s card: net R counts the copy once (+4.65R, not +4.88R), Friday one trade', appC.netR === 4.65 && fri(appC).n === 1 && fri(appC).r === -0.07 && appC.daysTraded === 2, [appC.netR, fri(appC)]);
+  // the server's card, from the function's own source
+  var src = await (await fetch('/supabase/functions/weekly-summary/index.ts')).text();
+  var part = src.slice(src.indexOf('// ---------- the week, in the member'), src.indexOf('// ---------- the words'));
+  part = part.replace(/export function/g, 'function').replace(/new Set<string>\(/g, 'new Set(').replace(/:\s*Promise<Set<string>>/g, '').replace(/:\s*Set<string>/g, '')
+    .replace(/:\s*Record<string,\s*\w+>/g, '').replace(/:\s*\[string,\s*string\[\]\]\[\]/g, '').replace(/:\s*(Any|string|number)(\[\])?/g, '').replace('inWeek: (k) => boolean', 'inWeek');
+  var srvF = null, srvErr = null;
+  try { srvF = new Function('admin', 'TRIAL_DAYS', 'ALLOW_ID', 'CHAT_PLANS', part + '\nreturn weekFacts;')({}, 14, {}, new Set()); } catch (e) { srvErr = String(e); }
+  ok('the server function\'s week code loads here', !!srvF, srvErr);
+  if (srvF) {
+    var f = srvF({ s: { tz: 'Europe/London', tradingDays: [1, 2, 3, 5] }, un: 'Nestor', acc: data.accounts, cs: JSON.parse(JSON.stringify(WK)), h: [], rs: null, bh: [], nl: NL, wc: {}, toff: [] }, Date.parse('2026-11-01T18:00:00Z'));
+    ok('the server\'s card: 2 trades, 1 W 1 BE', f.card.trades === 2 && f.card.wins === 1 && f.card.bes === 1 && f.trades === 2, f.card);
+    ok('the server\'s card: net R +4.65R, Friday one trade at -0.07R, 2 days traded', f.card.netR === 4.65 && fri(f.card).n === 1 && fri(f.card).r === -0.07 && f.card.daysTraded === 2, [f.card.netR, fri(f.card)]);
+    ok('the server and the app agree', JSON.stringify([f.card.netR, f.card.trades, f.card.days]) === JSON.stringify([appC.netR, appC.trades, appC.days.map(function (d) { return { key: d.key, dow: d.dow, r: d.r, n: d.n }; })]), [f.card.days, appC.days]);
+    var bc = f.card.rules.filter(function (x) { return x.id === 'bias'; })[0];
+    ok('the server stores what was behind the flag', bc && bc.flagged === 1 && bc.hits && bc.hits.against_bias === 1 && !bc.hits.no_bias, bc);
+    ok('the words get the exact topic, not "the morning bias"', f.nudgeTopics.length === 1 && /against the morning bias/.test(f.nudgeTopics[0].about), f.nudgeTopics);
+  }
+  // To watch says what happened
+  rows = [{ id: 'w5', week_key: '2026-10-26', card: { week: '2026-10-26', netR: 4.65, trades: 2, wins: 1, losses: 0, bes: 1, winRate: 100, daysTraded: 2, plannedDays: 4, days: appC.days, best: appC.best,
+    rules: [{ id: 'daily', flagged: 0 }, { id: 'bias', flagged: 2, hits: { against_bias: 1, no_bias: 1 } }, { id: 'news', flagged: 1 }] }, created_at: new Date().toISOString() }];
+  await window.__stWeekly.load(); await W(200);
+  var wg = txt(el.querySelectorAll('.st-wk-group')[1]);
+  ok('a bias flag says which: "Traded against your bias · 1 day" and "Traded with no bias posted · 1 day", never "With your bias"', /Traded against your bias · 1 day/.test(wg) && /Traded with no bias posted · 1 day/.test(wg) && !/With your bias/.test(wg), wg);
+  ok('an old summary with no record says it was a reminder', /Red news reminder · 1 day/.test(wg), wg);
+  var wb = el.getBoundingClientRect();
+  ok('every chip stays inside the card', [].every.call(el.querySelectorAll('.st-wk-chip'), function (x) { return x.getBoundingClientRect().right <= wb.right + 1; }));
+  rows = [{ id: 'w6', week_key: '2026-10-26', created_at: new Date().toISOString(), card: { week: '2026-10-26', netR: 0, trades: 0, wins: 0, losses: 0, bes: 0, winRate: null, daysTraded: 0, plannedDays: 4, days: appC.days, rules: [{ id: 'bias', flagged: 1 }] } }];
+  await window.__stWeekly.load(); await W(200);
+  ok('a stored card without the detail reads it from the journal\'s record', /Traded against your bias · 1 day/.test(txt(el.querySelectorAll('.st-wk-group')[1])), txt(el));
   // nothing unread: no card; a mentor view never shows it
   rows = []; await window.__stWeekly.load(); await W(80);
   ok('nothing unread: no card', el.hidden);

@@ -114,6 +114,33 @@ function allTrades(j: Any): Any[] {
   slots.forEach((r: Any) => (r && Array.isArray(r.trades) ? r.trades : []).forEach((t: Any) => add(t && !t.date && r.sessionDate ? Object.assign({}, t, { date: r.sessionDate + "T12:00:00" }) : t)));
   return out;
 }
+// A trade and its copies are ONE trade, as the app's _ideaMerge (Nestor, 1 Nov 2026: "I only took 2 trades, the 3rd one was a copy trade
+// of the second trade of the week"): the first trade, carrying the money and the risk of every copy, so its R is the idea's R once.
+function grossOf(t: Any): number {
+  const risk = parseFloat(t.risk) || 0, r = parseFloat(t.r) || 0;
+  return t.actualGross != null ? Number(t.actualGross) : (t.result === "Win" ? r * risk : t.result === "Lose" ? -risk : 0);
+}
+function mergeIdeas(list: Any[]): Any[] {
+  const out: Any[] = [], at: Record<string, number> = {};
+  list.forEach((t) => {
+    const id = t && t.ideaId;
+    if (!id) { out.push(t); return; }
+    if (at[id] == null) { at[id] = out.length; out.push({ __g: [t] }); } else out[at[id]].__g.push(t);
+  });
+  return out.map((x) => {
+    if (!x || !x.__g) return x;
+    const g: Any[] = x.__g; if (g.length === 1) return g[0];
+    const ts = (t: Any) => Date.parse(String(t.openTs || "")) || 0;
+    const sorted = g.slice().sort((a, b) => ts(a) - ts(b));
+    const rk = g.reduce((a, t) => a + (parseFloat(t.risk) || 0), 0);
+    return Object.assign({}, sorted[0], {
+      actualGross: g.reduce((a, t) => a + grossOf(t), 0),
+      costs: g.reduce((a, t) => a + Math.abs(parseFloat(t.costs) || 0), 0),
+      risk: rk > 0 ? rk : sorted[0].risk,
+      copies: g.length,
+    });
+  });
+}
 // A trade's realised R, as the app's tradeRforMath: net money (the real result when imported, else the logged R) over the money
 // risked; a loss stays negative; with no risk logged, the logged R for a win, -1 for a loss, 0 for a break-even.
 function realR(t: Any): number {
@@ -156,24 +183,27 @@ function ruleChecks(j: Any, nl: Any, inWeek: (k: string) => boolean) {
     daily: rr.some((r: Any) => on(r.maxLossMode, r.maxLossAmount, r.maxLossPct) || on(r.firmDailyMode, r.firmDailyAmount, r.firmDailyPct)),
     risk: rr.some((r: Any) => on(r.maxRiskMode, r.maxRiskAmount, r.maxRiskPct)),
   };
-  return RULE_CHIPS.map(([id, rules]) => ({
-    id,
-    flagged: Object.keys(nl).filter((k) => inWeek(k) && Object.keys(nl[k] || {}).some((x) => x.indexOf("sample:") !== 0 && rules.indexOf(String(nl[k][x] && nl[k][x].rule)) >= 0)).length,
-  })).filter((c) => c.flagged > 0 || !(c.id in set) || set[c.id]);
+  const daysWith = (rules: string[]) => Object.keys(nl).filter((k) => inWeek(k) && Object.keys(nl[k] || {}).some((x) => x.indexOf("sample:") !== 0 && rules.indexOf(String(nl[k][x] && nl[k][x].rule)) >= 0)).length;
+  return RULE_CHIPS.map(([id, rules]) => {
+    // hits: which nudges were behind the flag and on how many days, so the card says what happened ("Traded against your bias"), not the rule's name
+    const hits: Record<string, number> = {};
+    rules.forEach((r) => { const n = daysWith([r]); if (n) hits[r] = n; });
+    return { id, flagged: daysWith(rules), hits };
+  }).filter((c) => c.flagged > 0 || !(c.id in set) || set[c.id]);
 }
 const NUDGE_TOPIC: Record<string, string> = {
   daily_hit: "daily loss limit", daily_left: "daily loss limit", dd_left: "maximum drawdown", target_hit: "profit target reached",
   consistency: "consistency rule", ea_risk: "risk per trade", big_risk: "risk per trade", risk: "risk per trade", widen: "risk per trade",
   ea_trades: "trades per day", limit: "trades per day", finished: "trades per day", ea_sl: "stop loss", no_stop: "stop loss",
   outside: "trading outside the session", news_hold: "red news", news_open: "red news", news_soon: "red news",
-  against_bias: "the morning bias", no_bias: "the morning bias", reentry: "re-entering soon after a loss", streak: "losing streak",
+  against_bias: "a trade that went against the morning bias", no_bias: "trading on a day with no morning bias posted", reentry: "re-entering soon after a loss", streak: "losing streak",
 };
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 function dayName(key: string): string { const d = new Date(key + "T12:00:00Z"); return isNaN(d.getTime()) ? key : DAYS[d.getUTCDay()] + " " + key; }
 export function weekFacts(j: Any, now: number) {
   const tz = (j && j.s && j.s.tz) || "Europe/London", today = dayKey(now, tz), monday = mondayOf(today);
   const inWeek = (k: string) => k >= monday && k <= today;
-  const trades = allTrades(j).filter((t) => { const ms = Date.parse(String(t.date || "")); return isFinite(ms) && inWeek(dayKey(ms, tz)); })
+  const trades = mergeIdeas(allTrades(j).filter((t) => { const ms = Date.parse(String(t.date || "")); return isFinite(ms) && inWeek(dayKey(ms, tz)); }))
     .sort((a, b) => Date.parse(a.date) - Date.parse(b.date));
   const rOf = realR;
   const wins = trades.filter((t) => t.result === "Win"), losses = trades.filter((t) => t.result === "Lose"), bes = trades.filter((t) => t.result === "BE");
@@ -231,7 +261,7 @@ Answer with JSON only, nothing before or after it: {"highlight": "...", "focus":
 
 Rules:
 - Use only the facts in the data. Every sentence must rest on a field in the data: never invent trades, numbers, setups, tools, habits or reasons.
-- Never state a mistake as fact or blame. Nudges are reminders the app showed during the week, not proof that anything went wrong. Mention them at most once, softly, by topic ("the app reminded you about your trades per day on two days - worth a look"). Never write that the member broke, exceeded, moved, widened or ignored anything.
+- Never state a mistake as fact or blame. Nudges are reminders the app showed during the week, not proof that anything went wrong. Mention them at most once, softly, by topic, keeping the topic's own words so it is clear what the reminder was about ("the app reminded you once about a trade that went against the morning bias - worth a look"). Never write that the member broke, exceeded, moved, widened or ignored anything.
 - Name a weekday only if it is given in the data.
 - R means risk multiple, already net of costs. Write +2.4R / -1R. No money amounts.
 - Use their first name once at most, in the highlight. No greeting, no sign-off, no emojis, no markdown.
