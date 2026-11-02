@@ -54348,7 +54348,12 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       // Never nudge to import WHILE a session is live - the Session Live view stays focused on
       // trading. The session-end edge trigger (_maybeAutoSyncOnSessionEnd) fires this the moment
       // the window closes, and the poll keeps catching later closes, so nothing is missed.
-      if (reason !== 'session-end' && typeof isSessionLive === 'function' && isSessionLive()) return;
+      /* Unless you are flat: nothing left to focus on, and waiting for the session's end left closed trades unmentioned for an hour (Nestor, 30 Oct 2026: "i was never prompted today to
+         import my trades, i had to press auto sync trades" - both closed at 08:50 in a session to 10:00). */
+      if (reason !== 'session-end' && typeof isSessionLive === 'function' && isSessionLive()) {
+        let _open = null; try { _open = (window.__stLive && window.__stLive.openList) ? window.__stLive.openList() : null; } catch (e) {}
+        if (!_open || _open.length) return;
+      }
       // NB: do NOT guard on `currentUser` here — in this script scope that variable is not the
       // signed-in user (the cloud pull uses its own). Guarding on it silently killed every prompt.
       if (!window.STCloud || typeof window.STCloud.pullInbox !== 'function') return;
@@ -54380,10 +54385,29 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
         _autoSyncToastOpen = true;
         showUndoToast(msg, () => { _autoSyncToastOpen = false; try { openMt5Modal(); runMt5AutoSync(); } catch (e) {} }, 15000, label, 'rule');
         setTimeout(function () { _autoSyncToastOpen = false; }, 15500);   // clear the latch after the toast's own lifetime
+        try { _mt5PromptInStage(msg, label); } catch (e) {}
       }).catch(() => { _autoSyncPromptInFlight = false; });
     } catch (e) { _autoSyncPromptInFlight = false; }
   }
   window.__stMaybePromptAutoSync = maybePromptAutoSync;
+  /* Live Charts in its own window: the prompt above sits in the main window, behind it, so it says so in the window being looked at too. Its buttons are the main prompt's. */
+  function _mt5PromptStage() { try { const lv = window.__stPractice && window.__stPractice._lv && window.__stPractice._lv(), w = lv && lv.sat; return (w && !w.closed && w.document && w.document.body) ? w : null; } catch (e) { return null; } }
+  function _mt5PromptInStage(msg, label) {
+    const w = _mt5PromptStage(), toast = document.getElementById('toast'); if (!w || !toast) return;
+    const d = w.document, old = d.getElementById('st-import-ask'); if (old) old.remove();
+    const lt = !!d.querySelector('.stpr-win.pl-lt');
+    const card = d.createElement('div'); card.id = 'st-import-ask'; card.setAttribute('role', 'alert');
+    card.style.cssText = 'position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:100000;display:flex;align-items:center;gap:14px;max-width:calc(100vw - 32px);padding:12px 14px 12px 16px;border-radius:10px;font:13px/1.35 Inter,system-ui,sans-serif;'
+      + (lt ? 'background:#fff;color:#131722;border:1px solid #d6d9e0;box-shadow:0 6px 18px rgba(0,0,0,.18);' : 'background:#1e222d;color:#d1d4dc;border:1px solid #363a45;box-shadow:0 6px 18px rgba(0,0,0,.55);');
+    const btn = (txt, on) => { const b = d.createElement('button'); b.type = 'button'; b.textContent = txt; b.style.cssText = 'flex:none;height:30px;padding:0 12px;border-radius:7px;cursor:pointer;font:600 12px Inter,system-ui,sans-serif;' + (on ? 'background:#f472b6;color:#000;border:1px solid #f472b6;' : 'background:transparent;color:inherit;border:1px solid ' + (lt ? '#d6d9e0' : '#363a45') + ';'); return b; };
+    const m = d.createElement('span'); m.textContent = msg; card.appendChild(m);
+    const imp = btn(label, true), cl = btn((typeof t === 'function' ? t('btn.close') : '') || 'Close', false);
+    imp.addEventListener('click', () => { try { window.focus(); } catch (e) {} const a = document.getElementById('toast-action-btn'); if (a) a.click(); });
+    cl.addEventListener('click', () => { const a = document.getElementById('toast-dismiss-btn'); if (a) a.click(); });
+    card.appendChild(imp); card.appendChild(cl); d.body.appendChild(card);
+    const mo = new MutationObserver(() => { if (!toast.classList.contains('show')) { mo.disconnect(); try { card.remove(); } catch (e) {} } });   // answered in either window: gone from both
+    mo.observe(toast, { attributes: true, attributeFilter: ['class'] });
+  }
 
   // ----- MT5 withdrawals -> payouts (EA v8.5) -----
   // A withdrawal matching a payout you logged as requested (same account, same amount) is that
@@ -54471,7 +54495,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
     // Early staggered attempts so it fires soon after load even if auth/plan wasn't ready on the
     // first try (maybePromptAutoSync no-ops until currentUser exists), then settle to a slow poll.
     [4000, 12000, 30000, 60000].forEach(function (ms) { setTimeout(function () { try { maybePromptAutoSync('startup'); } catch (e) {} }, ms); });
-    setInterval(function () { try { if (!document.hidden) maybePromptAutoSync('poll'); } catch (e) {} }, 90000);
+    setInterval(function () { try { if (!document.hidden || _mt5PromptStage()) maybePromptAutoSync('poll'); } catch (e) {} }, 90000);   // the main window covered by Live Charts' own window can read as hidden
     // Withdrawals change rarely: two early looks after load, then every five minutes.
     [20000, 75000].forEach(function (ms) { setTimeout(function () { try { maybeCheckMt5Withdrawals(); } catch (e) {} }, ms); });
     setInterval(function () { try { if (!document.hidden) maybeCheckMt5Withdrawals(); } catch (e) {} }, 300000);
