@@ -44,7 +44,7 @@
     data.biasSlots = [JSON.parse(JSON.stringify(slot))]; data.activeBiasSlot = 0; data.bias = data.biasSlots[0]; data.lastSessionDate = y.toDateString();
     recheckNewDayOnResume(); await W(300);
     var c2 = JSON.parse(JSON.stringify(data)); window.STCloud.setData(c2); await W(200);   // the cloud copy (same)
-    data.biasSlots[0].direction = 'Bullish'; data.bias = data.biasSlots[0];   // then today's own pick
+    data.biasSlots[0].direction = 'Bullish'; data.biasSlots[0].date = new Date().toISOString(); data.bias = data.biasSlots[0];   // then today's own pick (a pick stamps the slot's date)
     recheckNewDayOnResume(); await W(300);
     ok('an edit made today after the cloud copy still counts as today\'s work (no question, nothing cleared)', !shown() && data.biasSlots[0].direction === 'Bullish', [shown(), data.biasSlots[0].direction]);
   } catch (e) { ok('test ran', false, String(e && e.stack || e)); }

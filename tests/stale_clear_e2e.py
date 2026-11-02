@@ -113,6 +113,14 @@ def new_row():
     return d
 
 
+def blank_row():
+    """What a phone last saw when it was last used on Monday just after the clear: empty forms, nothing to keep."""
+    d = old_row()
+    d['biasSlots'] = [{'symbol': 'EUR/USD', 'sessionName': 'London', 'sessionDate': DAY(3).strftime('%Y-%m-%d')}]
+    d['bias'] = d['biasSlots'][0]
+    return d
+
+
 def yesterday_row():
     """The cloud last used yesterday on the PC: two more days, yesterday's bias still in the slot, today not cleared."""
     d = old_row()
@@ -154,7 +162,7 @@ def main():
         print('Microsoft Edge not found')
         return 2
     servers, ports = [], []
-    for _ in range(3):
+    for _ in range(5):
         port = bt.free_port()
         httpd = http.server.ThreadingHTTPServer(('127.0.0.1', port), functools.partial(se.Fake, directory=bt.ROOT))
         threading.Thread(target=httpd.serve_forever, daemon=True).start()
@@ -238,9 +246,9 @@ def main():
                 time.sleep(0.25)
             return cloud_peek()
 
-        def phone_last_used(c, base, since=new_row):
+        def phone_last_used(c, base, since=new_row, first=old_row):
             """The phone signed in on Monday's journal and saved once; then it was closed."""
-            se.set_row(old_row())
+            se.set_row(first())
             go(c, '%s/%s?e2eday=-3&st=%d' % (base, app, random.randint(1, 10 ** 9)))
             ok = wait(c, ready, 40)
             ev(c, "(() => { data.settings.e2ePhone = 1; STCloud.save(); return true; })()")
@@ -313,6 +321,30 @@ def main():
             ev(P3, "document.getElementById('new-session-confirm').click(), true")
         p = wait_cloud(lambda q: q['day'] == jday(NOW) and not q['todayBias'])
         check('...Clear: the cloud is cleared for today, yesterday\'s history and the PC\'s setting kept', p['day'] == jday(NOW) and not p['todayBias'] and p['history'] == 5 and p['fromPC'] == 'pc', p)
+        # ---- phone 4: 30 Oct 2026 (Nestor: "this morning i was not asked if i wanted to clear my bias and review from yesterday, why?").
+        # The phone's own copy was days old and EMPTY, so at load it found "nothing to keep" and moved the day on before the cloud
+        # arrived; merged, the journal said the day was handled, and neither the phone nor the PC ever asked.
+        P4 = open_page(new_target())
+        b4 = 'http://127.0.0.1:%d' % ports[3]
+        check('setup: phone 4 last used on Monday with empty forms, the PC last used yesterday', phone_last_used(P4, b4, yesterday_row, blank_row))
+        go(P4, '%s/%s?st=%d' % (b4, app, random.randint(1, 10 ** 9)))
+        ok = wait(P4, ready + " && (data.biasHistory || []).length === 5", 30)
+        asked = ok and wait(P4, ASKED, 10)
+        check('phone 4: its empty old copy does not move the day on; once the journal is in, the question is asked', ok and asked, {'ready': ok, 'asked': ev(P4, ASKED), 'day': ev(P4, 'data.lastSessionDate'), 'page': json.loads(ev(P4, PAGE_PEEK))})
+        check('...and yesterday\'s bias is still there to be asked about', ev(P4, "!!(data.biasSlots && data.biasSlots[0] && data.biasSlots[0].direction)"), json.loads(ev(P4, PAGE_PEEK)))
+        check('...and the cloud still says yesterday until it is answered', cloud_peek()['day'] == jday(DAY(1)), cloud_peek())
+        # ---- phone 5: the same morning with the tab left open: an empty form in memory, the phone woken up. It must look at the cloud first.
+        P5 = open_page(new_target())
+        b5 = 'http://127.0.0.1:%d' % ports[4]
+        se.set_row(blank_row())
+        go(P5, '%s/%s?st=%d' % (b5, app, random.randint(1, 10 ** 9)))
+        ok = wait(P5, ready, 30); time.sleep(3)
+        ev(P5, "(() => { data.lastSessionDate = %s; return true; })()" % json.dumps(jday(DAY(3))))
+        se.set_row(yesterday_row())
+        ev(P5, "window.dispatchEvent(new Event('focus')), document.dispatchEvent(new Event('visibilitychange')), true")
+        asked = ok and wait(P5, ASKED, 15)
+        check('phone 5, woken with an empty form: it asks about the old bias instead of moving the day on', ok and asked, {'ok': ok, 'asked': ev(P5, ASKED), 'day': ev(P5, 'data.lastSessionDate'), 'cloud': cloud_peek()})
+        check('...and the cloud still says yesterday until it is answered', cloud_peek()['day'] == jday(DAY(1)), cloud_peek())
     except SystemExit:
         pass
     finally:

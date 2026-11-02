@@ -15428,7 +15428,10 @@ try {
      the snapshot is taken, and a bias saved with fewer read as edited today, so the morning question was skipped. */
   function _ndSig(b){ try{ var c=Object.assign({}, b||{}); if(Array.isArray(c.tvLinks)) c.tvLinks=c.tvLinks.filter(function(l){ return l&&l.url; }); return biasSig(c); }catch(e){ return biasSig(b); } }
   function _captureNewDaySnapshot(){ try{ var rs={}; _reviewSlotsArr().forEach(function(r){ if(r) rs[reviewSlotKey(r)]=JSON.stringify(r.trades||[]); }); return { sigs:_biasSlotsArr().map(_ndSig), reviewSig: JSON.stringify((data.review&&data.review.trades)||[]), reviewSigs: rs }; }catch(e){ return null; } }
-  function _slotIsTodaysWork(sl, idx){ if(!sl) return false; if(_isTodayIso(sl.copiedAt)||_isTodayIso(sl.date)) return true; if(_newDaySnapshot&&_newDaySnapshot.sigs&&idx!=null&&_newDaySnapshot.sigs[idx]!=null&&_ndSig(sl)!==_newDaySnapshot.sigs[idx]) return true; return false; }
+  /* Today's work = posted or edited today: every pick, chart link and note stamps sl.date. It used to also count "differs from the copy taken when the new day was noticed", and any
+     difference between two copies of the journal (a second cloud copy, another window's merge) then read as today's work: the question was skipped and yesterday's bias stayed
+     (Nestor, 22 and 30 Oct 2026: "this morning i was not asked if i wanted to clear my bias and review from yesterday, why?"). The stamp cannot be fooled that way. */
+  function _slotIsTodaysWork(sl, idx){ if(!sl) return false; return !!(_isTodayIso(sl.copiedAt)||_isTodayIso(sl.date)); }
   // Does the review hold work done TODAY? Either it was sent today, or it's stamped today
   // and its trade rows have changed since the new day was detected. Used both by the reset
   // itself and by the prompt's safety net, so "is there anything stale left?" and "what
@@ -15436,7 +15439,9 @@ try {
   // Per review (session + symbol); r defaults to the one on screen.
   function _reviewIsTodaysWork(r){ try{ r=r||data.review; if(!r) return false; if(_isTodayIso(r.copiedAt)) return true;
     var snapSig = (_newDaySnapshot && _newDaySnapshot.reviewSigs && _newDaySnapshot.reviewSigs[reviewSlotKey(r)] != null) ? _newDaySnapshot.reviewSigs[reviewSlotKey(r)] : (_newDaySnapshot && _newDaySnapshot.reviewSig);
-    return !!(r.sessionDate===todayDateStr() && Array.isArray(r.trades) && r.trades.length>0 && _newDaySnapshot && JSON.stringify(r.trades||[])!==snapSig); }catch(e){ return false; } }
+    /* the same trap: a row with its own earlier date is yesterday's whichever copy of the journal it came through */
+    var _rowToday = function (t) { var d = t && (t.openTs || t.date); if (!d) return true; var ms = Date.parse(d); return isNaN(ms) || new Date(ms).toDateString() === new Date().toDateString(); };
+    return !!(r.sessionDate===todayDateStr() && Array.isArray(r.trades) && r.trades.length>0 && r.trades.some(_rowToday) && _newDaySnapshot && JSON.stringify(r.trades||[])!==snapSig); }catch(e){ return false; } }
   function _reviewIsStale(){ try{ return _reviewSlotsArr().some(function(r){ return !!(r && Array.isArray(r.trades) && r.trades.length>0 && !_reviewIsTodaysWork(r)); }); }catch(e){ return false; } }
   function hasPriorSessionContent() {
     /* Every bias, not only the one on screen: with two symbols, yesterday's bias for the other symbol was never asked
