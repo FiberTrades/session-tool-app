@@ -15024,6 +15024,11 @@ try {
     _stSessionState = _stSessionPhase();
     _stLastTick = Date.now(); _stHiddenAt = Date.now();
   }
+  /* The session voice on time with this window minimised (Nestor, 2 Nov 2026: "i want to make sure that if the app is minimized ... users still hear the session live and session end chime").
+     After 5 minutes hidden the browser fires this window's timers once a minute (measured: 60 s apart), so the voice could come up to a minute late. A worker's clock is not slowed:
+     the first look of each new minute now runs as it turns. Once a minute, so a hidden window does no more work than it did; the claims below still make it one voice. */
+  (function () { try { if (_isDetachedWindow()) return; var last = 0, w = new Worker(URL.createObjectURL(new Blob(['setInterval(function(){postMessage(1)},1000)'], { type: 'text/javascript' })));
+      w.onmessage = function () { if (!document.hidden) return; var m = Math.floor(Date.now() / 60000); if (m === last) return; last = m; try { renderMetaTime(); } catch (e) {} }; } catch (e) {} })();
   // Per-second tick: live clock + rollover, plus a watchdog. If far more than 1s elapsed
   // between ticks the machine was asleep/suspended, so refresh everything on resume.
   setInterval(function () {
@@ -94489,11 +94494,12 @@ window.__stAZ = (function () {
     var v = pvLevels(); if (!v) return; pvDraw(p, v, su);
   }
   function pvTitles(v, su){ return { e: v.kind ? pendName({ dir: v.dir, kind: v.kind }) : sideW(v.dir), sl: 'SL ' + fmtU(v.rd, su) + ' ' + uLbl(su), tp: v.tp ? 'TP ' + (Math.abs(v.tp - v.entry) / v.rd).toFixed(1) + 'R' : '' }; }
-  function pvDraw(p, v, su){ var t = pvTitles(v, su), as = function(k, pr){ var l = p.lines[p.lines.length - 1]; if (l && !l._pv && l._p === pr) { l._pv = k; l._ti = t[k]; } };   // _pv: moved in place while aimed (pvMove)
-    addLine(p, v.entry, '#c0c0c0', 2, t.e, v.kind ? 'pvent' : null); as('e', v.entry);
+  // Trade lines off on a chart: the order being aimed shows no line or tag there either, and none to drag (Nestor, 2 Nov 2026: "if i dont want to see the execution lines on the other charts i can turn it off but when i turn it off the lines dont dissapear")
+  function pvDraw(p, v, su){ var hd = !showOn(p, 'marks'), t = pvTitles(v, su), as = function(k, pr){ var l = p.lines[p.lines.length - 1]; if (l && !l._pv && l._p === pr) { l._pv = k; l._ti = t[k]; } };   // _pv: moved in place while aimed (pvMove)
+    addLine(p, v.entry, '#c0c0c0', 2, t.e, v.kind ? 'pvent' : null, hd); as('e', v.entry);
     // solid, as in the trade (Nestor, 17 Oct 2026: "i dont like the fact the SL and TP lines are dotted")
-    addLine(p, v.sl, '#E56767', 0, t.sl, 'pvsl'); as('sl', v.sl);
-    if (v.tp) { addLine(p, v.tp, '#4ECD8B', 0, t.tp, 'pvtp'); as('tp', v.tp); }
+    addLine(p, v.sl, '#E56767', 0, t.sl, 'pvsl', hd); as('sl', v.sl);
+    if (v.tp) { addLine(p, v.tp, '#4ECD8B', 0, t.tp, 'pvtp', hd); as('tp', v.tp); }
   }
   /* Aiming an order (and dragging its stop or target): only the lines being aimed move, each in place, as a live trade's dragged line does
      (ltMove) - not every line of every chart taken off and drawn again on each move of the mouse. false: they are not all there to move
@@ -94854,13 +94860,20 @@ window.__stAZ = (function () {
   var MH = null;   // the menu open now: this window's, or a chart window's
   function mEl(){ return (MH && MH.isConnected) ? MH : $('stpr-menu'); }
   function popDocs(){ var a = []; for (var k in POP) if (popOn(+k)) { try { a.push(POP[k].w.document); } catch (e) {} } return a; }
+  /* Inside its window, however it grew after it opened (Nestor, 2 Nov 2026: "why is this copy trading panel getting cut off?": Trade with became the wider Copy trading sheet where it stood). */
+  function menuKeep(m){ if (!m || !m.classList.contains('show') || phone() || landPhone()) return; var d = m.ownerDocument, v = d.defaultView, mw = d.getElementById('stpr-win'); if (!v || !mw) return;
+    var w = mw.getBoundingClientRect(), vr = Math.min(v.innerWidth, w.right), r = m.getBoundingClientRect(), room = Math.floor(vr - Math.max(0, w.left) - 16);
+    if (r.width > room) { m.style.maxWidth = room + 'px'; m.style.overflowX = 'auto'; r = m.getBoundingClientRect(); }
+    var over = r.right - (vr - 8); if (over > 0.5) { m.style.left = Math.max(8, (parseFloat(m.style.left) || 0) - over) + 'px'; r = m.getBoundingClientRect(); }
+    var de = d.documentElement; if (de.scrollHeight <= v.innerHeight + 1) { var vb = Math.min(v.innerHeight, w.bottom), maxH = Math.floor(vb - r.top - 8); if (r.bottom > vb - 7.5 && maxH >= 120) { m.style.maxHeight = maxH + 'px'; m.style.overflowY = 'auto'; } } }
+  function menuWatch(m){ try { var Ro = m.ownerDocument.defaultView.ResizeObserver; if (m._keepW === m.ownerDocument.defaultView || !Ro) return; if (m._keepO) m._keepO.disconnect(); m._keepW = m.ownerDocument.defaultView; m._keepO = new Ro(function(){ var w0 = m.ownerDocument.defaultView; if (w0) w0.requestAnimationFrame(function(){ menuKeep(m); }); }); m._keepO.observe(m); } catch (e) {} }   // (the next frame: a change of size inside the observer's own call is a browser error)
   function closeMenu(){ allDocs().forEach(function(d){ var m0 = d.getElementById('stpr-menu'); if (m0) m0.classList.remove('show'); }); MH = null; var m = $('stpr-menu'); menuFor = null; MENU_BTNS.forEach(function(id){ var b = $(id); if (b) b.setAttribute('aria-expanded', 'false'); }); SD.querySelectorAll('.stpr-ptf.open').forEach(function(b){ b.classList.remove('open'); }); MENUD = null; MENUA = null; try { satBar(); } catch (e) {} }
   function openMenu(anchor, html, tag){
     if (menuFor === tag) { closeMenu(); return; }
     if (UI.fwd && anchor && anchor.id && UI.fwd.id === anchor.id && UI.fwd.isConnected) anchor = UI.fwd;   // asked from a chart window's toolbar: it opens there
     var hd = (anchor && anchor.ownerDocument) || document, m = hd.getElementById('stpr-menu') || $('stpr-menu'), mw = hd.getElementById('stpr-win') || $('stpr-win');
     if (MH && MH !== m) MH.classList.remove('show'); MH = m;
-    m.innerHTML = html; m.classList.add('show'); menuFor = tag; MENU_BTNS.forEach(function(id){ var b = $(id); if (b) b.setAttribute('aria-expanded', b === anchor ? 'true' : 'false'); }); m.style.padding = tag === 'layers' ? '5px' : '';
+    m.style.maxWidth = ''; m.style.overflowX = ''; m.innerHTML = html; m.classList.add('show'); menuFor = tag; MENU_BTNS.forEach(function(id){ var b = $(id); if (b) b.setAttribute('aria-expanded', b === anchor ? 'true' : 'false'); }); m.style.padding = tag === 'layers' ? '5px' : '';
     MENUD = hd; MENUA = (anchor && anchor.id) || null; try { satBar(); } catch (e) {}   // lit in the window it opened in, and only there (Nestor, 22 Oct 2026: "when i click this button why is it getting highlighted on the top charts too?")
     var w = mw.getBoundingClientRect(), a = anchor.getBoundingClientRect();
     var left = Math.min(a.left - w.left + mw.scrollLeft, w.width - m.offsetWidth - 8), top = a.bottom - w.top + mw.scrollTop + 6;
@@ -94871,6 +94884,7 @@ window.__stAZ = (function () {
     var cmp = (anchor && anchor.classList && anchor.classList.contains('stpr-cmanc')) ? anchor.parentNode : null;   // from the right-click menu: inside that chart
     if (cmp) { var pr0 = cmp.getBoundingClientRect(), ct = pr0.top - w.top + mw.scrollTop + 6; m.style.top = ct + 'px'; m.style.left = Math.max(pr0.left - w.left + mw.scrollLeft + 6, Math.min(parseFloat(m.style.left) || 0, pr0.right - w.left + mw.scrollLeft - m.offsetWidth - 6)) + 'px';
       m.style.maxHeight = Math.max(160, pr0.height - 12) + 'px'; m.style.overflowY = 'auto'; }
+    menuKeep(m); menuWatch(m);
   }
   function tfMenu(i, anchor){
     var cur = panes[i] ? panes[i].tf : 5;
@@ -96478,7 +96492,8 @@ window.__stAZ = (function () {
   function cmOpen(p, x, y, rows, act){ var e = ctxEl(p);
     e.innerHTML = rows.map(function(r){ if (r === '-') return '<hr>'; return '<button type="button" role="menuitem" data-act="' + r.k + '"' + (r.dis ? ' disabled' : '') + (r.cls ? ' class="' + r.cls + '"' : '') + '>' + cmSvg(r.ic || r.k) + '<span>' + esc(r.t) + '</span>' + (r.kbd ? '<kbd>' + esc(r.kbd) + '</kbd>' : '') + '</button>'; }).join('').replace(/^(<hr>)+|(<hr>)+$/g, '').replace(/(<hr>){2,}/g, '<hr>');
     e.querySelectorAll('[data-act]').forEach(function(b){ b.onclick = function(ev){ ev.stopPropagation(); hideCtx(); act(b.getAttribute('data-act')); }; });
-    e.style.display = 'block'; var mw = e.offsetWidth || 248, mh = e.offsetHeight || 200, W = p.el.clientWidth, H = p.el.clientHeight;
+    e.style.maxHeight = ''; e.style.overflowY = ''; e.style.display = 'block'; var mw = e.offsetWidth || 248, mh = e.offsetHeight || 200, W = p.el.clientWidth, H = p.el.clientHeight;
+    if (mh > H - 8) { mh = Math.max(80, H - 8); e.style.maxHeight = mh + 'px'; e.style.overflowY = 'auto'; mw = e.offsetWidth || mw; }   // a chart shorter than the menu: it scrolls, inside the chart (2 Nov 2026)
     e.style.left = Math.max(4, Math.min(x + 2, W - mw - 4)) + 'px'; e.style.top = Math.max(4, y + mh + 6 > H ? Math.min(y - mh - 2, H - mh - 4) : y + 2) + 'px';
     var d0 = p.el.ownerDocument, esc0 = function(ev){ if (ev.key === 'Escape') { hideCtx(); d0.removeEventListener('keydown', esc0, true); } }; d0.addEventListener('keydown', esc0, true); }
   function showCtx(p, x, y, pr){ var multi = (DW.multi && DW.multi.length) ? DW.multi.length : 0, sd = !multi && DW.sel != null && DW.list[DW.sel];
@@ -97557,7 +97572,8 @@ window.__stAZ = (function () {
   // the window-wide handlers of this window, in that one too (mouse, keys, right-click, its timeframe buttons)
   function wireWin(w, i){ var d = w.document, L = [], on = function(t, ev, fn, op){ t.addEventListener(ev, fn, op); L.push([t, ev, fn, op]); };   // window-wide: undone when it is let go (satLetGo)
     on(d, 'pointerdown', actDown, true); on(d, 'mousedown', dwDown, true);
-    if (d !== document) { on(d, 'click', function(e){ try { var TMw = window.__stTM; if (TMw && TMw.pct) TMw.pct(e); if (TMw && TMw.click) TMw.click(e); } catch (x) {} }, true); }   // Move to BE, Close 50%, Close in this window too on(d, 'dblclick', WH.dbl, true); on(d, 'contextmenu', WH.ctx, true); on(d, 'paste', WH.paste, true);
+    if (d !== document) { on(d, 'click', function(e){ try { var TMw = window.__stTM; if (TMw && TMw.pct) TMw.pct(e); if (TMw && TMw.click) TMw.click(e); } catch (x) {} }, true); }   // Move to BE, Close 50%, Close in this window too
+    on(d, 'dblclick', WH.dbl, true); on(d, 'contextmenu', WH.ctx, true); on(d, 'paste', WH.paste, true);   // (2 Nov 2026, Nestor: "the normal menu needs to appear on all windows when right button is clicked": this line sat behind the comment above since 30 Oct)
     on(w, 'mousemove', dwMove); on(w, 'mouseup', dwUp); on(w, 'keyup', WH.kup);
     on(d, 'pointerdown', function(){ UI.w = w; }, true); on(d, 'keydown', function(e){ UI.w = w; WH.key(e); });
     on(d, 'pointerup', WH.handOff, true); on(d, 'pointercancel', WH.handOff, true); ohWire(d, on);
@@ -97838,7 +97854,7 @@ window.__stAZ = (function () {
   function cpConf(){ var a = LV.cpAsk; if (!a || Date.now() - a.at > 20000) return ''; var yes = a.act === 'lead' ? T('Make it the Lead', 'Hacerla Líder') : T('Stop', 'Parar');
     return '<div class="stpr-cpq"><span>' + esc(cpAskTxt(a)) + '</span><span class="stpr-cpqb"><button type="button" class="stpr-accf" data-cpno="1">' + esc(T('Keep', 'Mantener')) + '</button><button type="button" class="stpr-accf go" data-cpyes="1">' + esc(yes) + '</button></span></div>'; }
   function cpDo(act, lg){ if (!window.__stCopyWish) return; window.__stCopyWish.set(lg, act).then(function(){ cpPaint(); }); cpPaint(); }
-  function cpPaint(){ var m = $('stpr-menu'); if (m && menuFor === 'acct') m.innerHTML = lvAccHtml(false); try { paintMM(); } catch (e) {} }
+  function cpPaint(){ var m = $('stpr-menu'); if (m && menuFor === 'acct') { m.innerHTML = lvAccHtml(false); menuKeep(m); } try { paintMM(); } catch (e) {} }
   // the clicks: an action that stops or starts a copy asks first; copying an account into the Lead's does it at once
   function cpClick(t){ var b;
     if (t.closest('[data-cpsheet]')) { LV.cpSheet = true; LV.cpAsk = null; cpPaint(); return true; }   // Copy trading (29 Oct 2026)
@@ -98340,8 +98356,17 @@ window.__stAZ = (function () {
   function lvMs(){ try { return (window.__stLiveLine && window.__stLiveLine.ms) ? window.__stLiveLine.ms() : 2000; } catch (e) { return 2000; } }
   // F: a feed (chart 1's, S, unless said) - its EA's prices came lately
   function lvFresh(F){ F = F || S; return !!(F && F.at && Date.now() - F.at < Math.max(15000, 3 * lvMs())); }
-  function lvClkArm(){ var w = SW; try { (LV.clkW || window).clearInterval(LV.clk); } catch (e) {} try { if (w.closed) w = window; } catch (e) { w = window; } LV.clkW = w; LV.clk = w.setInterval(lvClock, 1000); }
-  function clearLiveT(){ try { (LV.clkW || window).clearInterval(LV.clk); } catch (e) {} LV.clkW = null; LV.clk = 0; clearTimeout(LV.rq); LV.rq = 0; }
+  /* The clock of every chart, whichever windows are on screen (Nestor, 2 Nov 2026: "ive noticed when the main chart is minimized, the other external chats candle timers lag, they dont seem live, why?").
+     All the windows' charts are drawn from one place, and it ran on one window's timer: the browser slows a minimised window's timers to once a second, after 5 minutes to once a MINUTE. A worker's
+     clock is not slowed and its message wakes this window at once. With no chart on screen anywhere it asks less. (No worker: the timer of a window that is on screen.) */
+  var CLK_SRC = 'function t(){postMessage(1);setTimeout(t,1015-Date.now()%1000)}setTimeout(t,1015-Date.now()%1000)';   // just after each second turns: the countdowns never skip one
+  function lcOnScreen(){ try { if (SD !== document ? (!SW.closed && !SD.hidden) : !document.hidden) return true; } catch (e) {} for (var k in POP) if (popOn(+k)) { try { if (!POP[k].w.document.hidden) return true; } catch (e) {} } return false; }
+  function lvClkTick(){ var n = Date.now(), gap = n - (LV.clkAt || 0); if (gap < 400 || (gap < 5000 && !lcOnScreen())) return; LV.clkAt = n; lvClock(); }
+  function lvClkStop(){ try { if (LV.clkWk) LV.clkWk.terminate(); } catch (e) {} LV.clkWk = null; try { (LV.clkW || window).clearInterval(LV.clk); } catch (e) {} LV.clkW = null; LV.clk = 0; }
+  function lvClkArm(){ lvClkStop();
+    try { if (!LV.clkU) LV.clkU = URL.createObjectURL(new Blob([CLK_SRC], { type: 'text/javascript' })); var wk = new Worker(LV.clkU); wk.onmessage = function(){ if (LV.clkWk === wk) lvClkTick(); }; LV.clkWk = wk; return; } catch (e) {}
+    var w = liveWin(); LV.clkW = w; LV.clk = w.setInterval(lvClkTick, 1000); }
+  function clearLiveT(){ lvClkStop(); try { (LV.rqW || window).clearTimeout(LV.rq); } catch (e) {} LV.rq = 0; }
   // a symbol on a live chart: the day's 1-minute candles from the store (its EA tops them up), its digits; then its EA's prices
   /* ---- Instant chart open (Nestor, 24 Oct 2026: "can you make this faster?", asked twice). A symbol opened live is on screen at
      once: its day's minutes and every chart's history asked together (and early - a watchlist row pointed at or touched), the
@@ -98447,7 +98472,7 @@ window.__stAZ = (function () {
     var st = $('stpr-state'); st.style.display = 'flex'; st.textContent = T('Loading your live chart…', 'Cargando tu gráfico en vivo…');
     var win = $('stpr-win'); win.classList.add('lc'); win.classList.remove('lcp');
     if (!(S && S.live)) { var ch = $('stpr-chip'); ch.className = 'stpr-chip lvoff'; ch.innerHTML = '<i></i>' + esc(T('Live', 'En vivo')); $('stpr-when').textContent = T('Your MT5 prices', 'Precios de tu MT5'); $('stpr-score').innerHTML = ''; }   // LIVE from the first frame (18 Oct 2026: "for a split second the practice pink button"), grey until its prices come in
-    if (S && !S.live) { if (S.pos) closeNow(); if (S) S.pend = null; resumeSave(); pushTrades(); popShutAll(); if (LOG.open) logOpen(false); }   // the replay that was here
+    if (S && !S.live) { if (S.pos) closeNow(); if (S) S.pend = null; resumeSave(); pushTrades(); if (LOG.open) logOpen(false); }   // the replay that was here; its chart windows stay where they are and show Live (Nestor, 2 Nov 2026: "i just switched from replay to live and all external screen came together into the main one in the app, stop this from happening!!")
     var lwc = ensureLWC(); lwc.catch(function(){});   // the chart library loads while the symbols and the candles are asked for, not before them (27 Oct 2026)
     await loadSymbols(); var sym = symLive(raw) || symLive(canon(raw)) || symLive(CFG.sym) || (SYMS && SYMS[0]);
     if (!sym) { st.textContent = T('No candles stored yet.', 'Aún no hay velas guardadas.'); return false; }
@@ -98481,7 +98506,7 @@ window.__stAZ = (function () {
   // minutes; the open trades' lines follow their levels
   function lvClock(){
     if (!S || !S.live) { clearLiveT(); return; }
-    if (SD !== document) try { window.__stLiveLine.tickle(); } catch (e) {}   // Live Charts' own window: the line kept up from its timer (this window's may be slowed)
+    if (SD !== document || document.hidden) try { window.__stLiveLine.tickle(); } catch (e) {}   // the line kept up from this clock (this window's timers may be slowed)
     var n = nowS();
     if (n >= S.f.close + 30 && liveDay(S.sym) !== S.day) { goLive(S.sym.raw); return; }
     S.now = Math.max(S.now, Math.min(n, S.f.close));
@@ -98576,7 +98601,7 @@ window.__stAZ = (function () {
       if (fb && fb.time >= S.f.open && fb.time < S.f.close) upsertBar(F.base, fb); }
     if (S.live) { S.now = Math.max(S.now, Math.min(nowS(), S.f.close)); if (prev != null) lvAlertScan(F, prev, b); }   // Back Testing's today keeps its own clock
     lvSoon(); }
-  function lvSoon(){ if (LV.rq) return; LV.rq = setTimeout(function(){ LV.rq = 0; if (lvData()) render(); }, 100); }
+  function lvSoon(){ if (LV.rq && Date.now() - (LV.rqAt || 0) < 1500) return; LV.rqAt = Date.now(); var w = liveWin(); LV.rqW = w; LV.rq = w.setTimeout(function(){ LV.rq = 0; if (lvData()) render(); }, 100); }   // on the timer of a window on screen (a window closed meanwhile takes its timer with it: the next price asks again)
   /* Your trades' position boxes as Long / Short drawings (Nestor, 22 Oct 2026: "i need them to stay in place once the trade is finished
      and also make them like the other position tools so i can always manually change them if i want to or delete them by clicking on
      them"). Each trade of the chart's account becomes a drawing of its symbol - entry, the stop and target it was taken with, from its
@@ -98915,18 +98940,19 @@ window.__stAZ = (function () {
     try { if (document.body.classList.contains('st-lcm-ok') !== ok) document.body.classList.toggle('st-lcm-ok', ok); } catch (e) {}   // the full screen's Live button reads it there (changed only when it changes)
     if (pg) { pg.classList.toggle('lcm-replay', !live); var dk = !(phone() || landPhone() || touchOnly()) && (window.innerWidth || 0) >= 1024; if (pg.classList.contains('lcm-desk') !== dk) pg.classList.toggle('lcm-desk', dk); if (pg.classList.contains('lcm-ok') !== ok) pg.classList.toggle('lcm-ok', ok); } }
   // every swap asks first
-  function lcAsk(toLive){ var old = document.getElementById('lc-ask-bg'); if (old) old.remove();
-    var bg = document.createElement('div'); bg.className = 'lc-ask-bg'; bg.id = 'lc-ask-bg';
+  function lcAsk(toLive){ if (toLive && S && S.live) return;   // already Live: nothing to ask
+    var D = SD || document, old = D.getElementById('lc-ask-bg'); if (old) old.remove();   // in Live Charts' own window when it is in one: this window may be behind it (2 Nov 2026)
+    var bg = D.createElement('div'); bg.className = 'lc-ask-bg'; bg.id = 'lc-ask-bg';
     bg.innerHTML = '<div class="lc-ask" role="dialog" aria-modal="true" aria-labelledby="lc-ask-h"><h4 id="lc-ask-h">' + (toLive ? '<i></i>' + esc(T('Switch to Live?', '¿Pasar a En vivo?')) : '<svg class="lc-rw" viewBox="2.2 2.2 15.6 11.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 3 3 8l6.5 5z"/><path d="M17 3l-6.5 5L17 13z"/></svg>' + esc(T('Switch to Replay?', '¿Pasar a Replay?'))) + '</h4>'
       + '<p>' + esc(toLive ? T('You leave this replay; where you are in it is kept for next time. The charts go back to your live MT5 prices.', 'Dejas este replay; donde estás se guarda para la próxima vez. Los gráficos vuelven a tus precios de MT5 en vivo.')
                           : T('Your live charts stop while you replay a past day. Trades there are practice only: nothing is sent to MT5.', 'Tus gráficos en vivo se paran mientras repites un día pasado. Las operaciones allí son de práctica: nada se envía a MT5.')) + '</p>'
       + '<div class="lc-ask-b"><button type="button" data-lca="0">' + esc(toLive ? T('Stay in Replay', 'Seguir en Replay') : T('Stay on Live', 'Seguir en vivo')) + '</button><button type="button" data-lca="1" class="go' + (toLive ? ' lv' : '') + '">' + esc(toLive ? T('Switch to Live', 'Pasar a En vivo') : T('Switch to Replay', 'Pasar a Replay')) + '</button></div></div>';
-    document.body.appendChild(bg);
-    var done = function(yes){ bg.remove(); document.removeEventListener('keydown', key, true); if (!yes) return; if (toLive) { LV.mode = 'live'; resumeSave(); lvBack(); }
+    D.body.appendChild(bg);
+    var done = function(yes){ bg.remove(); D.removeEventListener('keydown', key, true); if (!yes) return; if (toLive) { LV.mode = 'live'; resumeSave(); lvBack(); }
       else { if (LV.sat) stageDetach(true); if (lcAwayOn()) { lcAwayClose(); lcAwayPaint(false); } lcReplayStart(); }   // its own window closes: Replay here
       setTimeout(lcModePaint, 50); };
     var key = function(e){ if (e.key === 'Escape') { e.stopPropagation(); done(false); } };
-    document.addEventListener('keydown', key, true);
+    D.addEventListener('keydown', key, true);
     bg.addEventListener('click', function(e){ var b = e.target.closest && e.target.closest('[data-lca]'); if (b) done(b.getAttribute('data-lca') === '1'); });
     try { bg.querySelector('[data-lca="1"]').focus(); } catch (e) {} }
   setInterval(function(){ try { if (LV.inl || LV.max || $('page-livecharts').classList.contains('active')) lcModePaint(); } catch (e) {} }, 700);
@@ -99042,7 +99068,8 @@ window.__stAZ = (function () {
   // (each only while this app window still draws that one: a closed or reloaded app window's never act there - stageLetGo)
   function stageWire(w){ stageUnwire(); var d = w.document, L = [], on = function(t, ev, fn, op){ if (!fn) return; var g = function(){ if (LV.sat !== w || LV.bye) return; return fn.apply(this, arguments); }; t.addEventListener(ev, g, op); L.push([t, ev, g, op]); };
     on(d, 'pointerdown', actDown, true); on(d, 'mousedown', dwDown, true);
-    if (d !== document) { on(d, 'click', function(e){ try { var TMw = window.__stTM; if (TMw && TMw.pct) TMw.pct(e); if (TMw && TMw.click) TMw.click(e); } catch (x) {} }, true); }   // Move to BE, Close 50%, Close in this window too on(d, 'dblclick', WH.dbl, true); on(d, 'contextmenu', WH.ctx, true); on(d, 'paste', WH.paste, true);
+    if (d !== document) { on(d, 'click', function(e){ try { var TMw = window.__stTM; if (TMw && TMw.pct) TMw.pct(e); if (TMw && TMw.click) TMw.click(e); } catch (x) {} }, true); }   // Move to BE, Close 50%, Close in this window too
+    on(d, 'dblclick', WH.dbl, true); on(d, 'contextmenu', WH.ctx, true); on(d, 'paste', WH.paste, true);   // (2 Nov 2026, Nestor: "the normal menu needs to appear on all windows when right button is clicked": this line sat behind the comment above since 30 Oct)
     on(d, 'touchstart', WH.tst, { passive: false, capture: true }); on(d, 'touchmove', WH.tmv, { passive: false, capture: true }); on(d, 'touchend', WH.tend, { passive: false, capture: true });
     on(w, 'mousemove', dwMove); on(w, 'mouseup', dwUp); on(w, 'keyup', WH.kup); on(w, 'resize', WH.rsz); on(w, 'blur', WH.execOff);
     on(d, 'pointerdown', function(){ UI.w = w; }, true); on(d, 'keydown', function(){ UI.w = w; }, true); on(d, 'keydown', WH.key);
@@ -99130,7 +99157,7 @@ window.__stAZ = (function () {
       var tb = document.querySelector('.tab[data-page="livecharts"]');
       if (tb && tb.classList.contains('active') && S && S.live) { var w = LV.want; LV.want = null; if (w && w !== S.sym.raw) goLive(w); else if (o.tf) setTf(0, +o.tf); return; }
       if (tb) tb.click(); },
-    visible: function(){ return !!(((S && S.live && (LV.inl || LV.max)) || (((S && S.today) || LV.tdWant) && isOpen())) && !(SD !== document ? SD.hidden : document.hidden)); },   // + Back Testing's today; Live Charts' own window: that one on screen
+    visible: function(){ return !!(((S && S.live && (LV.inl || LV.max)) || (((S && S.today) || LV.tdWant) && isOpen())) && lcOnScreen()); },   // + Back Testing's today; on screen: the window with the main chart, or any chart window (the main chart minimised must not stop the EA's prices for the others, 2 Nov 2026)
     // the charts' symbols as their EAs name them, chart 1's first ("watch" carries them; each EA streams its own)
     sym: function(){ if (!lvData()) return ''; var a = []; allFeeds().forEach(function(F){ if (F.ea && a.indexOf(F.ea.raw) < 0) a.push(F.ea.raw); }); return a.join(','); },
     px: lvPx, bars: lvBars, q: wlQ, symlist: wlSymlist, set: lvSet, acct: tbAcct, dhist: tbDhist, acc: function(){ return tbEA(); },
@@ -99310,7 +99337,9 @@ window.__stAZ = (function () {
     document.addEventListener('paste', WH.paste = function(e){ if (!isOpen()) return; var tg = e.target; if (tg && (tg.tagName === 'INPUT' || tg.tagName === 'TEXTAREA' || tg.isContentEditable)) return;
       var it = e.clipboardData && e.clipboardData.items, f = null; if (it) for (var i = 0; i < it.length; i++) if (it[i].kind === 'file' && /^image\//.test(it[i].type)) { f = it[i].getAsFile(); break; }
       if (!f) return; e.preventDefault(); if (DW.pvT) { clearTimeout(DW.pvT); DW.pvT = 0; } imgHere(f); }, true);   // a picture on the clipboard: on the chart, where the mouse is
-    document.addEventListener('contextmenu', WH.ctx = function(e){ if (!isOpen()) return; var p = paneOf(e), box = e.target && e.target.closest && e.target.closest('.stdb-bar,.stdb-pop,.stpr-ctx'); if (!p && !box) return; e.preventDefault(); if (!p) return;
+    document.addEventListener('contextmenu', WH.ctx = function(e){ if (!isOpen()) return; var p = paneOf(e), box = e.target && e.target.closest && e.target.closest('.stdb-bar,.stdb-pop,.stpr-ctx');
+      if (!p && !box && e.target && !(e.target.closest && e.target.closest('input,textarea,[contenteditable="true"]'))) p = panes.filter(function(q){ return q.el && q.el.contains(e.target); })[0] || null;   // over the chart's name, its O H L C and buttons too: the chart's menu, never the browser's
+      if (!p && !box) return; e.preventDefault(); if (!p) return;
       if (DW.pending && /^(path|polyline|ghost)$/.test(DW.pending.type)) { pathDone(); hideCtx(); return; }   // a path being drawn ends where it is
       if (DW.tool !== 'none') { DW.pending = null; DW.penning = null; setTool('none'); hideCtx(); return; }
       var xy = evXY(p, e), h = hit(p, xy.x, xy.y);
@@ -99470,7 +99499,10 @@ window.__stAZ = (function () {
     if (win.ownerDocument !== document) { if (!stageOn() || win.ownerDocument !== SD) return ''; var sw = 0; try { sw = SW.innerWidth || 0; } catch (e) {} return sw >= 1024 ? 'desk' : ''; }
     if (phone() || landPhone()) return (LV.inl && !LV.max) ? 'ph' : '';   // a phone: the phone layout, in the tab
     if (touchOnly()) return ''; return (window.innerWidth || 0) >= 1024 ? 'desk' : ''; }
-  function platSync(){ var w = plWant(), cur = PL.on ? (PL.ph ? (PL.rp ? 'phrp' : 'ph') : (PL.rp ? 'rp' : 'desk')) : ''; if (w !== cur) { if (cur) platOff(); if (w) platOn(w); } else if (w) { plClasses(); if (PL.ph) try { plPhPaint(); } catch (e) {} } }
+  /* One change at a time (Nestor, 2 Nov 2026: "now it says switch to live when i am already in LIVE! whats going on?"): platOff's own lcFit asked here again, in the middle of the
+     change; that inner call put the platform on, the outer one put it on a second time, and the second forgot where every part had come from (PL.moved). Replay's Live button then
+     "went home" to the top bar and stayed there in Live. */
+  function platSync(){ if (PL.syncing) return; PL.syncing = true; try { var w = plWant(), cur = PL.on ? (PL.ph ? (PL.rp ? 'phrp' : 'ph') : (PL.rp ? 'rp' : 'desk')) : ''; if (w !== cur) { if (cur) platOff(); if (w) platOn(w); } else if (w) { plClasses(); if (PL.ph) try { plPhPaint(); } catch (e) {} } } finally { PL.syncing = false; } }
   function plLight(){ if (CFG.plLt == null) { CFG.plLt = lightBg(); try { save(); } catch (e) {} } return !!CFG.plLt; }   // the frame's theme: its own (25 Oct 2026), first taken from the chart as it was
   function plClasses(){ var win = $('stpr-win'), st = plSt(); if (!win) return; var cl = lightBg(); if (win.classList.contains('pl-clt') !== cl) win.classList.toggle('pl-clt', cl);   // the chart's own background: what sits on it
     if (PL.ph) { var l0 = plLight(), r0 = !!PL.rp, th = !st.phTr; if (win.classList.contains('pl-lt') !== l0) win.classList.toggle('pl-lt', l0); if (win.classList.contains('pl-replay') !== r0) win.classList.toggle('pl-replay', r0);
