@@ -104,14 +104,14 @@
     var ex = Math.max(4, Math.min(mz.x0, r.width - 10)), ey = Math.max(mz.y0 + 6, Math.min(mz.y1 - 6, r.height * 0.5));
     if (mz.x0 < 4) { pane().chart.timeScale().scrollToPosition(-40, false); await W(300); P._render(); await W(100); mz = pane()._mz; ex = mz.x0; ey = Math.max(mz.y0 + 6, Math.min(mz.y1 - 6, r.height * 0.5)); }
     var i0 = M().zone.i0;
-    mev('mousedown', mz.x0, ey); mev('mousemove', mz.x0 - 50, ey, { held: true }); mev('mouseup', mz.x0 - 50, ey); await W(80);
+    mev('mousedown', mz.x0, ey); mev('mouseup', mz.x0, ey); await W(30); /* clicked first since 2 Nov 2026 */ mev('mousedown', mz.x0, ey); mev('mousemove', mz.x0 - 50, ey, { held: true }); mev('mouseup', mz.x0 - 50, ey); await W(80);
     var z2 = M().zone;
     ok('dragging its left edge moves its start back and turns Auto off (it says so)', C.miniS.auto === false && C.miniS.zA > 0 && z2.i0 < i0 && /moved by hand/.test(document.getElementById('stpr-flash').textContent), [i0, z2.i0, C.miniS.zA]);
     P._miniDialog(); await W(60); inp('detach').click(); await W(60); dlg().querySelector('[data-dok]').click(); await W(60); P._render(); await W(100); mz = pane()._mz;
     // its right edge on the chart, not on the price scale (a press there scales the chart since 20 Oct 2026): scroll it into view
     var pwR = r.width - pane().chart.priceScale('right').width();
     for (var sc = 0; sc < 6 && mz && mz.x1 > pwR - 12; sc++) { pane().chart.timeScale().scrollToPosition(pane().chart.timeScale().scrollPosition() + 25, false); await W(250); P._render(); await W(100); mz = pane()._mz; }
-    mev('mousedown', mz.x1, ey); mev('mousemove', mz.x1 - 120, ey, { held: true }); mev('mouseup', mz.x1 - 120, ey); await W(80);
+    mev('mousedown', mz.x1, ey); mev('mouseup', mz.x1, ey); await W(30); mev('mousedown', mz.x1, ey); mev('mousemove', mz.x1 - 120, ey, { held: true }); mev('mouseup', mz.x1 - 120, ey); await W(80);
     var z3 = M().zone;
     ok('with Start only off, its right edge sets where it ends', C.miniS.detach === false && C.miniS.zB > C.miniS.zA && z3.end != null && z3.end < pane().bars.length - 1, [C.miniS.zB, z3.end]);
     // double-click inside it: its settings

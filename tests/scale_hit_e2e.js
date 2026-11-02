@@ -33,7 +33,7 @@
     mev('mousemove', pw - 30, yT); await W(30); var cIn = ch.style.cursor;
     mev('mousemove', pw + 12, yT); await W(30); var cPs = ch.style.cursor;
     mev('mousemove', xv, ph + 8); await W(30); var cTs = ch.style.cursor;
-    ok('the mouse: move on the box, the price scale\'s up-down cursor over the scale (not move), the time scale\'s sideways one', cIn === 'move' && cPs === 'ns-resize' && cTs === 'ew-resize', [cIn, cPs, cTs]);
+    ok('the mouse: a hand on the box (2 Nov 2026), the price scale\'s up-down cursor over the scale (not move), the time scale\'s sideways one', cIn === 'pointer' && cPs === 'ns-resize' && cTs === 'ew-resize', [cIn, cPs, cTs]);
     var a0 = JSON.stringify(DW.list[0]);
     mev('mousedown', pw + 12, yT); mev('mousemove', pw + 12, yT + 40, { held: true }); mev('mousemove', pw + 12, yT + 80, { held: true }); mev('mouseup', pw + 12, yT + 80); await W(80);
     ok('a drag on the price scale where the box is: the box stays, nothing is picked (the scale gets the drag)', JSON.stringify(DW.list[0]) === a0 && DW.sel == null && !DW.drag, [DW.sel, JSON.stringify(DW.list[0]) === a0]);

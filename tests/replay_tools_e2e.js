@@ -56,7 +56,7 @@
     ok('the mouse on it: its tags show (hover)', tx.some(function (t) { return /^Target: /.test(t); }) && S.hov === 0, S.hov);
     // a press and drag: no options box, no tags while it moves; a plain click opens the box
     var cy = pz.ye - 8, cx = (pz.x0 + pz.x1) / 2, a0 = L0.a.idx;
-    mev('mousedown', cx, cy); mev('mousemove', cx + 30, cy, { held: true }); mev('mousemove', cx + 60, cy, { held: true }); tx = await painted();
+    S.sel = S.drawings.indexOf(L0); S.noProps = true; /* clicked first since 2 Nov 2026 */ if (box()) { key('Escape'); } mev('mousedown', cx, cy); mev('mousemove', cx + 30, cy, { held: true }); mev('mousemove', cx + 60, cy, { held: true }); tx = await painted();
     var midBox = box(), midTags = tx.some(function (t) { return /^Target: /.test(t); });
     mev('mouseup', cx + 60, cy); await W(40);
     // the tags show while dragging since 22 Oct 2026 (Nestor: "when i am dragging the SL or TP boxes i need to see the amount of pips and risk reward")

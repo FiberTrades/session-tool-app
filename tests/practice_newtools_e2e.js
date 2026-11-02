@@ -139,7 +139,7 @@
     var cin = px(Math.round(el.x), Math.round(el.y)), cedge = nearBy(el.x + erx, el.y, [192, 132, 252], 24);
     ok('violet, filled at 10% inside', cedge && cin[3] > 15 && cin[3] < 50, [cin, cedge]);
     ok('its handles: its sides (left / right change its width, top / bottom its height)', (P._hit(0, el.x + erx, el.y) || {}).part === 'rx' && (P._hit(0, el.x, el.y - ery) || {}).part === 'ry');
-    mev('mousedown', el.x, el.y - ery); mev('mousemove', el.x, el.y - ery - 10, { held: true }); mev('mousemove', el.x, el.y - ery - 20, { held: true }); mev('mouseup', el.x, el.y - ery - 20); await W(60);
+    DW.sel = DW.list.indexOf(ci); /* clicked first since 2 Nov 2026 */ mev('mousedown', el.x, el.y - ery); mev('mousemove', el.x, el.y - ery - 10, { held: true }); mev('mousemove', el.x, el.y - ery - 20, { held: true }); mev('mouseup', el.x, el.y - ery - 20); await W(60);
     ok('its top dragged up 20 px: 20 px taller each way, as wide as before', Math.abs(Math.abs(P._yOf(0, ci.b.price) - el.y) - (ery + 20)) < 2 && Math.abs(Math.abs(P._xOfT(0, ci.b.t) - el.x) - erx) < 1);
     DW.sel = DW.list.indexOf(ci); P._props(); await W(20);
     ok('its toolbar: Templates, line, fill, width, style, Visibility, lock, delete, More', acts() === 'tpl,line,fill,width,dash,vis,lock,del,more', acts());

@@ -88751,7 +88751,27 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     return { render: render, hide: hide, closePop: closePop, open: function(k){ render(); if (B.el && B.el.style.display !== 'none') openPop(k); }, el: function(){ return B.el; }, pop: function(){ return B.pop; }, dlg: function(){ return B.dlg; }, popK: function(){ return B.popK; },
       moveTo: function(x, y){ if (!B.el) return; B.el.style.left = x + 'px'; B.el.style.top = y + 'px'; clampBar(); B.pos = { wrap: B.wrap, x: parseFloat(B.el.style.left), y: parseFloat(B.el.style.top) }; }, unpin: function(){ B.pos = null; } };
   }
-  window.__stDrawBar = { make: make, KEYS: KEYS, durTxt: durTxt, icons: TICON, PAL: PAL, anchor: anchor, groundOf: groundOf, magnet: MAG, snapOHLC: snapOHLC, MAGI: MAGI, FIBS: FIBS, lookOf: lookOf, applyLook: applyLook, eff: eff, same: same, parseC: parseC, mkC: mkC, withA: withA, dash: dash,
+  /* The mouse on a selected drawing (Nestor, 2 Nov 2026: "i rather get a hand with a finger pointing at the item like in tradingview, also when
+     trying to resize the object i rather get the usual 2 headed arrow displaying in what direction the item can be reshaped towards"): its body
+     the hand; a handle the two-headed arrow its way: a side straight, a box's corner its diagonal, a line's end along the line (nearly level or
+     nearly upright reads as level or upright). P: a point on screen; m: the mouse. */
+  function dwCursor(d, part, P, m){ var diag = function(dx, dy){ return dx * dy > 0 ? 'nwse-resize' : 'nesw-resize'; };
+    if (part === 'l' || part === 'r' || part === 'pr' || part === 'rx') return 'ew-resize';
+    if (part === 't' || part === 'bo' || part === 'psl' || part === 'ptp' || part === 'ry' || part === 'po') return 'ns-resize';
+    if (part === 'esz') { var c0 = d.a && P(d.a); return c0 && m ? diag(m.x - c0.x, m.y - c0.y) : 'nwse-resize'; }
+    var A = d.a && P(d.a), B = d.b && P(d.b);
+    if (part === 'c1' || part === 'c2') return (A && B) ? diag(A.x - B.x, B.y - A.y) : 'nwse-resize';
+    var pm = /^p(\d+)$/.exec(part || ''), me = null, to = null;
+    if (pm && d.pts) { var k = +pm[1]; me = d.pts[k] && P(d.pts[k]); to = (d.pts[k + 1] || d.pts[k - 1]); to = to && P(to); }
+    else if (part === 'a') { me = A; to = B; } else if (part === 'b') { me = B; to = A; } else if (part === 'c') { me = d.c && P(d.c); to = B; }
+    else return 'pointer';   // its body, a note's box
+    if (d.type === 'long' || d.type === 'short') return 'nwse-resize';   // the entry's corner: it moves both ways
+    if (d.type === 'vline') return 'ew-resize';
+    if (!me || !to) return d.type === 'hray' ? 'ns-resize' : 'pointer';   // one point: a horizontal ray's level; anything else moves as a whole
+    var dx = me.x - to.x, dy = me.y - to.y;
+    if (/^(rect|range|fib|circle|ellipse)$/.test(d.type)) return diag(dx, dy);
+    if (Math.abs(dy) < 0.35 * Math.abs(dx)) return 'ew-resize'; if (Math.abs(dx) < 0.35 * Math.abs(dy)) return 'ns-resize'; return diag(dx, dy); }
+  window.__stDrawBar = { cursor: dwCursor, make: make, KEYS: KEYS, durTxt: durTxt, icons: TICON, PAL: PAL, anchor: anchor, groundOf: groundOf, magnet: MAG, snapOHLC: snapOHLC, MAGI: MAGI, FIBS: FIBS, lookOf: lookOf, applyLook: applyLook, eff: eff, same: same, parseC: parseC, mkC: mkC, withA: withA, dash: dash,
     DSTY: NDSTY, keysHtml: keysHtml, keyRows: keyRows, kit: { has: function(t){ return !!KT[t]; }, paint: kPaint, axis: kAxis, text: kText, hit: kHit, handles: kHandles, box: kBox, note: kNote, NOFF: NOFF,
       ltx: function(t){ return !!LTX[t]; }, lineText: function(d, X, P0, P1, o){ return kLTgeo(d, X, P0, P1, o); }, ltGeo: function(d, X){ return kLTk(d, X); }, ltDraw: kLTdraw, gapClip: kGapClip,
       txt: function(t){ return (K2[t] && K2[t].txt) || null; }, ted: function(d, X){ var o = K2[d.type]; return (o && o.ted) ? o.ted(d, X) : null; }, init: function(d){ var o = K2[d.type]; if (o && o.init) o.init(d); },
@@ -90574,6 +90594,7 @@ window.__stAZ = (function () {
   function miniEdgeAt(xy){ var mz=MSHOW&&MP&&MP._mz, P=window.__stPractice; if(!mz||!P||!P._ms||(P._miniOn&&!P._miniOn('zone',MP))) return null;
     if(xy.y<mz.y0-4||xy.y>mz.y1+4) return null; var o0=P._ms(MP); return Math.abs(xy.x-mz.x0)<6?'a':((!o0.detach&&mz.x1!=null&&Math.abs(xy.x-mz.x1)<6)?'b':null); }
   function miniEdgeDown(e,xy){ if(e.touches) return false; var ed=miniEdgeAt(xy), P=window.__stPractice; if(!ed) return false;
+    if(!S.mzSel){ S.mzPick={x0:xy.x,y0:xy.y}; return false; }   /* the zone's edge too: clicked first (it stays lit), then it moves */
     e.stopPropagation(); e.preventDefault(); var W0=Object.assign({},P._msRaw(MP));
     if(W0.auto!==false){ W0.auto=false; W0.zA=MP._mz.tA; W0.detach=true; flash(L('Range zone moved by hand: Auto (follow structure) is off in its settings.','Zona del rango movida a mano: Auto está apagado en sus ajustes.')); }
     P._msSet(MP,W0); S.mzDrag={edge:ed}; MP.mzHot=true; return true; }
@@ -90953,7 +90974,8 @@ window.__stAZ = (function () {
   function clearMulti(){ S.selMulti=null; }
   function rScale(px,py){ if(!chartEl) return null; return px>=plotW(chartEl.clientWidth)?'price':(py>=_axisTop(chartEl.clientHeight)?'time':null); }   /* the price or the time scale, not the chart */
   function hit(px,py){ if(rScale(px,py)) return null;   /* over the scales the chart scales: no drawing takes the mouse there (Nestor, 20 Oct 2026) */
-    for(var i=S.drawings.length-1;i>=0;i--){ var d=S.drawings[i];
+    for(var hn=S.drawings.length;hn>=0;hn--){ var i=hn===S.drawings.length?S.sel:hn; if(i==null||(hn<S.drawings.length&&i===S.sel)) continue;   /* the selected one first: a drag moves it whatever lies over it (2 Nov 2026) */
+    var d=S.drawings[i]; if(!d) continue;
     if(!visibleOn(d)) continue;   /* cannot select what is not on screen */
     if(d.type==='emoji'){ var eg=emoGeo(d); if(!eg) continue; var hs=eg.s/2;
       if([[-1,-1],[1,-1],[-1,1],[1,1]].some(function(c){ return Math.hypot(px-(eg.x+c[0]*hs),py-(eg.y+c[1]*hs))<8; })) return {i:i,part:'esz'};
@@ -91360,7 +91382,9 @@ window.__stAZ = (function () {
       else if(S.pending.st===1){ S.pending.b=p; S.pending.st=2; }
       else { if(S.pending.st===2) S.pending.off=chanOff(S.pending,p); else S.pending.b=p; pendDone(); }
       draw(); return; }
-    var h=hit(xy.x,xy.y); if(h){ e.stopPropagation(); e.preventDefault(); S.sel=h.i; S.noProps=true; updDel(); S.drag={i:h.i,part:h.part,start:p,orig:clone(S.drawings[h.i]),x0:xy.x,y0:xy.y,lock:rlk(S.drawings[h.i])};
+    /* An object is clicked first, then it moves, as in Live and Replay (Nestor, 2 Nov 2026): a press on one not selected is the chart's; let go without moving, it is selected (_ptrUp) */
+    S.pick=null; S.mzPick=null; var h=hit(xy.x,xy.y), hPick=false; if(h&&h.i!==S.sel){ if(!e.touches||e.touches.length===1) S.pick={d:S.drawings[h.i],x0:xy.x,y0:xy.y}; h=null; hPick=true; }
+    if(h){ e.stopPropagation(); e.preventDefault(); S.mzSel=false; S.sel=h.i; S.noProps=true; updDel(); S.drag={i:h.i,part:h.part,start:p,orig:clone(S.drawings[h.i]),x0:xy.x,y0:xy.y,lock:rlk(S.drawings[h.i])};
       /* Bind a side handle to ONE point for the whole gesture. Which of a/b holds an edge is
          worked out from their current order, and that order flips the moment you drag one edge
          past the other - so resolving it per mousemove handed the handle to the opposite point
@@ -91368,7 +91392,7 @@ window.__stAZ = (function () {
          chart. Decided once, here, and held until the button comes up. */
       try{ var _dd=S.drawings[h.i];
         if(h.part==='l'||h.part==='r'){ var _aL=(_dd.a.idx<=_dd.b.idx); S.drag.pt=(((h.part==='l')===_aL)?'a':'b'); }
-        else if(h.part==='t'||h.part==='bo'){ var _aT=(_dd.a.price>=_dd.b.price); S.drag.pt=(((h.part==='t')===_aT)?'a':'b'); } }catch(_){} draw(); } else { if(miniEdgeDown(e,xy)) return; if(S.sel!=null||(S.selMulti&&S.selMulti.length)){ S.sel=null; clearMulti(); updDel(); draw(); } }
+        else if(h.part==='t'||h.part==='bo'){ var _aT=(_dd.a.price>=_dd.b.price); S.drag.pt=(((h.part==='t')===_aT)?'a':'b'); } }catch(_){} draw(); } else { if(!hPick&&miniEdgeDown(e,xy)) return; if(S.mzSel){ S.mzSel=false; if(MP) MP.mzHot=false; } if(S.sel!=null||(S.selMulti&&S.selMulti.length)){ S.sel=null; clearMulti(); updDel(); draw(); } }
   }
   /* TOUCH. Lightweight Charts consumes touch events on the chart and calls preventDefault, so
      the browser never synthesizes the mousedown the badge handler above listens for: on a phone
@@ -91413,6 +91437,7 @@ window.__stAZ = (function () {
     }catch(_){} }
   if(_RAW) try{ document.addEventListener('pointerrawupdate',_ptrTrack,true); }catch(_){}
   function _ptrMoveAll(e){ if(!S) return;
+    if(S.pick||S.mzPick){ var pk0=S.pick||S.mzPick, pq0=evXY(e); if(Math.hypot(pq0.x-pk0.x0,pq0.y-pk0.y0)>(e.touches?8:4)){ S.pick=null; S.mzPick=null; } }   /* it moved: the chart is being dragged, nothing is selected */
     if(!_RAW) _ptrTrack(e);
     if(S.marq){ var mxy=evXY(e); S.marq.x1=mxy.x; S.marq.y1=mxy.y; return; }
     if(S.meas&&S.meas.live){ var qm=toP(e); if(qm) S.meas.d.b=qm; return; }
@@ -91466,14 +91491,16 @@ window.__stAZ = (function () {
       var prev=S._newsHover; S._newsHover=nh?{i:nh.i,j:nh.j}:null;
       if(nh){ newsCard(nh); } else if(prev&&!S._newsPinned){ newsCard(null); }
       /* the drawing under the mouse: a position tool shows its tags while it is there */
-      var hh=hit(xy.x,xy.y); S.hov=hh?hh.i:null; var onEdge=!hh&&!nh&&!!miniEdgeAt(xy); if(MP) MP.mzHot=onEdge;
+      var hh=hit(xy.x,xy.y); S.hov=hh?hh.i:null; var onEdge=!hh&&!nh&&!!miniEdgeAt(xy); if(MP) MP.mzHot=onEdge||!!S.mzSel;
       var osc=rScale(xy.x,xy.y);   /* the scales: their own resize cursor, as TradingView's */
-      chartEl.style.cursor=osc?(osc==='price'?'ns-resize':'ew-resize'):nh?'pointer':(hh?((S.drawings[hh.i]&&rlk(S.drawings[hh.i]))?'pointer':'move'):(onEdge?'ew-resize':'crosshair')); }
+      chartEl.style.cursor=osc?(osc==='price'?'ns-resize':'ew-resize'):nh?'pointer':(hh?((hh.i!==S.sel||!S.drawings[hh.i]||rlk(S.drawings[hh.i]))?'pointer':window.__stDrawBar.cursor(S.drawings[hh.i],hh.part,P,xy)):(onEdge?(S.mzSel?'ew-resize':'pointer'):'crosshair')); }
       else { S.hov=null; if(S._newsHover&&!S._newsPinned){ S._newsHover=null; newsCard(null); } } }  }
   function _ptrUp(){ if(!S) return;
+    if(S.pick){ var pk1=S.pick, pki=S.drawings.indexOf(pk1.d); S.pick=null; if(pki>=0&&S.activeTool==='none'){ S.sel=pki; clearMulti(); S.noProps=false; updDel(); renderProps(); draw(); } return; }   /* pressed and let go without moving: selected */
+    if(S.mzPick){ S.mzPick=null; S.mzSel=true; if(MP) MP.mzHot=true; draw(); }   /* clicked: the zone's edge is in hand */
     if(S.meas&&S.meas.live){ var md=S.meas.d; S.meas.live=false; if(md.a.idx===md.b.idx&&md.a.price===md.b.price) S.meas=null; return; }   /* a Shift-click with no drag: nothing to keep */
     if(S.pdn){ var pd=S.pdn; S.pdn=null; if(pd.far&&S.pending){ if(S.pending.st===1) S.pending.st=2; else pendDone(); return; } }   /* dragged out: let go, it is drawn */
-    if(S.mzDrag){ S.mzDrag=null; if(MP) MP.mzHot=false; try{ window.__stPractice._cfgSave(); }catch(_){} return; }
+    if(S.mzDrag){ S.mzDrag=null; if(MP) MP.mzHot=!!S.mzSel; try{ window.__stPractice._cfgSave(); }catch(_){} return; }
     if(S.marq){ var mr=marqNorm(S.marq); S.marq=null;
       /* A band smaller than a few pixels is a Ctrl-click, not a drag - treat it as clearing the
          selection rather than selecting everything it happens to touch. */
@@ -95672,7 +95699,8 @@ window.__stAZ = (function () {
     if (onScale(p, px, py)) return null;   // over the scales the chart scales: no drawing takes the mouse there (Nestor, 20 Oct 2026)   // another symbol's chart: a press brings its drawings into hand first (dwFocus)
     var bl = (p._bells || []).filter(function(q){ return q.d && q.d.type !== 'hline' && Math.hypot(px - q.x, py - q.y) < 9; })[0];   // a bell on a drawing picks that drawing
     if (bl) { var bli = DW.list.indexOf(bl.d); if (bli >= 0 && visibleOn(bl.d, p.tf)) return { i: bli, part: 'body' }; }
-    for (var i = DW.list.length - 1; i >= 0; i--) { var d = DW.list[i]; if (!visibleOn(d, p.tf, p)) continue;
+    for (var hn = DW.list.length; hn >= 0; hn--) { var i = hn === DW.list.length ? DW.sel : hn; if (i == null || (hn < DW.list.length && i === DW.sel)) continue;   // the selected one first: a drag moves it whatever lies over it (2 Nov 2026)
+      var d = DW.list[i]; if (!d || !visibleOn(d, p.tf, p)) continue;
       if (d.type === 'hline') { var y = yOf(p, d.price); if (y != null && Math.abs(py - y) < 6) return { i: i, part: 'line' };
         if (y != null && d.alert && Math.abs(py - y) < 10 && Math.abs(px - (paneDims(p).pw - BELLX)) < 9) return { i: i, part: 'line' }; continue; }   // its bell
       if (d.type === 'text') { var tb = txtBox(p, d); if (tb && px >= tb.x0 - 5 && px <= tb.x1 + 5 && py >= tb.y0 - 4 && py <= tb.y1 + 4) return { i: i, part: 'body' }; continue; }
@@ -96065,7 +96093,7 @@ window.__stAZ = (function () {
           if (y0 != null) { g.textBaseline = 'top'; g.fillText('▲', xb + 3, y0 + 2); }
           if (y1 != null) { g.textBaseline = 'bottom'; g.fillText('▼', xb + 3, y1 - 2); } }
         // drawn by hand: its edges can be dragged (the left one always, the right one when it has an end)
-        if (DW.mzHover === p || (DW.mz && DW.mz.p === p) || p.mzHot) { g.strokeStyle = '#f472b6'; g.lineWidth = 2; g.beginPath(); g.moveTo(Math.round(xa) + .5, Math.min(y0, y1)); g.lineTo(Math.round(xa) + .5, Math.max(y0, y1));
+        if (DW.mzHover === p || DW.mzSel === p || (DW.mz && DW.mz.p === p) || p.mzHot) { g.strokeStyle = '#f472b6'; g.lineWidth = 2; g.beginPath(); g.moveTo(Math.round(xa) + .5, Math.min(y0, y1)); g.lineTo(Math.round(xa) + .5, Math.max(y0, y1));
           if (!o.detach) { g.moveTo(Math.round(xb) + .5, Math.min(y0, y1)); g.lineTo(Math.round(xb) + .5, Math.max(y0, y1)); } g.stroke(); g.lineWidth = 1; } } }
     // his volume profile's arrows: offset candles right of the zone's box (its right edge: now + Extend Right)
     if (miniOn('zone') && M.zone && o.vpOn && M.vp) vpDraw(g, M.vp, X(n - 1 + (+o.ext || 0) + (+o.vpOff || 0)), Y, o, pw, ink);
@@ -96772,7 +96800,7 @@ window.__stAZ = (function () {
   function isOpen(){ return !!(S && ($('stpr-bg').classList.contains('show') || LV.inl)); }
   function paneOf(e){ var t = e.target; for (var i = 0; i < panes.length; i++) { var pc = panes[i].el.querySelector('.stpr-pc'); if (pc && t && pc.contains(t)) return panes[i]; } return null; }
   function dwDown(e){
-    if (!isOpen() || drag) return; if (DW.meas && !DW.meas.live) { DW.meas = null; dirty(); }   // a Shift-measure goes with the next click
+    if (!isOpen() || drag) return; DW.pick = null; DW.mzPick = null; if (DW.meas && !DW.meas.live) { DW.meas = null; dirty(); }   // a Shift-measure goes with the next click
     if (e.target && e.target.closest && e.target.closest('.stpr-pathok')) { if (e.cancelable) e.preventDefault(); e.stopPropagation(); pathDone(); dirty(); return; }   // Done: the path ends where it is
     var p = paneOf(e); if (!p) return; flyShut();
     if (e.button != null && e.button !== 0) return;   // left button only; a touch has none
@@ -96821,7 +96849,11 @@ window.__stAZ = (function () {
     // a press on one of several selected: they all move together
     if (h && DW.multi && DW.multi.length > 1 && DW.multi.indexOf(h.i) >= 0) { e.stopPropagation(); e.preventDefault();
       DW.drag = { p: p, i: h.i, part: 'body', start: q, x0: xy.x, y0: xy.y, group: DW.multi.slice(), origs: DW.multi.map(function(k){ return clone(DW.list[k]); }), lock: DW.multi.some(function(k){ return lkd(DW.list[k]); }) }; dirty(); return; }
-    if (h) { e.stopPropagation(); e.preventDefault(); DW.sel = h.i; DW.multi = null; DW.noProps = true; updDel(); DW.drag = { p: p, i: h.i, part: h.part, start: q, orig: clone(DW.list[h.i]), x0: xy.x, y0: xy.y, lock: lkd(DW.list[h.i]) };
+    /* An object is clicked first, then it moves, as in TradingView (Nestor, 2 Nov 2026: "objects on the chart for them to be activated they need to
+       be clicked on then you can drag them and change settings, if i just click and drag them the chart should move, not the drawing or object"):
+       a press on one not selected is the chart's (below); let go without moving, it is selected (dwUp). A finger the same. */
+    if (h && h.i !== DW.sel) { if (!touch || e.touches.length === 1) DW.pick = { p: p, d: DW.list[h.i], x0: xy.x, y0: xy.y }; h = null; var hPick = true; }
+    if (h) { e.stopPropagation(); e.preventDefault(); DW.mzSel = null; DW.sel = h.i; DW.multi = null; DW.noProps = true; updDel(); DW.drag = { p: p, i: h.i, part: h.part, start: q, orig: clone(DW.list[h.i]), x0: xy.x, y0: xy.y, lock: lkd(DW.list[h.i]) };
       // a side handle is bound to ONE point for the whole drag, so dragging an edge past the other one cannot hand it over
       var dd = DW.list[h.i];
       if (h.part === 'l' || h.part === 'r') DW.drag.pt = ((h.part === 'l') === (dd.a.t <= dd.b.t)) ? 'a' : 'b';
@@ -96830,17 +96862,19 @@ window.__stAZ = (function () {
     // the Minimalist's range zone: its left edge (and its right one when it has an end) moves its start (and end) by hand
     // (Nestor, 17 Oct 2026: "i cant move the P/D zone?"); the first drag turns Auto (follow structure) off
     var mz = showOn(p, 'mini') && miniOn('zone', p) && p._mz;
-    if (mz && !touch && xy.y >= mz.y0 - 4 && xy.y <= mz.y1 + 4) { var o0 = ms(p), ed = Math.abs(xy.x - mz.x0) < 6 ? 'a' : (!o0.detach && Math.abs(xy.x - mz.x1) < 6 ? 'b' : null);
-      if (ed) { e.stopPropagation(); e.preventDefault(); var W0 = Object.assign({}, msRaw(p));
+    if (mz && !touch && !hPick && xy.y >= mz.y0 - 4 && xy.y <= mz.y1 + 4) { var o0 = ms(p), ed = Math.abs(xy.x - mz.x0) < 6 ? 'a' : (!o0.detach && Math.abs(xy.x - mz.x1) < 6 ? 'b' : null);
+      if (ed && DW.mzSel !== p) DW.mzPick = { p: p, x0: xy.x, y0: xy.y };   // the zone's edge too: clicked first (it stays lit), then it moves
+      else if (ed) { e.stopPropagation(); e.preventDefault(); var W0 = Object.assign({}, msRaw(p));
         if (W0.auto !== false) { W0.auto = false; W0.zA = mz.tA; W0.detach = true; flash(T('Range zone moved by hand: Auto (follow structure) is off in its settings.', 'Zona del rango movida a mano: Auto está apagado en sus ajustes.')); }
         msSet(p, W0); DW.mz = { p: p, edge: ed }; panes.forEach(function(q){ q._mini = null; }); dirty(); return; } }
+    if (DW.mzSel) { DW.mzSel = null; dirty(); }
     if (DW.sel != null || (DW.multi && DW.multi.length)) { DW.sel = null; DW.multi = null; updDel(); }
     // A plain press on the chart is the chart being moved. Auto-fit is switched off before the drag starts, so it moves up
     // and down as well as sideways (Nestor, 15 Oct 2026: "i hate how the charts feel stuck and its only when i drag the
     // right scale i can move the chart normally"). A drag that stayed level puts auto-fit back on when it ends.
     if (!touch) { var dm = paneDims(p); if (xy.x < dm.pw && xy.y < dm.ph) { try { var ps = p.chart.priceScale('right'); if (ps.options().autoScale) { ps.applyOptions({ autoScale: false }); DW.asTemp = { p: p, y0: xy.y, dy: 0 }; } } catch (x) {} } }
     if (touch && e.touches.length === 1) { lpOff(); if (DW.cx && DW.cx.touch) { DW.cx = null; dirty(); }
-      DW.lp = { p: p, x: xy.x, y: xy.y, tm: setTimeout(function(){ var L = DW.lp; if (!L) return; DW.lp = null; DW.lpOn = L.p;
+      DW.lp = { p: p, x: xy.x, y: xy.y, tm: setTimeout(function(){ var L = DW.lp; if (!L) return; DW.lp = null; DW.lpOn = L.p; DW.pick = null;
         try { L.p.chart.applyOptions({ handleScroll: false, handleScale: false }); } catch (x) {} DW.cx = { p: L.p, x: L.x, y: L.y, touch: true };
         try { if (navigator.vibrate) navigator.vibrate(8); } catch (x) {} dirty(); }, 420) }; }
   }
@@ -96853,6 +96887,7 @@ window.__stAZ = (function () {
     DW.noProps = true; updDel(); dirty(); }
   function dwMove(e){
     if (!isOpen()) return; var p = paneOf(e);
+    if (DW.pick || DW.mzPick) { var pk = DW.pick || DW.mzPick, pq = evXY(pk.p, e); if (Math.hypot(pq.x - pk.x0, pq.y - pk.y0) > (e.touches ? 8 : 4)) { DW.pick = null; DW.mzPick = null; } }   // it moved: the chart is being dragged, nothing is selected
     if (DW.lp && e.touches) { var lq = evXY(DW.lp.p, e); if (Math.hypot(lq.x - DW.lp.x, lq.y - DW.lp.y) > 8) { clearTimeout(DW.lp.tm); DW.lp = null; } }   // it moved: the chart is being dragged
     // a finger moves the crosshair only after a long press (or while it draws); a drag of the chart leaves it be (TradingView's app)
     var fing = !!e.touches, cxOk = !fing || DW.lpOn === p || DW.tool !== 'none' || DW.drag || DW.pending || DW.penning;
@@ -96909,14 +96944,18 @@ window.__stAZ = (function () {
       var hh = hit(p, xy2.x, xy2.y), hv = hh ? hh.i : null; if (DW.hov !== hv || DW.hovP !== p) { DW.hov = hv; DW.hovP = p; dirty(); }
       var onPl = onPlus(p, xy2) ? p : null; if (DW.plusHov !== onPl) { DW.plusHov = onPl; dirty(); } if (onPl) { p.el.querySelector('.stpr-pc').style.cursor = 'pointer'; return; }
       var osc = onScale(p, xy2.x, xy2.y);   // the scales: their own resize cursor, as TradingView's
-      p.el.querySelector('.stpr-pc').style.cursor = osc ? (osc === 'price' ? 'ns-resize' : 'ew-resize') : nh ? 'pointer' : (nearLine(p, xy2.y) ? 'ns-resize' : (hh ? (DW.list[hh.i] && lkd(DW.list[hh.i]) ? 'pointer' : 'move') : (onEdge ? 'ew-resize' : 'crosshair'))); }
+      p.el.querySelector('.stpr-pc').style.cursor = osc ? (osc === 'price' ? 'ns-resize' : 'ew-resize') : nh ? 'pointer' : (nearLine(p, xy2.y) ? 'ns-resize' : (hh ? dwCur(p, hh, xy2) : (onEdge ? (DW.mzSel === p ? 'ew-resize' : 'pointer') : 'crosshair'))); }
   }
+  // the mouse on a drawing: the hand until it is selected (a click selects it); selected, the hand on its body and a two-headed arrow on its handles
+  function dwCur(p, h, m){ var d = DW.list[h.i]; if (!d || h.i !== DW.sel || lkd(d)) return 'pointer'; return window.__stDrawBar.cursor(d, h.part, function(z){ return Pt(p, z); }, m); }
   function dwUp(){
     if (DW.lp || DW.lpOn) lpOff();   // the crosshair stays where the finger lifted, until the next touch
     if (DW.meas && DW.meas.live) { var md = DW.meas.d, mhi = DW.meas.hi; DW.meas.live = false; if (md.a.t === md.b.t && md.a.price === md.b.price) { DW.meas = null; if (mhi != null) togSel(mhi); } dirty(); return; }   // a Shift-click with no drag: nothing to keep (on a drawing: it joins the selection)
     if (DW.mz) { DW.mz = null; save(); dirty(); return; }
     if (DW.asTemp) { var a = DW.asTemp; DW.asTemp = null; if (a.dy < 5) try { a.p.chart.priceScale('right').applyOptions({ autoScale: true }); } catch (x) {} }
+    if (DW.mzPick) { DW.mzSel = DW.mzPick.p; DW.mzPick = null; dirty(); }   // clicked: the zone's edge is in hand
     if (!S) return;
+    if (DW.pick) { var pk0 = DW.pick, pki = DW.list.indexOf(pk0.d); DW.pick = null; if (pki >= 0 && DW.tool === 'none') { DW.sel = pki; DW.multi = null; DW.noProps = false; updDel(); dirty(); } return; }   // pressed and let go without moving: selected
     if (DW.pdn) { var pd = DW.pdn; DW.pdn = null; if (pd.far && DW.pending) { if (DW.pending.st === 1) { DW.pending.st = 2; if (DW.pending.type !== 'channel') DW.pending.c = { t: DW.pending.b.t, price: DW.pending.b.price }; } else pendDone(); dirty(); return; } }   // dragged out: let go, it is drawn
     if (DW.marq) { var mp = DW.marq.p, mr = marqNorm(DW.marq); DW.marq = null; DW.noProps = false;
       if (Math.abs(mr.x1 - mr.x0) < 4 && Math.abs(mr.y1 - mr.y0) < 4) { DW.multi = null; updDel(); return; }
@@ -100572,7 +100611,7 @@ window.__stAZ = (function () {
     _lines: function(i){ var p = panes[i || 0]; return p ? p.lines.map(function(l){ var o = l.options(); return { k: l._k, p: l._p, title: o.title, vis: !!(l._ln && l._ln.vis) && o.axisLabelVisible !== false }; }) : []; },
     _yOf: function(i, pr){ var p = panes[i || 0]; return p ? p.series.priceToCoordinate(pr) : null; }, _cfg: function(){ return CFG; }, _render: function(f){ render(f); },
     _layout: setLayout, _tf: setTf, _syms: function(){ return SYMS; }, _wl: function(){ return { list: wlList(), q: WL.q, hub: hubKey() }; }, _wlTerms: wlTerms, _wlSearch: wlSearch, _wlSug: function(){ return { q: WL.sugQ, qs: WL.sugQs, sug: WL.sug, d: WL.sugD }; }, _wlSymlist: wlSymlist, _canon: canon, _keyOf: keyOf, _paneBars: function(i){ return panes[i] ? paneBars(panes[i]) : null; },
-    _dr: function(){ return DW; }, _quick: quickDraw, _copy: copySel, _paste: pasteClip, _pick: pickTool, _keyRows: keyRows, _keysMenu: function(){ keysMenu($('stpr-keysbtn')); }, _flyOpen: flyOpen, _flyShut: flyShut, _tg: function(){ return TG; },
+    _dr: function(){ return DW; }, _showOn: showOn, _layersDot: layersDot, _visibleOn: visibleOn, _quick: quickDraw, _copy: copySel, _paste: pasteClip, _pick: pickTool, _keyRows: keyRows, _keysMenu: function(){ keysMenu($('stpr-keysbtn')); }, _flyOpen: flyOpen, _flyShut: flyShut, _tg: function(){ return TG; },
     _hit: function(i, x, y){ return hit(panes[i || 0], x, y); }, _bbox: function(i, d){ var p = panes[i || 0]; return p ? bboxOf(p, d, paneDims(p).pw) : null; }, _kx: function(i){ return kx(panes[i || 0]); }, _mini: function(i){ return miniCalc(panes[i || 0]); }, _miniFresh: function(){ panes.forEach(function(q){ q._mini = null; }); }, _look: look, _parseC: parseC, _lookSet: lookSet, _lookReset: function(){ CFG.look = {}; LK.pick = null; save(); lookAll(true); }, _txtBox: function(i, d){ return txtBox(panes[i || 0], d); }, _ms: ms, _msRaw: function(p){ return msRaw(p); }, _msSet: function(p, v){ msSet(p, v); }, _cfgSave: function(){ save(); }, _miniOn: function(k, p){ return miniOn(k, p); },
     _dwmStack: dwmStack, _newsPaint: newsPaint, _newsAt: newsHitsAt, _newsCardBody: newsCardBody, _nw: function(){ return NW; },
     _miniDraw: function(p, g, dm, mx){ MX = mx; MINI_P = p; try { drawMini(p, g, dm); } catch (e) {} MINI_P = null; MX = null; },
