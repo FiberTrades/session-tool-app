@@ -115,6 +115,9 @@
     var tb0 = sd && sd.createElement('button'); if (tb0) { tb0.type = 'button'; tb0.setAttribute('data-tma', 'askno'); tb0.setAttribute('data-tmk', '1'); sd.body.appendChild(tb0); tb0.click(); tb0.remove(); }
     if (tmw) tmw.click = tmc0;
     check('...a trade button clicked in Live Charts window reaches the trade actions (Move to BE, Close 50%, Close)', tmHit === 1, tmHit);
+    // in Live Charts' own window the top bar's last button takes Live Charts back into the app (30 Oct 2026); full screen stays in that window
+    var popb = sd && sd.getElementById('stpr-pop');
+    check('...its top bar\'s last button reads Back to the app window there', popb && /Back to the app window/.test(popb.title), popb && popb.title);
     // the theme from that window: the platform there and the chart window light, the app's tab untouched
     sq('.plat-top [data-pltheme]').click(); await W(1200);
     check('the sun there: that window\'s platform light, and the chart window with it', sw.classList.contains('pl-lt') && cwin.classList.contains('pl-lt'), [sw.className, cwin.className]);

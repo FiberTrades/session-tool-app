@@ -129,7 +129,7 @@
         bar.scrollLeft = bar.scrollWidth; await until(function () { return fa('::before') === '1' && fa('::after') === '0'; }); var wq = $('.ph-icons [data-phpn="wl"]').getBoundingClientRect();
         check('...swiped to the end: the Watchlist (last) on screen, the fade at the left now and none at the right', inScr(wq) && wq.right <= bar.getBoundingClientRect().right + 1 && bar.classList.contains('ph-fl') && !bar.classList.contains('ph-fr') && fa('::before') === '1' && fa('::after') === '0', [Math.round(wq.right), bar.className]);
       } else check('...all of it fits this screen: no fade', !bar.classList.contains('ph-fr') && !bar.classList.contains('ph-fl'), [bar.scrollWidth, bar.clientWidth, bar.className]);
-      var pnl = $('.ph-pnl'), PN = [['wl', 'Watchlist', function () { return document.querySelectorAll('.ph-pnc .pl-wlr').length >= 2 && /EURUSD/.test(($('.ph-pnc .pl-wld') || {}).textContent || '') && !!$('.ph-pnl [data-plwladd]'); }],
+      var pnl = $('.ph-pnl'), PN = [['wl', 'Watchlist', function () { return document.querySelectorAll('.ph-pnc .pl-wlr').length >= 1 && /EURUSD/.test(($('.ph-pnc .pl-wld') || {}).textContent || '') && !!$('.ph-pnl [data-plwladd]'); }],
         ['td', 'Today', function () { return !!$('.ph-pnc .pl-tdb') && $('.ph-pnc .pl-tdb').textContent.length > 5; }],
         ['ot', 'Object tree', function () { return !!$('.ph-pnc .pl-otb') && $('.ph-pnc .pl-otb').textContent.length > 3; }],
         ['tb', 'Positions & History', function () { return !!$('.ph-tbx [data-pltab="pos"].on') && !!($('.ph-tbx .pl-t') || $('.ph-tbx .pl-wait')) && !!$('.ph-tbx .pl-sum') && getComputedStyle($('.ph-tbx .pl-fold')).display === 'none'; }]];

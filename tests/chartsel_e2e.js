@@ -111,6 +111,13 @@
     var f8 = fits();
     check('8 charts: every legend fits its chart', f8.every(function (x) { return x === 'ok'; }), f8);
     P._layout(2); for (k = 0; k < 60 && P._panes().length !== 2; k++) await W(250); await W(800); ps = P._panes();
+    // Open my charts when the computer starts: its Copy buttons copy (30 Oct 2026: "these buttons dont copy anything, they dont work")
+    var wsb = document.createElement('button'); wsb.setAttribute('data-wsrset', '1'); document.getElementById('stpr-win').appendChild(wsb); wsb.click(); wsb.remove(); await W(500);
+    var copied0 = ''; try { Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: function (x) { copied0 = x; return Promise.resolve(); } } }); } catch (e) {} window.prompt = function () { return null; };   // headless: no real clipboard, and a prompt would hang the run
+    var cpb = document.querySelector('[data-wscopy="apps"]'); if (cpb) cpb.click(); await W(600);
+    cpb = document.querySelector('[data-wscopy="apps"]');
+    check('Open my charts at start-up: Copy copies the address and says Copied', cpb && /Copied|Copiado/.test(cpb.textContent) && /apps$/.test(copied0), cpb && [cpb.textContent, copied0]);
+    var dlx = Array.prototype.filter.call(document.querySelectorAll('button'), function (b) { return /^(Close|Cerrar)$/.test(b.textContent.trim()) && b.offsetWidth; })[0]; if (dlx) dlx.click(); await W(300);
     // Copy trading (Nestor, 30 Oct 2026: "the copy trading panel... looks messy! can you improve its look?"): the Trade with list's tags
     // open each group; stand-ins only, as platform_e2e.js
     var CWs = {}, rawc = P._s().sym.raw, LVc = P._lv(), Lc = window.__stLiveLine;
