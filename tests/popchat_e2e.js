@@ -136,6 +136,13 @@
     await W(1500);
     var lastTx = function (r) { var t = r && r.querySelectorAll('.dcx-msg .dcx-text'); return t && t.length ? t[t.length - 1].textContent : ''; };
     check('...a new message arrives there, the chat still at its end', /tapped the 50%/.test(lastTx(r1)) && atEnd(r1), lastTx(r1));
+    // a Spanish message there: its English only, never the Spanish first (2 Nov 2026), as the app window is behind it
+    var tr0 = window.stTranslateText, S0 = 'creo que el precio va a subir mucho hoy', E0 = 'I think the price will go up a lot today', trSeen = [];
+    window.stTranslateText = function (t) { return new Promise(function (ok) { setTimeout(function () { ok(t === S0 ? E0 : t); }, 300); }); };
+    var msg1 = r1.querySelector('#dcx-msgs'), obs1 = new satW.MutationObserver(function () { trSeen.push(msg1.textContent); }); obs1.observe(msg1, { childList: true, subtree: true, characterData: true });
+    arrive({ id: 'psp1', channel_id: 'ch-chat', sender_id: TROY, sender_name: 'Troy', body: S0, created_at: new Date().toISOString() });
+    await W(1000); obs1.disconnect(); window.stTranslateText = tr0;
+    check('...a Spanish message in that window: its English, the Spanish never on screen, the chat at its end', msg1.textContent.indexOf(E0) >= 0 && !trSeen.some(function (x) { return x.indexOf(S0) >= 0; }) && atEnd(r1), lastTx(r1));
     await picOpens(r1, 'Live Charts\' window');
     var rows = r1.querySelectorAll('.dcx-msg'), row = rows[rows.length - 1], more = row && row.querySelector('.dcx-more');
     var st1 = sd.createElement('style'); st1.textContent = '.dcx-msg.__pcfocus .dcx-actions{display:flex !important;}'; sd.head.appendChild(st1);   // its hover toolbar, as under the mouse

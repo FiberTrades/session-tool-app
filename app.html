@@ -60611,7 +60611,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
     function contentHtml(m){ var s=''; var _mb=_msgBody(m); var _allowImg=isAdminId(m && m.sender_id)||_chartChannel();
       /* Showing a translation swaps the TEXT only - attachments, charts and every
          other part of the message render exactly as they always do. */
-      var _trTxt=_trWant(m); if(_trTxt) _mb=_trTxt;
+      var _trTxt=_trPin[String(m&&m.id)]||_trWant(m); if(_trTxt) _mb=_trTxt;
       /* A shared playbook (#playbooks): its card, with "Add to my playbooks", instead of the text. */
       var _pbm=_mb && /\[st-playbook:([A-Za-z0-9_\-]+)\]/.exec(_mb);
       if(_pbm && typeof window.__stPbCardHtml==='function'){ var _pbc=window.__stPbCardHtml(_pbm[1], !!(currentUser && m && m.sender_id===currentUser.id)); if(_pbc){ s+=_pbc; _mb=''; } }
@@ -60766,7 +60766,8 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       var _scab=(box.scrollHeight-box.scrollTop-box.clientHeight)<50, _scpt=box.scrollTop;
       if(!msgs.length){ box.innerHTML='<div class="dcx-welcome"><h2>#'+esc(cur?_chName(cur):'')+'</h2><p>'+(_esUI()?('Este es el comienzo de #'+esc(cur?_chName(cur):'')+'. \u00a1Escribe algo!'):('This is the start of #'+esc(cur?_chName(cur):'')+'. Say something!'))+'</p></div>'; return; }
       var desired=[],ps=null,pt=0,pd='',_pl=null;
-      msgs.forEach(function(m){ if(!_msgVisible(m)) return; var t=new Date(m.created_at).getTime()||0; var dk=(window.STCommunity&&STCommunity.dayKey)?STCommunity.dayKey(m.created_at):''; if(dk&&dk!==pd){ pd=dk; ps=null; if(STCommunity.dateSepHtml) desired.push({k:'d:'+dk, h:STCommunity.dateSepHtml(m.created_at)}); } var lsid=m.live_session_id||null; if(lsid!==_pl){ _pl=lsid; ps=null; if(lsid) desired.push({k:'l:'+lsid, h:liveSepHtml(m)}); } var g=(m.sender_id===ps)&&((t-pt)<5*60000); desired.push({k:'m:'+m.id, h:fmtRow(m,g)}); ps=m.sender_id; pt=t; });
+      var _hb=false, _meId=currentUser&&currentUser.id;
+      msgs.forEach(function(m){ if(!_msgVisible(m)) return; if(m.sender_id!==_meId && (_hb||_trHeld(m))){ _hb=true; return; } var t=new Date(m.created_at).getTime()||0; var dk=(window.STCommunity&&STCommunity.dayKey)?STCommunity.dayKey(m.created_at):''; if(dk&&dk!==pd){ pd=dk; ps=null; if(STCommunity.dateSepHtml) desired.push({k:'d:'+dk, h:STCommunity.dateSepHtml(m.created_at)}); } var lsid=m.live_session_id||null; if(lsid!==_pl){ _pl=lsid; ps=null; if(lsid) desired.push({k:'l:'+lsid, h:liveSepHtml(m)}); } var g=(m.sender_id===ps)&&((t-pt)<5*60000); desired.push({k:'m:'+m.id, h:fmtRow(m,g)}); ps=m.sender_id; pt=t; });
       /* Anything still waiting to go out sits after the real messages, in the order it was
          written - so what you typed is on screen where you left it, not lost. */
       try{
@@ -60795,7 +60796,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
         if(b.__wired) return; b.__wired=true;
         b.addEventListener('click', function(){ window.STQueue.retry(b.getAttribute('data-oid')); });
       }); }catch(e){} }
-    function append(m){ if(seen[m.id]) return; seen[m.id]=true; msgs.push(m); repaint(); }
+    function append(m){ if(seen[m.id]) return; seen[m.id]=true; _trHoldNew(m); msgs.push(m); repaint(); }
     function idx(id){ for(var i=0;i<msgs.length;i++) if(msgs[i].id===id) return i; return -1; }
     /* Spinner only appears if a load actually takes a moment (>250ms). Fast/cached
        loads never flash it; slow ones show it early. The timer starts at the FIRST
@@ -60810,9 +60811,9 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
         if(!cur||cur.id!==chId){ loadingOld=false; return; }
         var rows=(r&&r.data)||[]; if(rows.length<200) noMoreOld=true; rows.reverse();
         var add=[]; rows.forEach(function(m){ if(!seen[m.id]){ seen[m.id]=true; add.push(m); } });
-        if(add.length){ msgs=add.concat(msgs); oldestTs=add[0].created_at; repaint();
-          try{ var b2=G('dcx-msgs'); if(b2) b2.scrollTop=b2.scrollHeight-pH+pT; }catch(_){}   /* keep the same message under the viewport */
-        }
+        if(add.length){ _trReadyThen(add, 1500, function(){ if(!cur||cur.id!==chId){ loadingOld=false; return; } var b1=G('dcx-msgs'), pH1=b1?b1.scrollHeight:pH, pT1=b1?b1.scrollTop:pT; msgs=add.concat(msgs); oldestTs=add[0].created_at; repaint();
+          try{ var b2=G('dcx-msgs'); if(b2) b2.scrollTop=b2.scrollHeight-pH1+pT1; }catch(_){}   /* keep the same message under the viewport */
+          loadingOld=false; }); return; }
         loadingOld=false;
       }).catch(function(){ loadingOld=false; }); }
     function wireOlder(){ if(olderWired) return; var box=G('dcx-msgs'); if(!box) return; olderWired=true;
@@ -60820,7 +60821,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
     function subscribe(){ try{ if(chan) sb.removeChannel(chan); }catch(e){} if(!cur) return;
       chan=sb.channel('chan:'+cur.id)
         .on('postgres_changes',{event:'INSERT',schema:'public',table:'channel_messages',filter:'channel_id=eq.'+cur.id},function(p){ if(p.new) append(p.new); })
-        .on('postgres_changes',{event:'UPDATE',schema:'public',table:'channel_messages',filter:'channel_id=eq.'+cur.id},function(p){ var m=p.new; if(!m) return; var i=idx(m.id); if(i>=0){ msgs[i]=m; _trForget(m.id); if(editingId!==m.id) repaint(); } })
+        .on('postgres_changes',{event:'UPDATE',schema:'public',table:'channel_messages',filter:'channel_id=eq.'+cur.id},function(p){ var m=p.new; if(!m) return; var i=idx(m.id); if(i>=0){ var _same=msgs[i].body===m.body&&msgs[i].body_es===m.body_es; if(_same){ msgs[i]=m; if(editingId!==m.id) repaint(); return; } if(currentUser&&m.sender_id===currentUser.id){ msgs[i]=m; _trForget(m.id); if(editingId!==m.id) repaint(); return; } _trEditHold(m); } })
         .on('postgres_changes',{event:'DELETE',schema:'public',table:'channel_messages',filter:'channel_id=eq.'+cur.id},function(p){ var o=p.old; if(!o) return; var i=idx(o.id); if(i>=0){ msgs.splice(i,1); delete seen[o.id]; repaint(); } })
         .on('postgres_changes',{event:'*',schema:'public',table:'channel_reactions',filter:'channel_id=eq.'+cur.id},function(){ loadReactions(); })
         .subscribe();
@@ -61688,12 +61689,33 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
                a half-translated chat - and it still has to run, or a batch that finishes
                inside the 100ms grace (nothing ever shown) would never paint its result. */
             if (!_trBusy && !_trQueue.length) _trSpinEnd();
-            _trRepaintSoon();
+            if (Object.keys(_trHold).length) { clearTimeout(_trTimer); try { repaint(); } catch (e) {} } else _trRepaintSoon();
           });
         })(_trQueue.shift());
       }
     }
 
+    /* A foreign message is held back until its translation is ready (Nestor, 2 Nov 2026: "if a spanish speaker writes a message in the chat we first see
+       the spanish message then it gets translated to english, can you make that seamless so we dont see the spanish message first?"). Off the screen
+       until then, for at most 1.5 s (0.7 s when the language is only a guess, as for "yep": an English chat must not feel late), so a slow translator
+       never hides a message for long. Your own messages never wait. Messages behind a held one wait with it, so the order never jumps. */
+    var _trHold = {}, _trSure = {}, _trPin = {};
+    function _trReady(m){ var k=String(m.id); if(_trSeen[k] && _trCache[k]===undefined) return false; if(m.reply_to && m.reply_excerpt){ var q='rref:'+m.reply_to; if(_trSeen[q] && _trCache[q]===undefined) return false; } return true; }
+    function _trHeld(m){ var k=String(m.id), h=_trHold[k]; if(!h) return false; if(!_trAll || Date.now()>=h || _trReady(m)){ delete _trHold[k]; return false; } return true; }
+    function _trAsk(m){ _trWant(m); if(m.reply_to && m.reply_excerpt) _trWant({ id:'rref:'+m.reply_to, body:m.reply_excerpt }); }
+    function _trPumpNow(){ if(_trStart){ clearTimeout(_trStart); _trStart=null; _trPump(); } }   /* in Live Charts' own window the app window is hidden: its timers run late */
+    function _trLater(fn, ms){ var w=null; try{ w=document.defaultView; }catch(e){} try{ return (w&&!w.closed?w:window).setTimeout(fn, ms); }catch(e){ return setTimeout(fn, ms); } }
+    function _trHoldNew(m){ try{
+      if(!_trAll || !m || !window.stTranslateText || (currentUser && m.sender_id===currentUser.id)) return;
+      _trAsk(m); if(_trReady(m)) return;
+      var ms=_trSure[String(m.id)] ? 1500 : 700; _trHold[String(m.id)]=Date.now()+ms; _trPumpNow();
+      _trLater(function(){ try{ repaint(); }catch(e){} }, ms+20);
+    }catch(e){} }
+    /* The same wait for rows that are added or changed outside append(): an older page coming in, a message edited. */
+    function _trReadyThen(list, ms, cb){ var fired=false, go=function(){ if(fired) return; fired=true; cb(); };
+      try{ if(!_trAll || !window.stTranslateText){ go(); return; } list.forEach(_trAsk); _trPumpNow(); var end=Date.now()+ms;
+        (function wait(){ if(fired) return; if(Date.now()>=end || list.every(_trReady)){ go(); return; } _trLater(wait, 40); })();
+      }catch(e){ go(); } }
     /* Called while rendering. Queues anything not yet translated, and returns the
        translation when it is ready - until then the original stays on screen, so
        the chat never flashes blank. */
@@ -61745,7 +61767,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
          the whole message reads foreign, or a specific line inside it does. Uncertain
          messages still translate in the background, but silently - a spinner on every
          English post in an English app is just noise. */
-      if ((det && det !== to) || foreignLine) _trSpinBegin();
+      if ((det && det !== to) || foreignLine) { _trSure[key] = 1; _trSpinBegin(); }
       if (!_trStart) _trStart = setTimeout(function () { _trStart = null; _trPump(); }, 0);
       return null;
     }
@@ -61759,7 +61781,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       for (var i = 0; i < msgs.length; i++) { try { _trWant(msgs[i]); if (msgs[i] && msgs[i].reply_to && msgs[i].reply_excerpt) _trWant({ id: 'rref:' + msgs[i].reply_to, body: msgs[i].reply_excerpt }); } catch (e) {} }
       /* Only raise the logo if a translator is actually available to drain the queue and call
          _trSpinEnd — otherwise _trPump clears the queue with no end and the logo would stick. */
-      if ((_trSpinT || _trSpin) && window.stTranslateText) { clearTimeout(_trSpinT); _trSpinT = null; _trSpinTok++; _trSpin = true; }
+      if ((_trSpinT || _trSpin) && window.stTranslateText) { clearTimeout(_trSpinT); _trSpinT = null; _trSpinTok++; _trSpin = true; var _tk = _trSpinTok; _trLater(function () { if (_tk === _trSpinTok) _trSpinEnd(); }, 2000); }
     }
 
     /* Diagnostic: run stDiagHeading() in the console while looking at the message.
@@ -61800,6 +61822,9 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       delete _trCache[k];
       delete _trSeen[k];
     }
+    /* Someone edits a message: the old row stays as it is (its old translation pinned) until the new text's translation is ready, then both change in one go. */
+    function _trEditHold(m){ var k=String(m.id), was=_trCache[k]; _trForget(m.id); if(was!==undefined) _trPin[k]=was;
+      _trReadyThen([m], 1500, function(){ delete _trPin[k]; var j=idx(m.id); if(j>=0) msgs[j]=m; if(editingId!==m.id) repaint(); }); }
 
     function toggleTranslate(){
       _trAll = !_trAll;
