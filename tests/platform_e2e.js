@@ -43,7 +43,7 @@
       check('...scrolled down: full screen, locked, the way out top-left', win.classList.contains('ph-full') && document.body.classList.contains('st-phfull') && getComputedStyle(document.body).overflow === 'hidden' && Math.abs(wr0.top) < 1 && Math.abs(wr0.height - innerHeight) < 2 && $('.ph-exit') && $('.ph-exit').getBoundingClientRect().left < 20 && $('.ph-exit').getBoundingClientRect().top < 20,
         [win.className, Math.round(wr0.top), Math.round(wr0.height), getComputedStyle(document.body).overflow]);
       var nm0 = $('#stpr-grid .pl-nm'), oh0 = $('#stpr-grid .stpr-ohlc');
-      check('its legend: the name beside the way out, O H L C under it, then the account pill and the Session Indicator line under it', nm0 && /^Euro \/ U\.S\. Dollar · 15 · /.test(nm0.textContent) && nm0.getBoundingClientRect().left > $('.ph-exit').getBoundingClientRect().right && oh0 && oh0.getBoundingClientRect().top > nm0.getBoundingClientRect().top + 8 && $('.ph-ov [data-phsi]') && $('.ph-ov [data-phpill]') && $('.ph-ov [data-phpill]').getBoundingClientRect().top < $('.ph-ov [data-phsi]').getBoundingClientRect().top && /ON|OFF/.test($('[data-phpill]').textContent),
+      check('its legend: the name beside the way out, O H L C under it, then the account icon and the Session Indicator icon under it', nm0 && /^Euro \/ U\.S\. Dollar · 15 · /.test(nm0.textContent) && nm0.getBoundingClientRect().left > $('.ph-exit').getBoundingClientRect().right && oh0 && oh0.getBoundingClientRect().top > nm0.getBoundingClientRect().top + 8 && $('.ph-ov [data-phsi]') && $('.ph-ov [data-phpill]') && $('[data-phico="acc"]').getBoundingClientRect().top < $('[data-phico="si"]').getBoundingClientRect().top && /ON|OFF/.test($('[data-phpill]').textContent),
         [nm0 && nm0.textContent, $('.ph-ov') && $('.ph-ov').textContent]);
       var bar = $('.ph-bar'), kids = [$('.ph-live'), $('.ph-bar #stpr-sym'), $('.ph-tf'), $('.ph-icons > [data-phtrb]'), $('.ph-icons #stpr-drawbtn'), $('.ph-icons #stpr-undo'), $('.ph-icons #stpr-redo')];
       check('the bottom toolbar: Live first (no logo since 29 Oct 2026), the symbol, the timeframe, the trade row\'s button, drawing tools, undo, redo - on screen (the rest a swipe away)', kids.every(function (k) { return k && k.getBoundingClientRect().width > 0 && k.getBoundingClientRect().right <= innerWidth + 1; }) && !$('.ph-logo') && bar.firstElementChild === $('.ph-live'),
@@ -59,6 +59,20 @@
       var trh1 = trH(), cwh1 = cwH(), trsv = {}; try { trsv = JSON.parse(localStorage.getItem('st_plat') || '{}'); } catch (e) {}
       check('...its button brings it up, the chart gives way, kept on this device', trh1 >= 44 && cwh1 <= cwh0 - 40 && trb.classList.contains('on') && trsv.phTr === true, [trh1, cwh0, cwh1, trsv.phTr, ms1 + ' ms']);
       check('no squashed + in the bar: Compare is in the symbol menu on a phone', getComputedStyle($('#stpr-cmpbtn')).display === 'none', getComputedStyle($('#stpr-cmpbtn')).display);
+      // the chips as icons (Nestor, 30 Oct 2026: "They take too much space on the chart? Maybe they can be icons that when pressed they show bigger like now?")
+      var ovw = function () { return Math.round($('.ph-ov').getBoundingClientRect().width); }, vis = function (q) { var e = $(q); return !!(e && e.getClientRects().length); };
+      check('phone chips: two small icons on the chart, the chips folded away', vis('[data-phico="acc"]') && vis('[data-phico="si"]') && !vis('.ph-pill') && !vis('.ph-si') && ovw() <= 30, [ovw(), $('.ph-ov').textContent]);
+      /*PHSHOT1*/
+      $('[data-phico="acc"]').click(); await W(150);
+      check('pressed: the account chip comes out beside its icon, on screen, and only that one', vis('.ph-pill') && !vis('.ph-si') && $('.ph-pill').getBoundingClientRect().right <= innerWidth && Math.abs($('.ph-pill').getBoundingClientRect().top - $('[data-phico="acc"]').getBoundingClientRect().top) < 6, [$('.ph-pill').getBoundingClientRect().right]);
+      /*PHSHOT2*/
+      $('[data-phico="si"]').click(); await W(150);
+      check('the other icon: the Session Indicator chip, the account one folded', vis('.ph-si') && !vis('.ph-pill'));
+      /*PHSHOT3*/
+      $('.ph-si').click(); await W(300); $('.ph-si').click(); await W(300);
+      check('the chip still does its job and stays out while used', vis('.ph-si'));
+      $('[data-phico="si"]').click(); await W(150);
+      check('pressed again: folded away', !vis('.ph-si') && !vis('.ph-pill'));
       $('[data-phpill]').click(); await sheetAt(true); await W(200);
       check('the pill slides up the Trade Manager, Setup and Why in it', win.classList.contains('ph-open') && $('.ph-sheet #stpr-mm.pl-mm') && $('.ph-sheet [data-plsetup]') && $('.ph-sheet [data-plwhy]') && $('.ph-sheet').getBoundingClientRect().bottom <= innerHeight + 1, [win.className, !!$('.ph-sheet #stpr-mm.pl-mm'), !!$('.ph-sheet [data-plsetup]'), Math.round($('.ph-sheet').getBoundingClientRect().bottom), innerHeight]);
       $('.ph-sheet .pl-x').click(); await sheetAt(false);
