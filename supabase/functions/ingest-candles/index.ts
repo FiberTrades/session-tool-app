@@ -32,7 +32,9 @@ function backfill(feed: string): { pace: number; days: number } {
   try { c = JSON.parse(Deno.env.get("CANDLES_BACKFILL") || "{}"); } catch { c = {}; }
   const f = (c.feeds || {})[feed] || {};
   const n = (x: unknown, d: number) => (typeof x === "number" && Number.isFinite(x) && x >= 0 ? Math.floor(x) : d);
-  return { pace: Math.min(4, Math.max(1, n(f.pace ?? c.pace, 1))), days: n(f.days ?? c.days, feed === "ftmo-demo" ? 7 : 30) };
+  // days 0 for the real feeds since 2 Nov 2026: EA 9.19 tops up only a FINISHED timeframe, so one waiting at 30 days stopped getting new candles. With no
+  // waiting it finishes its depth and tops up as before; EA 9.20 keeps a waiting timeframe current.
+  return { pace: Math.min(4, Math.max(1, n(f.pace ?? c.pace, 1))), days: n(f.days ?? c.days, feed === "ftmo-demo" ? 7 : 0) };
 }
 // where a feed's bars are read: its own rows, or the legacy table
 function storeUrl(feed: string, symbol: string, tf: number, cols: string, lo: number, hi: number, limit: number): string {
