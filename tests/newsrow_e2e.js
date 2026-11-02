@@ -66,7 +66,7 @@
       check('a phone: a tap on a flag pins its card, the arrow on it', p.card.style.display === 'block' && ar2 && Math.abs((ar2.l + ar2.r) / 2 - h0.spots[0].x) <= 1, ar2);
       (document.elementFromPoint(o0.left + h0.spots[0].x, o0.top + h0.y) || ch).dispatchEvent(new MouseEvent('mousedown', { clientX: o0.left + h0.spots[0].x, clientY: o0.top + h0.y, bubbles: true, button: 0 })); await W(100); }
     // the latest candle off the right edge: the » chip by Spread, the flags clear of it too
-    for (k = 0; k < 10 && !chip(); k++) { p._rtNear = true; ts.scrollToPosition(-6, false); await W(300); }   // the mouse by the corner on a computer (the chip always shows on a touch screen)
+    for (k = 0; k < 30 && !chip(); k++) { p._rtNear = true; ts.scrollToPosition(-6, false); await W(300); }   // the mouse by the corner on a computer (the chip always shows on a touch screen)
     var cp = chip(); put(cp ? (cp.l + cp.r) / 2 : null); P._drawOv(0); await W(200); P._drawOv(0); var N2 = p._news || [], sp2 = spr(), zone = cp ? { l: cp.l, r: sp2 ? sp2.r : cp.r } : null;
     check('scrolled back, candles under the » chip and Spread: a release there is nudged left of them, the rest clear too, all on the Spread row', !!cp && N2.length === 3 && N2.every(clear(zone)) && N2.some(function (h) { return h.spots[h.spots.length - 1].x + h.r > cp.l - 12; }) && N2.every(function (h) { return Math.abs(h.y - midS) <= 1; }),
       [cp && Math.round(cp.l), sp2 && Math.round(sp2.l), N2.map(function (h) { return Math.round(h.spots[h.spots.length - 1].x + h.r); }), p.n, JSON.stringify(ts.getVisibleLogicalRange())]);
@@ -108,8 +108,8 @@
     // Live: the rest of today's releases show before they come out (30 Oct 2026: "i need at least the days news on the chart"); tomorrow's don't
     var nowS = P._s().now; P._news([{ at: iso(nowS + 120), currency: 'EUR', title: 'German Prelim GDP q/q', impact: 'Medium', forecast: '0.1%', previous: '0.2%', actual: '' },
       { at: iso(nowS + 2 * 86400), currency: 'USD', title: 'Tomorrow NFP', impact: 'High', forecast: '', previous: '', actual: '' }]);
-    try { p.chart.timeScale().scrollToPosition(8, false); } catch (e) {} await W(300);
-    for (k = 0; k < 10; k++) { P._drawOv(0); await W(100); }
+    var seeFut = function () { return (p._news || []).some(function (n) { return n.list.some(function (e) { return e.title === 'German Prelim GDP q/q'; }); }); };
+    for (k = 0; k < 24 && !seeFut(); k++) { try { var rg0 = p.chart.timeScale().getVisibleLogicalRange(), sp0 = rg0 ? rg0.to - rg0.from : 60; p.chart.timeScale().setVisibleLogicalRange({ from: B.length + 8 - sp0, to: B.length + 8 }); } catch (e) {} await W(150); P._drawOv(0); await W(100); }   // room to the right of the latest candle (the chart's own view can land just after one asked for)
     var titles = (p._news || []).map(function (n) { return n.list.map(function (e) { return e.title; }).join('+'); });
     check('Live: a release still to come today is on the chart already; one days away is not', titles.indexOf('German Prelim GDP q/q') >= 0 && !titles.some(function (t) { return /Tomorrow/.test(t); }), titles.length ? titles : { tf: p.tf, now: nowS, last: B[B.length-1].time, xl: xOf(B[B.length-1].time), pw: pw(), rows: (P._s().live), lr: JSON.stringify(p.chart.timeScale().getVisibleLogicalRange()), n: B.length });
     window.__stNewsCcyOk = ok0; P._news([]);
