@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "9.18"
+#property version   "9.19"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -4071,7 +4071,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.18\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\",\"cloud\":%s,\"company\":\"%s\",\"server\":\"%s\",\"start_bal\":%s}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.19\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\",\"cloud\":%s,\"company\":\"%s\",\"server\":\"%s\",\"start_bal\":%s}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY),g_inCloud?"true":"false",
                             JsonSafe(AccountInfoString(ACCOUNT_COMPANY)),JsonSafe(AccountInfoString(ACCOUNT_SERVER)),DoubleToString(CpAccountSize(),2)));   // v9.12: the Accounts tab's "Read from MT5" line
   }
@@ -4466,7 +4466,7 @@ void LwOpen()
 // v9.06: MT5's Algo Trading button (and this EA's own "Allow Algo Trading") - off, no order can be placed, from here or from the app
 bool AlgoOn(){ return TerminalInfoInteger(TERMINAL_TRADE_ALLOWED)!=0 && MQLInfoInteger(MQL_TRADE_ALLOWED)!=0; }
 int  g_lwAl=-1;                       // v9.06: Algo Trading as last told to the app
-string LwHi(){ return StringFormat("{\"v\":\"9.18\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d,\"cl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0,g_inCloud?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
+string LwHi(){ return StringFormat("{\"v\":\"9.19\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d,\"cl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0,g_inCloud?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
 // v9.06 (Nestor, 19 Oct 2026: "whatever messages appear in MT5 i need to also see them in the app"): every message this EA writes on its
 // chart (Flash) goes to Session Terminal too, which shows it on Live Charts. Only while the line is up; nothing is queued.
 void LwMsg(string m)
@@ -6225,8 +6225,14 @@ long            CE_READY     = 30*60;     // PASS 1: replayable this soon after 
 long            CE_DAY_M     = 120;       // PASS 2: grace past end-of-day so the last bar has closed
 
 // Fire-and-forget POST to ingest-candles (mirrors SyncPost, longer timeout for big batches).
+// v9.19 (29 Oct 2026): per-broker candles - every post says its feed (this MT5's server), and the server's reply sets how fast and
+// how far back the deep history goes (one batch a minute and the last 30 days to start with; raised from the server, no new build).
+int  g_hbPace=1;    // batches per M1 bar for the deep history (the reply's "pace", 1-4)
+long g_hbDays=30;   // how many days back it goes for now (the reply's "days"; 0 = its full depth)
+long CpJsonNum(string s,string key,long def){ int i=StringFind(s,"\""+key+"\":"); if(i<0) return def; return StringToInteger(StringSubstr(s,i+StringLen(key)+3,12)); }
 bool CandlePost(string json)
   {
+   if(StringGetCharacter(json,0)=='{') json="{\"feed\":\""+AccountInfoString(ACCOUNT_SERVER)+"\","+StringSubstr(json,1);   // v9.19
    char post[]; StringToCharArray(json,post,0,StringLen(json),CP_UTF8);
    char result[]; string rh;
    string headers="Content-Type: application/json\r\nAuthorization: Bearer "+SYNC_KEY+"\r\n";
@@ -6239,7 +6245,14 @@ bool CandlePost(string json)
       else          PrintFormat("Replay candles: WebRequest failed (error %d).",err);
       return false;
      }
-   if(code==200) return true;
+   if(code==200)
+     {
+      string rs=CharArrayToString(result);
+      long pc=CpJsonNum(rs,"pace",-1), dy=CpJsonNum(rs,"days",-1);
+      if(pc>=1 && pc<=4) g_hbPace=(int)pc;
+      if(dy>=0) g_hbDays=dy;
+      return true;
+     }
    PrintFormat("Replay candles: server returned HTTP %d (%s)",code,CharArrayToString(result));
    return false;
   }
@@ -6464,7 +6477,8 @@ void CE_CatchupOnce()
 //  v8.96: a timeframe that stopped short of its depth is looked at again on every start (HB_Load),
 //  so raising "Max. bars in chart" and restarting MT5 carries on - before or after M1's turn.
 //==================================================================
-string HB_FILE      = "MMReplayHist.csv";   // sym,tf index,depth,oldest sent,newest sent,done,last top-up (server time)
+string HB_FILE      = "MMReplayHistF.csv";  // sym,tf index,depth,oldest sent,newest sent,done,last top-up (server time)
+                                             // v9.19: a new file - the history is sent again, now kept under this MT5's server
 long   HB_DEPTH[6]  = {365*86400, 365*86400, 365*86400, 3*365*86400, 5*365*86400, 0};   // M1..D1 before now; 0 = all (M1, M5: a year since 8.95)
 int    HB_POSTS_BAR = 2;                    // batches per M1 bar, at most (each is one blocking WebRequest)
 string g_hbSym[]; int g_hbSymN=0;
@@ -6650,6 +6664,8 @@ bool HB_Back(int k)
    string sym=g_hbS[k]; int ti=g_hbT[k]; ENUM_TIMEFRAMES per=CE_TF_PER[ti];
    long lim=(HB_DEPTH[ti]>0)?((long)TimeCurrent()-HB_DEPTH[ti]):0;
    if(g_hbOld[k]>0 && g_hbOld[k]<=lim){ g_hbDone[k]=1; HB_Report(k); return false; }
+   // v9.19: no further back than the server says for now (recent weeks first, then deeper) - waits there, not done
+   if(g_hbDays>0 && g_hbOld[k]>0 && g_hbOld[k]<=(long)TimeCurrent()-g_hbDays*86400) return false;
    datetime end=(g_hbOld[k]>0)?(datetime)(g_hbOld[k]-1):TimeCurrent();
    MqlRates r[];
    ResetLastError();
@@ -7515,11 +7531,35 @@ int CpReserve(ulong lt)
    CpSaveMap(m); GlobalVariablesFlush();
    return m;
   }
+// v9.19 (Nestor's OneFunded, 30 Oct 2026, 08:13:52: MT5's journal said "failed market buy 1.11 EURUSD ... [AutoTrading disabled by server]",
+// this EA printed it on a server nobody reads, and the app said nothing): a Lead trade this Follow did not take is told to the app at once,
+// with the broker's retcode and words, once per Lead trade. The copier itself does what it always did. CpReportOk takes it back when a
+// copy turns out to be there after all, or a trade that was waiting (Algo Trading off, say) got copied.
+string g_cpRpSym=""; int g_cpRpDir=0; double g_cpRpLots=0.0; uint g_cpRpRc=0;   // the trade being worked, for the report
+void CpRpSet(string sym,int dir,double lots,uint rc){ g_cpRpSym=sym; g_cpRpDir=dir; g_cpRpLots=lots; g_cpRpRc=rc; }
+string CpRpKey(ulong lt){ return "MMC_RPT_"+CpLogin()+"_"+IntegerToString((long)lt); }
+void CpReport(ulong lt,string kind,string why)
+  {
+   string k=CpRpKey(lt);
+   if(GlobalVariableCheck(k)) return;
+   GlobalVariableSet(k,(double)TimeGMT());
+   LiveEnqueue(StringFormat("{\"event\":\"copy_fail\",\"token\":\"%s\",\"login\":\"%s\",\"ticket\":\"%I64u\",\"lead\":\"%I64d\",\"symbol\":\"%s\",\"direction\":\"%s\",\"lots\":%s,\"retcode\":%d,\"kind\":\"%s\",\"why\":\"%s\"}",
+               g_syncTokenEff,CpLogin(),lt,g_copyLead,JsonSafe(g_cpRpSym),(g_cpRpDir>0)?"long":"short",DoubleToString(g_cpRpLots,2),(int)g_cpRpRc,kind,JsonSafe(why)));
+   PrintFormat("COPIER: told the app lead #%I64u was not copied (%s, retcode %d): %s",lt,kind,(int)g_cpRpRc,why);
+  }
+void CpReportOk(ulong lt)
+  {
+   string k=CpRpKey(lt);
+   if(!GlobalVariableCheck(k)) return;
+   GlobalVariableDel(k);
+   LiveEnqueue(StringFormat("{\"event\":\"copy_fail\",\"token\":\"%s\",\"login\":\"%s\",\"ticket\":\"%I64u\",\"ok\":true}",g_syncTokenEff,CpLogin(),lt));
+  }
 void CpSkipMap(int m,string why)
   {
    g_cm[m].st=2; CpSaveMap(m);
    g_cpLast=why; g_cpLastWarn=true;
    PrintFormat("COPIER: lead #%I64u not copied - %s",g_cm[m].lt,why);
+   CpReport(g_cm[m].lt,(g_cpRpRc>0)?"refused":"skip",why);   // v9.19
   }
 void CpSkip(ulong lt,string why){ int m=CpReserve(lt); CpSkipMap(m,why); }
 void CpForget(int m)
@@ -7669,6 +7709,7 @@ bool CpAdoptOrSkip(int m,ulong lt,double leadVol,string why)
      {
       g_cm[m].ft=at; g_cm[m].lv0=leadVol; g_cm[m].fv0=av; g_cm[m].st=1; CpSaveMap(m);
       PrintFormat("COPIER: the send for lead #%I64u reported '%s' but the copy #%I64u is there - following it.",lt,why,at);
+      CpReportOk(lt);   // v9.19
       return true;
      }
    CpSkipMap(m,why);
@@ -7679,6 +7720,7 @@ bool CpAdoptOrSkip(int m,ulong lt,double leadVol,string why)
 bool CpOpenMarket(int m,const CpItem &it,string fsym)
   {
    if(!CpStillOwner("F")) return false;
+   CpRpSet(fsym,it.dir,0.0,0);   // v9.19
    if(CpStopAtBE(fsym,it)){ if(m<0) CpSkip(it.tk,fsym+" skipped - Lead stop at break-even"); else CpSkipMap(m,fsym+" skipped - Lead stop at break-even"); return false; }
    double px=0.0; string why="";
    if(!CpFair(fsym,it,px,why)){ if(m<0) CpSkip(it.tk,why); return false; }
@@ -7699,9 +7741,10 @@ bool CpOpenMarket(int m,const CpItem &it,string fsym)
    bool ok=(it.dir>0) ? copyTrade.Buy(lots,fsym,0,sl,tp,cm) : copyTrade.Sell(lots,fsym,0,sl,tp,cm);
    uint rc=copyTrade.ResultRetcode();
    if(!ok || (rc!=TRADE_RETCODE_DONE && rc!=TRADE_RETCODE_DONE_PARTIAL && rc!=TRADE_RETCODE_PLACED))
-      return CpAdoptOrSkip(m,it.tk,it.vol,fsym+" refused - "+copyTrade.ResultRetcodeDescription());
+     { CpRpSet(fsym,it.dir,lots,(rc>0)?rc:1); return CpAdoptOrSkip(m,it.tk,it.vol,fsym+" refused - "+copyTrade.ResultRetcodeDescription()); }   // v9.19: with the broker's retcode
    g_cm[m].ft=copyTrade.ResultOrder(); g_cm[m].lv0=it.vol; g_cm[m].fv0=lots; g_cm[m].st=1;
    CpSaveMap(m);
+   CpReportOk(it.tk);   // v9.19: if it had been waiting, it isn't any more
    long lat=(it.seen>0) ? (long)(GetTickCount64()-it.seen) : -1;
    g_cpLast=StringFormat("%s %s %s lots",fsym,CpDirWord(it.dir),DoubleToString(lots,2))
            +((lat>=0 && lat<60000) ? " · "+DoubleToString(lat/1000.0,1)+"s" : "");
@@ -7714,6 +7757,7 @@ bool CpOpenMarket(int m,const CpItem &it,string fsym)
 void CpOpenPending(const CpItem &it,string fsym)
   {
    if(!CpStillOwner("F")) return;
+   CpRpSet(fsym,it.dir,0.0,0);   // v9.19
    if(CpStopAtBE(fsym,it)){ CpSkip(it.tk,fsym+" skipped - Lead stop at entry"); return; }
    double price=CpNorm(fsym,it.open);
    double sl=(it.sl>0) ? CpNorm(fsym,it.sl) : 0.0;
@@ -7727,9 +7771,10 @@ void CpOpenPending(const CpItem &it,string fsym)
    bool ok=copyTrade.OrderOpen(fsym,(ENUM_ORDER_TYPE)it.otype,lots,0.0,price,sl,tp,ORDER_TIME_GTC,0,cm);
    uint rc=copyTrade.ResultRetcode();
    if(!ok || (rc!=TRADE_RETCODE_DONE && rc!=TRADE_RETCODE_PLACED))
-     { CpAdoptOrSkip(m,it.tk,it.vol,fsym+" order refused - "+copyTrade.ResultRetcodeDescription()); return; }
+     { CpRpSet(fsym,it.dir,lots,(rc>0)?rc:1); CpAdoptOrSkip(m,it.tk,it.vol,fsym+" order refused - "+copyTrade.ResultRetcodeDescription()); return; }
    g_cm[m].ft=copyTrade.ResultOrder(); g_cm[m].lv0=it.vol; g_cm[m].fv0=lots;
    CpSaveMap(m);
+   CpReportOk(it.tk);   // v9.19
    bool lim=(it.otype==ORDER_TYPE_BUY_LIMIT || it.otype==ORDER_TYPE_SELL_LIMIT);
    g_cpLast=StringFormat("%s %s %s %s lots",fsym,CpDirWord(it.dir),lim?"limit":"stop",DoubleToString(lots,2));
    g_cpLastWarn=false;
@@ -7893,7 +7938,7 @@ void CpReconcile(CpItem &items[],ulong &closed[],long fileAge)
            {
             // skipped - unless a send that looked refused went through after all
             double av=0.0; ulong at=CpAdopt(g_cm[m].lt,av);
-            if(at>0){ g_cm[m].ft=at; g_cm[m].fv0=av; g_cm[m].lv0=items[li].vol; g_cm[m].st=1; CpSaveMap(m); }
+            if(at>0){ g_cm[m].ft=at; g_cm[m].fv0=av; g_cm[m].lv0=items[li].vol; g_cm[m].st=1; CpSaveMap(m); CpReportOk(g_cm[m].lt); }   // v9.19: the report taken back
            }
          continue;
         }
@@ -7921,11 +7966,13 @@ void CpReconcile(CpItem &items[],ulong &closed[],long fileAge)
      {
       if(CpFindMap(g_copyLead,items[i].tk)>=0) continue;
       if(GlobalVariableCheck(CpKey(g_copyLead,items[i].tk)+"st")) continue;   // another chart on this account took it
-      if(!canNew) continue;                  // shown as the status; copied when it can be, while still fresh
+      CpRpSet(items[i].sym,items[i].dir,0.0,0);   // v9.19: for the report
+      bool cpFresh=(items[i].pos && items[i].age+fileAge<=CP_MAX_AGE_SEC);   // v9.19: only a trade that could still be copied is told as waiting
+      if(!canNew){ if(cpFresh) CpReport(items[i].tk,"wait",why); continue; }   // shown as the status; copied when it can be, while still fresh
       string fsym=CpSymbol(items[i].sym);
       if(fsym==""){ CpSkip(items[i].tk,items[i].sym+" skipped - not on this account"); continue; }
       // This symbol's daily limit (8.94): shown as the status; copied when it can be, while still fresh.
-      if(CpDayLimitFor(fsym)){ g_cpStatus=fsym+" daily limit reached"; g_cpStatusWarn=true; continue; }
+      if(CpDayLimitFor(fsym)){ g_cpStatus=fsym+" daily limit reached"; g_cpStatusWarn=true; if(cpFresh) CpReport(items[i].tk,"wait","daily limit reached"); continue; }
       { string rc,rt; if(RuleRefuse(fsym,0,true,rc,rt)){ CpSkip(items[i].tk,fsym+" skipped - "+rt); continue; } }   // v9.15: this account's own rules
       if(items[i].pos)
         {
@@ -8356,7 +8403,7 @@ int OnInit()
    RulesLoad(true);   // v9.15: the account's order rules, before any order
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v9.18 loaded (a Follow account trades only the Lead's copies: anything opened on it in MT5 is closed; a typed target banks its distance from the real fill: MT5's TP and the EA's close both sit at the target plus the slippage this account has shown, whichever fires first; order rules from Session Terminal: locks for the day, the session and a break, the time between entries, the money at risk, the allowed symbols; BE halfway between the entry and the TP, the trailing / partial steps parked clear of the TP on every unit; MT5's messages and Algo Trading on or off, to Session Terminal; alerts on drawings from Session Terminal: a trend line or ray followed tick by tick, a rectangle or channel rings when price enters or leaves it; Live Charts: this chart's prices streamed to Session Terminal while its Live Charts tab shows them - 2 a second in your session, every 2 s with a trade open, every 5 s otherwise - and today's 1-minute candles when it asks; tick volume with every candle sent, and the older candles a volume profile in Practice Replay asks for; price alerts from Session Terminal, sent to your phone; 1-minute candles for the live chart; a live line to Session Terminal: the live chart updates every second, 3 hours a day; the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
+   Print("=== MinimalistManager v9.19 loaded (a copy a Follow did not take is told to the app, with the broker's reason; candles kept per broker: every candle sent says this MT5's server; a Follow account trades only the Lead's copies: anything opened on it in MT5 is closed; a typed target banks its distance from the real fill: MT5's TP and the EA's close both sit at the target plus the slippage this account has shown, whichever fires first; order rules from Session Terminal: locks for the day, the session and a break, the time between entries, the money at risk, the allowed symbols; BE halfway between the entry and the TP, the trailing / partial steps parked clear of the TP on every unit; MT5's messages and Algo Trading on or off, to Session Terminal; alerts on drawings from Session Terminal: a trend line or ray followed tick by tick, a rectangle or channel rings when price enters or leaves it; Live Charts: this chart's prices streamed to Session Terminal while its Live Charts tab shows them - 2 a second in your session, every 2 s with a trade open, every 5 s otherwise - and today's 1-minute candles when it asks; tick volume with every candle sent, and the older candles a volume profile in Practice Replay asks for; price alerts from Session Terminal, sent to your phone; 1-minute candles for the live chart; a live line to Session Terminal: the live chart updates every second, 3 hours a day; the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
    Print("=== MinimalistManager v5.7 notes (BE-offset ladder now sweeps EVERY level from +0R to +1R in 0.05R steps, arms itself off the price path so it runs on EVERY trade instead of only ones moved to BE, and reports a stop-never-moved baseline so locking in can be judged against doing nothing. v5.6 kept: the sweep freeze fix and the heartbeat) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)
@@ -8837,7 +8884,7 @@ void OnTimer()
    uint _nowMs=GetTickCount();
    if(s_lastSec!=0 && _nowMs-s_lastSec<1000) return;
    s_lastSec=_nowMs;
-   static uint s_whyGc=0; if(s_whyGc==0 || _nowMs-s_whyGc>3600000){ s_whyGc=_nowMs; GlobalVariablesDeleteAll("MMC_WHY_",TimeLocal()-6*3600); }   // v9.18: old close reasons
+   static uint s_whyGc=0; if(s_whyGc==0 || _nowMs-s_whyGc>3600000){ s_whyGc=_nowMs; GlobalVariablesDeleteAll("MMC_WHY_",TimeLocal()-6*3600); GlobalVariablesDeleteAll("MMC_RPT_",TimeLocal()-48*3600); }   // v9.18: old close reasons
    AsideTick(false);                        // v9.08: the VPS copy reports; any other copy asks whether to stand aside
    if(g_aside){ CpRoleSync(); DrawInfoReadout(); AccountLabel(false); if(g_flashMsg!="" && GetTickCount64()>=g_flashUntil) DrawHint(); ChartRedraw(); return; }   // v9.10: + CpRoleSync
    if(SyncPositionLines()) ChartRedraw();   // v8.87: a stop / target moved outside the EA, in a quiet market or with the EA off
@@ -9125,7 +9172,7 @@ void OnTick()
       s_pmBar=curBar;
       g_lastStage="pm_sweep";  PM_Sweep();
       g_lastStage="ce_sweep";  if(!g_ceInitDue) CE_Sweep();   // v9.15: not before the live line (the timer runs the first one)
-      g_lastStage="hb_step";   HB_Step(HB_POSTS_BAR);   // v8.7: deep replay history, when nothing is open
+      g_lastStage="hb_step";   HB_Step(g_hbPace);   // v8.7: deep replay history, when nothing is open (v9.19: the server's pace)
      }
    g_lastStage="sweeps_done";
    UpdateBrokerOffset();   // a tick just arrived, so TimeCurrent() is live right now: learn the offset

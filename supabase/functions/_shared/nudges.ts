@@ -693,6 +693,63 @@ export async function afterEaChange(admin: Any, userId: string, logId: number, b
   return await deliver(admin, userId, "nudge", out, es, 0);
 }
 
+// ---------- a copy a Follow account did not take (EA 9.19, 2 Nov 2026) ----------
+// The same words as the app's __stCopyFail. Plain, no scolding: it says what happened and why, and nothing about what to do.
+const COPY_RC: Record<number, [string, string]> = {
+  10026: ["the broker blocks EA trading", "el bróker bloquea el trading con EA"],
+  10027: ["Algo Trading is off in its MT5", "el trading algorítmico está desactivado en su MT5"],
+  10017: ["trading is disabled on this account", "el trading está desactivado en esta cuenta"],
+  10018: ["the market is closed", "el mercado está cerrado"],
+  10019: ["there isn't enough free margin", "no hay margen libre suficiente"],
+  10014: ["the broker doesn't accept that lot size", "el bróker no acepta ese tamaño de lote"],
+  10016: ["the broker doesn't accept those stops", "el bróker no acepta esos stops"],
+  10015: ["the price wasn't valid", "el precio no era válido"],
+  10004: ["the price changed before it filled", "el precio cambió antes de ejecutarse"],
+  10020: ["the price changed before it filled", "el precio cambió antes de ejecutarse"],
+  10021: ["the broker had no price for it", "el bróker no tenía precio"],
+  10006: ["the broker rejected the order", "el bróker rechazó la orden"],
+  10024: ["too many requests went to the broker", "demasiadas peticiones al bróker"],
+  10031: ["its MT5 had no connection to the broker", "su MT5 no tenía conexión con el bróker"],
+  10033: ["the account reached its limit of orders", "la cuenta llegó a su límite de órdenes"],
+  10034: ["the account reached its limit for that symbol", "la cuenta llegó a su límite en ese símbolo"],
+  10040: ["the account reached its limit of positions", "la cuenta llegó a su límite de posiciones"],
+  10044: ["that symbol only allows closing", "ese símbolo solo permite cerrar"],
+  10045: ["the broker's position rules don't allow it", "las normas de posiciones del bróker no lo permiten"],
+  10046: ["the broker's position rules don't allow it", "las normas de posiciones del bróker no lo permiten"],
+};
+const COPY_WHY: Array<[RegExp, string, string]> = [
+  [/Lead stop at (break-even|entry)/, "the Lead's stop was already at break-even", "el stop de la Líder ya estaba en break-even"],
+  [/lot too small/, "the lot would be too small for its risk", "el lote sería demasiado pequeño para su riesgo"],
+  [/not on this account/, "that symbol isn't on the account", "ese símbolo no está en la cuenta"],
+  [/opened too long ago/, "the Lead's trade was too old to copy", "la operación de la Líder era demasiado antigua para copiarla"],
+  [/price moved/, "the price had moved too far", "el precio se había movido demasiado"],
+  [/has no price/, "it had no price for that symbol", "no tenía precio para ese símbolo"],
+  [/price differs/, "its price was too far from the Lead's", "su precio estaba demasiado lejos del de la Líder"],
+  [/Algo Trading is off/, "Algo Trading is off in its MT5", "el trading algorítmico está desactivado en su MT5"],
+  [/EA is OFF/, "its EA is switched off", "su EA está apagado"],
+  [/FTMO total/, "your FTMO total is over the maximum", "tu total de FTMO supera el máximo"],
+  [/2\+ Leads/, "two accounts are set as Lead", "hay dos cuentas como Líder"],
+  [/daily limit/, "its daily limit is reached", "ha llegado a su límite diario"],
+];
+export function copyReason(rc: number, why: string, es: boolean): string {
+  const r = COPY_RC[rc]; if (r) return r[es ? 1 : 0];
+  for (const w of COPY_WHY) if (w[0].test(why)) return w[es ? 2 : 1];
+  return String(why || "").replace(/^\S+\s+(order\s+)?(refused|skipped)\s*-\s*/, "") || (es ? "el bróker no la aceptó" : "the broker didn't take it");
+}
+export async function afterCopyFail(admin: Any, userId: string, row: Any) {
+  await sleep(8000);
+  const ctx = await loadCtx(admin, userId); if (!ctx || !cfgOf(ctx.j).trades || sepLogin(ctx, row.login)) return;   // an account kept separate stays quiet
+  const { data: still } = await admin.from("copy_refusals").select("ticket").eq("user_id", userId).eq("login", row.login).eq("ticket", row.ticket).maybeSingle();
+  if (!still) return;   // copied after all
+  const es = esOf(ctx.j), id = (ctx.j.lm || {})[String(row.login)], a = accounts(ctx.j).find((x: Any) => x && x.id === id);
+  const name = (a && a.name ? String(a.name) : "MT5 " + row.login).replace(/\s*-\s*(challenge|verification|funded|fase.*|phase.*)$/i, "");
+  const sym = symCore(row.symbol) || String(row.symbol || ""), side = tr(row.direction === "short" ? "w_short" : "w_long", es), why = copyReason(row.retcode, row.why, es);
+  const text = row.kind === "wait"
+    ? (es ? `${name} aún no ha copiado tu ${sym} ${side}: ${why}.` : `${name} hasn't copied your ${sym} ${side} yet: ${why}.`)
+    : (es ? `${name} no copió tu ${sym} ${side}: ${why}.` : `${name} didn't copy your ${sym} ${side}: ${why}.`);
+  return await deliver(admin, userId, "trade", [item("tr_copy", String(row.login) + ":" + String(row.ticket), text, null)], es, 0);
+}
+
 // ---------- trade alerts (EA 8.86) ----------
 function tradeWords(ctx: Ctx, me: Row, key: string, pnl?: number, x = "") {
   const es = esOf(ctx.j), long = me.direction !== "short", cur = accCurOf(ctx, me);

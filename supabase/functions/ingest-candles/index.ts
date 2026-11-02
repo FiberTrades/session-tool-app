@@ -24,6 +24,16 @@ const MAX_BARS = 5000;   // reject oversized batches (the EA chunks to ~3000)
 function feedId(x: unknown): string {
   return (typeof x === "string" ? x : "").trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").slice(0, 40);
 }
+// How fast and how far back a feed's deep history goes for now (EA 9.19 reads "pace" - batches a minute - and "days" from every
+// reply; 0 days = its full depth). The CANDLES_BACKFILL secret, JSON: {"pace":1,"days":30,"feeds":{"ftmo-demo":{"days":7}}} -
+// recent weeks of every feed first at one batch a minute, the demo shallow until it is compared with ftmo-server4; raised from here.
+function backfill(feed: string): { pace: number; days: number } {
+  let c: { pace?: number; days?: number; feeds?: Record<string, { pace?: number; days?: number }> } = {};
+  try { c = JSON.parse(Deno.env.get("CANDLES_BACKFILL") || "{}"); } catch { c = {}; }
+  const f = (c.feeds || {})[feed] || {};
+  const n = (x: unknown, d: number) => (typeof x === "number" && Number.isFinite(x) && x >= 0 ? Math.floor(x) : d);
+  return { pace: Math.min(4, Math.max(1, n(f.pace ?? c.pace, 1))), days: n(f.days ?? c.days, feed === "ftmo-demo" ? 7 : 30) };
+}
 // where a feed's bars are read: its own rows, or the legacy table
 function storeUrl(feed: string, symbol: string, tf: number, cols: string, lo: number, hi: number, limit: number): string {
   return `${SUPABASE_URL}/rest/v1/${feed ? "candles_feed" : "candles"}?select=${cols}${feed ? `&feed=eq.${encodeURIComponent(feed)}` : ""}` +
@@ -133,6 +143,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const tf     = Number(body?.tf);
   const bars   = body?.bars;
   const feed   = feedId(body?.feed);   // "" = an EA before 9.19: the legacy table
+  const ok = (o: Record<string, unknown>) => json(feed ? { ...o, ...backfill(feed) } : o);   // a 9.19 EA's answer carries the pace
   if (!token || typeof token !== "string") return json({ error: "missing token" }, 401);
   if (!symbol || typeof symbol !== "string" || !tf || !Array.isArray(bars))
     return json({ error: "missing symbol / tf / bars" }, 400);
@@ -163,17 +174,17 @@ Deno.serve(async (req: Request): Promise<Response> => {
   // has none and leaves the stored volume alone (every row of one POST must name the same columns).
   const allV = rows.length > 0 && rows.every((x) => Number.isFinite(Number(x.v)) && Number(x.v) >= 0);
   for (const x of rows) if (!allV) delete x.v;
-  if (!rows.length) return json({ ok: true, upserted: 0 });
+  if (!rows.length) return ok({ ok: true, upserted: 0 });
   // A batch from an EA whose clock is off (23 Oct 2026). Before its first live tick an EA worked out the broker's time
   // from the last price it had - frozen since the close for a terminal started after it - so every bar went out minutes
   // late: his cloud 70K's 12, the demo's 2, and months of 1/2/12/17-minute copies beside the real candles. Such a batch is
   // refused whole (the EA is told ok, so it moves on): a 5-minute-or-longer bar off its boundary, a bar from the future, or
   // a batch that repeats the candles already stored a few minutes away.
   const bad = await clockOff(symbol, tf, rows, feed);
-  if (bad) return json({ ok: true, upserted: 0, rejected: rows.length, reason: bad });
+  if (bad) return ok({ ok: true, upserted: 0, rejected: rows.length, reason: bad });
   const nOff = rows.length;
   rows = await offGrid(symbol, tf, rows, feed);
-  if (!rows.length) return json({ ok: true, upserted: 0, rejected: nOff, reason: "4h / 1D bars off the New York-close grid" });
+  if (!rows.length) return ok({ ok: true, upserted: 0, rejected: nOff, reason: "4h / 1D bars off the New York-close grid" });
   if (tf <= 5) {
     const edge = Date.now() / 1000 - DEEP_AGE, deep = rows.filter((x) => Number(x.t) < edge).length;
     if (deep && (await dbBytes()) > DEEP_CAP) {
@@ -191,7 +202,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         } catch { /* the volume waits for the next ask */ }
       }
       rows = rows.filter((x) => Number(x.t) >= edge);
-      if (!rows.length) return json({ ok: true, upserted: 0, skipped: deep, vol_set: volSet, reason: "storage cap" });
+      if (!rows.length) return ok({ ok: true, upserted: 0, skipped: deep, vol_set: volSet, reason: "storage cap" });
     }
   }
 
@@ -212,5 +223,5 @@ Deno.serve(async (req: Request): Promise<Response> => {
   // what each batch was and what it changed (29 Oct 2026: the MT5s kept sending ~3.5 MB of bars a minute after the write fix -
   // which history, and from where, is read from these lines)
   console.log(`put ${feed || "legacy"} ${symbol} tf${tf} n=${rows.length} ${rows[0].t}-${rows[rows.length - 1].t} w=${written} tok=${String(token).slice(0, 6)}`);
-  return json({ ok: true, upserted: written, sent: rows.length });
+  return ok({ ok: true, upserted: written, sent: rows.length });
 });

@@ -24,6 +24,9 @@
 //        -> part of the trade closed: the share of the original size, the R and the money of that deal
 //    { event:"alert", token, id, px, symbol, login[, zx] }   (EA 8.99; zx "in" / "out": a zone entered or left, EA 9.05)
 //        -> price reached one of the member's price alerts: marked fired once and pushed to the phone (afterAlert)
+//    { event:"copy_fail", token, login, ticket, lead, symbol, direction, lots, retcode, kind, why }   (EA 9.19; or { ..., ok:true } to take it back)
+//        -> a Follow account did not take a Lead trade (ticket = the Lead's position): one row in copy_refusals, which the app
+//           shows at once, and a trade alert on the phone unless a window showed it
 //    { event:"settings", token, login, symbol, ea_version, settings:{...} }   (EA 8.6; 8.83 adds copy_*)
 //        -> the EA's own settings right now (risk, stop limits, take profit,
 //           break-even, daily trade cap): upsert ea_settings, and when a real
@@ -44,7 +47,7 @@
 // ============================================================
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { afterAlert, afterBE, afterClose, afterCloseTrade, afterEaChange, afterLock, afterOpen, afterPartial, afterRisk, afterWiden, checkNoStop, utcDay } from "../_shared/nudges.ts";
+import { afterAlert, afterBE, afterClose, afterCloseTrade, afterCopyFail, afterEaChange, afterLock, afterOpen, afterPartial, afterRisk, afterWiden, checkNoStop, utcDay } from "../_shared/nudges.ts";
 
 // deno-lint-ignore no-explicit-any
 declare const EdgeRuntime: { waitUntil(p: Promise<any>): void } | undefined;
@@ -84,7 +87,7 @@ Deno.serve(async (req) => {
   const isAlert = event === "alert";                // no ticket either: a price alert of the member's
   if (
     !token ||
-    (event !== "open" && event !== "close" && event !== "be" && event !== "sl" && event !== "partial" && !isSettings && !isAlert) ||
+    (event !== "open" && event !== "close" && event !== "be" && event !== "sl" && event !== "partial" && event !== "copy_fail" && !isSettings && !isAlert) ||
     (!isSettings && !isAlert && (!ticketStr || ticketStr === "0" || ticketStr === "null" || ticketStr === "undefined"))
   ) {
     return json({ error: "empty or malformed live event" }, 400);
@@ -119,6 +122,28 @@ Deno.serve(async (req) => {
     const id = String(body.id ?? "").trim().slice(0, 40), px = Number(body.px), zx = String(body.zx ?? "").slice(0, 3);
     if (!/^[0-9a-f-]{36}$/i.test(id)) return json({ error: "bad alert id" }, 400);
     later("alert", afterAlert(admin, userId, id, px, zx));
+    return json({ ok: true });
+  }
+
+  // A copy a Follow account did not take (EA 9.19, 2 Nov 2026: OneFunded's "AutoTrading disabled by server" on 30 Oct, and the app silent).
+  if (event === "copy_fail") {
+    const login = String(body.login ?? "").trim().slice(0, 32);
+    if (!login) return json({ error: "no login" }, 400);
+    if (body.ok === true) {   // the copy was there after all, or got copied once it could
+      await admin.from("copy_refusals").delete().eq("user_id", userId).eq("login", login).eq("ticket", ticketStr);
+      return json({ ok: true });
+    }
+    const row = {
+      user_id: userId, login, ticket: ticketStr.slice(0, 32), lead: String(body.lead ?? "").slice(0, 32) || null,
+      symbol: String(body.symbol ?? "").slice(0, 32) || null, direction: body.direction === "short" ? "short" : "long",
+      lots: Number.isFinite(Number(body.lots)) ? Number(body.lots) : null, retcode: Math.trunc(Number(body.retcode)) || 0,
+      kind: ["refused", "skip", "wait"].includes(body.kind) ? body.kind : "refused", why: String(body.why ?? "").slice(0, 200),
+      at: new Date().toISOString(),
+    };
+    const { error: cErr } = await admin.from("copy_refusals").upsert(row, { onConflict: "user_id,login,ticket" });
+    if (cErr) return json({ error: cErr.message }, 500);
+    await admin.from("copy_refusals").delete().eq("user_id", userId).lt("at", new Date(Date.now() - 7 * 86400000).toISOString());
+    later("copy", afterCopyFail(admin, userId, row));
     return json({ ok: true });
   }
 
