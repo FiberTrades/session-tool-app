@@ -2,9 +2,9 @@
 --
 -- Until now a read took the legacy candles only before the feed's first bar. A feed does not fill from now backwards alone: one batch of
 -- daily bars reaches 12 years back at once (the demo's first batch, AUDUSD D1, 2 Nov), a closed trade's export or a volume ask lands
--- on an older day - and everything between that and the feed's recent weeks read as no candles at all. Now a legacy bar is used wherever the
--- feed has nothing in the same hour (4h and daily: the same bar period), so a chart has no holes while a feed fills, and a quiet minute inside
--- an hour the broker did trade stays that broker's own (no other broker's bar put in it).
+-- on an older day - and everything between that and the feed's recent weeks read as no candles at all. Now a legacy bar is used unless it falls
+-- between two of the feed's own bars of the same hour (4h and daily: the same bar period): a chart has no holes while a feed fills, also at the
+-- edge where its bars begin part way through an hour, and a quiet minute inside an hour the broker did trade stays that broker's own.
 --   - With no feed rows in the window the answer is the legacy rows, exactly as before.
 --   - p_fsym: what the feed's broker calls the symbol when that differs from the name the legacy series goes by (EURUSD.x against EURUSD).
 --
@@ -21,12 +21,12 @@ language sql stable security definer set search_path = public as $$
      where k.feed = f.id and k.symbol = coalesce(p_fsym, p_symbol) and k.tf = p_tf
        and k.t between (p_from / f.b) * f.b and (p_to / f.b + 1) * f.b - 1
   ),
-  bk as materialized (select distinct fr.t / f.b n from fr, f)
+  bk as materialized (select fr.t / f.b n, min(fr.t) a, max(fr.t) z from fr, f group by 1)
   select fr.t, fr.o, fr.h, fr.l, fr.c, fr.v from fr where fr.t between p_from and p_to
   union all
   select k.t, k.o, k.h, k.l, k.c, k.v from public.candles k, f
    where k.symbol = p_symbol and k.tf = p_tf and k.t between p_from and p_to
-     and not exists (select 1 from bk where bk.n = k.t / f.b)
+     and not exists (select 1 from bk where bk.n = k.t / f.b and k.t between bk.a and bk.z)
   order by 1;
 $$;
 grant execute on function public.st_candles(text, integer, bigint, bigint, text, text) to anon, authenticated, service_role;
@@ -41,13 +41,13 @@ language sql stable security definer set search_path = public as $$
          where k.feed = f.id and k.symbol = coalesce(p_fsym, p_symbol) and k.tf = p_tf and k.t < p_before order by k.t desc limit (select n from n)),
   b as materialized (select k.t, k.o, k.h, k.l, k.c, k.v from public.candles k, n
          where k.symbol = p_symbol and k.tf = p_tf and k.t < p_before order by k.t desc limit (select 2 * n from n)),
-  bk as materialized (select distinct k.t / f.b n from public.candles_feed k, f
+  bk as materialized (select k.t / f.b n, min(k.t) a, max(k.t) z from public.candles_feed k, f
          where k.feed = f.id and k.symbol = coalesce(p_fsym, p_symbol) and k.tf = p_tf
-           and k.t between ((select min(b.t) from b) / f.b) * f.b and (p_before / f.b + 1) * f.b - 1)
+           and k.t between ((select min(b.t) from b) / f.b) * f.b and (p_before / f.b + 1) * f.b - 1 group by 1)
   select z.t, z.o, z.h, z.l, z.c, z.v from (
     select * from a
     union all
-    select * from b where not exists (select 1 from bk, f where bk.n = b.t / f.b)
+    select * from b where not exists (select 1 from bk, f where bk.n = b.t / f.b and b.t between bk.a and bk.z)
     order by 1 desc limit (select n from n)
   ) z order by z.t;
 $$;
