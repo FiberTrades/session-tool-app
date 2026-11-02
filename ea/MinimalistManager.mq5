@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "9.19"
+#property version   "9.20"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -4071,7 +4071,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.19\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\",\"cloud\":%s,\"company\":\"%s\",\"server\":\"%s\",\"start_bal\":%s}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.20\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\",\"cloud\":%s,\"company\":\"%s\",\"server\":\"%s\",\"start_bal\":%s}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY),g_inCloud?"true":"false",
                             JsonSafe(AccountInfoString(ACCOUNT_COMPANY)),JsonSafe(AccountInfoString(ACCOUNT_SERVER)),DoubleToString(CpAccountSize(),2)));   // v9.12: the Accounts tab's "Read from MT5" line
   }
@@ -4466,7 +4466,7 @@ void LwOpen()
 // v9.06: MT5's Algo Trading button (and this EA's own "Allow Algo Trading") - off, no order can be placed, from here or from the app
 bool AlgoOn(){ return TerminalInfoInteger(TERMINAL_TRADE_ALLOWED)!=0 && MQLInfoInteger(MQL_TRADE_ALLOWED)!=0; }
 int  g_lwAl=-1;                       // v9.06: Algo Trading as last told to the app
-string LwHi(){ return StringFormat("{\"v\":\"9.19\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d,\"cl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0,g_inCloud?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
+string LwHi(){ return StringFormat("{\"v\":\"9.20\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d,\"cl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0,g_inCloud?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
 // v9.06 (Nestor, 19 Oct 2026: "whatever messages appear in MT5 i need to also see them in the app"): every message this EA writes on its
 // chart (Flash) goes to Session Terminal too, which shows it on Live Charts. Only while the line is up; nothing is queued.
 void LwMsg(string m)
@@ -7589,6 +7589,19 @@ void CpFail(int m,string what)
                   (int)copyTrade.ResultRetcode(),copyTrade.ResultRetcodeDescription());
    if(g_cm[m].fails==3){ g_cpLast=what+" refused - retrying"; g_cpLastWarn=true; }
   }
+// v9.20 (Nestor, 2 Nov 2026: the Lead closes, the broker refuses the copy's close, the copy stays open and nobody is told): told to the app at once
+// with the broker's reason, once; the copier keeps retrying as it always did, and CpReportOk clears it when the copy is gone. An answer that may be
+// gone on the next try (a requote, no price) waits for the 3rd refusal, about 2 s; "already closed" is no refusal.
+void CpReportClose(int m,string kind,string sym,int dir,double vol)
+  {
+   uint rc=copyTrade.ResultRetcode();
+   if(rc==TRADE_RETCODE_POSITION_CLOSED) return;
+   bool soft=(rc==TRADE_RETCODE_REQUOTE || rc==TRADE_RETCODE_REJECT || rc==TRADE_RETCODE_TIMEOUT || rc==TRADE_RETCODE_PRICE_CHANGED || rc==TRADE_RETCODE_PRICE_OFF
+              || rc==TRADE_RETCODE_TOO_MANY_REQUESTS || rc==TRADE_RETCODE_FROZEN || rc==TRADE_RETCODE_CONNECTION);
+   if(soft && g_cm[m].fails<3) return;
+   CpRpSet(sym,dir,vol,(rc>0)?rc:1);
+   CpReport(g_cm[m].lt,kind,sym+" "+kind+" refused - "+copyTrade.ResultRetcodeDescription());
+  }
 void CpTradeFor(string sym){ copyTrade.SetTypeFillingBySymbol(sym); }
 int  CpFindItem(CpItem &items[],ulong tk){ for(int i=0;i<ArraySize(items);i++) if(items[i].tk==tk) return i; return -1; }
 bool CpFindPos(ulong id,ulong &tk,string &sym,int &dir,double &vol,double &op,double &sl,double &tp)
@@ -7841,19 +7854,21 @@ bool CpCloseCopy(int m)
      {
       CpTouch(m); CpTradeFor(sym);
       if(copyTrade.PositionClose(ptk)){ CpOk(m); PrintFormat("COPIER: lead #%I64u closed -> closing copy #%I64u",g_cm[m].lt,ft); }
-      else CpFail(m,sym+" close");
+      else { CpFail(m,sym+" close"); CpReportClose(m,"close",sym,dir,vol); }   // v9.20
       return false;
      }
    if(OrderSelect(ft))
      {
       string osym=OrderGetString(ORDER_SYMBOL);
       CpTouch(m); CpTradeFor(osym);
+      long ot9=OrderGetInteger(ORDER_TYPE); double ov9=OrderGetDouble(ORDER_VOLUME_CURRENT);   // before the send: it moves what is selected
       if(copyTrade.OrderDelete(ft)){ CpOk(m); PrintFormat("COPIER: lead order #%I64u gone -> cancelling copy #%I64u",g_cm[m].lt,ft); }
-      else CpFail(m,osym+" cancel");
+      else { CpFail(m,osym+" cancel"); CpReportClose(m,"cancel",osym,(ot9==ORDER_TYPE_BUY_LIMIT || ot9==ORDER_TYPE_BUY_STOP)?1:-1,ov9); }   // v9.20
       return false;
      }
-   if(CpConfirmClosed(ft)) return true;
-   return (g_cm[m].goneMs>0 && GetTickCount64()-g_cm[m].goneMs>600000);
+   if(CpConfirmClosed(ft)){ CpReportOk(g_cm[m].lt); return true; }   // v9.20: a refused close, cleared
+   if(g_cm[m].goneMs>0 && GetTickCount64()-g_cm[m].goneMs>600000){ CpReportOk(g_cm[m].lt); return true; }
+   return false;
   }
 // One copy, while its Lead trade is still there.
 void CpFollowOne(int m,const CpItem &it)
@@ -8403,7 +8418,7 @@ int OnInit()
    RulesLoad(true);   // v9.15: the account's order rules, before any order
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v9.19 loaded (a copy a Follow did not take is told to the app, with the broker's reason; candles kept per broker: every candle sent says this MT5's server; a Follow account trades only the Lead's copies: anything opened on it in MT5 is closed; a typed target banks its distance from the real fill: MT5's TP and the EA's close both sit at the target plus the slippage this account has shown, whichever fires first; order rules from Session Terminal: locks for the day, the session and a break, the time between entries, the money at risk, the allowed symbols; BE halfway between the entry and the TP, the trailing / partial steps parked clear of the TP on every unit; MT5's messages and Algo Trading on or off, to Session Terminal; alerts on drawings from Session Terminal: a trend line or ray followed tick by tick, a rectangle or channel rings when price enters or leaves it; Live Charts: this chart's prices streamed to Session Terminal while its Live Charts tab shows them - 2 a second in your session, every 2 s with a trade open, every 5 s otherwise - and today's 1-minute candles when it asks; tick volume with every candle sent, and the older candles a volume profile in Practice Replay asks for; price alerts from Session Terminal, sent to your phone; 1-minute candles for the live chart; a live line to Session Terminal: the live chart updates every second, 3 hours a day; the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
+   Print("=== MinimalistManager v9.20 loaded (a copy a Follow cannot close is told to the app at once; a copy a Follow did not take too, with the broker's reason; candles kept per broker: every candle sent says this MT5's server; a Follow account trades only the Lead's copies: anything opened on it in MT5 is closed; a typed target banks its distance from the real fill: MT5's TP and the EA's close both sit at the target plus the slippage this account has shown, whichever fires first; order rules from Session Terminal: locks for the day, the session and a break, the time between entries, the money at risk, the allowed symbols; BE halfway between the entry and the TP, the trailing / partial steps parked clear of the TP on every unit; MT5's messages and Algo Trading on or off, to Session Terminal; alerts on drawings from Session Terminal: a trend line or ray followed tick by tick, a rectangle or channel rings when price enters or leaves it; Live Charts: this chart's prices streamed to Session Terminal while its Live Charts tab shows them - 2 a second in your session, every 2 s with a trade open, every 5 s otherwise - and today's 1-minute candles when it asks; tick volume with every candle sent, and the older candles a volume profile in Practice Replay asks for; price alerts from Session Terminal, sent to your phone; 1-minute candles for the live chart; a live line to Session Terminal: the live chart updates every second, 3 hours a day; the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
    Print("=== MinimalistManager v5.7 notes (BE-offset ladder now sweeps EVERY level from +0R to +1R in 0.05R steps, arms itself off the price path so it runs on EVERY trade instead of only ones moved to BE, and reports a stop-never-moved baseline so locking in can be judged against doing nothing. v5.6 kept: the sweep freeze fix and the heartbeat) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)

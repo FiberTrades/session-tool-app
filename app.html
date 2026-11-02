@@ -4372,7 +4372,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .stlf-copies.miss { color: #e0b23c; }
   .stlf-note { margin-top: 10px; font-size: 12px; line-height: 1.5; color: var(--text-mid); max-width: 62ch; }
   .stlf-note.cf { color: #e0b23c; }
-  .slx-cfn { margin-top: 10px; font-size: 12px; line-height: 1.5; color: #e0b23c; }
+  .stlf-note.cf.urg { color: #f87171; font-weight: 600; }
   .stlf-dot { width: 7px; height: 7px; border-radius: 50%; background: #e0b23c; animation: stlfp 1s infinite; }
   .stlf-ic { display: inline-flex; align-items: center; justify-content: center; min-width: 0.95em; font-size: 15px; line-height: 1; font-weight: 700; }
   .stlf-res.be .stlf-ic { font-size: 21px; transform: translateY(-2px); }
@@ -19506,7 +19506,8 @@ try {
       var el = feedEl(); if (!el) return;
       var all = _allRows();
       // After the session the boxes are only for trades still running.
-      if (!all.length || (!_isLiveUi() && !_hasOpen())) { el.innerHTML = ''; el.style.display = 'none'; return; }
+      var cfEsc = function (x) { return String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }, cfStuck = (window.__stCopyFail ? window.__stCopyFail.stuckLines() : []).map(function (x) { return '<div class="stlf-note cf urg">' + cfEsc(x) + '</div>'; }).join('');   // EA 9.20: a copy that could not be closed, whatever else is going on
+      if (!all.length || (!_isLiveUi() && !_hasOpen())) { el.innerHTML = cfStuck; el.style.display = cfStuck ? 'block' : 'none'; return; }
       el.style.display = 'block';
       var es = document.documentElement.lang === 'es';
       // One box per idea: with the trade copier, a trade and its copies on your other accounts are one.
@@ -19546,7 +19547,8 @@ try {
           ? 'Tu EA no informa desde las ' + T + '. Si tu PC o MT5 están apagados, ' + (off.length > 1 ? 'puede que estas operaciones ya se hayan cerrado' : 'puede que esta operación ya se haya cerrado') + ' \u2014 se actualizará en cuanto MT5 vuelva a estar encendido.'
           : 'Your EA hasn\u2019t reported since ' + T + '. If your PC or MT5 is off, ' + (off.length > 1 ? 'these trades may already have closed' : 'this trade may already have closed') + ' \u2014 it updates as soon as MT5 is back on.') + '</div>';
       }
-      if (cfNotes.length) note = cfNotes.map(function (x) { return '<div class="stlf-note cf">' + String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</div>'; }).join('') + note;
+      if (cfNotes.length) note = cfNotes.map(function (x) { return '<div class="stlf-note cf">' + cfEsc(x) + '</div>'; }).join('') + note;
+      note = cfStuck + note;
       el.innerHTML = '<div class="stlf-head">' + head + '</div><div class="stlf-chips">' + chips + '</div>' + note;
     }
     return {
@@ -20471,7 +20473,7 @@ try {
         var at = msOf(r.at), k = String(r.login) + ':' + String(r.ticket);
         if (!fresh(at) || handled['c' + k]) return;
         handled['c' + k] = 1;
-        raise([{ rule: 'tr_copy', text: window.__stCopyFail.nudgeText(r) }], k);
+        raise([{ rule: window.__stCopyFail.isStuck(r) ? 'tr_copyclose' : 'tr_copy', text: window.__stCopyFail.nudgeText(r) }], k);
       } catch (e) {}
     }
     function eaChanged(r) {
@@ -21234,13 +21236,11 @@ try {
       var cht = has && isFinite(tk.px) && isFinite(tk.op);
       if (cht) ball = '';
       var tmRow = window.__stTM ? window.__stTM.row(r) : '';   // MT5's state and Close trade (18 Oct 2026)
-      var cfTxt = ''; try { cfTxt = window.__stCopyFail ? window.__stCopyFail.lineOf(window.__stCopyFail.forIdea(idea)) : ''; } catch (e) {}   /* EA 9.19: a copy not taken */
-      var stat = head + '|' + (cht ? '' : marks + seg) + '|' + chips.join('') + '|' + on() + has + cht + '|' + tmRow + '|' + cfTxt;
+      var stat = head + '|' + (cht ? '' : marks + seg) + '|' + chips.join('') + '|' + on() + has + cht + '|' + tmRow;
       var html = '<div class="slx-tc" data-k="' + esc(r.ticket) + '"><div class="slx-th">' + head + '<div class="slx-right"><span class="slx-tpw">' + tp + '</span>' + (has ? tog : '') + '</div></div>'
         + (cht ? '' : '<div class="slx-lad"><div class="slx-ln"></div>' + seg + marks + (ball ? '<div class="slx-now' + (R < -0.049 ? ' r' : '') + '" style="left:' + ball + '"></div>' : '') + '</div>')
         + (chips.length ? '<div class="slx-chips">' + chips.join('') + '</div>' : '')
         + (has && !cht ? '<div class="slx-cnote"><span class="slx-need">' + esc(T2('Live chart needs EA 8.89', 'Gráfico en vivo: necesita el EA 8.89')) + '</span></div>' : '')
-        + (cfTxt ? '<div class="slx-cfn">' + esc(cfTxt) + '</div>' : '')
         + '<div class="slx-chs"></div>' + tmRow + '</div>';
       return { k: String(r.ticket), s: stat, html: html, ball: ball, red: R < -0.049, tp: tp };
     }
@@ -21704,10 +21704,16 @@ try {
       [/daily limit/, 'its daily limit is reached', 'ha llegado a su l\u00edmite diario']];
     function reason(r) { var c = RC[+r.retcode]; if (c) return X(c[0], c[1]); var w = String(r.why || '');
       for (var i = 0; i < WHY.length; i++) if (WHY[i][0].test(w)) return X(WHY[i][1], WHY[i][2]);
-      return w.replace(/^\S+\s+(order\s+)?(refused|skipped)\s*-\s*/, '') || X('the broker didn\u2019t take it', 'el br\u00f3ker no la acept\u00f3'); }
+      return w.replace(/^\S+\s+(order\s+|close\s+|cancel\s+)?(refused|skipped)\s*-\s*/, '') || X('the broker didn\u2019t take it', 'el br\u00f3ker no la acept\u00f3'); }
     function nameOf(lg) { var nm = ''; try { var id = (data.mt5LoginMap || {})[String(lg)], a = id ? (data.accounts || []).filter(function (x) { return x && x.id === id; })[0] : null; if (a && a.name) nm = a.name; if (nm && window.__stStripStage) nm = window.__stStripStage(nm); } catch (e) {} return nm || 'MT5 ' + lg; }
     function verb(r) { return r.kind === 'wait' ? X('hasn\u2019t copied it yet', 'a\u00fan no la ha copiado') : (r.kind === 'skip' ? X('skipped it', 'la omiti\u00f3') : X('refused it', 'la rechaz\u00f3')); }
-    function ofTicket(tk) { tk = String(tk); return Object.keys(rows).map(function (k) { return rows[k]; }).filter(function (r) { return String(r.ticket) === tk; }); }
+    function isStuck(r) { return r.kind === 'close' || r.kind === 'cancel'; }   // EA 9.20: the Lead's trade is over and the copy is still there
+    function ofTicket(tk) { tk = String(tk); return Object.keys(rows).map(function (k) { return rows[k]; }).filter(function (r) { return String(r.ticket) === tk && !isStuck(r); }); }
+    // Nestor, 2 Nov 2026: the broker refuses to close a copy, the Lead's trade is gone, nobody told. Urgent but plain, and what to do. Shown until the copy has closed.
+    function stuckLine(r) { var sym = String(r.symbol || ''), side = r.direction === 'short' ? X('short', 'corto') : X('long', 'largo'), nm = nameOf(r.login), w = reason(r);
+      return r.kind === 'cancel' ? X(nm + ' couldn\u2019t cancel its copied order of your ' + sym + ' ' + side + ': ' + w + '. The order is still working: cancel it in that MT5.', nm + ' no pudo cancelar su orden copiada de tu ' + sym + ' ' + side + ': ' + w + '. La orden sigue activa: canc\u00e9lala en ese MT5.')
+        : X(nm + ' couldn\u2019t close its copy of your ' + sym + ' ' + side + ': ' + w + '. The copy is still open: close it in that MT5.', nm + ' no pudo cerrar su copia de tu ' + sym + ' ' + side + ': ' + w + '. La copia sigue abierta: ci\u00e9rrala en ese MT5.'); }
+    function stuckLines() { return Object.keys(rows).map(function (k) { return rows[k]; }).filter(isStuck).sort(function (a, b) { return Date.parse(b.at) - Date.parse(a.at); }).map(stuckLine); }
     // the reports of one trade (a Lead's ticket), read on its row: "Copied to 1 of 2: OneFunded refused it, the broker blocks EA trading"
     function lineOf(list) { if (!list || !list.length) return ''; var M = 0; try { M = (window.__stEA.copier().accounts || 0) - 1; } catch (e) {} if (M < list.length) M = list.length; var N = M - list.length;
       var bits = list.map(function (r) { return nameOf(r.login) + ' ' + verb(r) + ', ' + reason(r); }).join('; ');
@@ -21716,15 +21722,17 @@ try {
     function forIdea(idea) { var seen = {}, out = []; try { idea.rows.forEach(function (x) { ofTicket(x.ticket).forEach(function (r) { var k = r.login + '|' + r.ticket; if (!seen[k]) { seen[k] = 1; out.push(r); } }); }); } catch (e) {} return out; }
     // this account's report on a trade still open, or a fresh one: what Trade with shows
     function current(lg) { var open = {}; try { window.__stLive.openIdeas().forEach(function (i) { i.rows.forEach(function (x) { open[String(x.ticket)] = 1; }); }); } catch (e) {}
-      var best = null; Object.keys(rows).forEach(function (k) { var r = rows[k]; if (lg != null && String(r.login) !== String(lg)) return; if (!open[String(r.ticket)] && Date.now() - Date.parse(r.at) > 900000) return; if (!best || Date.parse(r.at) > Date.parse(best.at)) best = r; }); return best; }
-    function nudgeText(r) { var sym = String(r.symbol || ''), side = r.direction === 'short' ? X('short', 'corto') : X('long', 'largo'), nm = nameOf(r.login), w = reason(r);
+      var best = null; Object.keys(rows).forEach(function (k) { var r = rows[k]; if (lg != null && String(r.login) !== String(lg)) return; if (!isStuck(r) && !open[String(r.ticket)] && Date.now() - Date.parse(r.at) > 900000) return; if (!best || (isStuck(r) && !isStuck(best)) || (isStuck(r) === isStuck(best) && Date.parse(r.at) > Date.parse(best.at))) best = r; }); return best; }
+    // what Trade with says above its accounts: a copy still open first
+    function menuLines() { var out = stuckLines(), c = current(); if (c && !isStuck(c)) { var l = line(c.ticket); if (l) out.push(l); } return out; }
+    function nudgeText(r) { if (isStuck(r)) return stuckLine(r); var sym = String(r.symbol || ''), side = r.direction === 'short' ? X('short', 'corto') : X('long', 'largo'), nm = nameOf(r.login), w = reason(r);
       return r.kind === 'wait' ? X(nm + ' hasn\u2019t copied your ' + sym + ' ' + side + ' yet: ' + w + '.', nm + ' a\u00fan no ha copiado tu ' + sym + ' ' + side + ': ' + w + '.')
         : X(nm + ' didn\u2019t copy your ' + sym + ' ' + side + ': ' + w + '.', nm + ' no copi\u00f3 tu ' + sym + ' ' + side + ': ' + w + '.'); }
     function paint() { try { window.__stLive.render(); } catch (e) {} try { window.__stLiveBox.render(); } catch (e) {} }
     return {
       apply: function (r) { if (!r || !r.login || r.ticket == null) return; rows[String(r.login) + '|' + String(r.ticket)] = r; paint(); try { window.__stNudge.copyFail(r); } catch (e) {} },
       remove: function (r) { if (!r) return; delete rows[String(r.login) + '|' + String(r.ticket)]; paint(); },
-      line: line, lineOf: lineOf, forIdea: forIdea, current: current, nameOf: nameOf, reason: reason, nudgeText: nudgeText, verb: verb, rows: function () { return rows; } };
+      line: line, lineOf: lineOf, forIdea: forIdea, current: current, nameOf: nameOf, reason: reason, nudgeText: nudgeText, verb: verb, isStuck: isStuck, stuckLine: stuckLine, stuckLines: stuckLines, menuLines: menuLines, rows: function () { return rows; } };
   })();
   window.__stEA = (function () {
     var rows = {}, log = [], MAXLOG = 12;
@@ -79352,7 +79360,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     if(!uid || !sb || !window.__stEA) return;
     try{ sb.from('ea_settings').select('*').eq('user_id', uid).then(function(res){ ((res&&res.data)||[]).forEach(function(r){ window.__stEA.apply(r); }); try{ window.__stEA.loaded(); }catch(e){} }, function(){ try{ window.__stEA.loaded(); }catch(e){} }); }catch(e){}
     try{ sb.from('ea_settings_log').select('*').eq('user_id', uid).order('changed_at',{ascending:false}).limit(12).then(function(res){ ((res&&res.data)||[]).slice().reverse().forEach(function(r){ window.__stEA.logged(r); }); }, function(){}); }catch(e){}
-    try{ sb.from('copy_refusals').select('*').eq('user_id', uid).gte('at', new Date(Date.now()-86400000).toISOString()).then(function(res){ ((res&&res.data)||[]).forEach(function(r){ if(window.__stCopyFail) window.__stCopyFail.apply(r); }); }, function(){}); }catch(e){}   /* EA 9.19: copies not taken */
+    try{ sb.from('copy_refusals').select('*').eq('user_id', uid).or('at.gte.'+new Date(Date.now()-86400000).toISOString()+',kind.in.(close,cancel)').then(function(res){ ((res&&res.data)||[]).forEach(function(r){ if(window.__stCopyFail) window.__stCopyFail.apply(r); }); }, function(){}); }catch(e){}   /* EA 9.19: copies not taken */
   }
   function startEA(){
     if(!uid || !sb) return;
@@ -91958,6 +91966,7 @@ window.__stAZ = (function () {
   .lctb-sum td { background: rgba(255,255,255,.03); text-align: left !important; } .lctb-sum td:not(:first-child) { text-align: right !important; }
   .lctb-ord td { color: var(--text-mid); }
   .lctb-cfn td { color: #e0b23c; text-align: left !important; white-space: normal; } .stpr-win.pl-lt .lctb-cfn td { color: #a65f00; }
+  .lctb-cfn.urg td { color: #f87171; font-weight: 600; } .stpr-win.pl-lt .lctb-cfn.urg td { color: #c62828; }
   .lctb-wait { margin: 0; padding: 14px; color: var(--text-dim); font-family: Fraunces, serif; font-size: 13px; }
   .lctb-t td.lctb-none { text-align: center !important; color: var(--text-dim); padding: 14px; }
   .lc-pfp { margin-top: 26px; }   /* Prop Firm Progress of the EA's account, under the Toolbox (18 Oct 2026) */
@@ -92550,6 +92559,7 @@ window.__stAZ = (function () {
   .stpr-twc.cp { color: #60A5FA; background: rgba(96,165,250,.14); }
   .stpr-twc.off { color: #f5a524; background: rgba(245,165,36,.14); }
   .stpr-twcf { margin: 2px 8px 8px; max-width: 320px; font-size: 12px; line-height: 1.4; color: #f5a524; } .stpr-win.pl-lt .stpr-twcf { color: #a65f00; }
+  .stpr-twcf.urg, .stpr-twc.off.urg { color: #f87171; font-weight: 600; } .stpr-twc.off.urg { background: rgba(248,113,113,.14); } .stpr-win.pl-lt .stpr-twcf.urg, .stpr-win.pl-lt .stpr-twc.off.urg { color: #c62828; }
   .stpr-twmore { display: block; width: 100%; margin-top: 6px; padding: 10px 6px 3px 28px; border: 0; border-top: 1px solid var(--border-2); background: transparent; color: var(--text-dim); font: inherit; font-size: 12.5px; text-align: left; cursor: pointer; }
   @media (hover: hover) { .stpr-twmore:hover { color: var(--text); } }
   /* Copy trading: the Lead, the accounts copying it, the others - each with its one action, a confirm and what was asked in place */
@@ -93113,6 +93123,8 @@ window.__stAZ = (function () {
   .pl-t th { position: sticky; top: 0; z-index: 1; padding: 7px 10px; border-bottom: 1px solid var(--pl-line); background: var(--pl-bg); color: var(--pl-dim); font-size: 11.5px; font-weight: 400; text-align: left; }
   .pl-t td { padding: 7px 10px; border-bottom: 1px solid var(--pl-line); }
   .pl-t .u { color: #22ab94; } .pl-t .d { color: var(--pl-dn); }
+  .pl-t .pl-cfr td { color: #e0b23c; white-space: normal; } .stpr-win.pl-lt .pl-t .pl-cfr td { color: #a65f00; }
+  .pl-cfn { margin: 8px 10px; font-size: 12.5px; line-height: 1.4; white-space: normal; } .pl-cfn.urg { color: #f87171; font-weight: 600; } .stpr-win.pl-lt .pl-cfn.urg { color: #c62828; }
   .pl-t .pl-act { text-align: right; }
   .pl-ab { height: 24px; margin-left: 4px; padding: 0 9px; border: 0; border-radius: 4px; background: var(--pl-pane2); color: var(--pl-txt); font: 12px var(--pl-font); cursor: pointer; }
   .pl-ab.x { background: transparent; box-shadow: inset 0 0 0 1px var(--pl-line2); }
@@ -97963,6 +97975,7 @@ window.__stAZ = (function () {
     if (c.role !== 'follow') return '';
     var ln = cpName(c.lead);
     var cf = null; try { cf = lg != null ? window.__stCopyFail.current(lg) : null; } catch (e) {}   // EA 9.19: it did not take the latest trade
+    if (cf && window.__stCopyFail.isStuck(cf)) return '<span class="stpr-twc off urg" title="' + esc(window.__stCopyFail.stuckLine(cf)) + '">' + esc(T('NOT CLOSED', 'SIN CERRAR')) + '</span>';
     if (cf) return '<span class="stpr-twc off" title="' + esc(window.__stCopyFail.lineOf([cf])) + '">' + esc(cf.kind === 'wait' ? T('NOT YET', 'A\u00daN NO') : (cf.kind === 'skip' ? T('SKIPPED', 'OMITIDA') : T('REFUSED', 'RECHAZADA'))) + '</span>';
     if (cpOf(c.lead).role === 'lead') return '<span class="stpr-twc cp" title="' + esc(T('Copies ' + ln + '\u2019s trades', 'Copia las operaciones de ' + ln)) + '">' + esc(T('COPIES ', 'COPIA ') + cpShort(c.lead)) + '</span>';
     return '<span class="stpr-twc off" title="' + esc(T('Copies ' + ln + ', but ' + ln + ' isn\u2019t the Lead, so nothing is copied. The fix is in Copy trading.', 'Copia a ' + ln + ', pero ' + ln + ' no es L\u00edder, as\u00ed que no se copia nada. El arreglo est\u00e1 en Copiar operaciones.')) + '">' + esc(T('LEAD OFF', 'SIN L\u00cdDER')) + '</span>'; }
@@ -97973,8 +97986,8 @@ window.__stAZ = (function () {
     var rows = list.map(function(o){ var lg = String(o.lg), c = cpOf(lg), on = lg === on0; if (c.role !== 'off' || cpFollowers(lg).length) any = true;
       return '<button type="button" class="stpr-tw' + (on ? ' on' : '') + '" data-lvacc="' + esc(lg) + '"' + (o.fol ? ' data-lvfol="1"' : '') + (on ? ' aria-current="true"' : '') + ' title="' + esc(lvAccName(lg)) + '">'
         + '<span class="stpr-tw-ck">' + (on ? TW_CK : '') + '</span>' + twName(lg) + twChip(c, lg) + '</button>'; }).join('');
-    var cfl = ''; try { var cfa = window.__stCopyFail.current(); if (cfa) cfl = window.__stCopyFail.line(cfa.ticket); } catch (e) {}   // the sentence, above the accounts: "Copied to 1 of 2: OneFunded refused it, the broker blocks EA trading"
-    return '<div class="stpr-accm stpr-twm"><h6>' + esc(T('Trade with', 'Operar con')) + '</h6>' + (cfl ? '<p class="stpr-twcf">' + esc(cfl) + '</p>' : '') + (rows || '<p class="stpr-wlf">' + esc(T('No account is live on this symbol.', 'Ninguna cuenta en vivo en este s\u00edmbolo.')) + '</p>')
+    var cfl = ''; try { cfl = window.__stCopyFail.menuLines().map(function(x){ return '<p class="stpr-twcf' + (/MT5\.$/.test(x) ? ' urg' : '') + '">' + esc(x) + '</p>'; }).join(''); } catch (e) {}   // the sentence, above the accounts: "Copied to 1 of 2: OneFunded refused it, the broker blocks EA trading"
+    return '<div class="stpr-accm stpr-twm"><h6>' + esc(T('Trade with', 'Operar con')) + '</h6>' + cfl + (rows || '<p class="stpr-wlf">' + esc(T('No account is live on this symbol.', 'Ninguna cuenta en vivo en este s\u00edmbolo.')) + '</p>')
       + ((list.length > 1 || any) ? '<button type="button" class="stpr-twmore" data-cpsheet="1">' + esc(T('Copy trading\u2026', 'Copiar operaciones\u2026')) + '</button>' : '') + '</div>'; }
   // Copy trading: a copier whose Lead isn't one first (with the fix), then the Lead, the accounts copying it and the others - or, with no
   // Lead yet, every account with Make Lead. An action's confirm and what was asked (Setting up copy…, or why not) sit under its row.
@@ -98066,6 +98079,7 @@ window.__stAZ = (function () {
   function tbTd(v){ return '<td>' + esc(v) + '</td>'; }
   function tbTrade(){ var a = TB.acct; if (!a) return '<p class="lctb-wait">' + esc(T('Waiting for your account from MT5… (EA 9.02 or newer)', 'Esperando tu cuenta desde MT5… (EA 9.02 o posterior)')) + '</p>';
     var hd = '<tr><th>' + [T('Symbol', 'Símbolo'), 'Ticket', T('Time', 'Hora'), T('Type', 'Tipo'), T('Volume', 'Volumen'), T('Price', 'Precio'), 'S / L', 'T / P', T('Price', 'Precio'), T('Profit', 'Beneficio')].join('</th><th>') + '</th></tr>', h = '', tot = 0;
+    try { window.__stCopyFail.stuckLines().forEach(function(x){ h += '<tr class="lctb-cfn urg"><td colspan="10">' + esc(x) + '</td></tr>'; }); } catch (e) {}   /* EA 9.20: a copy that could not be closed */
     tbRows(a.pos, 12).forEach(function(r){ tot += +r[9];
       h += '<tr>' + tbTd(r[1]) + tbTd(r[0]) + tbTd(tbTime(+r[2])) + tbTd(r[3]) + tbTd(r[4]) + tbTd(r[5]) + tbTd(+r[6] ? r[6] : '') + tbTd(+r[7] ? r[7] : '') + tbTd(r[8]) + '<td class="' + tbCl(r[9]) + '">' + tbNum(r[9], 2) + '</td></tr>';
       var cf = ''; try { cf = window.__stCopyFail.line(r[0]); } catch (e) {} if (cf) h += '<tr class="lctb-cfn"><td colspan="10">' + esc(cf) + '</td></tr>'; });   /* EA 9.19: why a copy is missing */
@@ -98141,7 +98155,7 @@ window.__stAZ = (function () {
     return k; }
   // where the list's prices come from: the account's MT5 server (EA 9.12 sends it; else its cloud card's), shown under Watchlist
   function wlSrc(){ var h = hubEA(); if (!h) return null; var key = h.raw + '|' + h.lg; if (WL.srcK === key && Date.now() - (WL.srcAt || 0) < 5000) return WL.src;
-    var sv = '', co = ''; try { (window.__stEA.summary() || []).forEach(function(r){ if (String(r.login) === String(h.lg) && r.settings) { sv = sv || r.settings.server || ''; co = co || r.settings.company || ''; } }); } catch (e) {}
+    var sv = '', co = ''; try { var R0 = window.__stEA.rows() || {}; Object.keys(R0).forEach(function(k){ var r = R0[k]; if (String(r.login) === String(h.lg) && r.settings) { sv = sv || r.settings.server || ''; co = co || r.settings.company || ''; } }); } catch (e) {}   /* the rows: summary()'s settings are a sentence, so this read nothing and only the cloud card named the server (2 Nov 2026) */
     if (!sv) try { var cl = window.__stMt5c.cloud().filter(function(r){ return String(r.login) === String(h.lg); })[0]; if (cl && cl.server) sv = cl.server; } catch (e) {}
     var a = lvAccOf(h.lg); WL.srcK = key; WL.srcAt = Date.now(); return (WL.src = { lg: String(h.lg), sv: sv, co: co, nm: a && a.name ? a.name : 'MT5 ' + h.lg }); }
   function wlSrcTxt(){ var w = wlSrc(); return w ? (w.sv || w.co || 'MT5') + ' \u00b7 ' + w.nm : T('waiting for your MT5', 'esperando a tu MT5'); }
@@ -99226,7 +99240,7 @@ window.__stAZ = (function () {
     // the charts' symbols as their EAs name them, chart 1's first ("watch" carries them; each EA streams its own)
     sym: function(){ if (!lvData()) return ''; var a = []; allFeeds().forEach(function(F){ if (F.ea && a.indexOf(F.ea.raw) < 0) a.push(F.ea.raw); }); return a.join(','); },
     px: lvPx, bars: lvBars, q: wlQ, symlist: wlSymlist, set: lvSet, acct: tbAcct, dhist: tbDhist, acc: function(){ return tbEA(); },
-    _tb: function(){ return TB; },
+    _tb: function(){ return TB; }, _wlSrc: wlSrc,
     lg: function(){ if (!lvData()) return ''; var ls = {}; allFeeds().forEach(function(F){ var e = F.ea; if (e && !e.hub && e.lg) ls[String(e.lg)] = 1; }); var k = Object.keys(ls); return k.length === 1 ? k[0] : ''; },   // the account the charts show, when it is one (EA 9.03 streams only for it)
     _accs: function(){ return lvAccs().map(function(o){ return String(o.lg); }); },
     look: function(){ return look(); }, lookBars: function(a){ return lookBars(a); },
@@ -100176,7 +100190,8 @@ window.__stAZ = (function () {
   // when the trade opened, in the member's own time (MT5's own time is its server's): today as 08:13:52, another day as 29 Oct 08:13 (Nestor, 30 Oct 2026: "I need to see the time of entry in this row")
   function plOpenTxt(idea, r){ var ms = idea ? (+idea.openedAt || Date.parse(idea.opened_at) || 0) : 0; if (!(ms > 0)) return tbTime(+r[2]); var d = new Date(ms), n = new Date(), p2t = function(v){ return (v < 10 ? '0' : '') + v; };
     var hm = p2t(d.getHours()) + ':' + p2t(d.getMinutes()); return d.toDateString() === n.toDateString() ? hm + ':' + p2t(d.getSeconds()) : d.getDate() + ' ' + d.toLocaleString(T('en-GB', 'es-ES'), { month: 'short' }) + ' ' + hm; }
-  function plPos(rows, cur){ if (!rows.length) return '<p class="pl-wait">' + esc(T('No open positions.', 'Sin posiciones abiertas.')) + '</p>';
+  function plPos(rows, cur){ var cfh = ''; try { cfh = window.__stCopyFail.stuckLines().map(function(x){ return '<p class="pl-cfn urg">' + esc(x) + '</p>'; }).join(''); } catch (e) {}   /* EA 9.20: a copy that could not be closed, above the trades: the Lead's own row is gone */
+    if (!rows.length) return cfh + '<p class="pl-wait">' + esc(T('No open positions.', 'Sin posiciones abiertas.')) + '</p>';
     var TM = window.__stTM, h = '<table class="pl-t"><tr><th>' + [T('Symbol', 'Símbolo'), T('Side', 'Lado'), T('Time', 'Hora'), T('Lots', 'Lotes'), T('Entry', 'Entrada'), T('Price', 'Precio'), 'Stop', T('Target', 'Objetivo'), 'P&amp;L', 'R', ''].join('</th><th>') + '</th></tr>';
     rows.forEach(function(r){ var tk = r[0], idea = plIdea(tk), R = (idea && idea.tick && isFinite(+idea.tick.r)) ? +idea.tick.r : NaN, pr = +r[9] || 0, buy = /buy/i.test(String(r[3]));
       var ok = !!(TM && idea && TM.state(idea) === 'on'), bz = TM && TM.busy(tk), dis = (ok && !bz) ? '' : ' disabled';
@@ -100185,8 +100200,9 @@ window.__stAZ = (function () {
       if (!ask) act += ''
         + '<button type="button" class="pl-ab x" data-tma="close" data-tmk="' + esc(tk) + '"' + dis + '>' + esc(bz && bz.a === 'close' ? T('Closing…', 'Cerrando…') : T('Close', 'Cerrar')) + '</button>';
       h += '<tr><td><b>' + esc(r[1]) + '</b></td><td><span class="pl-side ' + (buy ? 'b' : 's') + '">' + (buy ? 'BUY' : 'SELL') + '</span></td><td class="pl-tm">' + esc(plOpenTxt(idea, r)) + '</td><td>' + esc(r[4]) + '</td><td>' + esc(r[5]) + '</td><td>' + esc(r[8]) + '</td><td>' + (+r[6] ? esc(r[6]) : '—') + '</td><td>' + (+r[7] ? esc(r[7]) : '—') + '</td>'
-        + '<td class="' + (pr > 0 ? 'u' : (pr < 0 ? 'd' : '')) + '"><b>' + plSg(pr, cur) + '</b></td><td class="' + (R > 0 ? 'u' : (R < 0 ? 'd' : '')) + '">' + (isFinite(R) ? plR(R) : '—') + '</td><td class="pl-act">' + act + '</td></tr>'; });
-    return h + '</table>'; }
+        + '<td class="' + (pr > 0 ? 'u' : (pr < 0 ? 'd' : '')) + '"><b>' + plSg(pr, cur) + '</b></td><td class="' + (R > 0 ? 'u' : (R < 0 ? 'd' : '')) + '">' + (isFinite(R) ? plR(R) : '—') + '</td><td class="pl-act">' + act + '</td></tr>';
+      var cf = ''; try { cf = window.__stCopyFail.line(tk); } catch (e) {} if (cf) h += '<tr class="pl-cfr"><td colspan="11">' + esc(cf) + '</td></tr>'; });   /* EA 9.19: why a copy is missing */
+    return cfh + h + '</table>'; }
   function plOrd(rows){ if (!rows.length) return '<p class="pl-wait">' + esc(T('No pending orders.', 'Sin órdenes pendientes.')) + '</p>';
     var h = '<table class="pl-t"><tr><th>' + [T('Symbol', 'Símbolo'), T('Type', 'Tipo'), T('Lots', 'Lotes'), T('Price', 'Precio'), 'Stop', T('Target', 'Objetivo'), T('Placed', 'Colocada')].join('</th><th>') + '</th></tr>';
     rows.forEach(function(r){ h += '<tr><td><b>' + esc(r[1]) + '</b></td><td>' + esc(r[3]) + '</td><td>' + esc(r[4]) + '</td><td>' + esc(r[5]) + '</td><td>' + (+r[6] ? esc(r[6]) : '—') + '</td><td>' + (+r[7] ? esc(r[7]) : '—') + '</td><td>' + esc(tbTime(+r[2])) + '</td></tr>'; });

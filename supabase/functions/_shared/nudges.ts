@@ -734,7 +734,7 @@ const COPY_WHY: Array<[RegExp, string, string]> = [
 export function copyReason(rc: number, why: string, es: boolean): string {
   const r = COPY_RC[rc]; if (r) return r[es ? 1 : 0];
   for (const w of COPY_WHY) if (w[0].test(why)) return w[es ? 2 : 1];
-  return String(why || "").replace(/^\S+\s+(order\s+)?(refused|skipped)\s*-\s*/, "") || (es ? "el bróker no la aceptó" : "the broker didn't take it");
+  return String(why || "").replace(/^\S+\s+(order\s+|close\s+|cancel\s+)?(refused|skipped)\s*-\s*/, "") || (es ? "el bróker no la aceptó" : "the broker didn't take it");
 }
 export async function afterCopyFail(admin: Any, userId: string, row: Any) {
   await sleep(8000);
@@ -744,10 +744,14 @@ export async function afterCopyFail(admin: Any, userId: string, row: Any) {
   const es = esOf(ctx.j), id = (ctx.j.lm || {})[String(row.login)], a = accounts(ctx.j).find((x: Any) => x && x.id === id);
   const name = (a && a.name ? String(a.name) : "MT5 " + row.login).replace(/\s*-\s*(challenge|verification|funded|fase.*|phase.*)$/i, "");
   const sym = symCore(row.symbol) || String(row.symbol || ""), side = tr(row.direction === "short" ? "w_short" : "w_long", es), why = copyReason(row.retcode, row.why, es);
-  const text = row.kind === "wait"
+  const text = row.kind === "close"   // EA 9.20: the Lead closed, its copy did not (Nestor, 2 Nov 2026): urgent, plain, and what to do
+    ? (es ? `${name} no pudo cerrar su copia de tu ${sym} ${side}: ${why}. La copia sigue abierta: ciérrala en ese MT5.` : `${name} couldn't close its copy of your ${sym} ${side}: ${why}. The copy is still open: close it in that MT5.`)
+    : row.kind === "cancel"
+    ? (es ? `${name} no pudo cancelar su orden copiada de tu ${sym} ${side}: ${why}. La orden sigue activa: cancélala en ese MT5.` : `${name} couldn't cancel its copied order of your ${sym} ${side}: ${why}. The order is still working: cancel it in that MT5.`)
+    : row.kind === "wait"
     ? (es ? `${name} aún no ha copiado tu ${sym} ${side}: ${why}.` : `${name} hasn't copied your ${sym} ${side} yet: ${why}.`)
     : (es ? `${name} no copió tu ${sym} ${side}: ${why}.` : `${name} didn't copy your ${sym} ${side}: ${why}.`);
-  return await deliver(admin, userId, "trade", [item("tr_copy", String(row.login) + ":" + String(row.ticket), text, null)], es, 0);
+  return await deliver(admin, userId, "trade", [item(row.kind === "close" || row.kind === "cancel" ? "tr_copyclose" : "tr_copy", String(row.login) + ":" + String(row.ticket), text, null)], es, 0);
 }
 
 // ---------- trade alerts (EA 8.86) ----------

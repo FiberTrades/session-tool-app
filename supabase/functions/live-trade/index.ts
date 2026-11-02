@@ -137,7 +137,7 @@ Deno.serve(async (req) => {
       user_id: userId, login, ticket: ticketStr.slice(0, 32), lead: String(body.lead ?? "").slice(0, 32) || null,
       symbol: String(body.symbol ?? "").slice(0, 32) || null, direction: body.direction === "short" ? "short" : "long",
       lots: Number.isFinite(Number(body.lots)) ? Number(body.lots) : null, retcode: Math.trunc(Number(body.retcode)) || 0,
-      kind: ["refused", "skip", "wait"].includes(body.kind) ? body.kind : "refused", why: String(body.why ?? "").slice(0, 200),
+      kind: ["refused", "skip", "wait", "close", "cancel"].includes(body.kind) ? body.kind : "refused", why: String(body.why ?? "").slice(0, 200),
       at: new Date().toISOString(),
     };
     const { error: cErr } = await admin.from("copy_refusals").upsert(row, { onConflict: "user_id,login,ticket" });
