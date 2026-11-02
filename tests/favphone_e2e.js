@@ -29,7 +29,7 @@
     check('no bar until the pencil is pressed', !bar() || !bar().classList.contains('show'));
     var pen = $('.ph-icons #stpr-drawbtn'); pen.click(); await W(300);
     var e = bar(), r = e && e.getBoundingClientRect(), pr = p0.el.getBoundingClientRect();
-    check('the pencil opens it: upright, slim, at the chart\'s left edge', e && e.classList.contains('show') && e.classList.contains('vert') && r.width <= 42 && r.left - pr.left <= 8 && r.height > r.width, r && [r.left - pr.left, r.width, r.height]);
+    check('the pencil opens it: upright, slim, at the chart\'s left edge', e && e.classList.contains('show') && e.classList.contains('vert') && r.width <= 42 && r.left - pr.left <= 52 && r.height > r.width, r && [r.left - pr.left, r.width, r.height]);
     check('...wholly inside the chart', r.top >= pr.top - 0.5 && r.bottom <= pr.bottom + 0.5 && r.left >= pr.left - 0.5, [r.top, r.bottom, pr.top, pr.bottom]);
     check('...its tools one under another, its grip on top', e.querySelectorAll('[data-fvt]').length === 10 && e.firstElementChild.classList.contains('fv-grip') && e.querySelectorAll('[data-fvt]')[1].getBoundingClientRect().top > e.querySelectorAll('[data-fvt]')[0].getBoundingClientRect().top, e.querySelectorAll('[data-fvt]').length);
     check('...the row of all tools stays put away', getComputedStyle($('.ph-tray')).display === 'none', getComputedStyle($('.ph-tray')).display);

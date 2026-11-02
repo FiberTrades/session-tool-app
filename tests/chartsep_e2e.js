@@ -117,6 +117,22 @@
     check('from the main window, with chart 2 clicked last: the title says a main window chart', !/chart 2/.test(tit()) && dlg().ownerDocument === document, tit());
     dlg().querySelector('[data-k="s0.name"]').value = 'Main'; dlg().querySelector('[data-k="s0.name"]').dispatchEvent(new Event('input', { bubbles: true })); await W(120); dlg().querySelector('[data-dok]').click(); await W(200);
     check('renamed there: chart 2 keeps Fifteen', P._ms(pn(1)).ses[0].name === 'Fifteen' && (P._ms(pn(0)).ses[0].name === 'Main' || P._ms(pn(2)).ses[0].name === 'Main'), [P._ms(pn(0)).ses[0].name, P._ms(pn(1)).ses[0].name, P._ms(pn(2)).ses[0].name]);
+    // ---- objects clicked first, then dragged, in the chart window too; its cursors there ----
+    var D2 = P._dr(), p2 = pn(1), c2 = chartOf(1), q2 = c2.getBoundingClientRect(), b2 = p2.bars, t0 = b2[Math.max(0, b2.length - 30)].time, t1 = b2[Math.max(0, b2.length - 10)].time, pa = p2.series.coordinateToPrice(q2.height * 0.35), pb = p2.series.coordinateToPrice(q2.height * 0.6);
+    var box2 = { type: 'rect', a: { t: t0, price: pa }, b: { t: t1, price: pb }, tfs: null }; D2.list.push(box2); D2.sel = null; P._render(); await W(250);
+    var at2 = function (z) { return { x: P._xOfT(1, z.t), y: P._yOf(1, z.price) }; }, mv2 = function (t, x, y, held) { var el = cd.elementFromPoint(q2.left + x, q2.top + y) || c2; el.dispatchEvent(new cw.MouseEvent(t, { clientX: q2.left + x, clientY: q2.top + y, bubbles: true, cancelable: true, view: cw, button: 0, buttons: (t === 'mousedown' || held) ? 1 : 0 })); };
+    var A2 = at2(box2.a), B2 = at2(box2.b), mx2 = (A2.x + B2.x) / 2, my2 = (A2.y + B2.y) / 2, s2 = JSON.stringify(box2), v20 = p2.chart.timeScale().getVisibleLogicalRange();
+    mv2('mousemove', mx2, my2); await W(40);
+    check('in the chart window: on it, not selected, a hand', c2.style.cursor === 'pointer', c2.style.cursor);
+    mv2('mousedown', mx2, my2); for (var j2 = 1; j2 <= 6; j2++) { mv2('mousemove', mx2 + j2 * 12, my2, true); await W(16); } mv2('mouseup', mx2 + 72, my2); await W(300);
+    check('...dragged, not selected: the chart moves, the drawing stays', JSON.stringify(box2) === s2 && D2.sel == null && Math.abs(p2.chart.timeScale().getVisibleLogicalRange().from - v20.from) > 1, [D2.sel, v20, p2.chart.timeScale().getVisibleLogicalRange()]);
+    A2 = at2(box2.a); B2 = at2(box2.b); mx2 = (A2.x + B2.x) / 2; my2 = (A2.y + B2.y) / 2; mv2('mousedown', mx2, my2); mv2('mouseup', mx2, my2); await W(100);
+    check('...a click: selected', D2.sel === D2.list.indexOf(box2), D2.sel);
+    mv2('mousemove', A2.x, A2.y); await W(40); var c20 = c2.style.cursor; mv2('mousemove', B2.x, my2); await W(40); var c21 = c2.style.cursor; mv2('mousemove', mx2, my2); await W(40);
+    check('...selected: a diagonal arrow on a corner, left and right on a side, a hand on its body', c20 === 'nwse-resize' && c21 === 'ew-resize' && c2.style.cursor === 'pointer', [c20, c21, c2.style.cursor]);
+    s2 = JSON.stringify(box2); mv2('mousedown', mx2, my2); for (j2 = 1; j2 <= 6; j2++) { mv2('mousemove', mx2 + j2 * 5, my2 + j2 * 3, true); await W(16); } mv2('mouseup', mx2 + 30, my2 + 18); await W(100);
+    check('...then a drag moves it', JSON.stringify(box2) !== s2);
+    D2.list.splice(D2.list.indexOf(box2), 1); D2.sel = null; P._render(); await W(100);
     // a chart window reopened keeps its own
     P._unpop(1); await until(function () { return pn(1).el.ownerDocument === document; }, 6000); await W(600);
     check('chart 2 back in the main window keeps its own name', P._ms(pn(1)).ses[0].name === 'Fifteen' && P._ms(pn(0)).ses[0].name !== 'Fifteen', [P._ms(pn(0)).ses[0].name, P._ms(pn(1)).ses[0].name]);
