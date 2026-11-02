@@ -6727,10 +6727,10 @@ void HB_Step(int maxPosts=2)
       for(int ti=5;ti>=0 && posts<maxPosts;ti--)        // D1 first: the deepest view, and the cheapest
         {
          int k=HB_Idx(g_hbSym[s],ti);
-         // v9.20 (2 Nov 2026): a timeframe waiting at the depth the server set is kept current too. 9.19 only topped up a finished timeframe, so
-         // at its 30 days every feed stopped where its first pass ended, and with nothing posted no reply could ever move the depth on.
+         // v9.20 (2 Nov 2026): every timeframe is kept current while its history goes deeper, and while it waits at the depth the server set. 9.19 topped up only a
+         // finished one, so a feed stopped getting new candles for as long as its backfill lasted, and at the server's 30 days for good. HB_Top sends at most hourly.
          bool hbHeld=(g_hbDone[k]==0 && g_hbDays>0 && g_hbOld[k]>0 && g_hbOld[k]<=(long)TimeCurrent()-g_hbDays*86400);
-         if((g_hbDone[k]==0 && !hbHeld) ? HB_Back(k) : HB_Top(k)) posts++;
+         if(HB_Top(k) || (g_hbDone[k]==0 && !hbHeld && HB_Back(k))) posts++;
         }
    HB_Save();
   }
