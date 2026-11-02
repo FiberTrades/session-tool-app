@@ -100944,6 +100944,10 @@ window.__stAZ = (function () {
   .rs-sw input:focus-visible + i, .rs button:focus-visible, .rs select:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
   .rs-err { margin: 0; padding: 12px 20px; border-bottom: 1px solid var(--ln); color: #f7525f; font-size: 12.5px; }
   .rs-err[hidden] { display: none; }
+  .rs-micq { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; padding: 12px 20px; border-bottom: 1px solid var(--ln); }
+  .rs-micq[hidden] { display: none; }
+  .rs-micq p { flex: 1 1 260px; margin: 0; color: #f7525f; font-size: 12.5px; }
+  .rs-micq span { display: flex; gap: 8px; flex: none; }
   .rs-f { display: flex; align-items: center; gap: 8px; padding: 14px 20px; }
   .rs-n { margin-right: auto; font-size: 12px; color: var(--dim); }
   .rs-b { height: 34px; padding: 0 16px; border: 1px solid var(--ln); border-radius: 4px; background: transparent; color: var(--tx); font: 600 13px -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
@@ -101107,6 +101111,7 @@ window.__stAZ = (function () {
       + '<div class="rs-sec"><div class="rs-st">' + esc(T('Privacy and screen', 'Privacidad y pantalla')) + '</div>'
       + row('sm', T('Streamer mode', 'Modo streamer'), T('Hides positions, P&L, balance, equity, account names and trade sizes. R and pips stay.', 'Oculta posiciones, P&L, balance, fondos, nombres de cuenta y tamaños. La R y los pips se quedan.'), sw('sm'))
       + row('fs', T('Full screen while recording', 'Pantalla completa al grabar'), T('The platform fills your screen for the sharpest video', 'La plataforma llena tu pantalla para el vídeo más nítido'), sw('fs')) + '</div>'
+      + '<div class="rs-micq" role="alert" hidden><p></p><span><button type="button" class="rs-b sm" data-r="micretry">' + esc(T('Try again', 'Reintentar')) + '</button><button type="button" class="rs-b sm" data-r="nomic">' + esc(T('Record without sound', 'Grabar sin sonido')) + '</button></span></div>'
       + '<p class="rs-err" role="alert" hidden></p>'
       + '<div class="rs-f"><span class="rs-n">' + esc(T('Nothing is uploaded: the video saves to this computer.', 'No se sube nada: el vídeo se guarda en este ordenador.')) + '</span><button type="button" class="rs-b" data-r="close">' + esc(T('Cancel', 'Cancelar')) + '</button><button type="button" class="rs-b go" data-r="go"><i></i>' + esc(T('Start recording', 'Empezar a grabar')) + '</button></div></div>'; }
   function q(s) { return SH && SH.bg.querySelector(s); }
@@ -101121,6 +101126,7 @@ window.__stAZ = (function () {
     bg.querySelectorAll('[data-rfps]').forEach(function (b) { b.classList.toggle('on', +b.getAttribute('data-rfps') === CFG.fps); });
     ['cam', 'mic', 'sm', 'fs'].forEach(function (k) { var i = q('[data-rsw="' + k + '"]'); if (i) i.checked = !!CFG[k]; });
     q('[data-rdev="cam"]').disabled = !CFG.cam; q('[data-rdev="mic"]').disabled = !CFG.mic;
+    var mq = q('.rs-micq'), mqOn = !!(CFG.mic && SH.micErr); mq.hidden = !mqOn; if (mqOn) mq.querySelector('p').textContent = SH.micErr;
     q('.rs-camx').hidden = !CFG.cam; q('.rs-mt').style.visibility = CFG.mic ? '' : 'hidden';
     var fr = frameOf(camKey()), rz = q('[data-rz]'); if (rz && CX.d.activeElement !== rz) rz.value = fr.z; var rzv = q('[data-rzv]'); if (rzv) rzv.textContent = fr.z.toFixed(1) + '×';
     bg.querySelectorAll('[data-rbg]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-rbg') === CFG.bg); });
@@ -101136,11 +101142,11 @@ window.__stAZ = (function () {
       sel.innerHTML = ds.map(function (d, i) { var v = d.deviceId === 'default' ? '' : d.deviceId; return '<option value="' + esc(v) + '">' + esc(d.label || (k[2] + ' ' + (i + 1))) + '</option>'; }).join('');
       if (cur && ds.some(function (d) { return d.deviceId === cur; })) sel.value = cur === 'default' ? '' : cur; }); }
   var TOK = { cam: 0, mic: 0 };
-  async function camOn() { if (!SH) return; var my = ++TOK.cam; camOff(); var id = CFG.camId;
+  async function camOn() { if (!SH) return; var my = ++TOK.cam; SH.camPend = true; camOff(); var id = CFG.camId;
     try { var s = await CX.w.navigator.mediaDevices.getUserMedia({ video: Object.assign({ width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }, id ? { deviceId: { exact: id } } : {}), audio: false });   // 1080p: zoomed to the face it stays sharp
       if (!SH || my !== TOK.cam || !CFG.cam) { stopS(s); return; }
-      SH.cam = s; SH.fx = camFx(s); pvOn(); if (CFG.bg !== 'none') fxLoad(); err('', 'cam'); paint(); devices(); }
-    catch (e) { if (my !== TOK.cam) return; if (id && e && e.name === 'OverconstrainedError') { CFG.camId = ''; save(); camOn(); return; } CFG.cam = false; save(); paint(); err(why(e, 'cam'), 'cam'); } }
+      SH.camPend = false; SH.cam = s; SH.fx = camFx(s); pvOn(); if (CFG.bg !== 'none') fxLoad(); err('', 'cam'); paint(); devices(); }
+    catch (e) { if (my !== TOK.cam) return; if (SH) SH.camPend = false; if (id && e && e.name === 'OverconstrainedError') { CFG.camId = ''; save(); camOn(); return; } CFG.cam = false; save(); paint(); err(why(e, 'cam'), 'cam'); } }
   function camOff() { if (!SH) return; pvOff(); if (SH.fx) SH.fx.stop(); SH.fx = null; stopS(SH.cam); SH.cam = null; paint(); }
   // the preview: the framed picture as the video will have it, mirrored; drag to pan, the wheel or the slider to zoom
   function pvOn() { pvOff(); var c = q('.rs-pv canvas'); if (!c) return; var g = c.getContext('2d'), my = SH;
@@ -101148,11 +101154,27 @@ window.__stAZ = (function () {
     my.pvRaf = CX.w.requestAnimationFrame(tick); }
   function pvOff() { if (SH) try { CX.w.cancelAnimationFrame(SH.pvRaf); } catch (e) {} }
 
-  async function micOn() { if (!SH) return; var my = ++TOK.mic; micOff(); var id = CFG.micId;
+  async function micOn() { if (!SH) return; var my = ++TOK.mic; SH.micErr = ''; SH.micPend = true; micOff(); var id = CFG.micId;
     try { var s = await CX.w.navigator.mediaDevices.getUserMedia({ audio: Object.assign({ echoCancellation: true, noiseSuppression: true, autoGainControl: true }, id ? { deviceId: { exact: id } } : {}), video: false });
       if (!SH || my !== TOK.mic || !CFG.mic) { stopS(s); return; }
-      SH.mic = s; meter(s); err('', 'mic'); paint(); devices(); }
-    catch (e) { if (my !== TOK.mic) return; if (id && e && e.name === 'OverconstrainedError') { CFG.micId = ''; save(); micOn(); return; } CFG.mic = false; save(); paint(); err(why(e, 'mic'), 'mic'); } }
+      var late = !!SH.micErr; SH.micPend = false; SH.micErr = ''; SH.mic = s; meter(s); err('', 'mic'); paint(); devices(); if (late) goNote(T('Your microphone is ready. Press Start recording.', 'Tu micrófono está listo. Pulsa Empezar a grabar.')); }
+    catch (e) { if (my !== TOK.mic || !SH) return; SH.micPend = false; if (id && e && e.name === 'OverconstrainedError') { CFG.micId = ''; save(); micOn(); return; } SH.micErr = why(e, 'mic'); paint(); } }
+  // Start waits for what was asked for (2 Nov 2026, seen on a busy PC: Start before the microphone was ready recorded with no sound and no mute button). The button says so, for 4 s at most: the
+  // browser lets the click count for about 5, and the capture needs it. A microphone refused or not answering is said before anything records, and going on without it is his choice (Record without sound).
+  function liveIn(s, kind) { try { return !!s && s[kind]().some(function (t) { return t.readyState === 'live'; }); } catch (e) { return false; } }
+  function goNote(m) { var n = q('.rs-n'); if (n) { n.textContent = m; n.style.color = 'var(--hi)'; } }
+  function goPress() { if (R || !SH || SH.wait) return; var nm = CFG.mic && !liveIn(SH.mic, 'getAudioTracks'), nc = CFG.cam && !liveIn(SH.cam, 'getVideoTracks');
+    if (!nm && !nc) { start(); return; }
+    if (nm) { if (!SH.micPend) micOn(); SH.micErr = ''; paint(); } if (nc && !SH.camPend) camOn();
+    var s0 = SH, go = q('[data-r="go"]'), html = go.innerHTML, t0 = Date.now(), cam0 = CFG.cam; SH.wait = true; go.disabled = true;
+    var end = function () { s0.wait = false; go.disabled = false; go.innerHTML = html; };
+    var tick = function () { if (SH !== s0) return; var m1 = CFG.mic && !liveIn(SH.mic, 'getAudioTracks'), c1 = CFG.cam && !liveIn(SH.cam, 'getVideoTracks');
+      if (m1 && SH.micErr) { end(); return; }   // refused: said on the sheet
+      if (cam0 && !CFG.cam) { end(); return; }   // the camera refused: said on the sheet
+      if (!m1 && !c1) { end(); var ua = CX.w.navigator.userActivation; if (!ua || ua.isActive) start(); else goNote(T('Ready. Press Start recording.', 'Listo. Pulsa Empezar a grabar.')); return; }
+      if (Date.now() - t0 >= 4000) { end(); if (m1) { SH.micErr = T('Your microphone has not answered. If the browser is asking for permission, allow it.', 'Tu micrófono no ha respondido. Si el navegador está pidiendo permiso, acéptalo.'); paint(); } else err(T('Your camera has not answered yet. Press Start recording again, or turn the camera off.', 'Tu cámara aún no ha respondido. Pulsa Empezar a grabar otra vez, o apaga la cámara.'), 'cam'); return; }
+      go.textContent = m1 && c1 ? T('Getting your camera and microphone…', 'Preparando tu cámara y micrófono…') : (m1 ? T('Getting your microphone…', 'Preparando tu micrófono…') : T('Getting your camera…', 'Preparando tu cámara…')); CX.w.setTimeout(tick, 60); };
+    tick(); }
   function micOff() { if (!SH) return; meterOff(); stopS(SH.mic); SH.mic = null; paint(); }
   function meter(s) { meterOff(); try { var ac = new (window.AudioContext || window.webkitAudioContext)(), an = ac.createAnalyser(); an.fftSize = 1024; ac.createMediaStreamSource(s).connect(an); var buf = new Float32Array(an.fftSize), bar = q('.rs-mt i'), lv = 0;
     SH.ac = ac; SH.lv = 0; var tick = function () { if (!SH || SH.ac !== ac) return; an.getFloatTimeDomainData(buf); var sum = 0; for (var i = 0; i < buf.length; i++) sum += buf[i] * buf[i]; var rms = Math.sqrt(sum / buf.length);
@@ -101169,7 +101191,9 @@ window.__stAZ = (function () {
   function onClick(e) { var t = e.target, b = t && t.closest && t.closest('button'); if (t === SH.bg) { closeSheet(false); return; } if (!b) return;
     var a = b.getAttribute('data-r');
     if (a === 'close') { closeSheet(false); return; }
-    if (a === 'go') { start(); return; }
+    if (a === 'go') { goPress(); return; }
+    if (a === 'nomic') { start(); return; }
+    if (a === 'micretry') { micOn(); return; }
     if (b.hasAttribute('data-rf')) { CFG.fmt = b.getAttribute('data-rf'); save(); paint(); return; }
     if (b.hasAttribute('data-rhi')) { CFG.hi = b.getAttribute('data-rhi') === '1'; save(); paint(); return; }
     if (b.hasAttribute('data-rfit')) { CFG.fit = b.getAttribute('data-rfit'); save(); paint(); return; }
@@ -101189,8 +101213,8 @@ window.__stAZ = (function () {
   function onChange(e) { var t = e.target; if (!t) return; var k = t.getAttribute('data-rsw'), d = t.getAttribute('data-rdev');
     if (t.hasAttribute('data-rbgfile')) { var fl = t.files && t.files[0]; t.value = ''; if (fl) bgImgSet(fl); return; }
     if (k) { CFG[k] = !!t.checked; if (k !== 'sm') save(); err('', k);
-      if (k === 'cam') { if (CFG.cam) camOn(); else { TOK.cam++; camOff(); } }
-      else if (k === 'mic') { if (CFG.mic) micOn(); else { TOK.mic++; micOff(); } }
+      if (k === 'cam') { if (CFG.cam) camOn(); else { TOK.cam++; SH.camPend = false; camOff(); } }
+      else if (k === 'mic') { if (CFG.mic) micOn(); else { TOK.mic++; SH.micPend = false; SH.micErr = ''; micOff(); } }
       else if (k === 'sm') sm(CFG.sm);
       paint(); return; }
     if (d) { CFG[d + 'Id'] = t.value || ''; save(); if (d === 'cam' && CFG.cam) camOn(); if (d === 'mic' && CFG.mic) micOn(); } }

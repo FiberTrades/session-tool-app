@@ -203,7 +203,7 @@
     refused: async function () { var C = mk(), check = C.check;
       try {
         var md = navigator.mediaDevices, g0 = md.getDisplayMedia; md.getDisplayMedia = function () { return Promise.reject(new DOMException('Permission denied', 'NotAllowedError')); };
-        $('.plat-top .pl-rec').click(); await W(300);
+        $('.plat-top .pl-rec').click(); await W(1500);
         var bg = $('#st-rec-bg'), cam = bg.querySelector('[data-rsw="cam"]'); if (cam.checked) { cam.checked = false; cam.dispatchEvent(new Event('change', { bubbles: true })); }
         bg.querySelector('[data-r="go"]').click(); await W(800); md.getDisplayMedia = g0;
         var e2 = $('#st-rec-bg .rs-err');
@@ -233,6 +233,10 @@
       var has = function (d, id) { return !!(d && d.getElementById(id)); };
       return JSON.stringify({ st: st.st, mode: st.mode || null, elErr: st.elErr || '', iso: (function () { try { var w2 = sd && sd.getElementById('stpr-win'); return w2 ? sd.defaultView.getComputedStyle(w2).isolation + '|' + sd.defaultView.getComputedStyle(w2).transform : null; } catch (e) { return String(e); } })(), corner: window.__stRec._cfg().corner, bg: window.__stRec._cfg().bg, frames: window.__stRec._cfg().frames, muted: !!(window.__stRec._r() && window.__stRec._r().muted),
         main: { sheet: has(document, 'st-rec-bg'), ctl: has(document, 'st-rec-ctl'), pv: has(document, 'st-rec-pv') }, pop: { sheet: has(sd, 'st-rec-bg'), ctl: has(sd, 'st-rec-ctl'), pv: has(sd, 'st-rec-pv'), rec: !!(sd && sd.querySelector('.plat-top .pl-rec')), on: !!(sd && sd.body.classList.contains('st-rec-on')) } }); },
+    // the microphone's answer to getUserMedia, made slow or refused (2 Nov 2026: Start before the microphone was ready recorded with no sound and no mute button)
+    micStub: function (how) { var md = navigator.mediaDevices; if (!window.__recGu) window.__recGu = md.getUserMedia; var gu = window.__recGu; if (how == null) { delete md.getUserMedia; return true; }
+      md.getUserMedia = function (c) { if (!c || !c.audio) return gu.call(md, c); if (how === 'no') return Promise.reject(new DOMException('Permission denied', 'NotAllowedError')); return new Promise(function (ok, no) { setTimeout(function () { gu.call(md, c).then(ok, no); }, how); }); }; return true; },
+    micInfo: function () { var bg = $('#st-rec-bg'), go = bg && bg.querySelector('[data-r="go"]'), mq = bg && bg.querySelector('.rs-micq'), r = window.__stRec._r(); return JSON.stringify({ st: window.__stRec.state().st, sheet: !!bg, go: go ? go.textContent : '', goOff: !!(go && go.disabled), q: !!(mq && !mq.hidden), qText: mq && !mq.hidden ? mq.textContent : '', err: bg && !bg.querySelector('.rs-err').hidden ? bg.querySelector('.rs-err').textContent : '', note: bg ? bg.querySelector('.rs-n').textContent : '', micOn: !!(bg && bg.querySelector('[data-rsw="mic"]').checked), cfgMic: window.__stRec._cfg().mic, recMic: !!(r && r.mic), gn: !!(r && r.gn), mute: !!$('#st-rec-ctl [data-rc="mute"]') }); },
     // the self-view (2 Nov 2026): where it is on the platform, what it shows, what is around it
     selfInfo: function () { var sw = window.__recSatW, sd = null; try { sd = sw && !sw.closed ? sw.document : null; } catch (e) {} var C = window.__stRec._cfg(), R = window.__stRec._r(), ds = [document, sd].filter(function (x) { return !!x; }), find = function (id) { for (var i = 0; i < ds.length; i++) { var n = ds[i].getElementById(id); if (n) return n; } return null; };
       var bgEl = find('st-rec-bg'), out = { place: C.place, bg: C.bg, z: Object.keys(C.frames).map(function (k) { return C.frames[k].z; }), fx: !!(R && R.fx), box: (R && R.cb) || null, ph: !!find('st-rec-ph'), sheet: !!bgEl && bgEl.style.display !== 'none', opt: !!find('st-rec-opt'), tall: document.body.classList.contains('st-rec-tall') || !!(sd && sd.body.classList.contains('st-rec-tall')) };

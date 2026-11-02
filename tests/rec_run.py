@@ -184,6 +184,77 @@ try:
     except Exception: c.call('Page.setDownloadBehavior', behavior='allow', downloadPath=dl)
     page(c)
     add(json.loads(ev(c, '__recT.setup()')))
+    # ---- Start before the microphone is ready (2 Nov 2026, seen on a busy PC: it recorded with no sound and no mute button; Nestor: fix it): Start waits for it, says so,
+    #      and a microphone that is refused or does not answer is said plainly before anything records, with the choice to go on without it ----
+    R5 = []
+    def chk5(name, ok, got=None): R5.append({'name': name, 'ok': bool(ok), 'got': got})
+    def mi(): return json.loads(ev(c, '__recT.micInfo()'))
+    def wait_st(want, secs=25):
+        for _ in range(int(secs / 0.25)):
+            if where(c)['st'] == want: return True
+            time.sleep(0.25)
+        return False
+    def open_sheet():
+        for _ in range(5):
+            rclick(c, '.plat-top .pl-rec')
+            for _ in range(15):
+                if ev(c, "!!document.getElementById('st-rec-bg')"): return True
+                time.sleep(0.2)
+        return False
+    def end_rec(tag):
+        rclick(c, '#st-rec-ctl [data-rc="stop"]')
+        for _ in range(60):
+            if where(c)['main']['pv']: break
+            time.sleep(0.25)
+        f = None
+        for _ in range(40):
+            nf = [x for x in os.listdir(dl) if not x.endswith('.crdownload')]
+            if nf: f = nf[0]; break
+            time.sleep(0.25)
+        info = mp4_info(os.path.join(dl, f)) if f else {}
+        if f: shutil.move(os.path.join(dl, f), os.path.join(OUT, 'rec_mic_%s%s' % (tag, os.path.splitext(f)[1])))
+        time.sleep(1.0); rclick(c, '#st-rec-pv .rs-f [data-p="x"]'); time.sleep(0.5)
+        return 'soun' in (info.get('handlers') or [])
+    ev(c, "window.__stRec._cfg().mic = true, 1")
+    # a microphone that takes its time: Start straight away
+    ev(c, '__recT.micStub(1500)'); open_sheet(); rclick(c, '#st-rec-bg [data-r="go"]'); time.sleep(0.25); m0 = mi()
+    chk5('Start before the microphone is ready: it does not record yet, the button says it is getting the microphone', m0['st'] == 'setup' and m0['goOff'] and 'Getting your microphone' in m0['go'], m0)
+    print('waiting for the microphone:', shot(c, 'rec_mic_waiting.png'))
+    ok0 = wait_st('rec'); m1 = mi()
+    chk5('...the microphone comes: it records by itself, with the microphone and the mute button', ok0 and m1['recMic'] and m1['gn'] and m1['mute'], m1)
+    time.sleep(1.5); snd = end_rec('slow'); chk5('...and the file has a sound track', snd, snd)
+    # one that does not answer in time: said plainly, nothing records, the choice is his
+    ev(c, '__recT.micStub(30000)'); open_sheet(); rclick(c, '#st-rec-bg [data-r="go"]'); time.sleep(5.0); m2 = mi()
+    chk5('a microphone that does not answer: after a few seconds it says so, plainly, and nothing records', m2['st'] == 'setup' and m2['q'] and 'has not answered' in m2['qText'] and not m2['goOff'] and 'Start recording' in m2['go'], m2)
+    print('microphone not answering:', shot(c, 'rec_mic_noanswer.png'))
+    rclick(c, '#st-rec-bg [data-r="nomic"]'); ok1 = wait_st('rec'); m3 = mi()
+    chk5('...Record without sound: it records, no mute button, because he chose it', ok1 and not m3['recMic'] and not m3['mute'], m3)
+    time.sleep(1.2); snd = end_rec('nomic'); chk5('...and the file has no sound track', not snd, snd)
+    # refused: said as the set-up opens, Start does not slip past it; the switch stays as he set it
+    ev(c, "__recT.micStub('no')"); open_sheet(); time.sleep(0.8); m4 = mi()
+    chk5('a blocked microphone: plain words as the set-up opens, the two choices, the switch left on', m4['q'] and 'microphone is blocked' in m4['qText'] and m4['micOn'] and m4['cfgMic'] and ev(c, "!!document.querySelector('#st-rec-bg [data-r=\"micretry\"]') && !!document.querySelector('#st-rec-bg [data-r=\"nomic\"]')"), m4)
+    print('microphone blocked:', shot(c, 'rec_mic_blocked.png'))
+    rclick(c, '#st-rec-bg [data-r="go"]'); time.sleep(1.5); m5 = mi()
+    chk5('...Start: it tries again, still blocked: nothing records, it still says so', m5['st'] == 'setup' and m5['q'], m5)
+    ev(c, '__recT.micStub(null)'); rclick(c, '#st-rec-bg [data-r="micretry"]'); time.sleep(1.5); m6 = mi()
+    chk5('...Try again once it is allowed: the question goes', not m6['q'], m6)
+    rclick(c, '#st-rec-bg [data-r="go"]'); ok2 = wait_st('rec'); m7 = mi()
+    chk5('...Start records with the microphone and the mute button', ok2 and m7['recMic'] and m7['mute'], m7)
+    time.sleep(1.2); snd = end_rec('allowed'); chk5('...and sound in the file', snd, snd)
+    # switched off on purpose: no question, no wait
+    open_sheet(); time.sleep(0.2); ev(c, "(function(){var i=document.querySelector('#st-rec-bg [data-rsw=\"mic\"]'); if(i.checked) i.click(); return 1;})()"); rclick(c, '#st-rec-bg [data-r="go"]'); ok3 = wait_st('rec'); m8 = mi()
+    chk5('the microphone switched off on purpose: it records straight away, no question', ok3 and not m8['recMic'], m8)
+    time.sleep(1.0); end_rec('off')
+    ev(c, "window.__stRec._cfg().mic = true, 1")
+    # the camera the same: Start waits for it too
+    ev(c, "window.__stRec._cfg().cam = true, 1"); ev(c, "(function(){var md=navigator.mediaDevices,g=md.getUserMedia.bind(md);md.getUserMedia=function(q){return q&&q.video?new Promise(function(ok,no){setTimeout(function(){g(q).then(ok,no);},2500);}):g(q);};return 1;})()")
+    open_sheet(); rclick(c, '#st-rec-bg [data-r="go"]'); time.sleep(0.2); m9 = mi(); ok4 = wait_st('rec'); time.sleep(0.5); s9 = json.loads(ev(c, '__recT.selfInfo()'))
+    chk5('Start before the camera is ready: it waits for that too, then you are on the chart', 'Getting your camera' in m9['go'] and ok4 and s9.get('self') and s9['fx'], [m9, s9.get('fx')])
+    ev(c, '__recT.micStub(null)'); time.sleep(1.0); end_rec('cam')
+    ev(c, "window.__stRec._cfg().cam = false, 1")
+    add(R5)
+    if os.environ.get('REC_MICONLY'):
+        print('\n%d checks, %d failed\npictures and files: %s' % (len(results), len([r for r in results if not r.get('ok')]), OUT)); raise SystemExit(0)
     for i, (fmt, fit, ew, eh, corner, camo) in enumerate(FORMATS):
         tag = fmt + ('_fit' if fit == 'fit' else '')
         add(json.loads(ev(c, '__recT.sheet(%s, %s, %s, %s, %s)' % (json.dumps(fmt), json.dumps(fit), 'true' if i == 0 else 'false', json.dumps(corner), json.dumps(camo)))))
