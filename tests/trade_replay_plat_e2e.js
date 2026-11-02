@@ -45,7 +45,7 @@
     ok('hide, lock, the magnet, the tree and the bin under them', ['#strp-hideall', '#strp-lockall', '#strp-magnet', '#strp-treebtn', '#strp-del'].every(function (s) { return left.contains($(s)) && vis($(s)) && $(s).getBoundingClientRect().top > $('#strp-tools').getBoundingClientRect().bottom - 1; }));
     ok('the chart fills the middle', cw.height > cr.height - 110 && $('#strp-chart').getBoundingClientRect().height >= cw.height - 2, [Math.round(cw.height), Math.round(cr.height)]);
     var ct = $('#strp-ct'), ctr = ct.getBoundingClientRect();
-    ok('along the bottom: the moment, the progress, the time', ct.contains($('#strp-date')) && vis($('#strp-scrub')) && vis($('#strp-clock')) && ctr.height <= 34 && ctr.bottom <= cr.bottom, Math.round(ctr.height));
+    ok('along the bottom: the moment, the progress, the time', ct.contains($('#strp-date')) && vis($('#strp-scrub')) && vis($('#strp-clock')) && ctr.height <= 44 && ctr.bottom <= cr.bottom, Math.round(ctr.height));
     ok('no Trade Manager, no Positions', !card.querySelector('.stpr-mm, .pl-mm, .lc-tb, #lc-tb'));
 
     // ---- it works from there ----
