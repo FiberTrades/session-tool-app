@@ -85,6 +85,27 @@ def main():
         rc = 1 if (bad or not results) else 0
         time.sleep(1)
         shot(dbg_port, 'popchat_window_dark.png')
+        # a real click with the mouse on the picture in that window (2 Nov 2026: "i am clicking on this image and its not opening?"), and on the dark to close it
+        sat = next((SESS[t] for t in SESS), None)
+        if sat:
+            sat.call('Runtime.enable')
+            xy = sat.eval("(function(){var m=document.querySelector('[data-mid=\"fpic\"] .dcx-media'); if(!m) return ''; m.scrollIntoView({block:'center'}); var q=m.getBoundingClientRect(); return JSON.stringify([q.left+q.width/2,q.top+q.height/2]);})()")
+            time.sleep(0.3)
+            if xy:
+                x, y = json.loads(xy)
+                for t, b in (('mouseMoved', 0), ('mousePressed', 1), ('mouseReleased', 0)):
+                    sat.call('Input.dispatchMouseEvent', type=t, x=x, y=y, button='left' if t != 'mouseMoved' else 'none', buttons=b, clickCount=0 if t == 'mouseMoved' else 1)
+                time.sleep(0.8)
+                opened = sat.eval("(function(){var o=document.getElementById('dcx-img'); return !!(o&&o.classList.contains('open'));})()")
+                print('%s  a real mouse click on the picture in Live Charts\' window opens it' % ('PASS' if opened else 'FAIL'))
+                if not opened: rc = 1
+                shot(dbg_port, 'popchat_picture_big.png')
+                for t, b in (('mouseMoved', 0), ('mousePressed', 1), ('mouseReleased', 0)):
+                    sat.call('Input.dispatchMouseEvent', type=t, x=20, y=500, button='left' if t != 'mouseMoved' else 'none', buttons=b, clickCount=0 if t == 'mouseMoved' else 1)
+                time.sleep(0.5)
+                closed = sat.eval("(function(){var o=document.getElementById('dcx-img'); return !(o&&o.classList.contains('open'));})()")
+                print('%s  ...a real click on the dark closes it' % ('PASS' if closed else 'FAIL'))
+                if not closed: rc = 1
         cdp.eval("(function(){ var d = window.__pcSat && window.__pcSat.document; var b = d && d.querySelector('.plat-top [data-pltheme]'); if (b) b.click(); return 1; })()")
         time.sleep(2)
         shot(dbg_port, 'popchat_window_light.png')

@@ -30,6 +30,10 @@
       roles: [{ id: 'r-admin', name: 'Admin', color: '#ffffff', position: 5, is_mod: true }, { id: 'r-pro', name: 'Journal Pro', color: '#5ca413', position: 0 }],
       member_roles: [{ user_id: ADMIN, role_id: 'r-admin' }, { user_id: TROY, role_id: 'r-pro' }], channel_reads: []
     };
+    (function () { var cv = document.createElement('canvas'); cv.width = 640; cv.height = 400; var g = cv.getContext('2d'); g.fillStyle = '#123456'; g.fillRect(0, 0, 640, 400); g.fillStyle = '#fc52ab'; g.fillRect(40, 40, 200, 120); window.__pcPic = cv.toDataURL('image/png');
+      DB.channel_messages.push({ id: 'fgif', channel_id: 'ch-chat', sender_id: TROY, sender_name: 'Troy', body: '', attachment_url: 'https://media.giphy.com/media/abc/giphy.gif', attachment_type: 'image', attachment_name: 'g.gif', created_at: new Date(now - 90000).toISOString() });
+      DB.channel_messages.push({ id: 'fdoc', channel_id: 'ch-chat', sender_id: TROY, sender_name: 'Troy', body: '', attachment_url: 'about:blank', attachment_type: 'file', attachment_name: 'notes.pdf', created_at: new Date(now - 75000).toISOString() });
+      DB.channel_messages.push({ id: 'fpic', channel_id: 'ch-chat', sender_id: TROY, sender_name: 'Troy', body: '', attachment_url: window.__pcPic, attachment_type: 'image', attachment_name: 'chart.png', created_at: new Date(now - 60000).toISOString() }); })();
     var newestFirst = function () { DB.channel_messages.sort(function (a, b) { return a.created_at < b.created_at ? 1 : -1; }); }; newestFirst();
     var MEMBERS = [{ id: ADMIN, name: 'Nestor', avatar: '', plan: 'comp', paid: true, is_admin: true }, { id: TROY, name: 'Troy', avatar: '', plan: 'comp', paid: true, is_admin: false }];
     var runQ = function (st) {
@@ -80,6 +84,37 @@
     var atEnd = function (r) { var ml = r && r.querySelector('#dcx-msgs'); return !!ml && ml.scrollHeight > ml.clientHeight + 50 && ml.scrollTop + ml.clientHeight >= ml.scrollHeight - 6; };
     var L0 = look(root());
     check('the chat in the app window: styled, the emoji small, no call button, at its newest message', L0.css && L0.emoji > 0 && L0.emoji <= 24 && L0.call === 'none' && L0.headFlex === 'flex' && atEnd(root()), L0);
+    // A picture in the chat opens big in the window it was clicked in (Nestor, 2 Nov 2026: "i am clicking on this image and its not opening? why?").
+    // A real mouse-like click on the picture, and elementFromPoint proves the big picture is on top, not just "open" behind the chart.
+    var picOpens = async function (r, label) {
+      var d = r.ownerDocument, wv = d.defaultView, ml = r.querySelector('#dcx-msgs'), im = r.querySelector('[data-mid="fpic"] .dcx-media');
+      check(label + ': the picture is in the chat', !!im, !!im);
+      if (!im) return;
+      im.scrollIntoView({ block: 'center' }); await W(200);
+      var fire = function (el, t) { el.dispatchEvent(new wv.MouseEvent(t, { bubbles: true, cancelable: true, view: wv, clientX: 5, clientY: 5 })); };
+      var seen = function () { var o = d.getElementById('dcx-img'), i = d.getElementById('dcx-img-el'); if (!o || !o.classList.contains('open') || !i) return null; var q = i.getBoundingClientRect(), top = d.elementFromPoint(q.left + q.width / 2, q.top + q.height / 2); return { w: Math.round(q.width), h: Math.round(q.height), top: !!(top && top.closest && top.closest('#dcx-img')), src: (i.getAttribute('src') || '').slice(0, 22) }; };
+      fire(im, 'mousedown'); fire(im, 'mouseup'); im.click(); await W(500);
+      var v = seen();
+      check(label + ': clicked, it opens big in this window, on top of everything', !!v && v.top && v.w >= 500 && /^data:image\/png/.test(v.src), v);
+      window.__pcLb = label;
+      d.dispatchEvent(new wv.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await W(200);
+      check(label + ': Esc closes it', !seen(), seen());
+      im = r.querySelector('[data-mid="fpic"] .dcx-media'); im.click(); await W(300);
+      var o = d.getElementById('dcx-img-wrap'), wasOpen = !!seen();
+      if (o) o.click(); await W(250);
+      check(label + ': opens again, a click on the dark around it closes it', wasOpen && !seen(), [wasOpen, seen()]);
+      var fi = r.querySelector('[data-mid="fdoc"] .dcx-file');
+      if (fi) { fi.click(); await W(300); }
+      var lb = d.getElementById('stchat-lb'), lbOn = !!lb && lb.classList.contains('open') && (function () { var q = lb.getBoundingClientRect(); var tp = d.elementFromPoint(q.left + q.width / 2, q.top + 8); return q.width > 500 && !!tp && !!tp.closest('#stchat-lb'); })();
+      check(label + ': a document opens in this window too, Esc closes it', !!fi && lbOn, [!!fi, !!lb, lb && lb.className]);
+      d.dispatchEvent(new wv.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await W(150);
+      check(label + ': ...closed', !!lb && !lb.classList.contains('open'));
+      var gi = r.querySelector('[data-mid="fgif"] .dcx-media');
+      if (gi) { gi.click(); await W(250); }
+      check(label + ': a GIF still does not open it', !!gi && !seen(), [!!gi, seen()]);
+      var at = r.querySelector('#dcx-msgs'); at.scrollTop = at.scrollHeight;
+    };
+    await picOpens(root(), 'the app window');
     // Live Charts in a window of its own
     var wo = window.open, satW = null;
     window.open = function (u, n, f) { satW = wo.call(window, u, n, f); return satW; };
@@ -101,6 +136,7 @@
     await W(1500);
     var lastTx = function (r) { var t = r && r.querySelectorAll('.dcx-msg .dcx-text'); return t && t.length ? t[t.length - 1].textContent : ''; };
     check('...a new message arrives there, the chat still at its end', /tapped the 50%/.test(lastTx(r1)) && atEnd(r1), lastTx(r1));
+    await picOpens(r1, 'Live Charts\' window');
     var rows = r1.querySelectorAll('.dcx-msg'), row = rows[rows.length - 1], more = row && row.querySelector('.dcx-more');
     var st1 = sd.createElement('style'); st1.textContent = '.dcx-msg.__pcfocus .dcx-actions{display:flex !important;}'; sd.head.appendChild(st1);   // its hover toolbar, as under the mouse
     if (row) { row.classList.add('__pcfocus'); more = row.querySelector('.dcx-more'); if (more) { more.getBoundingClientRect(); more.click(); } }   // in one go: a redraw between would drop the class
@@ -116,6 +152,7 @@
     document.querySelector('.tab[data-page="community"]').click(); await W(3500);
     var pc = document.getElementById('page-community');
     check('the Community tab opened in the app window: the chat goes there, whole', !!document.getElementById('dcx-root') && pc.contains(document.getElementById('dcx-root')) && !document.getElementById('dcx-root').classList.contains('dcx-embed'), !!document.getElementById('dcx-root'));
+    await picOpens(document.getElementById('dcx-root'), 'the Community tab');
     document.querySelector('.tab[data-page="review"]').click(); await W(3500);
     var r2 = sd.getElementById('dcx-root');
     check('...another tab: back in Live Charts\' window, styled, at its newest message', !!r2 && slot1.contains(r2) && look(r2).emoji === L0.emoji && atEnd(r2), !!r2);
