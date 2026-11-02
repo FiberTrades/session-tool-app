@@ -94008,7 +94008,7 @@ window.__stAZ = (function () {
   // timeframes and watchlist act on its own chart, never on one in another window clicked before
   function actPaneIn(doc){ var a = actPane(); if (!doc) return a; var mine = panes.filter(function(p){ return p.el && p.el.ownerDocument === doc; }); if (!mine.length) return a;
     if (a && mine.indexOf(a) >= 0) return a; return mine.slice().sort(function(x, y){ return (y.actAt || 0) - (x.actAt || 0); })[0]; }
-  function paneActivate(p){ p.actAt = Date.now(); if (CFG.act !== p.i) { CFG.act = p.i; save(); paintAct(); try { platPaint(); } catch (e) {} } }
+  function paneActivate(p){ p.actAt = Date.now(); if (CFG.act !== p.i) { CFG.act = p.i; save(); paintAct(); try { platPaint(); } catch (e) {} try { layersDot(); } catch (e) {} } }
   // any press on a chart picks it: its candles, its labels and buttons, a bar floating over it (menus and dialogs aside)
   function actDown(e){ if (!S || !panes.length) return; var t = e.target, d = t && t.ownerDocument, hit = null; if (!d || !t.closest) return;
     if (t.closest('#stpr-menu, .stpr-ctx, .stpr-dlg, [role="dialog"], .st-dd')) return;
@@ -95119,7 +95119,8 @@ window.__stAZ = (function () {
      as they were (CFG.marks / hist / pos / mini). The menu is for the chart clicked last, or the chart in the window it was opened from. */
   function showOn(p, k){ var o = p && (CFG.showPer || {})[p.i]; if (o && o[k] != null) return !!o[k]; return k === 'mini' ? !!CFG.mini : CFG[k] !== false; }
   function showSet(p, k, v){ if (!p) return; CFG.showPer = Object.assign({}, CFG.showPer || {}); CFG.showPer[p.i] = Object.assign({}, CFG.showPer[p.i] || {}); CFG.showPer[p.i][k] = !!v; }
-  function showTgt(){ var w = UI.w; if (w && w !== SW) { var q = panes.filter(function(p){ return p.el.ownerDocument === w.document; })[0]; if (q) return q; } return actPane() || panes[0] || null; }
+  /* The chart the window's buttons are for: the chart picked last IN THAT WINDOW, never one clicked last in another (Nestor, 2 Nov 2026: "i change those settings on 1 chart and they change on another chart", his main window's button said chart 3, a chart in another window; the Session Indicator's settings the same: "i changed the name of the sessions on the 15min chart and it changed the names also in the 1m chart") */
+  function showTgt(){ var d = null; try { var w = UI.w; d = w && !w.closed ? w.document : null; } catch (e) {} return actPaneIn(d || SD) || panes[0] || null; }
   var LAYP = null;   // the chart the open Show on chart menu is for
   /* The news button opens two options on all three charts (Nestor, 2 Nov 2026: "the news button should open 2 options, show news on chart (the flags) and open news this week"):
      the flags, each chart's own as the rest of Show on chart is, and Trade Replay's week of news, over this window's charts */
@@ -95335,8 +95336,9 @@ window.__stAZ = (function () {
   function snapPlan(){ if (!S || !window.__stPlanCheck) return; var uw = (UI.w && UI.w !== window && !UI.w.closed && UI.w.document.getElementById('stpr-grid')) ? UI.w : SW;   // asked from a chart window: there
     window.__stPlanCheck.open({ doc: uw.document, sym: S.sym && S.sym.name }); }
   window.__stChartSnap = function(){ return S ? snapShot() : null; };   // Check my plan opened from elsewhere takes this picture
-  function layersOffIn(d){ var L = panes.filter(function(p){ return p && p.el && p.el.ownerDocument === d; }); if (!L.length && d === document) L = [null]; return L.some(function(p){ return !showOn(p, 'marks') || !showOn(p, 'pos') || !showOn(p, 'hist'); }); }
-  function layersDot(){ var b = $('stpr-layersbtn'); if (b) b.classList.toggle('dot', layersOffIn(document)); try { satBar(); } catch (e) {} }   // something off on a chart of this window: each window's button its own (satBar)
+  /* the button's dot: something is off on the chart that window's Show on chart is for (Nestor, 2 Nov 2026: "why does this got the dot when all options are selected on this chart?": it lit for any chart of the window, and only changed when a switch did) */
+  function layersOffIn(d){ var p = actPaneIn(d); return !!p && (!showOn(p, 'marks') || !showOn(p, 'pos') || !showOn(p, 'hist')); }
+  function layersDot(){ var b = $('stpr-layersbtn'); if (b) b.classList.toggle('dot', layersOffIn(SD)); try { satBar(); } catch (e) {} }   // each window's button its own (satBar)
   function sesMenu(anchor){
     if (!S) return;
     var h = '<h6>' + T('Session times', 'Horario de sesiones') + '</h6><div class="stpr-sesl">' + S.f.ses.map(function(x){ return '<label><span>' + esc(T(x.en, x.es)) + '</span><input type="text" inputmode="numeric" maxlength="5" autocomplete="off" data-sesin="' + x.id + '" value="' + hm(x.at) + '"></label>'; }).join('') + '</div>'
@@ -96959,7 +96961,7 @@ window.__stAZ = (function () {
     if (DW.pdn) { var pd = DW.pdn; DW.pdn = null; if (pd.far && DW.pending) { if (DW.pending.st === 1) { DW.pending.st = 2; if (DW.pending.type !== 'channel') DW.pending.c = { t: DW.pending.b.t, price: DW.pending.b.price }; } else pendDone(); dirty(); return; } }   // dragged out: let go, it is drawn
     if (DW.marq) { var mp = DW.marq.p, mr = marqNorm(DW.marq); DW.marq = null; DW.noProps = false;
       if (Math.abs(mr.x1 - mr.x0) < 4 && Math.abs(mr.y1 - mr.y0) < 4) { DW.multi = null; updDel(); return; }
-      var pw = paneDims(mp).pw, picked = []; DW.list.forEach(function(d, i){ var bb = visibleOn(d, mp.tf) && bboxOf(mp, d, pw); if (bb && !(bb.x1 < mr.x0 || bb.x0 > mr.x1 || bb.y1 < mr.y0 || bb.y0 > mr.y1)) picked.push(i); });
+      var pw = paneDims(mp).pw, picked = []; DW.list.forEach(function(d, i){ var bb = visibleOn(d, mp.tf, mp) && bboxOf(mp, d, pw); if (bb && !(bb.x1 < mr.x0 || bb.x0 > mr.x1 || bb.y1 < mr.y0 || bb.y0 > mr.y1)) picked.push(i); });
       DW.multi = picked.length ? picked : null; DW.sel = null; updDel(); return; }
     // the pen stays armed: marking up a chart is several strokes in a row
     if (DW.penning) { var st = DW.penning; DW.penning = null; delete st.px; delete st.tip; st.pts = smoothXY(st.pts, 't', 'price', 2);
@@ -100047,7 +100049,7 @@ window.__stAZ = (function () {
     (CFG.ctf || []).forEach(function(n){ n = +n; if (n > 0 && TFL[n] && list.indexOf(n) < 0) list.push(n); }); if (cur && list.indexOf(cur) < 0) list.push(cur); list.sort(function(a, b){ return a - b; });
     plSet(E.tfs, list.map(function(n){ return '<button type="button" data-pltf="' + n + '" class="' + (n === cur ? 'on' : '') + '">' + esc(plTfTxt(n)) + '</button>'; }).join('')
       + '<button type="button" class="pl-tfadd" data-pltfadd="1" title="' + esc(T('Custom timeframe', 'Temporalidad personalizada')) + '" aria-label="' + esc(T('Custom timeframe', 'Temporalidad personalizada')) + '"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9"/></svg></button>');   // a timeframe of your own (26 Oct 2026)
-    var sp = showTgt(), si = !!(sp && showOn(sp, 'mini')); E.si.classList.toggle('off', !si);
+    var sp = actPaneIn(SD), si = !!(sp && showOn(sp, 'mini')); E.si.classList.toggle('off', !si);   // this window's own chart, whichever window was used last
     var c0 = E.si.querySelector('.pl-chip'), c1 = E.si.querySelector('.pl-chipv'), t0 = si ? T('Session Indicator is on: click to hide it', 'Session Indicator encendido: clic para ocultarlo') : T('Session Indicator is off: click to show it', 'Session Indicator apagado: clic para mostrarlo');
     if (c0.title !== t0) c0.title = t0; var t1 = T('Session Indicator settings', 'Ajustes del Session Indicator'); if (c1.title !== t1) { c1.title = t1; c1.setAttribute('aria-label', t1); }
     plTxt(E.rp.querySelector('span'), 'Replay'); var rt = T('Replay a past day', 'Repetir un día pasado'); if (E.rp.title !== rt) E.rp.title = rt;
