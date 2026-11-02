@@ -4371,6 +4371,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .stlf-copies { display: flex; flex: 0 0 auto; align-items: center; justify-content: center; padding: 9px 12px; border-left: 1px solid var(--border-2); color: var(--text-mid); font-size: 11px; letter-spacing: 0.12em; white-space: nowrap; }
   .stlf-copies.miss { color: #e0b23c; }
   .stlf-note { margin-top: 10px; font-size: 12px; line-height: 1.5; color: var(--text-mid); max-width: 62ch; }
+  .stlf-note.cf { color: #e0b23c; }
+  .slx-cfn { margin-top: 10px; font-size: 12px; line-height: 1.5; color: #e0b23c; }
   .stlf-dot { width: 7px; height: 7px; border-radius: 50%; background: #e0b23c; animation: stlfp 1s infinite; }
   .stlf-ic { display: inline-flex; align-items: center; justify-content: center; min-width: 0.95em; font-size: 15px; line-height: 1; font-weight: 700; }
   .stlf-res.be .stlf-ic { font-size: 21px; transform: translateY(-2px); }
@@ -19445,6 +19447,7 @@ try {
       var head = _isLiveUi()
         ? (es ? 'Operaciones en esta sesi\u00f3n: ' : 'Trades this session: ') + ideas.length
         : (es ? 'Siguen abiertas de esta sesi\u00f3n: ' : 'Still running from this session: ') + ideas.filter(function (i) { return i.rows.some(function (x) { return !x.closed; }); }).length;
+      var cfNotes = [];
       var chips = ideas.map(function (idea) {
         var r = idea.main;
         var isLong = r.direction === 'long';
@@ -19458,9 +19461,10 @@ try {
         else if (res === 'Lose') { resHtml = '<span class="stlf-res lose"><span class="stlf-ic">\u2715</span>' + (es ? 'Perdida' : 'Lost') + '</span>'; }
         else { resHtml = '<span class="stlf-res be"><span class="stlf-ic">=</span>BE</span>'; }
         // "copied 2/3": how many of your accounts this trade is on - amber once a copy is overdue (20 s).
-        var cpHtml = '', n = idea.rows.length, M = cp.accounts;
+        var cpHtml = '', n = idea.rows.length, M = cp.accounts, cfl = window.__stCopyFail ? window.__stCopyFail.forIdea(idea) : [];
+        if (cfl.length) cfNotes.push(window.__stCopyFail.lineOf(cfl));   // EA 9.19: why a copy is missing, at once
         if (cp.on && (n > 1 || M > 1)) {
-          var miss = M > n && (Date.now() - (r.openedAt || Date.now())) > 20000;
+          var miss = (M > n && (Date.now() - (r.openedAt || Date.now())) > 20000) || cfl.length > 0;
           cpHtml = '<span class="stlf-copies' + (miss ? ' miss' : '') + '">' + (M > 1 ? t('live.copied').replace('{N}', n).replace('{M}', M) : t('live.copied_x').replace('{N}', n)) + '</span>';
         }
         return '<span class="stlf-chip"><span class="stlf-side ' + (isLong ? 'long' : 'short') + '"><span class="stlf-arrow">' + arrow + '</span>' + sideTxt + '</span>' + resHtml + cpHtml + '</span>';
@@ -19474,6 +19478,7 @@ try {
           ? 'Tu EA no informa desde las ' + T + '. Si tu PC o MT5 están apagados, ' + (off.length > 1 ? 'puede que estas operaciones ya se hayan cerrado' : 'puede que esta operación ya se haya cerrado') + ' \u2014 se actualizará en cuanto MT5 vuelva a estar encendido.'
           : 'Your EA hasn\u2019t reported since ' + T + '. If your PC or MT5 is off, ' + (off.length > 1 ? 'these trades may already have closed' : 'this trade may already have closed') + ' \u2014 it updates as soon as MT5 is back on.') + '</div>';
       }
+      if (cfNotes.length) note = cfNotes.map(function (x) { return '<div class="stlf-note cf">' + String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</div>'; }).join('') + note;
       el.innerHTML = '<div class="stlf-head">' + head + '</div><div class="stlf-chips">' + chips + '</div>' + note;
     }
     return {
@@ -20391,6 +20396,16 @@ try {
     //    that LOOSENS - risk up more than 10%, the daily trade cap raised or turned off, the maximum
     //    stop widened - and only during a live session or on a day with a loss. Tightening, or
     //    changing things on a quiet evening, is shown in Settings and never nudged.
+    // A copy a Follow account did not take (EA 9.19): a trade alert, once, while it is news; an account kept separate stays quiet.
+    function copyFail(r) {
+      try {
+        if (!r || !eligibleTrades() || isSepLogin(r.login)) return;
+        var at = msOf(r.at), k = String(r.login) + ':' + String(r.ticket);
+        if (!fresh(at) || handled['c' + k]) return;
+        handled['c' + k] = 1;
+        raise([{ rule: 'tr_copy', text: window.__stCopyFail.nudgeText(r) }], k);
+      } catch (e) {}
+    }
     function eaChanged(r) {
       try {
         if (!r || r.id == null || !r.before || !r.after || !eligible()) return;
@@ -20798,7 +20813,7 @@ try {
         return { acc: acc, dLim: dLim, left: left, one: one, lim: lim, n: n + hand, ddAmt: ddAmt, room: room };
       } catch (e) { return null; }
     }
-    return { observe: observe, markOld: markOld, ack: ack, chime: chime, eaChanged: eaChanged, dayHtml: dayHtml, aiPack: aiPack,
+    return { observe: observe, markOld: markOld, ack: ack, chime: chime, eaChanged: eaChanged, copyFail: copyFail, dayHtml: dayHtml, aiPack: aiPack,
              netToday: function (acc) { try { return todayNet(acc, dayState()).net; } catch (e) { return 0; } },   // the order rules' daily loss (24 Oct 2026)
              budget: budget, redNewsFor: function (curs) { return redNews(curs); }, mediumNewsFor: function (curs) { return redNews(curs, 'medium'); }, myCurs: myCurs, cursOf: cursOf,
              periodHtml: periodHtml, periodStats: periodStats, newsTick: newsTick, dayList: dayList, results: resultsIn, _isSepLogin: isSepLogin,
@@ -21149,11 +21164,13 @@ try {
       var cht = has && isFinite(tk.px) && isFinite(tk.op);
       if (cht) ball = '';
       var tmRow = window.__stTM ? window.__stTM.row(r) : '';   // MT5's state and Close trade (18 Oct 2026)
-      var stat = head + '|' + (cht ? '' : marks + seg) + '|' + chips.join('') + '|' + on() + has + cht + '|' + tmRow;
+      var cfTxt = ''; try { cfTxt = window.__stCopyFail ? window.__stCopyFail.lineOf(window.__stCopyFail.forIdea(idea)) : ''; } catch (e) {}   /* EA 9.19: a copy not taken */
+      var stat = head + '|' + (cht ? '' : marks + seg) + '|' + chips.join('') + '|' + on() + has + cht + '|' + tmRow + '|' + cfTxt;
       var html = '<div class="slx-tc" data-k="' + esc(r.ticket) + '"><div class="slx-th">' + head + '<div class="slx-right"><span class="slx-tpw">' + tp + '</span>' + (has ? tog : '') + '</div></div>'
         + (cht ? '' : '<div class="slx-lad"><div class="slx-ln"></div>' + seg + marks + (ball ? '<div class="slx-now' + (R < -0.049 ? ' r' : '') + '" style="left:' + ball + '"></div>' : '') + '</div>')
         + (chips.length ? '<div class="slx-chips">' + chips.join('') + '</div>' : '')
         + (has && !cht ? '<div class="slx-cnote"><span class="slx-need">' + esc(T2('Live chart needs EA 8.89', 'Gráfico en vivo: necesita el EA 8.89')) + '</span></div>' : '')
+        + (cfTxt ? '<div class="slx-cfn">' + esc(cfTxt) + '</div>' : '')
         + '<div class="slx-chs"></div>' + tmRow + '</div>';
       return { k: String(r.ticket), s: stat, html: html, ball: ball, red: R < -0.049, tp: tp };
     }
@@ -21576,6 +21593,69 @@ try {
      and the nudges knowing is enough): loosening it mid-session is a nudge (__stNudge.eaChanged),
      and the AI gets the current settings (summary) and the recent changes (describe). Your Risk
      rules stay your plan: nothing here is copied into them. */
+  /* A copy a Follow account did not take (EA 9.19, 2 Nov 2026). On 30 Oct 08:13:52 OneFunded's MT5 journal said "failed market buy 1.11 EURUSD ...
+     [AutoTrading disabled by server]" and the app said nothing, while the trade read as copied to 1 of 2 at best. The EA reports it (copy_refusals: the
+     broker's retcode, the EA's words) and the app shows it at once: on the trade's row, in Trade with, and as a trade alert. Plain, no scolding: what
+     happened and why. The server's copy of these words is copyReason in _shared/nudges.ts. */
+  window.__stCopyFail = (function () {
+    var rows = {};
+    function X(en, es) { try { return window._stT(en, es); } catch (e) { return en; } }
+    var RC = { 10026: ['the broker blocks EA trading', 'el br\u00f3ker bloquea el trading con EA'],
+      10027: ['Algo Trading is off in its MT5', 'el trading algor\u00edtmico est\u00e1 desactivado en su MT5'],
+      10017: ['trading is disabled on this account', 'el trading est\u00e1 desactivado en esta cuenta'],
+      10018: ['the market is closed', 'el mercado est\u00e1 cerrado'],
+      10019: ['there isn\u2019t enough free margin', 'no hay margen libre suficiente'],
+      10014: ['the broker doesn\u2019t accept that lot size', 'el br\u00f3ker no acepta ese tama\u00f1o de lote'],
+      10016: ['the broker doesn\u2019t accept those stops', 'el br\u00f3ker no acepta esos stops'],
+      10015: ['the price wasn\u2019t valid', 'el precio no era v\u00e1lido'],
+      10004: ['the price changed before it filled', 'el precio cambi\u00f3 antes de ejecutarse'],
+      10020: ['the price changed before it filled', 'el precio cambi\u00f3 antes de ejecutarse'],
+      10021: ['the broker had no price for it', 'el br\u00f3ker no ten\u00eda precio'],
+      10006: ['the broker rejected the order', 'el br\u00f3ker rechaz\u00f3 la orden'],
+      10024: ['too many requests went to the broker', 'demasiadas peticiones al br\u00f3ker'],
+      10031: ['its MT5 had no connection to the broker', 'su MT5 no ten\u00eda conexi\u00f3n con el br\u00f3ker'],
+      10033: ['the account reached its limit of orders', 'la cuenta lleg\u00f3 a su l\u00edmite de \u00f3rdenes'],
+      10034: ['the account reached its limit for that symbol', 'la cuenta lleg\u00f3 a su l\u00edmite en ese s\u00edmbolo'],
+      10040: ['the account reached its limit of positions', 'la cuenta lleg\u00f3 a su l\u00edmite de posiciones'],
+      10044: ['that symbol only allows closing', 'ese s\u00edmbolo solo permite cerrar'],
+      10045: ['the broker\u2019s position rules don\u2019t allow it', 'las normas de posiciones del br\u00f3ker no lo permiten'],
+      10046: ['the broker\u2019s position rules don\u2019t allow it', 'las normas de posiciones del br\u00f3ker no lo permiten'] };
+    var WHY = [[/Lead stop at (break-even|entry)/, 'the Lead\u2019s stop was already at break-even', 'el stop de la L\u00edder ya estaba en break-even'],
+      [/lot too small/, 'the lot would be too small for its risk', 'el lote ser\u00eda demasiado peque\u00f1o para su riesgo'],
+      [/not on this account/, 'that symbol isn\u2019t on the account', 'ese s\u00edmbolo no est\u00e1 en la cuenta'],
+      [/opened too long ago/, 'the Lead\u2019s trade was too old to copy', 'la operaci\u00f3n de la L\u00edder era demasiado antigua para copiarla'],
+      [/price moved/, 'the price had moved too far', 'el precio se hab\u00eda movido demasiado'],
+      [/has no price/, 'it had no price for that symbol', 'no ten\u00eda precio para ese s\u00edmbolo'],
+      [/price differs/, 'its price was too far from the Lead\u2019s', 'su precio estaba demasiado lejos del de la L\u00edder'],
+      [/Algo Trading is off/, 'Algo Trading is off in its MT5', 'el trading algor\u00edtmico est\u00e1 desactivado en su MT5'],
+      [/EA is OFF/, 'its EA is switched off', 'su EA est\u00e1 apagado'],
+      [/FTMO total/, 'your FTMO total is over the maximum', 'tu total de FTMO supera el m\u00e1ximo'],
+      [/2\+ Leads/, 'two accounts are set as Lead', 'hay dos cuentas como L\u00edder'],
+      [/daily limit/, 'its daily limit is reached', 'ha llegado a su l\u00edmite diario']];
+    function reason(r) { var c = RC[+r.retcode]; if (c) return X(c[0], c[1]); var w = String(r.why || '');
+      for (var i = 0; i < WHY.length; i++) if (WHY[i][0].test(w)) return X(WHY[i][1], WHY[i][2]);
+      return w.replace(/^\S+\s+(order\s+)?(refused|skipped)\s*-\s*/, '') || X('the broker didn\u2019t take it', 'el br\u00f3ker no la acept\u00f3'); }
+    function nameOf(lg) { var nm = ''; try { var id = (data.mt5LoginMap || {})[String(lg)], a = id ? (data.accounts || []).filter(function (x) { return x && x.id === id; })[0] : null; if (a && a.name) nm = a.name; if (nm && window.__stStripStage) nm = window.__stStripStage(nm); } catch (e) {} return nm || 'MT5 ' + lg; }
+    function verb(r) { return r.kind === 'wait' ? X('hasn\u2019t copied it yet', 'a\u00fan no la ha copiado') : (r.kind === 'skip' ? X('skipped it', 'la omiti\u00f3') : X('refused it', 'la rechaz\u00f3')); }
+    function ofTicket(tk) { tk = String(tk); return Object.keys(rows).map(function (k) { return rows[k]; }).filter(function (r) { return String(r.ticket) === tk; }); }
+    // the reports of one trade (a Lead's ticket), read on its row: "Copied to 1 of 2: OneFunded refused it, the broker blocks EA trading"
+    function lineOf(list) { if (!list || !list.length) return ''; var M = 0; try { M = (window.__stEA.copier().accounts || 0) - 1; } catch (e) {} if (M < list.length) M = list.length; var N = M - list.length;
+      var bits = list.map(function (r) { return nameOf(r.login) + ' ' + verb(r) + ', ' + reason(r); }).join('; ');
+      return (N > 0 ? X('Copied to ' + N + ' of ' + M + ': ', 'Copiada a ' + N + ' de ' + M + ': ') : X('Not copied: ', 'Sin copiar: ')) + bits; }
+    function line(tk) { return lineOf(ofTicket(tk)); }
+    function forIdea(idea) { var seen = {}, out = []; try { idea.rows.forEach(function (x) { ofTicket(x.ticket).forEach(function (r) { var k = r.login + '|' + r.ticket; if (!seen[k]) { seen[k] = 1; out.push(r); } }); }); } catch (e) {} return out; }
+    // this account's report on a trade still open, or a fresh one: what Trade with shows
+    function current(lg) { var open = {}; try { window.__stLive.openIdeas().forEach(function (i) { i.rows.forEach(function (x) { open[String(x.ticket)] = 1; }); }); } catch (e) {}
+      var best = null; Object.keys(rows).forEach(function (k) { var r = rows[k]; if (lg != null && String(r.login) !== String(lg)) return; if (!open[String(r.ticket)] && Date.now() - Date.parse(r.at) > 900000) return; if (!best || Date.parse(r.at) > Date.parse(best.at)) best = r; }); return best; }
+    function nudgeText(r) { var sym = String(r.symbol || ''), side = r.direction === 'short' ? X('short', 'corto') : X('long', 'largo'), nm = nameOf(r.login), w = reason(r);
+      return r.kind === 'wait' ? X(nm + ' hasn\u2019t copied your ' + sym + ' ' + side + ' yet: ' + w + '.', nm + ' a\u00fan no ha copiado tu ' + sym + ' ' + side + ': ' + w + '.')
+        : X(nm + ' didn\u2019t copy your ' + sym + ' ' + side + ': ' + w + '.', nm + ' no copi\u00f3 tu ' + sym + ' ' + side + ': ' + w + '.'); }
+    function paint() { try { window.__stLive.render(); } catch (e) {} try { window.__stLiveBox.render(); } catch (e) {} }
+    return {
+      apply: function (r) { if (!r || !r.login || r.ticket == null) return; rows[String(r.login) + '|' + String(r.ticket)] = r; paint(); try { window.__stNudge.copyFail(r); } catch (e) {} },
+      remove: function (r) { if (!r) return; delete rows[String(r.login) + '|' + String(r.ticket)]; paint(); },
+      line: line, lineOf: lineOf, forIdea: forIdea, current: current, nameOf: nameOf, reason: reason, nudgeText: nudgeText, verb: verb, rows: function () { return rows; } };
+  })();
   window.__stEA = (function () {
     var rows = {}, log = [], MAXLOG = 12;
     // Read the settings yet? (the live feed calls loaded() when the first read comes back, or fails)
@@ -79200,6 +79280,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     if(!uid || !sb || !window.__stEA) return;
     try{ sb.from('ea_settings').select('*').eq('user_id', uid).then(function(res){ ((res&&res.data)||[]).forEach(function(r){ window.__stEA.apply(r); }); try{ window.__stEA.loaded(); }catch(e){} }, function(){ try{ window.__stEA.loaded(); }catch(e){} }); }catch(e){}
     try{ sb.from('ea_settings_log').select('*').eq('user_id', uid).order('changed_at',{ascending:false}).limit(12).then(function(res){ ((res&&res.data)||[]).slice().reverse().forEach(function(r){ window.__stEA.logged(r); }); }, function(){}); }catch(e){}
+    try{ sb.from('copy_refusals').select('*').eq('user_id', uid).gte('at', new Date(Date.now()-86400000).toISOString()).then(function(res){ ((res&&res.data)||[]).forEach(function(r){ if(window.__stCopyFail) window.__stCopyFail.apply(r); }); }, function(){}); }catch(e){}   /* EA 9.19: copies not taken */
   }
   function startEA(){
     if(!uid || !sb) return;
@@ -79210,6 +79291,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     ch = eaChan = sb.channel('ea-settings:'+uid)
       .on('postgres_changes',{event:'*',schema:'public',table:'ea_settings',filter:'user_id=eq.'+uid},function(p){ try{ if(p.new && p.new.login && window.__stEA) window.__stEA.apply(p.new); }catch(e){} })
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'ea_settings_log',filter:'user_id=eq.'+uid},function(p){ try{ if(p.new && window.__stEA) window.__stEA.logged(p.new); }catch(e){} })
+      .on('postgres_changes',{event:'*',schema:'public',table:'copy_refusals',filter:'user_id=eq.'+uid},function(p){ try{ if(!window.__stCopyFail) return; if(p.eventType==='DELETE') window.__stCopyFail.remove(p.old); else if(p.new) window.__stCopyFail.apply(p.new); }catch(e){} })
       .subscribe(function(status){
         if(ch !== eaChan) return;
         if(status === 'SUBSCRIBED'){ eaRetry = 0; seedEA(); return; }
@@ -88779,18 +88861,20 @@ window.__stAZ = (function () {
       var r=await q.order('close_time',{ascending:false}).limit(1); return (r&&r.data&&r.data[0])||null; }catch(_){ return null; } }
   // The n candles just BEFORE a time, oldest first - by count, so a weekend or a gap in what is
   // stored never reads as "no more history".
+  // The broker of the account the trade was on (per-broker candles, 2 Nov 2026): its feed, once that holds anything; else as always.
+  function feedArgs(symbol,lg){ try{ if(lg==null) lg=S&&S.login; return (lg!=null&&window.__stFeed)?window.__stFeed.args(lg,symbol):null; }catch(_){ return null; } }
   async function fetchOlder(symbol,tf,before,n){ var sb=sbc(); if(!sb) return [];
-    try{ var r=await sb.rpc('st_candles_before',{p_symbol:symbol,p_tf:tf,p_before:Math.floor(before),p_n:n});
+    try{ var r=await sb.rpc('st_candles_before',Object.assign({p_symbol:symbol,p_tf:tf,p_before:Math.floor(before),p_n:n},feedArgs(symbol)||{}));
       var d=(r&&r.data)||[], out=[], lastT=-1e18;
       for(var i=0;i<d.length;i++){ var t=Number(d[i].t); if(t-lastT<30) continue;
         out.push({time:t,open:Number(d[i].o),high:Number(d[i].h),low:Number(d[i].l),close:Number(d[i].c),vol:d[i].v==null?null:+d[i].v}); lastT=t; }
       return window.__stCandleGrid?window.__stCandleGrid(out,tf):out; }catch(_){ return []; } }
-  async function fetchCandles(symbol,tf,from,to){ var sb=sbc(); if(!sb) return [];
+  async function fetchCandles(symbol,tf,from,to,lg){ var sb=sbc(); if(!sb) return [];
     // Supabase caps an RPC response at ~1000 rows, so page through with .range() and
     // stitch — this way ANY-length trade (however many bars entry→exit spans) loads fully.
-    var rows=[],PAGE=1000,pg=0;
+    var rows=[],PAGE=1000,pg=0,fa=feedArgs(symbol,lg)||{};
     try{ while(pg<60){
-        var r=await sb.rpc('st_candles',{p_symbol:symbol,p_tf:tf,p_from:Math.floor(from),p_to:Math.ceil(to)}).range(pg*PAGE,pg*PAGE+PAGE-1);
+        var r=await sb.rpc('st_candles',Object.assign({p_symbol:symbol,p_tf:tf,p_from:Math.floor(from),p_to:Math.ceil(to)},fa)).range(pg*PAGE,pg*PAGE+PAGE-1);
         var d=(r&&r.data)||[]; for(var k=0;k<d.length;k++) rows.push(d[k]);
         if(d.length<PAGE) break; pg++;
       } }catch(_){}
@@ -88829,7 +88913,7 @@ window.__stAZ = (function () {
       // Same fallback chain the replay uses, so the R here matches the R on the replay header.
       var slPips=_n(row.sl_pips)||_n(row.req_sl_pips)||_n(trade&&trade.sl)||_n(trade&&trade.slPips)||_n(trade&&trade.reqSlPips);
       // 1-minute bars, entry→exit only: excursion is what happened WHILE the position was open.
-      var bars=await fetchCandles(symbol,1,entryTs,exitTs);
+      var bars=await fetchCandles(symbol,1,entryTs,exitTs,row.login!=null?String(row.login):(trade&&trade.mt5Login!=null?String(trade.mt5Login):''));
       if(!bars||!bars.length) return null;
       var hi=-Infinity, lo=Infinity;
       for(var i=0;i<bars.length;i++){ if(bars[i].high>hi) hi=bars[i].high; if(bars[i].low<lo) lo=bars[i].low; }
@@ -90366,7 +90450,7 @@ window.__stAZ = (function () {
     return {sym:S._msym, digits:_prec(), now:miniNow(), rows:miniRows, volAsk:miniVol}; }
   /* the previous day / week / month when this chart's candles do not hold all of it: the 1h (else 4h) history up to now,
      fetched once per trading day of the replay (nothing after the replay's own moment) */
-  function miniRows(tf){ var now=miniNow(); if(!now) return null; var P=window.__stPractice, dk=(P&&P._lonDay)?P._lonDay(now-1):Math.floor(now/86400), k=S.symbol+'|'+tf+'|'+dk, e=MPW[k];
+  function miniRows(tf){ var now=miniNow(); if(!now) return null; var P=window.__stPractice, dk=(P&&P._lonDay)?P._lonDay(now-1):Math.floor(now/86400), k=S.symbol+'|'+tf+'|'+dk+'|'+((S.login&&window.__stFeed&&window.__stFeed.ofLogin(S.login))||''), e=MPW[k];
     if(e) return e.rows?e:null;
     MPW[k]={rows:null}; var sRef=S;
     fetchCandles(S.symbol,tf,now-75*86400,now-1).then(function(r){ MPW[k].rows=r.filter(function(b){ return b.time<now; }); if(MP&&S===sRef) MP._mini=null; },function(){});
@@ -90380,7 +90464,8 @@ window.__stAZ = (function () {
     Object.keys(TRV.asked).forEach(function(k){ var o=TRV.asked[k]; if(o.sym===sym&&o.tf===atf&&o.from<=f&&o.to>=to) cov=o; });
     if(cov) return cov.nohist?'nohist':(cov.fail?'fail':'asked');
     TRV.asked[sym+'|'+atf+'|'+f+'|'+to]={sym:sym,tf:atf,from:f,to:to,at:Date.now()};
-    try{ sb.from('candle_requests').insert([{user_id:u,symbol:sym,tf:atf,from_t:f,to_t:to,note:'vol'}]).then(function(){},function(){}); }catch(_){}
+    var fd=(S&&S.login&&window.__stFeed&&window.__stFeed.ofLogin(S.login))||'';   /* per-broker candles: an MT5 on that feed answers */
+    try{ sb.from('candle_requests').insert([Object.assign({user_id:u,symbol:sym,tf:atf,from_t:f,to_t:to,note:'vol'},fd?{feed:fd}:{})]).then(function(){},function(){}); }catch(_){}
     trvWatch(); return 'asked'; }
   function trvWatch(){ if(TRV.t) return; TRV.t=setInterval(async function(){ var open=0;
       if(!S||!el('strp-modal-bg').classList.contains('show')) return;
@@ -91800,6 +91885,7 @@ window.__stAZ = (function () {
   .lctb-t td.g { color: #4ECD8B; } .lctb-t td.r { color: #E56767; }
   .lctb-sum td { background: rgba(255,255,255,.03); text-align: left !important; } .lctb-sum td:not(:first-child) { text-align: right !important; }
   .lctb-ord td { color: var(--text-mid); }
+  .lctb-cfn td { color: #e0b23c; text-align: left !important; white-space: normal; } .stpr-win.pl-lt .lctb-cfn td { color: #a65f00; }
   .lctb-wait { margin: 0; padding: 14px; color: var(--text-dim); font-family: Fraunces, serif; font-size: 13px; }
   .lctb-t td.lctb-none { text-align: center !important; color: var(--text-dim); padding: 14px; }
   .lc-pfp { margin-top: 26px; }   /* Prop Firm Progress of the EA's account, under the Toolbox (18 Oct 2026) */
@@ -92391,6 +92477,7 @@ window.__stAZ = (function () {
   .stpr-twc.lead { color: #4ECD8B; border-color: rgba(78,205,139,.6); }
   .stpr-twc.cp { color: #60A5FA; background: rgba(96,165,250,.14); }
   .stpr-twc.off { color: #f5a524; background: rgba(245,165,36,.14); }
+  .stpr-twcf { margin: 2px 8px 8px; max-width: 320px; font-size: 12px; line-height: 1.4; color: #f5a524; } .stpr-win.pl-lt .stpr-twcf { color: #a65f00; }
   .stpr-twmore { display: block; width: 100%; margin-top: 6px; padding: 10px 6px 3px 28px; border: 0; border-top: 1px solid var(--border-2); background: transparent; color: var(--text-dim); font: inherit; font-size: 12.5px; text-align: left; cursor: pointer; }
   @media (hover: hover) { .stpr-twmore:hover { color: var(--text); } }
   /* Copy trading: the Lead, the accounts copying it, the others - each with its one action, a confirm and what was asked in place */
@@ -93428,6 +93515,24 @@ window.__stAZ = (function () {
     }
     return c;
   }
+  /* Per-broker candles, the app's half (2 Nov 2026; Nestor, 29 Oct: "keep candles per broker, so each account's chart shows its own broker's
+     prices"). A login's feed is its MT5 server (the EA's report, else its cloud card), normalised as st_feed_id() does, and it is asked for
+     only once the store lists that feed as holding anything (st_candle_feeds, looked at every 10 minutes): until then this returns nothing, and
+     every candle read goes out exactly as it always did. A mentor's view and a signed-out one read the default feed. */
+  window.__stFeed = (function(){ var LS = 'st_feeds', has = {}, at = 0, busy = false, srv = null;
+    try { var c = JSON.parse(localStorage.getItem(LS) || 'null'); if (c && Array.isArray(c.f)) { c.f.forEach(function(x){ has[x] = 1; }); at = +c.at || 0; } } catch (e) {}
+    function load(){ if (busy || Date.now() - at < 600000) return; var sb = sbc(); if (!sb || !sb.rpc) return; busy = true; at = Date.now();
+      Promise.resolve(sb.rpc('st_candle_feeds')).then(function(r){ busy = false; if (!r || r.error || !Array.isArray(r.data)) return; has = {}; var l = r.data.map(function(x){ return String(x.feed); }); l.forEach(function(x){ has[x] = 1; }); try { localStorage.setItem(LS, JSON.stringify({ at: at, f: l })); } catch (e) {} }, function(){ busy = false; }); }
+    function id(x){ return String(x || '').trim().toLowerCase().replace(/[^a-z0-9._-]+/g, '-').slice(0, 40); }
+    function serverOf(lg){ lg = String(lg); if (srv && srv[lg]) return srv[lg]; var sv = '';
+      try { var R = window.__stEA.rows() || {}; Object.keys(R).forEach(function(k){ var r = R[k]; if (!sv && String(r.login) === lg && r.settings && r.settings.server) sv = r.settings.server; }); } catch (e) {}
+      if (!sv) try { var cl = window.__stMt5c.cloud().filter(function(r){ return String(r.login) === lg; })[0]; if (cl && cl.server) sv = cl.server; } catch (e) {}
+      return sv; }
+    function ofLogin(lg){ if (lg == null || lg === '') return ''; try { if (new URLSearchParams(location.search).get('mv')) return ''; } catch (e) {} load(); var f = id(serverOf(lg)); return f && has[f] ? f : ''; }
+    // what that account's broker calls the symbol, when it says (EURUSD.x), for the feed's own rows
+    function nameOn(lg, raw){ var k = canon(raw), out = ''; try { var R = window.__stEA.rows() || {}; Object.keys(R).forEach(function(q){ var r = R[q]; if (!out && String(r.login) === String(lg) && r.symbol && canon(r.symbol) === k) out = r.symbol; }); } catch (e) {} return out || raw; }
+    return { id: id, ofLogin: ofLogin, nameOn: nameOn, args: function(lg, raw){ var f = ofLogin(lg); if (!f) return null; var a = { p_feed: f }, n = nameOn(lg, raw); if (n && n !== raw) a.p_fsym = n; return a; },
+      _set: function(list, servers){ has = {}; (list || []).forEach(function(x){ has[x] = 1; }); at = Date.now(); if (servers) srv = servers; } }; })();
   // every broker's name for the same market (25 Oct 2026, other brokers than FTMO): the order rules' allowed symbols use it, so
   // "XAUUSD" also allows a broker's GOLD and "US100" its NAS100 / USTEC. Names under 4 letters (NQ, ES, CL, DAX) are left out:
   // the rules match a symbol by its start, and "ES" would let ESP35 through.
@@ -93439,7 +93544,7 @@ window.__stAZ = (function () {
     if (SYMS) return SYMS;
     var rows = null;
     try { var c = JSON.parse(localStorage.getItem(LS_SYMS) || 'null'); if (c && Date.now() - c.at < 6 * 3600000 && Array.isArray(c.rows) && c.rows.length) rows = c.rows; } catch (e) {}
-    if (!rows) { try { var r = await sbc().rpc('st_candle_symbols'); if (r && !r.error && Array.isArray(r.data)) { rows = r.data; try { localStorage.setItem(LS_SYMS, JSON.stringify({ at: Date.now(), rows: rows })); } catch (e) {} } } catch (e) {} }
+    if (!rows) { try { var fd0 = feedTag().slice(1), r = await sbc().rpc('st_candle_symbols', fd0 ? { p_feed: fd0 } : {}); if (r && !r.error && Array.isArray(r.data)) { rows = r.data; try { localStorage.setItem(LS_SYMS, JSON.stringify({ at: Date.now(), rows: rows })); } catch (e) {} } } catch (e) {} }
     if (!rows || !rows.length) rows = [{ symbol: 'EURUSD', tf: 5, first_t: 0, last_t: 2e9 }, { symbol: 'XAUUSD', tf: 5, first_t: 0, last_t: 2e9 }];
     var raw = {};
     rows.forEach(function(r){ var s = raw[r.symbol] || (raw[r.symbol] = { raw: r.symbol, tf: {} }); s.tf[+r.tf] = [+r.first_t, +r.last_t]; });
@@ -93582,9 +93687,12 @@ window.__stAZ = (function () {
   // ---- candles ----
   // A read the store did not answer - an error, or a time-out part way through its pages - comes back marked failed (29 Oct 2026: in the
   // 07:45-08:30 UTC outage such a read was kept as the chart's history, empty or cut short, until the page was reloaded)
+  // The account whose broker's candles a chart reads (2 Nov 2026): the one picked in Trade with, else the chart's EA's, else the journal's account in view.
+  function feedLg(){ try { if (CFG.lvLg) return String(CFG.lvLg); var e = S && S.live && S.ea; if (e && e.lg) return String(e.lg); var m = data.mt5LoginMap || {}, id = data.activeAccountId, out = ''; Object.keys(m).forEach(function(k){ if (!out && m[k] === id) out = k; }); return out; } catch (e) { return ''; } }
+  function feedTag(){ try { var f = window.__stFeed.ofLogin(feedLg()); return f ? '|' + f : ''; } catch (e) { return ''; } }   // on the end of a cache's key: nothing while the feed holds nothing
   async function fetchCandles(sym, tf, from, to){ var sb = sbc(); if (!sb) return [];
-    var rows = [], PAGE = 1000, pg = 0, bad = false;
-    try { while (pg < 30) { var r = await sb.rpc('st_candles', { p_symbol: sym, p_tf: tf, p_from: Math.floor(from), p_to: Math.ceil(to) }).range(pg * PAGE, pg * PAGE + PAGE - 1);
+    var rows = [], PAGE = 1000, pg = 0, bad = false, fa = null; try { fa = window.__stFeed.args(feedLg(), sym); } catch (e) {}
+    try { while (pg < 30) { var r = await sb.rpc('st_candles', Object.assign({ p_symbol: sym, p_tf: tf, p_from: Math.floor(from), p_to: Math.ceil(to) }, fa || {})).range(pg * PAGE, pg * PAGE + PAGE - 1);
         if (!r || r.error) { bad = true; break; }
         var d = r.data || []; for (var k = 0; k < d.length; k++) rows.push(d[k]); if (d.length < PAGE) break; pg++; } } catch (e) { bad = true; }
     var out = [], last = -1e18;
@@ -93674,7 +93782,7 @@ window.__stAZ = (function () {
   // The store's candles before the day, fetched once per symbol, day and timeframe and kept as a promise: a fetch started early - a
   // symbol about to open in Live Charts, a watchlist row pointed at - is the one the chart then waits for (24 Oct 2026, instant open)
   var staticRows = {};
-  function staticFetch(sym, day, open, tf){ var key = sym.raw + '|' + day + '|' + tf; if (staticRows[key]) return staticRows[key];
+  function staticFetch(sym, day, open, tf){ var key = sym.raw + '|' + day + '|' + tf + feedTag(); if (staticRows[key]) return staticRows[key];
     var src = SRC[tf], cov = sym.tf[src]; if (!cov) return Promise.resolve(null);
     return (staticRows[key] = (async function(){ var from = Math.max(open - LOOK[tf], cov[0]), rows = await fetchCandles(sym.raw, src, from, open - 1);
       // A window that is all weekend (1m on a Monday's day: Saturday) holds nothing: reach back to the last candles before it
@@ -93682,20 +93790,21 @@ window.__stAZ = (function () {
       if (rows.failed) delete staticRows[key];   // not kept: asked again next time
       return { rows: rows, from: from, failed: !!rows.failed }; })()); }
   async function paneStatic(tf, X){
-    X = X || S; var day = S.day, open = S.f.open, key = X.sym.raw + '|' + day + '|' + tf; if (staticCache[key]) return staticCache[key];
+    X = X || S; var day = S.day, open = S.f.open, fk = feedTag(), key = X.sym.raw + '|' + day + '|' + tf + fk; if (staticCache[key]) return staticCache[key];
     var src = SRC[tf], cov = X.sym.tf[src], from = open, rows = (lvData() && X.tfh && X.tfh[src]) ? X.tfh[src] : [], failed = false;   // Live Charts: none stored - its EA's (9.01)
     if (cov) { var got = await staticFetch(X.sym, day, open, tf); rows = got.rows; from = got.from; failed = !!got.failed; }
     // Live Charts: listed as stored but nothing came (deleted since the symbol list was cached, 6 hours) - its EA's instead; never
     // because the store did not answer
     var gone = !failed && !!(cov && !rows.length && lvData() && src > 1); if (gone) { (X.nost = X.nost || {})[src] = 1; if (X.tfh && X.tfh[src]) rows = X.tfh[src]; }
     rows = rows.filter(function(b){ return b.time + src * 60 <= open; });
-    var e = { rows: rows, from: from, full: failed || !cov || gone || from <= cov[0], agg: aggStatic(rows, tf), failed: failed };   // failed: read again (statHeal), not added to
+    var e = { rows: rows, from: from, full: failed || !cov || gone || from <= cov[0], agg: aggStatic(rows, tf), failed: failed, fk: fk };   // failed: read again (statHeal), not added to; fk: whose broker's
     if (!failed) staticCache[key] = e; return e;
   }
   // A chart whose history the store did not give (29 Oct 2026, the outage): read again every 15 s and painted in when it comes, the
   // candles on screen staying where they are
   function statHeal(){ if (!S || !panes.length) return;
-    panes.forEach(function(p){ var e = p.hist; if (!e || !e.failed || p._heal) return; var tf = p.tf, X = PS(p), day = S.day; p._heal = true;
+    var fk = feedTag();   // ...and a chart showing another feed's history than the account's now (2 Nov 2026): the same way, the view kept, no reload
+    panes.forEach(function(p){ var e = p.hist; if (!e || (!e.failed && (e.fk || '') === fk) || p._heal) return; var tf = p.tf, X = PS(p), day = S.day; p._heal = true;
       paneStatic(tf, X).then(function(n){ p._heal = false; if (!n || n.failed || !S || S.day !== day || panes.indexOf(p) < 0 || p.hist !== e || p.tf !== tf) return;
         var before = (p.static || []).length; p.hist = n; p.static = n.agg; var k = p.static.length - before;
         if (p.shown && k > 0) paintPane(p, false, k, getRange(p)); else paintPane(p, false);
@@ -95594,7 +95703,7 @@ window.__stAZ = (function () {
     list.forEach(function(q){ var cov = null; Object.keys(VOL.asked).forEach(function(k){ var o = VOL.asked[k]; if (o.sym === sym && o.tf === q.tf && o.from <= q.from && o.to >= q.to) cov = o; });
       if (cov) { if (cov.nohist) st = 'nohist'; else if (cov.fail && st !== 'nohist') st = 'fail'; return; }
       var o2 = { sym: sym, tf: q.tf, from: q.from, to: q.to, at: Date.now() }; VOL.asked[sym + '|' + q.tf + '|' + q.from + '|' + q.to] = o2;
-      rows.push({ user_id: uid, symbol: sym, tf: q.tf, from_t: q.from, to_t: q.to, note: 'vol' }); });
+      var fd = feedTag().slice(1); rows.push(Object.assign({ user_id: uid, symbol: sym, tf: q.tf, from_t: q.from, to_t: q.to, note: 'vol' }, fd ? { feed: fd } : {})); });
     if (rows.length) { try { sb.from('candle_requests').insert(rows).then(function(){}, function(){}); } catch (e) {} volWatch(); }
     return st; }
   // every 20 seconds for 10 minutes, then one ask every 2 minutes while Practice Replay is open: an EA started later
@@ -95693,7 +95802,7 @@ window.__stAZ = (function () {
   // the period before the one now, from the coarser history (1h, else 4h) when it holds the whole of it
   var miniWait = {};
   function miniPrev(kk, cur, p){
-    var pick = null; [60, 240].some(function(tf){ var e = MX ? MX.rows(tf) : staticCache[PS(p).sym.raw + '|' + S.day + '|' + tf];
+    var pick = null; [60, 240].some(function(tf){ var e = MX ? MX.rows(tf) : staticCache[PS(p).sym.raw + '|' + S.day + '|' + tf + feedTag()];
       if (!e) { if (MX) return false; var wk = PS(p).sym.raw + '|' + S.day + '|' + tf; if (!miniWait[wk]) { miniWait[wk] = 1; paneStatic(tf, PS(p)).then(function(){ panes.forEach(function(q){ q._mini = null; }); dirty(); }).catch(function(){}); } return false; }
       var R = e.rows, by = null, prevK = null, o = null; if (!R.length) return false;
       for (var j = R.length - 1; j >= 0; j--) { var k2 = lonK(R[j].time)[kk]; if (k2 >= cur) continue; if (prevK == null) prevK = k2; if (k2 !== prevK) { by = j; break; }
@@ -97764,9 +97873,11 @@ window.__stAZ = (function () {
   // an account's short name for a chip: its size ("70K") when its name has one, else its name without the stage
   function cpShort(lg){ var nm = cpName(lg); try { if (window.__stStripStage) nm = window.__stStripStage(nm); } catch (e) {} var m = /\b\d+(?:\.\d+)?\s?[kKmM]\b/.exec(nm);
     return m ? m[0].replace(/\s/g, '').toUpperCase() : (nm.length > 14 ? nm.slice(0, 13) + '\u2026' : nm); }
-  function twChip(c){ if (c.role === 'lead') return '<span class="stpr-twc lead">' + esc(T('LEAD', 'L\u00cdDER')) + '</span>';
+  function twChip(c, lg){ if (c.role === 'lead') return '<span class="stpr-twc lead">' + esc(T('LEAD', 'L\u00cdDER')) + '</span>';
     if (c.role !== 'follow') return '';
     var ln = cpName(c.lead);
+    var cf = null; try { cf = lg != null ? window.__stCopyFail.current(lg) : null; } catch (e) {}   // EA 9.19: it did not take the latest trade
+    if (cf) return '<span class="stpr-twc off" title="' + esc(window.__stCopyFail.lineOf([cf])) + '">' + esc(cf.kind === 'wait' ? T('NOT YET', 'A\u00daN NO') : (cf.kind === 'skip' ? T('SKIPPED', 'OMITIDA') : T('REFUSED', 'RECHAZADA'))) + '</span>';
     if (cpOf(c.lead).role === 'lead') return '<span class="stpr-twc cp" title="' + esc(T('Copies ' + ln + '\u2019s trades', 'Copia las operaciones de ' + ln)) + '">' + esc(T('COPIES ', 'COPIA ') + cpShort(c.lead)) + '</span>';
     return '<span class="stpr-twc off" title="' + esc(T('Copies ' + ln + ', but ' + ln + ' isn\u2019t the Lead, so nothing is copied. The fix is in Copy trading.', 'Copia a ' + ln + ', pero ' + ln + ' no es L\u00edder, as\u00ed que no se copia nada. El arreglo est\u00e1 en Copiar operaciones.')) + '">' + esc(T('LEAD OFF', 'SIN L\u00cdDER')) + '</span>'; }
   function twName(lg){ var a = lvAccOf(lg); return '<span class="stpr-tw-n"><b>' + esc(a && a.name ? a.name : 'MT5') + '</b><small>' + esc(String(lg)) + '</small></span>'; }
@@ -97775,8 +97886,9 @@ window.__stAZ = (function () {
     var cur = lvOwnEA(), on0 = LV.tmF ? String(LV.tmF) : (cur ? String(cur.lg) : ''), any = false;
     var rows = list.map(function(o){ var lg = String(o.lg), c = cpOf(lg), on = lg === on0; if (c.role !== 'off' || cpFollowers(lg).length) any = true;
       return '<button type="button" class="stpr-tw' + (on ? ' on' : '') + '" data-lvacc="' + esc(lg) + '"' + (o.fol ? ' data-lvfol="1"' : '') + (on ? ' aria-current="true"' : '') + ' title="' + esc(lvAccName(lg)) + '">'
-        + '<span class="stpr-tw-ck">' + (on ? TW_CK : '') + '</span>' + twName(lg) + twChip(c) + '</button>'; }).join('');
-    return '<div class="stpr-accm stpr-twm"><h6>' + esc(T('Trade with', 'Operar con')) + '</h6>' + (rows || '<p class="stpr-wlf">' + esc(T('No account is live on this symbol.', 'Ninguna cuenta en vivo en este s\u00edmbolo.')) + '</p>')
+        + '<span class="stpr-tw-ck">' + (on ? TW_CK : '') + '</span>' + twName(lg) + twChip(c, lg) + '</button>'; }).join('');
+    var cfl = ''; try { var cfa = window.__stCopyFail.current(); if (cfa) cfl = window.__stCopyFail.line(cfa.ticket); } catch (e) {}   // the sentence, above the accounts: "Copied to 1 of 2: OneFunded refused it, the broker blocks EA trading"
+    return '<div class="stpr-accm stpr-twm"><h6>' + esc(T('Trade with', 'Operar con')) + '</h6>' + (cfl ? '<p class="stpr-twcf">' + esc(cfl) + '</p>' : '') + (rows || '<p class="stpr-wlf">' + esc(T('No account is live on this symbol.', 'Ninguna cuenta en vivo en este s\u00edmbolo.')) + '</p>')
       + ((list.length > 1 || any) ? '<button type="button" class="stpr-twmore" data-cpsheet="1">' + esc(T('Copy trading\u2026', 'Copiar operaciones\u2026')) + '</button>' : '') + '</div>'; }
   // Copy trading: a copier whose Lead isn't one first (with the fix), then the Lead, the accounts copying it and the others - or, with no
   // Lead yet, every account with Make Lead. An action's confirm and what was asked (Setting up copy…, or why not) sit under its row.
@@ -97810,7 +97922,7 @@ window.__stAZ = (function () {
     openMenu(anchor, lvAccHtml(false), 'acct'); clearTimeout(LV.accTm);
     LV.accTm = setTimeout(function(){ if (menuFor !== 'acct') return; var any = lvAccs().some(function(o){ return o.at >= LV.accT0 - 500; }); if (!any) return; var m = $('stpr-menu'); if (m) m.innerHTML = lvAccHtml(true); }, 1500); }
   function lvAccPick(lg){ closeMenu(); if (!S || !S.live) return; var cur = lvOwnEA(); LV.tmF = null; CFG.lvLg = String(lg); save();
-    if (cur && String(cur.lg) === String(lg)) return; if (!lvAccSwap()) goLive(S.sym.raw); }
+    if (cur && String(cur.lg) === String(lg)) { statHeal(); return; } if (!lvAccSwap()) goLive(S.sym.raw); else statHeal(); }
   /* Another account to trade with, the charts kept (Nestor, 29 Oct 2026: "why when you change between lead account and follow accounts
      or just other accounts in the charts, the charts have to reload?" - each pick ran goLive: every chart made again, its history
      fetched again, the drawings laid again, "Loading your live chart..." in between). Now, as TradingView changes a broker's feed, the
@@ -97869,7 +97981,8 @@ window.__stAZ = (function () {
   function tbTrade(){ var a = TB.acct; if (!a) return '<p class="lctb-wait">' + esc(T('Waiting for your account from MT5… (EA 9.02 or newer)', 'Esperando tu cuenta desde MT5… (EA 9.02 o posterior)')) + '</p>';
     var hd = '<tr><th>' + [T('Symbol', 'Símbolo'), 'Ticket', T('Time', 'Hora'), T('Type', 'Tipo'), T('Volume', 'Volumen'), T('Price', 'Precio'), 'S / L', 'T / P', T('Price', 'Precio'), T('Profit', 'Beneficio')].join('</th><th>') + '</th></tr>', h = '', tot = 0;
     tbRows(a.pos, 12).forEach(function(r){ tot += +r[9];
-      h += '<tr>' + tbTd(r[1]) + tbTd(r[0]) + tbTd(tbTime(+r[2])) + tbTd(r[3]) + tbTd(r[4]) + tbTd(r[5]) + tbTd(+r[6] ? r[6] : '') + tbTd(+r[7] ? r[7] : '') + tbTd(r[8]) + '<td class="' + tbCl(r[9]) + '">' + tbNum(r[9], 2) + '</td></tr>'; });
+      h += '<tr>' + tbTd(r[1]) + tbTd(r[0]) + tbTd(tbTime(+r[2])) + tbTd(r[3]) + tbTd(r[4]) + tbTd(r[5]) + tbTd(+r[6] ? r[6] : '') + tbTd(+r[7] ? r[7] : '') + tbTd(r[8]) + '<td class="' + tbCl(r[9]) + '">' + tbNum(r[9], 2) + '</td></tr>';
+      var cf = ''; try { cf = window.__stCopyFail.line(r[0]); } catch (e) {} if (cf) h += '<tr class="lctb-cfn"><td colspan="10">' + esc(cf) + '</td></tr>'; });   /* EA 9.19: why a copy is missing */
     h += '<tr class="lctb-sum"><td colspan="9"><b>' + T('Balance', 'Balance') + ': ' + tbNum(a.bal, 2) + ' ' + esc(a.cur || '') + ' &nbsp; ' + T('Equity', 'Fondos') + ': ' + tbNum(a.eq, 2)
       + (+a.mg > 0 ? ' &nbsp; ' + T('Margin', 'Margen') + ': ' + tbNum(a.mg, 2) : '') + ' &nbsp; ' + T('Free Margin', 'Margen libre') + ': ' + tbNum(a.fm, 2) + (+a.ml > 0 ? ' &nbsp; ' + T('Margin Level', 'Nivel de margen') + ': ' + tbNum(a.ml, 2) + '%' : '')
       + '</b></td><td class="' + tbCl(tot) + '"><b>' + tbNum(tot, 2) + '</b></td></tr>';
@@ -97980,10 +98093,10 @@ window.__stAZ = (function () {
     if (Q.length >= 4) (ALIAS[canon(Q)] || []).forEach(function(x){ if (x.length >= 4 && out.indexOf(x) < 0 && x !== Q) out.push(x); });
     return out.slice(0, 5); }
   // Back Testing: each listed symbol's price at the replay's moment, and the day before's close (its stored 5-minute candles)
-  function wlBt(s){ var e = WL.bt[s.raw + '|' + S.day]; if (!e || !e.rows) return null; var last = null, pc = null;
+  function wlBt(s){ var e = WL.bt[s.raw + '|' + S.day + feedTag()]; if (!e || !e.rows) return null; var last = null, pc = null;
     e.rows.forEach(function(b){ if (b.time + 300 <= S.now) last = b; if (b.time + 300 <= S.f.open) pc = b; });
     return last ? { b: last.close, pc: pc ? pc.close : 0, dg: digitsOf(e.rows) || 5 } : null; }
-  function wlBtLoad(){ if (!S || S.live) return; wlList().forEach(function(raw){ var s = symBy(raw) || symBy(canon(raw)); if (!s) return; var k = s.raw + '|' + S.day; if (WL.bt[k]) return;
+  function wlBtLoad(){ if (!S || S.live) return; wlList().forEach(function(raw){ var s = symBy(raw) || symBy(canon(raw)); if (!s) return; var k = s.raw + '|' + S.day + feedTag(); if (WL.bt[k]) return;
       var e = WL.bt[k] = { rows: null }; fetchCandles(s.raw, 5, S.f.open - 4 * 86400, S.f.close - 1).then(function(rows){ e.rows = rows; if (menuFor === 'sym') wlRows(); }); }); }
   function wlFmt(v, dg){ return Number(v).toLocaleString('en-US', { minimumFractionDigits: dg, maximumFractionDigits: dg }); }
   var WL_GRIP = '<svg viewBox="0 0 10 16" fill="currentColor" aria-hidden="true"><circle cx="3" cy="4" r="1.2"/><circle cx="7" cy="4" r="1.2"/><circle cx="3" cy="8" r="1.2"/><circle cx="7" cy="8" r="1.2"/><circle cx="3" cy="12" r="1.2"/><circle cx="7" cy="12" r="1.2"/></svg>';   // a row's drag handle (Edit list)
@@ -98231,7 +98344,7 @@ window.__stAZ = (function () {
      prices show while its own chart opens in the background (EA 9.14's "chart"); that EA takes over the moment it says hi, and an
      order placed in between is held and sent then. Watchlist symbols are kept open on the cloud MT5 (keepTick, below). ---- */
   var LVB = {};   // the day's stored minutes for a symbol, a fetch kept 45 s: started early (lvPrefetch), used by liveFeed
-  function lvBaseFetch(sym, f){ var k = sym.raw + '|' + f.open, o = LVB[k];
+  function lvBaseFetch(sym, f){ var k = sym.raw + '|' + f.open + feedTag(), o = LVB[k];
     if (!o || Date.now() - o.at > 45000) o = LVB[k] = { at: Date.now(), p: fetchCandles(sym.raw, 1, f.open, Math.min(nowS(), f.close) - 1) };
     return o.p.then(function(b){ if (b.failed && LVB[k] === o) delete LVB[k]; return b.slice(); }); }   // what came since arrives from the EA (lvHist asks the day again, lvPx a gap); a failed read is not kept
   function lvPrefetch(raw, si){ try { if (!(S && S.live) && !LV.inl && !LV.max) return; var sym = symLive(raw) || symLive(canon(raw)); if (!sym) return;
@@ -98442,11 +98555,11 @@ window.__stAZ = (function () {
   function lvMergePre(F){ if (!lvData()) return; (F ? [F] : feeds()).forEach(function(X){ if (!X.pre || !X.pre.length) return;
     if (X.sym.lv) { var pre = X.pre.filter(function(b){ return b.time + 60 <= S.f.open; });
       panes.forEach(function(q){ if (PS(q) !== X || !q.hist || (SRC[q.tf] !== 1 && X.tfh && X.tfh[SRC[q.tf]])) return; lvSetStatic(q, pre, true); }); return; }
-    var e = staticCache[X.sym.raw + '|' + S.day + '|1']; if (!e) return;
+    var e = staticCache[X.sym.raw + '|' + S.day + '|1' + feedTag()]; if (!e) return;
     var m = {}; e.rows.forEach(function(b){ m[b.time] = b; }); X.pre.forEach(function(b){ if (b.time + 60 <= S.f.open) m[b.time] = b; });
     e.rows = Object.keys(m).map(Number).sort(function(a, b){ return a - b; }).map(function(t){ return m[t]; }); e.agg = aggStatic(e.rows, 1);
     panes.forEach(function(q){ if (q.tf === 1 && q.hist === e) q.static = e.agg;
-      var ek = (q.tf !== 1 && SRC[q.tf] === 1 && PS(q) === X) ? staticCache[X.sym.raw + '|' + S.day + '|' + q.tf] : null;   // a custom minute timeframe (2m, 3m): built from the same minutes
+      var ek = (q.tf !== 1 && SRC[q.tf] === 1 && PS(q) === X) ? staticCache[X.sym.raw + '|' + S.day + '|' + q.tf + feedTag()] : null;   // a custom minute timeframe (2m, 3m): built from the same minutes
       if (ek) { ek.rows = e.rows.slice(0); ek.agg = aggStatic(ek.rows, q.tf); if (q.hist === ek) q.static = ek.agg; } }); }); }
   // a price from an EA: its symbol's forming minute and the one before it into the day; a missing stretch is asked for again
   function lvNotOurs(F, p){ return p.lg != null && F.ea && F.ea.lg && String(p.lg) !== String(F.ea.lg); }   // another account's EA on this symbol (9.03)

@@ -12,7 +12,7 @@ import gzip, io, json, os, threading, urllib.parse, urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIX = os.path.join(HERE, 'fixtures', 'candles')
 WEEK = 7 * 86400
-RPCS = ('st_candles_before', 'st_candles', 'st_candle_symbols')
+RPCS = ('st_candles_before', 'st_candles', 'st_candle_symbols', 'st_candle_feeds')
 
 def enabled():
     return os.environ.get('ST_REAL_CANDLES', '') != '1'
@@ -95,9 +95,14 @@ def symbols():
 def answer(fn, args, offset=0, limit=1000):
     """what the store would answer this RPC (the rows, as PostgREST sends them)"""
     if fn == 'st_candle_symbols': return symbols()
-    if fn == 'st_candles': return candles(args.get('p_symbol', ''), args.get('p_tf', 1), args.get('p_from', 0), args.get('p_to', 0), offset, limit)
-    if fn == 'st_candles_before': return candles_before(args.get('p_symbol', ''), args.get('p_tf', 1), args.get('p_before', 0), args.get('p_n', 1))
-    return []
+    if fn == 'st_candle_feeds': return []   # no broker has its own candles here; a test says otherwise (window.__stFeed._set)
+    rows = []
+    if fn == 'st_candles': rows = candles(args.get('p_symbol', ''), args.get('p_tf', 1), args.get('p_from', 0), args.get('p_to', 0), offset, limit)
+    if fn == 'st_candles_before': rows = candles_before(args.get('p_symbol', ''), args.get('p_tf', 1), args.get('p_before', 0), args.get('p_n', 1))
+    if args.get('p_feed'):   # a broker's own candles (per-broker candles, 2 Nov 2026): 0.1% higher, per feed, so a test can see whose it got
+        k = 1.001 + (sum(map(ord, str(args['p_feed']))) % 7) * 0.0001
+        rows = [dict(x, o=x['o'] * k, h=x['h'] * k, l=x['l'] * k, c=x['c'] * k) for x in rows]
+    return rows
 
 def handle(handler):
     """bt.Quiet: GET /__stcandles/<rpc>?offset=&limit=&a=<its args as JSON> -> the rows as JSON; True when it was one"""
@@ -117,13 +122,14 @@ def handle(handler):
 # in the page, before its first script: the three candle RPCs go to this machine's test server, never to Supabase
 SHIM_JS = r"""(function () {
   if (window.__stCandleStub) return;
-  var RX = /\/rest\/v1\/rpc\/(st_candles_before|st_candles|st_candle_symbols)(?:\?|$)/, real = window.fetch, S = window.__stCandleStub = { n: 0 };
+  var RX = /\/rest\/v1\/rpc\/(st_candles_before|st_candles|st_candle_symbols|st_candle_feeds)(?:\?|$)/, real = window.fetch, S = window.__stCandleStub = { n: 0 };
   var json = function (t) { return new Response(t, { status: 200, headers: { 'Content-Type': 'application/json' } }); };
   window.fetch = function (input, init) {
     var url = typeof input === 'string' ? input : ((input && input.url) || String(input || '')), m = RX.exec(url);
     if (!m) return real.apply(this, arguments);
     S.n++;
     var args = {}; try { if (init && typeof init.body === 'string') args = JSON.parse(init.body); } catch (e) {}
+    if (S.calls) S.calls.push({ fn: m[1], args: args });   // a test: what was asked
     var qs = ''; try { var u = new URL(url, location.href); ['offset', 'limit'].forEach(function (k) { if (u.searchParams.has(k)) qs += '&' + k + '=' + encodeURIComponent(u.searchParams.get(k)); }); } catch (e) {}
     if (S.failIf && S.failIf(m[1], args, url)) return Promise.resolve(new Response(JSON.stringify({ code: '57014', message: 'canceling statement due to statement timeout' }), { status: 500, headers: { 'Content-Type': 'application/json' } }));   // a test: the store not answering (S.failIf)
     if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(location.origin)) return Promise.resolve(json('[]'));   // not the test server: nothing, never the real store
