@@ -21,6 +21,11 @@
     ok('execution mode: the price label is back on the scale, the time left just under it', cd && p.series.options().lastValueVisible === true && cd.y - priceY() >= 15 && cd.y - priceY() <= 19, [cd, priceY(), p.series.options().lastValueVisible]);
     P._exec(false); P._render(); await W(200); cd = P._axl(0, 'cd');
     ok('out of execution mode again: back as it was', cd && Math.abs(cd.y - priceY()) < 0.5 && p.series.options().lastValueVisible === false, cd);
+    var lookReal = C.look; C.look = Object.assign({}, C.look || {}, { up: 'rgba(244, 114, 182, 0.5)', dn: 'rgba(244, 114, 182, 0.5)' }); P._render(); await W(200); cd = P._axl(0, 'cd');
+    ok('candles at 50%: the countdown keeps their colour at 100%, nothing shows through', cd && cd.bg === 'rgb(244, 114, 182)', cd);
+    C.look = Object.assign({}, C.look, { up: '#f472b680', dn: '#f472b680' }); P._render(); await W(200); cd = P._axl(0, 'cd');
+    ok('...written the other way too (#rrggbbaa)', cd && cd.bg === '#f472b6', cd);
+    C.look = lookReal; P._render(); await W(200);
     // a trade, and a horizontal line with a note on its TP
     P._place(1); P._render(); await W(300);
     var tp = P._lines(0).filter(function (l) { return l.k === 'tp' && l.vis; })[0];
