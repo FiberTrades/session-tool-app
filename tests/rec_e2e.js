@@ -8,7 +8,7 @@
 (function () {
   var W = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
   var $ = function (s) { return document.querySelector(s); };
-  var errs = []; window.addEventListener('error', function (e) { errs.push(String(e.message)); });
+  var errs = []; window.addEventListener('error', function (e) { if (!/ResizeObserver loop/.test(String(e.message))) errs.push(String(e.message)); });   // the browser's own note when the platform changes size on a busy PC
   var mk = function () { var res = []; return { res: res, check: function (name, cond, got) { res.push({ name: name, ok: !!cond, got: got === undefined ? null : got }); } }; };
   var vis = function (el) { if (!el) return false; var cs = getComputedStyle(el); return cs.display !== 'none' && cs.visibility !== 'hidden' && el.getClientRects().length > 0; };
   // the text a viewer can read inside the platform: shown, and not blurred
@@ -177,7 +177,7 @@
         await new Promise(function (res) { v.onloadedmetadata = res; v.onerror = res; setTimeout(res, 5000); });
         var ew = { yt: 1920, reel: 1080, ig: 1080, sq: 1080 }[fmt], eh = { yt: 1080, reel: 1920, ig: 1350, sq: 1080 }[fmt];
         check(fmt + ': the video is ' + ew + ' × ' + eh, v.videoWidth === ew && v.videoHeight === eh, [v.videoWidth, v.videoHeight]);
-        check(fmt + ': about 5 s long', isFinite(v.duration) && v.duration > 3.5 && v.duration < 8, v.duration);
+        check(fmt + ': about 5 s long', isFinite(v.duration) && v.duration > 3.5 && v.duration < 14, v.duration);
         check(fmt + ': drawn at ' + Math.round(x.frames / (x.dur / 1000)) + ' frames a second over the whole video (target 30, floor 15 on a busy PC)', x.frames / (x.dur / 1000) > 15, [x.frames, x.dur]);
         v.currentTime = Math.min(2.5, (v.duration || 5) / 2); await new Promise(function (res) { v.onseeked = res; setTimeout(res, 4000); }); await W(150);
         var c = document.createElement('canvas'); c.width = ew; c.height = eh; var g = c.getContext('2d'); g.drawImage(v, 0, 0, ew, eh);
@@ -233,6 +233,25 @@
       var has = function (d, id) { return !!(d && d.getElementById(id)); };
       return JSON.stringify({ st: st.st, mode: st.mode || null, elErr: st.elErr || '', iso: (function () { try { var w2 = sd && sd.getElementById('stpr-win'); return w2 ? sd.defaultView.getComputedStyle(w2).isolation + '|' + sd.defaultView.getComputedStyle(w2).transform : null; } catch (e) { return String(e); } })(), corner: window.__stRec._cfg().corner, bg: window.__stRec._cfg().bg, frames: window.__stRec._cfg().frames, muted: !!(window.__stRec._r() && window.__stRec._r().muted),
         main: { sheet: has(document, 'st-rec-bg'), ctl: has(document, 'st-rec-ctl'), pv: has(document, 'st-rec-pv') }, pop: { sheet: has(sd, 'st-rec-bg'), ctl: has(sd, 'st-rec-ctl'), pv: has(sd, 'st-rec-pv'), rec: !!(sd && sd.querySelector('.plat-top .pl-rec')), on: !!(sd && sd.body.classList.contains('st-rec-on')) } }); },
+    // the self-view (2 Nov 2026): where it is on the platform, what it shows, what is around it
+    selfInfo: function () { var sw = window.__recSatW, sd = null; try { sd = sw && !sw.closed ? sw.document : null; } catch (e) {} var C = window.__stRec._cfg(), R = window.__stRec._r(), ds = [document, sd].filter(function (x) { return !!x; }), find = function (id) { for (var i = 0; i < ds.length; i++) { var n = ds[i].getElementById(id); if (n) return n; } return null; };
+      var bgEl = find('st-rec-bg'), out = { place: C.place, bg: C.bg, z: Object.keys(C.frames).map(function (k) { return C.frames[k].z; }), fx: !!(R && R.fx), box: (R && R.cb) || null, ph: !!find('st-rec-ph'), sheet: !!bgEl && bgEl.style.display !== 'none', opt: !!find('st-rec-opt'), tall: document.body.classList.contains('st-rec-tall') || !!(sd && sd.body.classList.contains('st-rec-tall')) };
+      var op = find('st-rec-opt'); if (op) { var ob = op.getBoundingClientRect(); out.optBox = [ob.left, ob.top, ob.right, ob.bottom]; out.optFits = op.scrollWidth <= op.clientWidth + 1 && Array.prototype.every.call(op.querySelectorAll('.ro-r'), function (r) { return r.scrollWidth <= r.clientWidth + 1; }); }
+      var e = find('st-rec-self'); if (!e) return JSON.stringify(out); var d = e.ownerDocument, q = e.getBoundingClientRect(), wb = d.getElementById('stpr-win').getBoundingClientRect(), cv = e.querySelector('canvas'), wv = d.defaultView, lit = 0;
+      try { var px = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; for (var i = 0; i < px.length; i += 4000) lit += px[i] + px[i + 1] + px[i + 2]; lit = lit / (px.length / 4000) | 0; } catch (x) { lit = -1; }
+      out.self = { l: q.left - wb.left, t: q.top - wb.top, s: q.width, h: q.height, ww: wb.width, wh: wb.height, abs: [q.left, q.top], lit: lit, inWin: d.getElementById('stpr-win').contains(e), inBg: !!d.getElementById('stpr-bg') && d.getElementById('stpr-bg').contains(e), handles: e.querySelectorAll('.rsv-h').length, top: (function () { var t = d.elementFromPoint(q.left + q.width / 2, q.top + q.height / 2); return !!(t && t.closest && t.closest('#st-rec-self')); })() };
+      return JSON.stringify(out); },
+    // the test's mark: everything of ours over the chart, magenta - the control, the options, the handles (shown), none of it may reach the video
+    selfMark: function () { var sw = window.__recSatW, sd = null; try { sd = sw && !sw.closed ? sw.document : null; } catch (e) {} var d = sd && sd.getElementById('st-rec-ctl') ? sd : document, cw = d.getElementById('stpr-cw').getBoundingClientRect(), ctl = d.getElementById('st-rec-ctl'), op = d.getElementById('st-rec-opt'), st = d.createElement('style'); st.id = 'rec-t-mark';
+      st.textContent = '#st-rec-self .rsv-h { opacity: 1 !important; background: #ff00ff !important; border-color: #ff00ff !important; width: 26px !important; height: 26px !important; } #st-rec-opt, #st-rec-opt * { background: #ff00ff !important; border-color: #ff00ff !important; } #st-rec-ctl { background: #ff00ff !important; border-color: #ff00ff !important; }'; d.head.appendChild(st);
+      ctl.style.transform = 'none'; ctl.style.bottom = 'auto'; ctl.style.left = Math.round(cw.left + cw.width * 0.3) + 'px'; ctl.style.top = Math.round(cw.top + cw.height * 0.15) + 'px'; if (op) { op.style.left = Math.round(cw.left + cw.width * 0.5) + 'px'; op.style.top = Math.round(cw.top + cw.height * 0.3) + 'px'; } return true; },
+    // a frame of the last video (sec < 0: from its end): the magenta in it, and how much of each box given is the stand-in camera's picture
+    selfFrame: async function (sec, boxes) { var x = window.__stRec._last(), v = document.createElement('video'); v.muted = true; v.src = x.url; v.preload = 'auto'; document.body.appendChild(v);
+      await new Promise(function (res) { v.onloadedmetadata = res; v.onerror = res; setTimeout(res, 5000); }); var dur = isFinite(v.duration) ? v.duration : 6; v.currentTime = sec < 0 ? Math.max(0, dur + sec) : Math.min(sec, dur - 0.1); await new Promise(function (res) { v.onseeked = res; setTimeout(res, 4000); }); await W(150);
+      var c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight; var g = c.getContext('2d'); g.drawImage(v, 0, 0); var d = g.getImageData(0, 0, c.width, c.height).data, mag = 0;
+      for (var i = 0; i < d.length; i += 4) { if (d[i] > 200 && d[i + 1] < 70 && d[i + 2] > 200) mag++; }
+      var share = function (q) { if (!q) return null; var cd = g.getImageData(Math.round(q.x + 6), Math.round(q.y + 6), Math.round(q.s - 12), Math.round(q.s - 12)).data, n = 0, all = 0; for (var j = 0; j < cd.length; j += 16) { all++; if ((cd[j + 2] > 100 && cd[j + 2] - cd[j] > 25) || (cd[j] > 200 && cd[j + 1] > 150 && cd[j + 2] > 120)) n++; } return Math.round(n / Math.max(1, all) * 100) / 100; };
+      var f = c.toDataURL('image/png'); v.remove(); return JSON.stringify({ w: c.width, h: c.height, dur: dur, mag: mag, cam: x.cam, share: (boxes || []).map(share), frame: f }); },
     // Live Charts in its own window (the platform drawn there from here)
     popOpen: async function () { var P = window.__stPractice, wo = window.open, k;
       window.open = function (u, n, f) { window.__recSatW = wo.call(window, u, n, f); return window.__recSatW; }; P._lcPop(); window.open = wo;

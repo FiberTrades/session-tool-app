@@ -75,6 +75,7 @@ def mp4_info(path):
     return info
 
 
+if os.environ.get('REC_FMTS'): FORMATS = FORMATS[:int(os.environ['REC_FMTS'])]   # while working on it: fewer formats
 p0 = stored_close('EURUSD', 1.1640)
 RPORT = bt.free_port()
 relay = subprocess.Popen([sys.executable, os.path.join(HERE, '..', 'relay', 'server.py')], env=dict(os.environ, PORT=str(RPORT)), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -253,6 +254,145 @@ try:
     time.sleep(1.0); rclick(c, '#st-rec-pv .rs-f [data-p="x"]'); time.sleep(0.3); chk('real mouse: Discard closes it', not where(c)['main']['pv'])
     add(R1)
     for f in os.listdir(dl): shutil.move(os.path.join(dl, f), os.path.join(OUT, 'rec_realmouse' + os.path.splitext(f)[1]))
+    # ---- the self-view (Nestor, 2 Nov 2026, after a real recording: "whilst i was recording myself i could not see myself in the frame and also i could not
+    #      access the recording options to adjust the camera etc ... make the small window bigger or smaller and also move it around the chart by dragging it"):
+    #      before it starts, while it records, in the video, and the next time ----
+    R4 = []
+    def chk4(name, ok, got=None): R4.append({'name': name, 'ok': bool(ok), 'got': got})
+    def si(cc=None): return json.loads(ev(c, '__recT.selfInfo()'))
+    def near(a, b, tol=3): return abs(a - b) <= tol
+    def until(js, secs=8):
+        for _ in range(int(secs / 0.2)):
+            if ev(c, js): return True
+            time.sleep(0.2)
+        return False
+    def setup_open():
+        until("!document.getElementById('st-rec-pv') || (document.querySelector('#st-rec-pv [data-p=\"x\"]').click(), false)", 4)   # a busy PC: the last preview gone, the platform back from full screen
+        for _ in range(4):
+            rclick(c, '.plat-top .pl-rec')
+            if until("!!document.getElementById('st-rec-bg')", 3): return True
+        return False
+    setup_open()
+    rclick(c, '#st-rec-bg [data-rf="yt"]')
+    sw_on = ev(c, "(function(){var i=document.querySelector('#st-rec-bg [data-rsw=\"cam\"]'); if(!i.checked) i.click(); return true;})()"); time.sleep(1.5)
+    rclick(c, '#st-rec-bg [data-rcn="bl"]')
+    chk4('before it starts: the set-up has Move and resize, next to the corners', ev(c, "!!document.querySelector('#st-rec-bg [data-rplace]') && !document.querySelector('#st-rec-bg [data-rplace]').disabled"))
+    rclick(c, '#st-rec-bg [data-rplace]'); time.sleep(1.2)
+    s0 = si()
+    chk4('...pressed: the set-up steps aside, the camera on the chart with its four handles and a Done', not s0['sheet'] and s0['ph'] and s0.get('self') and s0['self']['handles'] == 4 and s0['self']['lit'] > 20 and not s0['self']['inWin'] and not s0['self']['inBg'] and s0['self']['top'], s0)
+    print('placing the camera:', shot(c, 'rec_self_placing.png'))
+    p0 = at(c, '#st-rec-self')
+    rdrag(c, p0[0], p0[1], p0[0] + 420, p0[1] - 260); s1 = si()
+    chk4('real mouse: dragged, it moves with the mouse', near(s1['self']['l'] - s0['self']['l'], 420, 4) and near(s1['self']['t'] - s0['self']['t'], -260, 4), [s0['self'], s1['self']])
+    hb = at(c, '#st-rec-self [data-h="br"]'); rdrag(c, hb[0], hb[1], hb[0] + 70, hb[1] + 70); s2 = si()
+    chk4('real mouse: the corner handle makes it bigger, its other corner staying put', near(s2['self']['s'] - s1['self']['s'], 70, 4) and near(s2['self']['l'], s1['self']['l'], 2) and near(s2['self']['t'], s1['self']['t'], 2), [s1['self'], s2['self']])
+    hb = at(c, '#st-rec-self [data-h="tl"]'); rdrag(c, hb[0], hb[1], hb[0] + 30, hb[1] + 30); s3 = si()
+    chk4('...the opposite corner makes it smaller, the other corner staying put', near(s3['self']['s'] - s2['self']['s'], -30, 4) and near(s3['self']['l'] + s3['self']['s'], s2['self']['l'] + s2['self']['s'], 2), [s2['self'], s3['self']])
+    chk4('...square all along', near(s3['self']['s'], s3['self']['h'], 1), s3['self'])
+    rclick(c, '#st-rec-ph [data-rph]'); time.sleep(1.0); s4 = si()
+    chk4('Done: the set-up is back, the place kept for this format', s4['sheet'] and not s4['ph'] and not s4.get('self') and 'yt' in s4['place'], s4)
+    chk4('...the corner buttons say none of them', ev(c, "!document.querySelector('#st-rec-bg .rs-cn button.on')"))
+    fr0 = {k: s3['self'][k] / s3['self'][d] for k, d in (('l', 'ww'), ('t', 'wh'), ('s', 'ww'))}
+    rclick(c, '#st-rec-bg [data-r="go"]')
+    for _ in range(60):
+        if where(c)['st'] in ('starting', 'rec') and si().get('self'): break
+        time.sleep(0.25)
+    s5 = si()
+    chk4('it starts: during the count down you already see yourself', bool(s5.get('self')) and s5['self']['lit'] > 20, s5)
+    for _ in range(60):
+        if where(c)['st'] == 'rec': break
+        time.sleep(0.25)
+    time.sleep(0.8); s6 = si(); st6 = ev(c, '__stRec.state()')
+    chk4('recording, the platform alone captured: the camera on the chart, where it was placed (the same share of the platform)', st6.get('mode') == 'el' and s6.get('self') and near(s6['self']['l'] / s6['self']['ww'], fr0['l'], 0.01) and near(s6['self']['t'] / s6['self']['wh'], fr0['t'], 0.01) and near(s6['self']['s'] / s6['self']['ww'], fr0['s'], 0.01), [st6.get('mode'), fr0, s6.get('self')])
+    chk4('...outside what is captured, showing the camera, on top of the chart', s6.get('self') and not s6['self']['inWin'] and not s6['self']['inBg'] and s6['self']['lit'] > 20 and s6['self']['top'], s6.get('self'))
+    chk4('...the control has a camera button', ev(c, "!!document.querySelector('#st-rec-ctl [data-rc=\"opt\"]')"))
+    rclick(c, '#st-rec-ctl [data-rc="opt"]'); time.sleep(0.3); s7 = si()
+    chk4('real mouse: it opens the options, on screen, nothing cut off', s7['opt'] and s7['optFits'] and s7['optBox'][0] >= 0 and s7['optBox'][1] >= 0 and s7['optBox'][2] <= 1920 and s7['optBox'][3] <= 1080, s7)
+    print('options while recording:', shot(c, 'rec_self_options.png'))
+    zr = at(c, '#st-rec-opt [data-ro="z"]'); rdrag(c, zr[0] - zr[2] / 2 + 3, zr[1], zr[0] + zr[2] / 4, zr[1]); s8 = si()
+    chk4('real mouse: the zoom slider works while it records', max(s8['z'] or [0]) > max(s7['z'] or [0]) + 0.1 or max(s8['z'] or [0]) > 1.5, [s7['z'], s8['z']])
+    rclick(c, '#st-rec-opt [data-rbg="blur"]'); time.sleep(0.2); chk4('real mouse: Background Blur while it records', si()['bg'] == 'blur')
+    rclick(c, '#st-rec-opt [data-rbg="none"]'); time.sleep(0.2); chk4('...and None', si()['bg'] == 'none')
+    sr = at(c, '#st-rec-opt [data-ro="s"]'); s9a = si(); sv0 = ev(c, "+document.querySelector('#st-rec-opt [data-ro=\"s\"]').value"); sx0 = sr[0] - sr[2] / 2 + sr[2] * sv0 / 100; rdrag(c, sx0, sr[1], sx0 + sr[2] * 0.12, sr[1]); s9 = si()
+    chk4('real mouse: the size slider resizes the camera on the chart', s9['self']['s'] > s9a['self']['s'] + 10, [s9a['self']['s'], s9['self']['s']])
+    chk4('...the options stayed open throughout', s9['opt'])
+    ev(c, '__recT.selfMark()'); time.sleep(0.2)
+    p1 = at(c, '#st-rec-self'); rdrag(c, p1[0], p1[1], p1[0] + 560, p1[1] + 100); s10 = si(); time.sleep(0.5); st10 = ev(c, '__stRec.state()')
+    chk4('real mouse: dragged while it records', near(s10['self']['l'] - s9['self']['l'], 560, 5) and near(s10['self']['t'] - s9['self']['t'], 100, 5), [s9['self'], s10['self']])
+    old_cam = st10.get('cam')
+    chk4('...the video has it there (the same share of the frame)', old_cam and near(old_cam['x'] / 1920, s10['self']['l'] / s10['self']['ww'], 0.005) and near(old_cam['y'] / 1080, s10['self']['t'] / s10['self']['wh'], 0.005) and near(old_cam['s'] / 1920, s10['self']['s'] / s10['self']['ww'], 0.005), [old_cam, s10['self']])
+    def fps3():
+        a = ev(c, '__stRec.state()'); time.sleep(3); b = ev(c, '__stRec.state()'); return round((b['frames'] - a['frames']) / max(0.5, (b['t'] - a['t']) / 1000), 1)
+    f_on = fps3(); ev(c, "document.getElementById('st-rec-self').style.visibility='hidden', 1"); f_off = fps3(); ev(c, "document.getElementById('st-rec-self').style.visibility='', 1")
+    print('video frames a second with the self-view on screen: %s; with it hidden: %s' % (f_on, f_off))
+    time.sleep(1.5)
+    cam_i = at(c, '#st-rec-opt [data-ro="cam"]'); rclick(c, '#st-rec-opt [data-ro="cam"]'); time.sleep(0.6); s11 = si(); tB = (ev(c, '__stRec.state()').get('t') or 0) / 1000
+    chk4('real mouse: the camera off: gone from the chart, the camera let go', not s11.get('self') and not s11['fx'], s11)
+    print('camera off while recording:', shot(c, 'rec_self_camoff.png'))
+    time.sleep(1.5); tC = (ev(c, '__stRec.state()').get('t') or 0) / 1000
+    rclick(c, '#st-rec-opt [data-ro="cam"]')
+    for _ in range(40):
+        s12 = si()
+        if s12.get('self') and s12['self']['lit'] > 20: break
+        time.sleep(0.25)
+    chk4('...on again: back on the chart in the same place', s12.get('self') and s12['fx'] and near(s12['self']['l'], s10['self']['l'], 3) and near(s12['self']['t'], s10['self']['t'], 3), [s10.get('self'), s12.get('self')])
+    time.sleep(2.0)
+    rclick(c, '#st-rec-ctl [data-rc="stop"]')
+    for _ in range(40):
+        if where(c)['main']['pv']: break
+        time.sleep(0.25)
+    box0 = {'x': fr0['l'] * 1920, 'y': fr0['t'] * 1080, 's': fr0['s'] * 1920}
+    fa = json.loads(ev(c, '__recT.selfFrame(-0.6, %s)' % json.dumps([old_cam, box0])))
+    open(os.path.join(OUT, 'rec_self_frame_end.png'), 'wb').write(base64.b64decode(fa['frame'].split(',', 1)[1])); print('frame:', os.path.join(OUT, 'rec_self_frame_end.png'))
+    chk4('the video, near its end: the camera where it was dragged, not where it had been', fa['share'][0] is not None and fa['share'][0] > 0.8 and fa['share'][1] < 0.35, fa['share'])
+    chk4('...the control, the options and the handles (marked magenta over the chart) nowhere in it', fa['mag'] < 20, fa['mag'])
+    fb = json.loads(ev(c, '__recT.selfFrame(%f, %s)' % ((tB + tC) / 2, json.dumps([old_cam]))))
+    open(os.path.join(OUT, 'rec_self_frame_off.png'), 'wb').write(base64.b64decode(fb['frame'].split(',', 1)[1])); print('frame:', os.path.join(OUT, 'rec_self_frame_off.png'))
+    chk4('...with the camera off, none in the video at that moment', fb['share'][0] is not None and fb['share'][0] < 0.35, [fb['share'], tB, tC, fb['dur']])
+    chk4('...the handles and the control gone from the screen when it ended', not si().get('self') and not si()['opt'], si())
+    time.sleep(1.0); rclick(c, '#st-rec-pv .rs-f [data-p="x"]'); time.sleep(0.3)
+    for f in os.listdir(dl): shutil.move(os.path.join(dl, f), os.path.join(OUT, 'rec_self' + os.path.splitext(f)[1]))
+    # the next recording: where it was left
+    setup_open(); time.sleep(0.8); rclick(c, '#st-rec-bg [data-r="go"]')
+    for _ in range(60):
+        if where(c)['st'] == 'rec': break
+        time.sleep(0.25)
+    time.sleep(0.6); s13 = si()
+    chk4('the next recording: the camera where it was left', s13.get('self') and near(s13['self']['l'] / s13['self']['ww'], s10['self']['l'] / s10['self']['ww'], 0.01) and near(s13['self']['t'] / s13['self']['wh'], s10['self']['t'] / s10['self']['wh'], 0.01), [s10.get('self'), s13.get('self')])
+    time.sleep(1.2); rclick(c, '#st-rec-ctl [data-rc="stop"]')
+    for _ in range(40):
+        if where(c)['main']['pv']: break
+        time.sleep(0.25)
+    time.sleep(1.0); rclick(c, '#st-rec-pv .rs-f [data-p="x"]'); time.sleep(0.3)
+    for f in os.listdir(dl): shutil.move(os.path.join(dl, f), os.path.join(OUT, 'rec_self2' + os.path.splitext(f)[1]))
+    # a tall format placed before it starts: the platform takes that shape to place it, and goes back
+    setup_open(); time.sleep(0.5); rclick(c, '#st-rec-bg [data-rf="reel"]'); ev(c, "(function(){var b=document.querySelector('#st-rec-bg [data-rfit=\"fill\"]'); if(b) b.click(); return 1;})()"); time.sleep(0.3)
+    w_before = ev(c, "document.getElementById('stpr-win').getBoundingClientRect().width")
+    rclick(c, '#st-rec-bg [data-rplace]'); time.sleep(1.5); s14 = si(); w_tall = ev(c, "document.getElementById('stpr-win').getBoundingClientRect().width")
+    chk4('a Reel, placed before it starts: the platform shows the tall shape, the camera on it', s14['tall'] and s14.get('self') and w_tall < w_before and near(s14['self']['wh'] / s14['self']['ww'], 16 / 9, 0.05), [w_before, w_tall, s14.get('self')])
+    print('placing on a Reel:', shot(c, 'rec_self_placing_reel.png'))
+    rclick(c, '#st-rec-ph [data-rph]'); time.sleep(1.2); s15 = si(); w_back = ev(c, "document.getElementById('stpr-win').getBoundingClientRect().width")
+    chk4('...Done: the platform back as it was, this format\'s place apart from YouTube\'s', not s15['tall'] and near(w_back, w_before, 3) and s15['sheet'], [w_back, w_before, s15])
+    rclick(c, '#st-rec-bg [data-rf="yt"]'); rclick(c, '#st-rec-bg [data-rcn="bl"]'); s16 = si()
+    chk4('a corner button: the automatic place again', 'yt' not in s16['place'] and ev(c, "document.querySelector('#st-rec-bg [data-rcn=\"bl\"]').classList.contains('on')"), s16['place'])
+    rclick(c, '#st-rec-bg .rs-f [data-r="close"]'); time.sleep(0.5)
+    # the light theme: the control and the options follow the platform
+    ev(c, "(function(){var m=document.getElementById('rec-t-mark'); if(m) m.remove(); return 1;})()")   # the test's magenta off
+    ev(c, '__recT.light(true)'); setup_open(); time.sleep(0.8); rclick(c, '#st-rec-bg [data-r="go"]')
+    for _ in range(60):
+        if where(c)['st'] == 'rec': break
+        time.sleep(0.25)
+    time.sleep(1.5); rclick(c, '#st-rec-ctl [data-rc="opt"]'); time.sleep(0.6)
+    if not ev(c, "!!document.getElementById('st-rec-opt')"): print('options not open (light):', where(c), si()); rclick(c, '#st-rec-ctl [data-rc="opt"]'); time.sleep(0.6)
+    chk4('the light theme: the options and the control light', ev(c, "(function(){var o=document.getElementById('st-rec-opt'),k=document.getElementById('st-rec-ctl');return !!o&&!!k&&getComputedStyle(o).backgroundColor==='rgb(255, 255, 255)'&&getComputedStyle(k).backgroundColor==='rgb(255, 255, 255)';})()"), where(c))
+    print('options, light:', shot(c, 'rec_self_options_light.png'))
+    rclick(c, '#st-rec-ctl [data-rc="stop"]')
+    for _ in range(40):
+        if where(c)['main']['pv']: break
+        time.sleep(0.25)
+    time.sleep(1.0); rclick(c, '#st-rec-pv .rs-f [data-p="x"]'); time.sleep(0.3); ev(c, '__recT.light(false)')
+    for f in os.listdir(dl): shutil.move(os.path.join(dl, f), os.path.join(OUT, 'rec_self3' + os.path.splitext(f)[1]))
+    add(R4)
     # ---- Live Charts in its own window (Nestor: "if i press record on an external window why is this menu opening on the app and not on
     #      the external window?"): the set-up, the capture, the control and the preview all in that window ----
     R2 = []
@@ -288,6 +428,14 @@ try:
             time.sleep(0.25)
         w2 = where(c); w2['err'] = ev(pc, "(document.querySelector('#st-rec-bg .rs-err')||{}).textContent||''")
         chk2('...it records that window\'s platform (Element Capture), the control in that window', w2['st'] == 'rec' and w2['mode'] == 'el' and w2['pop']['ctl'] and not w2['main']['ctl'] and w2['pop']['on'], w2)
+        time.sleep(0.6); ps0 = json.loads(ev(c, '__recT.selfInfo()'))
+        chk2('...the camera on the chart in that window, outside what is captured', ps0.get('self') and ps0['self']['lit'] > 20 and not ps0['self']['inWin'] and not ps0['self']['inBg'] and ps0['self']['top'], ps0)
+        pp = at(pc, '#st-rec-self'); rdrag(pc, pp[0], pp[1], pp[0] + 300, pp[1] - 150); ps1 = json.loads(ev(c, '__recT.selfInfo()'))
+        chk2('real mouse there: it drags', ps1.get('self') and abs(ps1['self']['l'] - ps0['self']['l'] - 300) < 6 and abs(ps1['self']['t'] - ps0['self']['t'] + 150) < 6, [ps0.get('self'), ps1.get('self')])
+        hb2 = at(pc, '#st-rec-self [data-h="br"]'); rdrag(pc, hb2[0], hb2[1], hb2[0] + 50, hb2[1] + 50); ps2 = json.loads(ev(c, '__recT.selfInfo()'))
+        chk2('real mouse there: its corner resizes', ps2.get('self') and abs(ps2['self']['s'] - ps1['self']['s'] - 50) < 6, [ps1.get('self'), ps2.get('self')])
+        rclick(pc, '#st-rec-ctl [data-rc="opt"]'); time.sleep(0.3); ps3 = json.loads(ev(c, '__recT.selfInfo()'))
+        chk2('real mouse there: the options open in that window', ps3['opt'] and ps3['optFits'] and ev(pc, "!!document.getElementById('st-rec-opt')"), ps3)
         try: print('pop-out recording:', open(os.path.join(OUT, 'rec_popout_recording.png'), 'wb').write(base64.b64decode(pc.call('Page.captureScreenshot', format='png')['data'])) and os.path.join(OUT, 'rec_popout_recording.png'))
         except Exception as e: print('pop-out shot failed', e)
         ev(pc, "(function(){var t=document.getElementById('st-rec-ctl'), p=document.getElementById('stpr-cw').getBoundingClientRect(); t.style.background='#ff00ff'; t.style.borderColor='#ff00ff'; t.style.transform='none'; t.style.bottom='auto'; t.style.left=Math.round(p.left+p.width*0.4)+'px'; t.style.top=Math.round(p.top+p.height*0.5)+'px'; return 1;})()")   # the test's mark, over the chart
