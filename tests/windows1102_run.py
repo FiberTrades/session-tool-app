@@ -94,7 +94,7 @@ def main():
     relay = subprocess.Popen([sys.executable, os.path.join(HERE, '..', 'relay', 'server.py')], env=dict(os.environ, PORT=str(rport)), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(1)
     out = os.path.join(tempfile.gettempdir(), 'st_fake_ea_windows1102.json')
-    ea = subprocess.Popen([sys.executable, os.path.join(HERE, 'fake_ea_livecharts.py'), TOK, '400', out, 'EURUSD', str(T0), '1.1640', '5', '90001234'],
+    ea = subprocess.Popen([sys.executable, os.path.join(HERE, 'fake_ea_livecharts.py'), TOK, str(400 + 3 * int(os.environ.get('W1102_LONG', '0')) // 1000), out, 'EURUSD', str(T0), '1.1640', '5', '90001234'],
                           env=dict(os.environ, ST_RELAY='127.0.0.1:%d' % rport, ST_FAKE_V='9.03'))
     time.sleep(2)
     src = open(os.path.join(HERE, 'windows1102_e2e.js'), encoding='utf-8').read().replace('__RELAY__', 'ws://127.0.0.1:%d/realtime/v1/websocket?vsn=1.0.0' % rport).replace('__TOK__', TOK).replace('__LONG__', os.environ.get('W1102_LONG', '0'))
