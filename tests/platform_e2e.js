@@ -335,7 +335,7 @@
     if (tmc && tmc.style.display !== 'none') { var cx0 = tmc.querySelector('[data-tmc="0"]'); if (cx0) cx0.click(); } for (k = 0; k < 20 && $('.pl-tag.drag'); k++) await W(100); await W(300);
     var slTag = Array.prototype.filter.call(document.querySelectorAll('.pl-tag'), function (t) { return t.querySelector('.k') && t.querySelector('.k').textContent === 'SL'; })[0];
     check('...let go and Cancel: the SL back where MT5 has it, the tag as it was', !$('.pl-tag.drag') && slTag && /SL\s*−1R/.test(slTag.textContent) && Math.abs(p0.lines.filter(function (l) { return /\|sl\|/.test(l._k || ''); })[0]._p - sl0) < 1e-9, slTag && slTag.textContent);
-    bt.querySelector('.xx').click(); await W(300);
+    bt.querySelector('.xx').click(); for (k = 0; k < 40 && !document.querySelector('.pl-tag.ask'); k++) await W(75);   // the tag is repainted by the next overlay paint: 46-134 ms on an idle machine, past a fixed 300 ms on a loaded one (29 Oct 2026, 2 runs in 3)
     var ask = Array.prototype.filter.call(document.querySelectorAll('.pl-tag'), function (t) { return t.classList.contains('ask'); })[0];
     check('✕ asks first: Close it in MT5? Close / Keep', ask && /Close it in MT5\?/.test(ask.textContent) && ask.querySelector('[data-plyes]') && ask.querySelector('[data-plno]'), ask && ask.textContent);
     ask.querySelector('[data-plno]').click(); for (k = 0; k < 12 && document.querySelector('.pl-tag.ask'); k++) await W(150);

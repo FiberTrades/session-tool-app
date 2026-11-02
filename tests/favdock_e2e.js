@@ -84,10 +84,10 @@
     C.favPosP = C.favPosP || {}; C.favPosP[1] = { l: 99999, t: 80 }; document.getElementById('stpr-favbtn').click(); await W(60); document.getElementById('stpr-favbtn').click(); await W(150);
     var edge = function () { var b = bar(1).getBoundingClientRect(), c = P._panes()[1].el.getBoundingClientRect(); return { gap: Math.round(c.right - b.right), left: Math.round(b.left - c.left), w: Math.round(c.width) }; }, rw = function () { return Math.round($('.plat-right').getBoundingClientRect().width); };
     var e0 = edge(), sw = $('.plat-right [data-plsw]'), swr = sw.getBoundingClientRect(), sx = swr.left + swr.width / 2, sy = swr.top + Math.min(40, swr.height / 2), rw0 = rw();
-    pe(sw, 'pointerdown', sx, sy); pe(sw, 'pointermove', sx - 170, sy); pe(sw, 'pointermove', sx - (640 - rw0), sy); pe(sw, 'pointerup', sx - (640 - rw0), sy); await W(500);
+    pe(sw, 'pointerdown', sx, sy); pe(sw, 'pointermove', sx - 170, sy); pe(sw, 'pointermove', sx - (640 - rw0), sy); pe(sw, 'pointerup', sx - (640 - rw0), sy); for (var wk = 0; wk < 40 && !(edge().w < e0.w - 80 && edge().gap >= -0.5 && edge().gap < 3); wk++) await W(100);   // a size change reaches the bar on a rendered frame: late on a loaded machine
     var e1 = edge();
     ok('the side panel dragged from ' + rw0 + ' to ' + rw() + ' px: chart 2 narrower (' + e0.w + ' to ' + e1.w + ' px), its bar held wholly inside it, at its right edge', rw() > rw0 + 80 && e1.w < e0.w - 80 && e1.gap >= -0.5 && e1.gap < 3 && e1.left >= 0, [rw0, rw(), e0, e1]);
-    var back = rw() - rw0; pe(sw, 'pointerdown', sx - back, sy); pe(sw, 'pointermove', sx, sy); pe(sw, 'pointerup', sx, sy); await W(500);   // (the panel stops at its widest for the screen)
+    var back = rw() - rw0; pe(sw, 'pointerdown', sx - back, sy); pe(sw, 'pointermove', sx, sy); pe(sw, 'pointerup', sx, sy); for (wk = 0; wk < 40 && !(Math.abs(edge().w - e0.w) < 3 && edge().gap >= -0.5 && edge().gap < 3); wk++) await W(100);   // (the panel stops at its widest for the screen)
     var e2 = edge();
     ok('...and narrowed again: the chart back (' + e2.w + ' px), the bar back at its right edge, where it was left (kept: ' + J(C.favPosP[1]) + ')', Math.abs(e2.w - e0.w) < 3 && e2.gap >= -0.5 && e2.gap < 3 && C.favPosP[1].l === 99999, [e0, e2, rw()]);
 
