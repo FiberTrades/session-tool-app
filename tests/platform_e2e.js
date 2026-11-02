@@ -130,10 +130,10 @@
       var ics = $('.ph-icons'), land = innerWidth > innerHeight, barTop = function () { return bar.getBoundingClientRect().top; };
       var inScr = function (r) { return r.left >= -1 && r.top >= -1 && r.right <= innerWidth + 1 && r.bottom <= innerHeight + 1; };
       var ord = Array.prototype.map.call(ics.children, function (x) { return x.id ? x.id.replace('stpr-', '') : (x.getAttribute('data-phpn') || (x.hasAttribute('data-phtrb') ? 'ticket' : (x.hasAttribute('data-phchat') ? 'chat' : (x.hasAttribute('data-phtheme') ? 'theme' : (x.hasAttribute('data-phplan') ? 'plan' : x.className))))); }).join(' ');
-      check('the toolbar\'s order: Live, the symbol, the timeframe, the ticket, draw, undo, redo, Show on chart, alerts, Chat, Chart settings, Snapshot, the theme, Check my bias, Positions & History, Today, Object tree, Watchlist',
-        ord === 'ticket drawbtn undo redo layersbtn alertsbtn chat lookbtn snapbtn theme plan tb td ot wl' && bar.children[0] === $('.ph-live') && bar.children[2] === $('.ph-tf') && bar.children[3] === ics, ord);
+      check('the toolbar\'s order: Live, the symbol, the timeframe, the ticket, draw, undo, redo, Show on chart, alerts, News, Chat, Chart settings, Snapshot, the theme, Check my bias, Positions & History, Today, Object tree, Watchlist',
+        ord === 'ticket drawbtn undo redo layersbtn alertsbtn newsbtn chat lookbtn snapbtn theme plan tb td ot wl' && bar.children[0] === $('.ph-live') && bar.children[2] === $('.ph-tf') && bar.children[3] === ics, ord);
       var shown = Array.prototype.filter.call(ics.children, function (x) { return getComputedStyle(x).display !== 'none'; }), szs = shown.map(function (x) { var r = x.getBoundingClientRect(), g = x.querySelector('svg'); return Math.round(r.width) + 'x' + Math.round(r.height) + '/' + (g ? Math.round(g.getBoundingClientRect().width) : 0); });
-      check('...every one full size (38 px, its icon 21 px): none squeezed', shown.length === 15 && szs.every(function (z) { return z === '38x40/21'; }), szs.join(' '));
+      check('...every one full size (38 px, its icon 21 px): none squeezed', shown.length === 16 && szs.every(function (z) { return z === '38x40/21'; }), szs.join(' '));
       var bcs = getComputedStyle(bar);
       check('...it swipes sideways: a finger pans it only sideways, the flick its own (not the page\'s or the chart\'s)', bcs.overflowX === 'auto' && bcs.touchAction === 'pan-x' && bcs.overscrollBehaviorX === 'contain', [bcs.overflowX, bcs.touchAction, bcs.overscrollBehaviorX]);
       var fa = function (pe) { return getComputedStyle(bar, pe).opacity; };

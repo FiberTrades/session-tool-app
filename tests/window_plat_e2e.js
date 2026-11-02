@@ -123,6 +123,24 @@
     check('the sun there: that window\'s platform light, and the chart window with it', sw.classList.contains('pl-lt') && cwin.classList.contains('pl-lt'), [sw.className, cwin.className]);
     sq('.plat-top [data-pltheme]').click(); await W(1000);
     check('...the moon: both dark again', !sw.classList.contains('pl-lt') && !cwin.classList.contains('pl-lt'));
+    // the news button's two options (2 Nov 2026), in the windows themselves: the menu and the week in the window it was pressed in, the flags that chart's own
+    window.__stReplay._newsWeek.load = async function () { return { from: '2026-10-12', to: '2026-10-18', rows: [{ at: '2026-10-14T12:30:00Z', timed: true, currency: 'USD', title: 'CPI m/m', impact: 'High', forecast: '0.3%', previous: '0.4%', actual: '0.2%' }] }; };
+    sq('#stpr-newsbtn').click(); await W(250);
+    var sm = sd.getElementById('stpr-menu');
+    check('Live Charts\' window: the news button opens its two options there', sm && sm.classList.contains('show') && sd.getElementById('stpr-newsshow') && sm.querySelector('[data-nwopen]'), sm && sm.textContent);
+    sm.querySelector('[data-nwopen]').click(); await W(500);
+    var snx = sq('.stpr-news');
+    check('...the week opens in that window, over its charts', !!snx && /CPI m\/m/.test(snx.textContent) && !document.querySelector('.stpr-news') && vis(snx), snx && snx.textContent.slice(0, 100));
+    if (snx) { snx.querySelector('[data-nwx]').click(); await W(150); }
+    check('...its X closes it', !sq('.stpr-news'));
+    var cnb = cd.querySelector('#stpr-tb2 #stpr-newsbtn'); if (cnb) { cnb.click(); await W(300); }
+    var cm = cd.getElementById('stpr-menu');
+    check('a chart window: the news button opens its menu in that window', cnb && cm && cm.classList.contains('show') && cd.getElementById('stpr-newsshow') && cm.querySelector('[data-nwopen]'), cnb ? (cm && cm.textContent) : 'no button');
+    if (cnb && cd.getElementById('stpr-newsshow')) { var per0 = JSON.stringify(P._cfg().showPer || {}); cd.getElementById('stpr-newsshow').click(); await W(200);
+      var per = P._cfg().showPer || {}; check('...its switch is that chart\'s own (chart 2), the first chart keeps its flags', per[1] && per[1].news === false && !(per[0] && per[0].news === false), [per0, JSON.stringify(per)]);
+      cd.getElementById('stpr-newsshow').click(); await W(150); cm.querySelector('[data-nwopen]').click(); await W(500);
+      var cnx = cd.querySelector('.stpr-news'); check('...the week opens over that window\'s chart', !!cnx && /CPI m\/m/.test(cnx.textContent) && vis(cnx), cnx && cnx.textContent.slice(0, 80));
+      if (cnx) { cnx.querySelector('[data-nwx]').click(); await W(120); } }
     // the bottom panel's line, dragged in that window
     var dr = sq('.pl-drag'), bh0 = P._plat().st.bh;
     if (dr) { var r0 = dr.getBoundingClientRect(), ev = function (t, y) { return new satW.PointerEvent(t, { bubbles: true, clientX: r0.left + 20, clientY: y, pointerId: 1 }); };

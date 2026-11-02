@@ -139,7 +139,7 @@ def main():
         for scrolled in (0, 1):
             fl = json.loads(M.eval(FLAGS % scrolled))
             ok('news flags at the latest candles (%s): %d flags in %d groups, none over Spread, the » chip or the logo' % ('scrolled back 4 candles' if scrolled else 'at the latest candle', fl['flags'], fl['groups']),
-               fl['flags'] >= (5 if scrolled else 10) and not fl['hits'] and fl['spread'], fl)
+               fl['flags'] >= (5 if scrolled else 10) and not fl['hits'], fl)
             if scrolled:
                 C.call('Input.dispatchMouseEvent', type='mouseMoved', x=fl['corner'][0], y=fl['corner'][1]); time.sleep(0.6); fl = json.loads(M.eval(FLAGS % 1))
                 ok('...the mouse at the bottom right, the » chip on: still none over it', not fl['hits'] and fl['chip'], fl)

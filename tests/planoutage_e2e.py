@@ -231,7 +231,7 @@ def main():
 
         # Supabase down: no session to hand out, the profile read failing - still signed in, the plan as it was
         load(mode('down'))
-        s = until(lambda s: s.get('badge'), 15)
+        s = until(lambda s: s.get('badge') and s.get('charts') and s.get('community'), 15)
         check('down: still signed in (the session the server could not refresh), no sign-in screen, no paywall', s.get('user') and s.get('away') and not s.get('gates'), s)
         check('...the badge still says Journal Pro, Charts and Community still there, paid features on', s.get('badge') == 'Journal Pro' and s.get('paid') and s.get('charts') and s.get('community') and (s.get('plan') or {}).get('paid') is True, s)
         p0 = s.get('prof', 0)

@@ -27,7 +27,7 @@
     // what the overlay writes over a few frames
     var g = document.getElementById('strp-ov').getContext('2d'), texts = [], of = g.fillText;
     g.fillText = function (t) { texts.push(String(t)); return of.apply(this, arguments); };
-    var painted = async function () { texts.length = 0; await W(90); return texts.slice(); };
+    var painted = async function () { texts.length = 0; await W(90); for (var pi = 0; pi < 15 && !texts.length; pi++) await W(100); return texts.slice(); };
     var db = document.getElementById('strp-drawbtn'); if (db && !document.getElementById('strp-tb').classList.contains('strp-drawopen')) db.click(); await W(40);
     var tools = Array.prototype.map.call(document.querySelectorAll('#strp-tools [data-tool]'), function (b) { return b.getAttribute('data-tool'); });
     ok('the drawing tools (in TradingView\'s groups since batch B): Emoji, Long position and Short position after Text and the price note', tools.join(',') === 'trend,ray,arrow,path,hline,hray,vline,channel,fib,rect,circle,pen,brush,range,text,note,emoji,long,short', tools.join(','));

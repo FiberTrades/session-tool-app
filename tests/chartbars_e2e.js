@@ -146,6 +146,15 @@
       ok('Trade Replay: over a flag, the card, that flag\'s currency first', card.style.display === 'block' && card.querySelectorAll('.strp-nc-item').length === 5 && /USD/.test(card.querySelector('.strp-nc-item').textContent), card.textContent.slice(0, 120));
       R._newsCard(null);
     }
+    if (!phoneNow) {   // the playback on its bottom row too
+      var rp = $('.strp-plrpt'), rr = $('#strp-ct').getBoundingClientRect(), rpp = $('[data-rrc="strp-play"]');
+      ok('Trade Replay: back, play, forward and the speed on the bottom row too, the row as Replay\'s', rp && $('#strp-ct').contains(rp) && rr.height === 40 && rpp.getBoundingClientRect().height === 30 && $('[data-rrc="strp-spdcur"]').textContent === $('#strp-spdcur').textContent, rp && [rp.textContent, rr.height]);
+      rpp.click(); await W(200); ok('...its play button plays', R._s().playing && /Pause|Pausa/.test(rpp.textContent), rpp.textContent); rpp.click(); await W(150);
+      $('[data-rrc="strp-spdcur"]').click(); await W(200); var tm0 = $('#strp-menu');
+      ok('...its speed list upward, on the screen', tm0.classList.contains('show') && tm0.getBoundingClientRect().bottom <= $('[data-rrc="strp-spdcur"]').getBoundingClientRect().top && inView(tm0), tm0.getBoundingClientRect());
+      $('#strp-menu [data-rrms="4000"]').click(); await W(150);
+      ok('...0.25x picked: both buttons say it, the replay runs at it', R._s().ms === 4000 && $('[data-rrc="strp-spdcur"]').textContent === '0.25×' && $('#strp-spdcur').textContent === '0.25×', [R._s().ms, $('#strp-spdcur').textContent]);
+    }
     var sl = Array.prototype.map.call(document.querySelectorAll('#strp-spdmenu button b'), function (b) { return b.textContent; }).join(' ');
     ok('Trade Replay: the same eight speeds', sl === '16× 8× 4× 2× 1× 0.5× 0.25× 0.1×', sl);
     var tn = $('#strp-newsbtn'), tm = $('#strp-menu'); tn.click(); await W(200);
