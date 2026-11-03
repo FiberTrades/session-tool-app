@@ -87,6 +87,22 @@ def main():
 
         cdp.eval(src)
         part('setup')
+        if os.environ.get('RW_CLOSE_NOSTAGE'):   # the app window closed during Replay with no Live Charts' window: nothing is left to draw the chart windows
+            part('appReplay')
+            before = [t['id'] for t in targets(dbg) if 'chart.html' in t.get('url', '')]
+            app_id = next(t['id'] for t in targets(dbg) if '/app.html' in t.get('url', ''))
+            urllib.request.urlopen('http://127.0.0.1:%d/json/close/%s' % (dbg, app_id), timeout=5).read()
+            for _ in range(40):
+                if not any(t['id'] == app_id for t in targets(dbg)): break
+                try: cdp.call('Page.handleJavaScriptDialog', accept=True)
+                except Exception: pass
+                time.sleep(.25)
+            t0 = time.time(); left = before
+            while left and time.time() - t0 < 20:
+                time.sleep(.5); left = [t['id'] for t in targets(dbg) if 'chart.html' in t.get('url', '')]
+            ok = len(before) == 2 and not left
+            print('PASS ' if ok else 'FAIL ', 'no Live Charts window, the app window closed during Replay: the chart windows close with it, %.1f s later' % (time.time() - t0), '' if ok else [before, left], flush=True)
+            return 0 if ok else 1
         part('toReplay')
         shot(dbg, 'livecharts.html', 'rw_stage_replay.png'); shot(dbg, 'chart.html?slot=1', 'rw_chart_replay.png')
         part('stageControls'); part('chartWinControls')
