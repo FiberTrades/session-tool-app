@@ -52,6 +52,18 @@
     data.viewScope = 'lifetime'; renderAllTrades(); document.querySelector('.tab[data-page="stats"]').click(); await W(400);
     var tips = Array.prototype.map.call(document.querySelectorAll('[data-tip]'), function (e) { return e.getAttribute('data-tip'); }).filter(function (x) { return /on 2 accounts/.test(x); });
     ok('Series of 10: its dot\'s hover names both', tips.length >= 1 && /FTMO 70K −0\.10R/.test(tips[0]) && /TTT 10K \+0\.27R/.test(tips[0]), tips[0]);
+    // only dollars, on a member whose main currency is pounds (3 Nov 2026: "and what happens whe the only currency is $?")
+    var U = newAccountBlank('TTT 10K', 10000, 'challenge'); U.kind = 'challenge'; U.currency = 'USD'; data.accounts = [U]; data.settings.currency = 'GBP'; data.activeAccountId = U.id; data.viewScope = 'lifetime';
+    data.currentSeries = [{ id: 'u1', accountId: U.id, symbol: 'EUR/USD', date: iso, openTs: iso, dayOfWeek: d.getDay(), result: 'Lose', r: 5, risk: 44.4, actualGross: -39.96, costs: 0 }]; rebuildSeriesByDate();
+    document.querySelector('.tab[data-page="tradeview"]').click(); await W(400); renderAllTrades(); renderCalendar(); await W(150);
+    var uh = txt(document.querySelector('#alltrades-table .atl-head .atl-c-net')), un = txt(document.querySelector('#alltrades-table .atl-row:not(.atl-head) .atl-c-net')), uc = txt(document.querySelector('#cal-grid .cal-day.has-trade .cal-day-pl'));
+    ok('only dollars: the Trade Log says Net $ over dollars', /^net \$$/i.test(uh) && /−\$39\.96/.test(un), [uh, un]);
+    ok('...the Calendar\'s day too', /\$40/.test(uc) && !/£/.test(uc), uc);
+    ok('...the month total too', /−\$39\.96/.test(txt(document.getElementById('cal-month-summary'))), txt(document.getElementById('cal-month-summary')).slice(0, 80));
+    openDayModal(d.toDateString()); await W(300);
+    var ud = txt(document.getElementById('modal-net')), uh2 = Array.prototype.map.call(document.querySelectorAll('#modal-trades .modal-trade-row.headers .modal-trade-cell'), txt), ur = txt(document.querySelector('#modal-trades .modal-trade-row[data-id]'));
+    ok('...the day\'s window: its total, heading and row all in dollars', /−\$39\.96/.test(ud) && uh2.some(function (x) { return /^net \$$/i.test(x); }) && /−\$39\.96/.test(ur) && !/£/.test(ud + ur), [ud, uh2, ur]);
+    document.getElementById('day-modal-bg').classList.remove('show');
     document.querySelector('.tab[data-page="tradeview"]').click(); await W(400); var a = document.querySelector('.st-accs'); if (a) a.scrollIntoView({ block: 'center' });
   } catch (e) { out.push({ name: 'test ran', ok: false, got: String(e && e.stack || e) }); }
   return out;

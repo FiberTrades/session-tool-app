@@ -19103,8 +19103,11 @@ try {
     });
     return out;
   }
-  // A money column's heading over more than one currency: its word alone, not "Net £" above a dollar figure.
-  function _headNoCur(label, list) { return Object.keys(moneyBy(list, function () { return 1; })).length > 1 ? String(label).replace(/\s+\S+$/, '') : label; }
+  // A money column's heading: its word and the currency actually under it (Nestor, 3 Nov 2026: "and what happens whe the only currency is $?"), its word alone over more than one.
+  function _headNoCur(label, list) { var ks = Object.keys(moneyBy(list, function () { return 1; })), w = String(label).replace(/\s+\S+$/, ''); return ks.length > 1 ? w : (ks.length === 1 ? w + ' ' + curSymOf(ks[0]).trim() : label); }
+  // A list's total for a small cell with room for one figure: in its one currency, else the member's main one (a copied trade counts in its Lead's). All of them: fmtMoneyBy(_leadBy(list)).
+  function _leadBy(list) { var m = {}; (list || []).forEach(function (t) { var c = tradeCur(t); m[c] = (m[c] || 0) + tradeNetPL(t) * tradeCopies(t); }); return m; }
+  function _cellMoney(list) { var m = _leadBy(list), ks = Object.keys(m), main = accCur(null), c = ks.length === 1 ? ks[0] : (m[main] != null ? main : ks[0]); return { v: c ? m[c] : 0, cur: c || main }; }
   // Money per currency for a list, in spans coloured by their own sign; one line each when stack is true.
   function _moneyHtml(list, fn, stack) {
     var m = moneyBy(list, fn), main = accCur(null), ks = Object.keys(m).sort(function (a, b) { return a === main ? -1 : b === main ? 1 : a.localeCompare(b); });
@@ -36454,7 +36457,7 @@ try {
       const eeStr = (entry || exit) ? (esc(entry || '\u2014') + ' <span class="atl-sub">/</span> ' + esc(exit || '\u2014')) : '\u2014';
       const riskV = parseFloat(tr.risk);
       const slV = parseFloat(tr.sl);
-      const riskStr = (!isNaN(riskV) && riskV > 0) ? fmtMoney(riskV, { noSign: true }) : '\u2014';
+      const riskStr = (!isNaN(riskV) && riskV > 0) ? fmtMoney(riskV, { noSign: true, cur: tradeCur(tr) }) : '\u2014';
       const slStr = (!isNaN(slV) && slV > 0) ? slV.toFixed(0) + _pT(tr) : '\u2014';
       // Pot R·P adapts to result: Wins read potentialR/Pips; BEs read bePotentialR/Pips
       // (how far price extended before reversing); Losses have no potential.
@@ -36480,8 +36483,8 @@ try {
         + '<div class="atl-cell atl-c-hold">' + formatMinutes(holdMinutes(tr)) + '</div>'
         + '<div class="atl-cell atl-c-risksl">' + riskStr + ' <span class="atl-sub">\u00b7 ' + slStr + '</span></div>'
         + (tr._ideaTrades ? '<div class="atl-cell atl-c-gross">' + _moneyHtml([tr], x => tradeGross(x), true) + '</div><div class="atl-cell atl-c-net">' + _moneyHtml([tr], x => tradeNetPL(x), true) + '</div>'
-          : '<div class="atl-cell atl-c-gross ' + (gross > 0 ? 'good' : gross < 0 ? 'bad' : 'be') + '">' + fmtMoney(gross) + '</div>'
-          + '<div class="atl-cell atl-c-net ' + (net > 0 ? 'good' : net < 0 ? 'bad' : 'be') + '">' + fmtMoney(net) + '</div>')
+          : '<div class="atl-cell atl-c-gross ' + (gross > 0 ? 'good' : gross < 0 ? 'bad' : 'be') + '">' + fmtMoney(gross, { cur: tradeCur(tr) }) + '</div>'
+          + '<div class="atl-cell atl-c-net ' + (net > 0 ? 'good' : net < 0 ? 'bad' : 'be') + '">' + fmtMoney(net, { cur: tradeCur(tr) }) + '</div>')
         + '</div>' + _ideaAccLine(tr);
     });
 
@@ -36736,7 +36739,7 @@ try {
       const _mnDayShow = !!_mnDayNote;   // envelope stays: closed+pulsing until read, opened+calm after
       const mnDayEnv = _mnDayShow ? ('<div class="cal-day-mn-env'+(_mnDaySeen ? ' seen' : '')+'" title="'+(_mnDaySeen ? 'Mentor note (opened)' : 'Mentor note')+'">'+(_mnDaySeen ? MN_ENV_OPEN_SVG : MN_ENV_SVG)+'</div>') : '';
       const todayCls = isToday ? 'today' : '';
-      const plLabel = dayTrades.length > 0 ? fmtMoneyShort(net) : '';
+      const _dCell = _cellMoney(dayTrades), plLabel = dayTrades.length > 0 ? fmtMoneyShort(_dCell.v, _dCell.cur) : '';
       // P&L label colour mirrors the day classification so BE days show neutral/blue label, not red
       const plCls = cls === 'win' ? 'good' : cls === 'loss' ? 'bad' : 'be';
       const tradeCount = dayTradeCount > 0 ? (dayTradeCount === 1 ? t('cal.trade_count_singular') : t('cal.trade_count_plural').replace(/\{N\}/g, dayTradeCount)) : '';
@@ -36786,7 +36789,9 @@ try {
           weekCount += dTrades.length;
         }
         const wCls = weekNet > 0 ? 'good' : weekNet < 0 ? 'bad' : '';
-        const wLabel = weekCount > 0 ? fmtMoneyShort(weekNet) : curSym() + '0';
+        const _wT = []; for (let i = 0; i < 5; i++) { const dt = new Date(mondayDate); dt.setDate(dt.getDate() + i); _wT.push(...(grouped[dt.toDateString()] || [])); }
+        const _wCell = _cellMoney(_wT);
+        const wLabel = weekCount > 0 ? fmtMoneyShort(_wCell.v, _wCell.cur) : curSym() + '0';
         const wSub = weekCount > 0 ? (weekCount === 1 ? t('cal.trade_count_singular') : t('cal.trade_count_plural').replace(/\{N\}/g, weekCount)) : '';
         // Determine weekKey for dedup-matching against saved reviews
         const yearStart = new Date(fridayDate.getFullYear(), 0, 1);
@@ -36846,7 +36851,7 @@ try {
                        monthNet > 0 ? 'good' : monthNet < 0 ? 'bad' : 'be';
       // Five tiles (TradeZella treatment, Nestor 3 Oct 2026): Month total, Trades, Trading days, WR, Best / worst day.
       const tile = (label, val, extra) => `<div class="cms-tile${extra ? ' ' + extra : ''}"><span class="cms-l">${label}</span><span class="cms-v">${val}</span></div>`;
-      calSetHtml(summary, tile(t('cal.month_total'), `<span class="total ${monthCls}">${fmtMoney(monthNet)}</span>`, 'cms-total')
+      calSetHtml(summary, tile(t('cal.month_total'), `<span class="total ${monthCls}">${fmtMoneyBy(_leadBy(monthTrades))}</span>`, 'cms-total')
         + tile(t('cal.trades'), monthTrades.length)
         + tile(t('cal.trading_days'), monthDays)
         + (monthWR !== null ? tile(t('cal.wr'), monthWR + '%') : '')
@@ -36965,7 +36970,7 @@ try {
     // what the figure represents at a glance, and matches the weekly/monthly
     // modals which use the same prefix.
     const _dayCurs = Object.keys(moneyBy(dayTrades, x => tradeNetPL(x))).length;
-    netEl.innerHTML = `<span class="modal-net-label">${t('lbl.net_pnl')}</span>` + (_dayCurs > 1 ? '<span class="st-cur-v">' + _moneyHtml(dayTrades, x => tradeNetPL(x) * tradeCopies(x)) + '</span>' : fmtMoney(net));
+    netEl.innerHTML = `<span class="modal-net-label">${t('lbl.net_pnl')}</span>` + (_dayCurs > 1 ? '<span class="st-cur-v">' + _moneyHtml(dayTrades, x => tradeNetPL(x) * tradeCopies(x)) + '</span>' : fmtMoney(net, dayTrades.length ? { cur: tradeCur(dayTrades[0]) } : {}));
     netEl.className = 'modal-net ' + (_dayCurs > 1 ? '' : (net > 0 ? 'good' : net < 0 ? 'bad' : ''));
 
     // Day-level R + pips totals (across all trades on this day, win/lose/be combined the usual way).
@@ -37024,7 +37029,7 @@ try {
 
     document.getElementById('modal-stats').innerHTML = `
       <div class="modal-stat"><div class="label">${t('dmodal.wlbe')}</div><div class="v"><span class="wlbe-w">${wins}</span><span class="wlbe-sep">/</span><span class="wlbe-l">${losses}</span><span class="wlbe-sep">/</span><span class="wlbe-be">${bes}</span></div></div>
-      <div class="modal-stat"><div class="label">${t('dmodal.gross_pnl')}</div><div class="v ${_dayCurs > 1 ? '' : (gross > 0 ? 'good' : gross < 0 ? 'bad' : '')}">${_dayCurs > 1 ? _moneyHtml(dayTrades, x => tradeGross(x) * tradeCopies(x), true) : fmtMoney(gross)}</div></div>
+      <div class="modal-stat"><div class="label">${t('dmodal.gross_pnl')}</div><div class="v ${_dayCurs > 1 ? '' : (gross > 0 ? 'good' : gross < 0 ? 'bad' : '')}">${_dayCurs > 1 ? _moneyHtml(dayTrades, x => tradeGross(x) * tradeCopies(x), true) : fmtMoney(gross, dayTrades.length ? { cur: tradeCur(dayTrades[0]) } : {})}</div></div>
       <div class="modal-stat"><div class="label">${t('dmodal.net_r')}</div><div class="v ${dayTotalRCls}">${dayTotalRStr}</div></div>
       <div class="modal-stat"><div class="label">${t('dmodal.net_acc')}</div><div class="v ${dayNetPctCls}">${dayNetPctStr}</div></div>`;
 
@@ -37196,7 +37201,7 @@ try {
         <div class="modal-trade-cell center">${tSide(t.side) || '—'}</div>
         <div class="modal-trade-cell center"><span class="modal-tag ${tagCls}">${tResult(t.result)}</span></div>
         <div class="modal-trade-cell center">${rStr} <span class="modal-trade-sub-inline">· ${pStr}</span></div>
-        <div class="modal-trade-cell center ${t._ideaTrades ? '' : cls}">${t._ideaTrades ? _moneyHtml([t], x => tradeNetPL(x), true) : fmtMoney(tn)}</div>
+        <div class="modal-trade-cell center ${t._ideaTrades ? '' : cls}">${t._ideaTrades ? _moneyHtml([t], x => tradeNetPL(x), true) : fmtMoney(tn, { cur: tradeCur(t) })}</div>
         <div class="modal-trade-cell center">${formatMinutes(hm)}</div>
       </div>${_ideaAccLine(t)}`;
     });
