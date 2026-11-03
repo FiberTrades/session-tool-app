@@ -46,7 +46,8 @@ function storeUrl(feed: string, symbol: string, tf: number, cols: string, lo: nu
 // on the free plan, whose database holds 500 MB (over it, everything goes read-only, members' journals included). Past
 // DEEP_CAP the DEEP part of an M1 / M5 batch (older than DEEP_AGE) is dropped; recent candles always go in, so today's
 // days never go empty. The EA is told "ok" either way, so it moves on instead of retrying the same batch.
-const DEEP_CAP = 400 * 1024 * 1024;
+// 4 GB since 3 Nov 2026 (Nestor: 1-minute and 5-minute Replay further back than 100 days, "yes i do"): the Pro plan's disk is 8 GB; a year of M1 and M5 is about 60 MB more per symbol, per broker.
+const DEEP_CAP = 4 * 1024 * 1024 * 1024;
 const DEEP_AGE = 100 * 86400;
 let sizeAt = 0, sizeBytes = 0;
 async function dbBytes(): Promise<number> {

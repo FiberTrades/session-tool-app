@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "9.20"
+#property version   "9.21"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -4071,7 +4071,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.20\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\",\"cloud\":%s,\"company\":\"%s\",\"server\":\"%s\",\"start_bal\":%s}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.21\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\",\"cloud\":%s,\"company\":\"%s\",\"server\":\"%s\",\"start_bal\":%s}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY),g_inCloud?"true":"false",
                             JsonSafe(AccountInfoString(ACCOUNT_COMPANY)),JsonSafe(AccountInfoString(ACCOUNT_SERVER)),DoubleToString(CpAccountSize(),2)));   // v9.12: the Accounts tab's "Read from MT5" line
   }
@@ -4466,7 +4466,7 @@ void LwOpen()
 // v9.06: MT5's Algo Trading button (and this EA's own "Allow Algo Trading") - off, no order can be placed, from here or from the app
 bool AlgoOn(){ return TerminalInfoInteger(TERMINAL_TRADE_ALLOWED)!=0 && MQLInfoInteger(MQL_TRADE_ALLOWED)!=0; }
 int  g_lwAl=-1;                       // v9.06: Algo Trading as last told to the app
-string LwHi(){ return StringFormat("{\"v\":\"9.20\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d,\"cl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0,g_inCloud?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
+string LwHi(){ return StringFormat("{\"v\":\"9.21\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d,\"cl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0,g_inCloud?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
 // v9.06 (Nestor, 19 Oct 2026: "whatever messages appear in MT5 i need to also see them in the app"): every message this EA writes on its
 // chart (Flash) goes to Session Terminal too, which shows it on Live Charts. Only while the line is up; nothing is queued.
 void LwMsg(string m)
@@ -6477,6 +6477,7 @@ void CE_CatchupOnce()
 //  v8.96: a timeframe that stopped short of its depth is looked at again on every start (HB_Load),
 //  so raising "Max. bars in chart" and restarting MT5 carries on - before or after M1's turn.
 //==================================================================
+string HB_REDO      = "MMReplayDeep1.txt";  // v9.21: this terminal has done its one pass below (HB_Load)
 string HB_FILE      = "MMReplayHistF.csv";  // sym,tf index,depth,oldest sent,newest sent,done,last top-up (server time)
                                              // v9.19: a new file - the history is sent again, now kept under this MT5's server
 long   HB_DEPTH[6]  = {365*86400, 365*86400, 365*86400, 3*365*86400, 5*365*86400, 0};   // M1..D1 before now; 0 = all (M1, M5: a year since 8.95)
@@ -6507,7 +6508,7 @@ void HB_Load()
   {
    if(g_hbLoaded) return;
    g_hbLoaded=true;
-   if(!FileIsExist(HB_FILE)) return;
+   if(!FileIsExist(HB_FILE)){ HB_RedoMark(); return; }   // starts from nothing: it has nothing to send again
    int h=FileOpen(HB_FILE,FILE_READ|FILE_CSV|FILE_ANSI|FILE_SHARE_READ,',');
    if(h==INVALID_HANDLE) return;
    while(!FileIsEnding(h))
@@ -6530,6 +6531,23 @@ void HB_Load()
       g_hbDep[k]=HB_DEPTH[ti];
       HB_AddSymbol(sym);
      }
+   FileClose(h);
+   // v9.21 (Nestor, 3 Nov 2026: 1-minute and 5-minute Replay further back than 100 days, "yes i do"): while the server's storage limit stood it stored no M1 or
+   // M5 older than 100 days and still answered ok, so this terminal counts them as sent. Once, it goes back over them from there; the rest carry on as they were.
+   if(!FileIsExist(HB_REDO))
+     {
+      long edge=(long)TimeCurrent()-99*86400;
+      for(int k=0;k<g_hbN;k++) if(g_hbT[k]<=1 && g_hbOld[k]>0 && g_hbOld[k]<edge){ g_hbOld[k]=edge; g_hbDone[k]=0; }
+      HB_Save();
+      HB_RedoMark();
+     }
+  }
+
+void HB_RedoMark()
+  {
+   int h=FileOpen(HB_REDO,FILE_WRITE|FILE_TXT|FILE_ANSI);
+   if(h==INVALID_HANDLE) return;
+   FileWriteString(h,"1");
    FileClose(h);
   }
 
