@@ -167,11 +167,13 @@
       var ask = d.getElementById('lc-ask-bg');
       check('Replay pressed in Live Charts\' window: it asks there, where he is looking', !!ask && shown(ask.querySelector('.lc-ask')) && /Switch to Replay\?/.test(ask.textContent) && !document.getElementById('lc-ask-bg'), [!!ask, !!document.getElementById('lc-ask-bg')]);
       (ask || document.getElementById('lc-ask-bg')).querySelector('[data-lca="1"]').click();
-      for (k = 0; k < 120 && !(P._s() && !P._s().live && P._panes()[1] && P._panes()[1].n && !P._stage().on); k++) await W(150); await W(1500);
-      check('...Replay in the app, the chart window still where it was', !P._stage().on && P._s() && !P._s().live && inChartWin(), [P._stage().on, inChartWin()]);
-      document.getElementById('stpr-lvback').click(); await W(200); document.getElementById('lc-ask-bg').querySelector('[data-lca="1"]').click();
+      for (k = 0; k < 120 && !(P._s() && !P._s().live && P._panes()[1] && P._panes()[1].n); k++) await W(150); await W(1500);
+      check('...Replay in that window, the chart window still where it was', P._stage().on && P._s() && !P._s().live && inChartWin(), [P._stage().on, inChartWin()]);
+      d.getElementById('stpr-lvback').click(); await W(200); d.getElementById('lc-ask-bg').querySelector('[data-lca="1"]').click();
       await waitLive(); for (k = 0; k < 60 && !inChartWin(); k++) await W(150); await W(1200);
-      check('...back to Live: still there, and no Live button', P._s().live && inChartWin() && !shown(document.getElementById('stpr-lvback')), [inChartWin(), getComputedStyle(document.getElementById('stpr-lvback')).display]);
+      check('...back to Live: still there, and no Live button', P._s().live && P._stage().on && inChartWin() && !shown(d.getElementById('stpr-lvback')), [inChartWin(), d.defaultView.getComputedStyle(d.getElementById('stpr-lvback')).display]);
+      P._stageDetach(true); for (k = 0; k < 80 && (P._stage().on || !inChartWin() || !P._panes()[0] || P._panes()[0].el.ownerDocument !== document); k++) await W(150); await W(1000);
+      check('...Back to the app: Live Charts in the app, the chart window still there', !P._stage().on && inChartWin(), [P._stage().on, inChartWin()]);
     }),
 
     // every menu of a small chart window stays inside it (the runner has made that window small)
