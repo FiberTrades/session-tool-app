@@ -169,7 +169,7 @@
     // ---- an open trade: every 2 seconds, and its lines on the charts ----
     var nowS = Math.floor(Date.now() / 1000), op = LC.state().px.b;
     window.__stLive.upsert({ ticket: 990077, login: 90001234, symbol: 'EURUSD', direction: 'short', lots: 1, risk: 100,
-      opened_at: new Date(Date.now() - 5 * 60000).toISOString(), seen_at: new Date().toISOString(), tick_at: new Date().toISOString(),
+      opened_at: new Date(Date.now() - 30 * 3600000).toISOString(), seen_at: new Date().toISOString(), tick_at: new Date().toISOString(),
       r_now: -0.1, pnl_now: -10, sl_r: -1, tp_r: 3, ladder: '', px: op, op: op, rpx: 0.0004, digits: 5, bar: (nowS - nowS % 60) + ',' + op + ',' + op + ',' + op + ',' + op + ',60', spread: 0.00007 });
     for (k = 0; k < 20; k++) { await W(300); if (/^2000\|EURUSD\|/.test(LN.state().key)) break; }
     check('a trade open: "watch" says every 2 s', /^2000\|EURUSD\|/.test(LN.state().key), LN.state().key);
