@@ -106,6 +106,30 @@ def main():
                 closed = sat.eval("(function(){var o=document.getElementById('dcx-img'); return !(o&&o.classList.contains('open'));})()")
                 print('%s  ...a real click on the dark closes it' % ('PASS' if closed else 'FAIL'))
                 if not closed: rc = 1
+                # Nestor, 3 Nov 2026: "the X doesnt work!!! i cant come out the picture!!": the X itself, with a real mouse
+                for t, b in (('mouseMoved', 0), ('mousePressed', 1), ('mouseReleased', 0)):
+                    sat.call('Input.dispatchMouseEvent', type=t, x=x, y=y, button='left' if t != 'mouseMoved' else 'none', buttons=b, clickCount=0 if t == 'mouseMoved' else 1)
+                time.sleep(0.8)
+                info = json.loads(sat.eval("(function(){var b=document.getElementById('dcx-img-x'), o=document.getElementById('dcx-img'); if(!b||!o) return JSON.stringify({none:1}); var q=b.getBoundingClientRect(), cx=q.left+q.width/2, cy=q.top+q.height/2, top=document.elementFromPoint(cx,cy); return JSON.stringify({open:o.classList.contains('open'), x:cx, y:cy, w:q.width, h:q.height, top:top&&(top.id||top.className||top.tagName), z:getComputedStyle(o).zIndex, parent:o.parentNode&&o.parentNode.tagName, inView:window.innerWidth});})()"))
+                print('info', info)
+                if info.get('open'):
+                    for t, b in (('mouseMoved', 0), ('mousePressed', 1), ('mouseReleased', 0)):
+                        sat.call('Input.dispatchMouseEvent', type=t, x=info['x'], y=info['y'], button='left' if t != 'mouseMoved' else 'none', buttons=b, clickCount=0 if t == 'mouseMoved' else 1)
+                    time.sleep(0.5)
+                closed = sat.eval("(function(){var o=document.getElementById('dcx-img'); return !(o&&o.classList.contains('open'));})()")
+                print('%s  ...and a real click on its X closes it' % ('PASS' if (closed and info.get('open')) else 'FAIL'))
+                if not (closed and info.get('open')): rc = 1
+                # ...and when something lies over the X and swallows clicks on the page
+                for t, b in (('mouseMoved', 0), ('mousePressed', 1), ('mouseReleased', 0)):
+                    sat.call('Input.dispatchMouseEvent', type=t, x=x, y=y, button='left' if t != 'mouseMoved' else 'none', buttons=b, clickCount=0 if t == 'mouseMoved' else 1)
+                time.sleep(0.8)
+                sat.eval("(function(){var c=document.createElement('div'); c.id='x-cover'; c.style.cssText='position:fixed;top:0;right:0;width:200px;height:120px;z-index:2147483647'; document.body.appendChild(c); window.__xEat=function(e){ e.stopPropagation(); }; document.addEventListener('click',window.__xEat,true); return 1;})()")
+                for t, b in (('mouseMoved', 0), ('mousePressed', 1), ('mouseReleased', 0)):
+                    sat.call('Input.dispatchMouseEvent', type=t, x=info['x'], y=info['y'], button='left' if t != 'mouseMoved' else 'none', buttons=b, clickCount=0 if t == 'mouseMoved' else 1)
+                time.sleep(0.5)
+                closed2 = sat.eval("(function(){var o=document.getElementById('dcx-img'); var r=!(o&&o.classList.contains('open')); document.removeEventListener('click',window.__xEat,true); var c=document.getElementById('x-cover'); if(c) c.remove(); return r;})()")
+                print('%s  ...and still closes with something lying over the X and taking clicks' % ('PASS' if closed2 else 'FAIL'))
+                if not closed2: rc = 1
         cdp.eval("(function(){ var d = window.__pcSat && window.__pcSat.document; var b = d && d.querySelector('.plat-top [data-pltheme]'); if (b) b.click(); return 1; })()")
         time.sleep(2)
         shot(dbg_port, 'popchat_window_light.png')
