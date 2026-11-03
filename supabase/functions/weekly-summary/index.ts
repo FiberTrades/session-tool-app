@@ -115,7 +115,7 @@ function allTrades(j: Any): Any[] {
   return out;
 }
 // A trade and its copies are ONE trade, as the app's _ideaMerge (Nestor, 1 Nov 2026: "I only took 2 trades, the 3rd one was a copy trade
-// of the second trade of the week"): the first trade, carrying the money and the risk of every copy, so its R is the idea's R once.
+// of the second trade of the week"): the Lead's trade, carrying the money and the risk of every copy, with the R of the Lead's trade alone, as if nothing had been copied (3 Nov 2026).
 function grossOf(t: Any): number {
   const risk = parseFloat(t.risk) || 0, r = parseFloat(t.r) || 0;
   return t.actualGross != null ? Number(t.actualGross) : (t.result === "Win" ? r * risk : t.result === "Lose" ? -risk : 0);
@@ -132,18 +132,21 @@ function mergeIdeas(list: Any[]): Any[] {
     const g: Any[] = x.__g; if (g.length === 1) return g[0];
     const ts = (t: Any) => Date.parse(String(t.openTs || "")) || 0;
     const sorted = g.slice().sort((a, b) => ts(a) - ts(b));
+    const lead = sorted.filter((t) => !t.copyOf && !t.copyFollow)[0] || sorted[0];
     const rk = g.reduce((a, t) => a + (parseFloat(t.risk) || 0), 0);
-    return Object.assign({}, sorted[0], {
+    return Object.assign({}, lead, {
       actualGross: g.reduce((a, t) => a + grossOf(t), 0),
       costs: g.reduce((a, t) => a + Math.abs(parseFloat(t.costs) || 0), 0),
-      risk: rk > 0 ? rk : sorted[0].risk,
+      risk: rk > 0 ? rk : lead.risk,
       copies: g.length,
+      leadR: realR(lead),
     });
   });
 }
 // A trade's realised R, as the app's tradeRforMath: net money (the real result when imported, else the logged R) over the money
 // risked; a loss stays negative; with no risk logged, the logged R for a win, -1 for a loss, 0 for a break-even.
 function realR(t: Any): number {
+  if (t && t.leadR != null) return t.leadR;
   const res = t && t.result; if (res !== "Win" && res !== "Lose" && res !== "BE") return 0;
   const risk = parseFloat(t.risk) || 0, r = parseFloat(t.r) || 0;
   if (risk > 0) {

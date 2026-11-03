@@ -19014,6 +19014,7 @@ try {
       var first = (Date.parse(hit.openTs) || 0) <= (Date.parse(row.openTs) || 0) ? hit : row;
       var id = hit.ideaId || String(first.mt5Ticket || first.id);
       hit.ideaId = id; row.ideaId = id;
+      try { [hit, row].forEach(function (x) { if (x.mt5Login && window.__stEA.roleOf(x.mt5Login) === 'follow') x.copyFollow = true; }); } catch (e) {}
       try { if (hit.seriesId) { var sv = findTradeById(hit.seriesId); if (sv) sv.ideaId = id; } } catch (e) {}
       var a = _ideaAnswers(hit);
       if (_ideaFilled(a)) IDEA_KEYS.forEach(function (k) { row[k] = _ideaClone(a[k]); });
@@ -19056,8 +19057,9 @@ try {
       });
     });
   }
-  // A list with each idea as ONE trade: its first trade, carrying the money of every copy (so R stays the idea's R
-  // and P&L is what all your accounts made). _ideaN = how many accounts. Trades with no copies pass through as they are.
+  // A list with each idea as ONE trade: its Lead's trade, carrying the money of every copy (P&L is what all your accounts made),
+  // and the R of the Lead's trade alone, as if nothing had been copied (Nestor, 3 Nov 2026: "all i wanted was for the app to not count copied trades as extra trades"; a blend of both accounts read a break-even as -0.07R and added pounds to dollars).
+  // _ideaN = how many accounts. Trades with no copies pass through as they are.
   function _ideaMerge(list) {
     var out = [], at = {};
     (list || []).forEach(function (t) {
@@ -19069,7 +19071,10 @@ try {
       if (!x || !x.__g) return x;
       var g = x.__g; if (g.length === 1) return g[0];
       g = g.slice().sort(function (a, b) { return (Date.parse(a.openTs) || 0) - (Date.parse(b.openTs) || 0); });
-      var m = Object.assign({}, g[0]);
+      var _lead = g.filter(function (t) { return !t.copyOf && !t.copyFollow; })[0] || g[0];   // a copy can open a moment before its Lead
+      if (_lead !== g[0]) g = [_lead].concat(g.filter(function (t) { return t !== _lead; }));
+      var m = Object.assign({}, _lead);
+      m._ideaLead = _lead;
       m.actualGross = g.reduce(function (sm, t) { return sm + tradeGross(t); }, 0);
       m.costs = g.reduce(function (sm, t) { return sm + tradeCosts(t); }, 0);
       var rk = g.reduce(function (sm, t) { return sm + (parseFloat(t.risk) || 0); }, 0);
@@ -21848,7 +21853,8 @@ try {
       });
       return best;
     }
-    return { apply: apply, logged: logged, summary: summary, riskFor: riskFor, copier: copier, fmtRisk: fmtRisk, fmtDist: fmtDist, describe: describe, unitOf: unitOf,
+    function roleOf(login) { var out = ''; Object.keys(rows).forEach(function (k) { var r = rows[k], x = r.settings || {}; if (String(r.login) === String(login) && (x.copy_role === 'lead' || x.copy_role === 'follow')) out = x.copy_role; }); return out; }
+    return { apply: apply, logged: logged, summary: summary, riskFor: riskFor, copier: copier, roleOf: roleOf, fmtRisk: fmtRisk, fmtDist: fmtDist, describe: describe, unitOf: unitOf,
              loaded: loaded, ready: function () { return seeded; }, whenReady: whenReady,
              rows: function () { return rows; }, log: function () { return log; } };
   })();
@@ -21952,6 +21958,7 @@ try {
   })();
 
   function tradeRforMath(t) {
+    if (t && t._ideaLead) return tradeRforMath(t._ideaLead);   // a trade and its copies: the Lead's own R
     const res = t.result;
     if (res !== 'Win' && res !== 'Lose' && res !== 'BE') return 0;
     const risk = parseFloat(t.risk) || 0;
@@ -27320,6 +27327,7 @@ try {
         ...(t.mt5Symbol ? { mt5Symbol: t.mt5Symbol } : {}),
         // A copy made with the Trade Log's copy button: the leaderboard leaves it out (its trade already counts).
         ...(t.copyOf ? { copyOf: t.copyOf } : {}),
+        ...(t.copyFollow ? { copyFollow: true } : {}),
       };
       // Idempotent save: if this review trade was already committed to the series, UPDATE that
       // same series trade in place (matched by the id we linked when it was first saved) rather

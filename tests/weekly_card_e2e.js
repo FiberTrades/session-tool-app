@@ -98,8 +98,18 @@
   data.currentSeries = JSON.parse(JSON.stringify(WK)); data.history = []; rebuildSeriesByDate(); data.nudgeLog = NL; data.settings.tradingDays = [1, 2, 3, 5];
   var appC = window.__stWeekly.card('2026-10-26');
   var fri = function (c) { return c.days.filter(function (d) { return d.key === '2026-10-30'; })[0]; };
+  var WKNET = Math.round((2357.56 / 500 - 50.05 / 500) * 100) / 100;   // Monday's win and the Lead's break-even
   ok('the app\'s card: 2 trades, 1 W 0 L 1 BE, not 3', appC.trades === 2 && appC.wins === 1 && appC.losses === 0 && appC.bes === 1, appC);
-  ok('the app\'s card: net R counts the copy once (+4.65R, not +4.88R), Friday one trade', appC.netR === 4.65 && fri(appC).n === 1 && fri(appC).r === -0.07 && appC.daysTraded === 2, [appC.netR, fri(appC)]);
+  ok('the app\'s card: Friday is the Lead\'s own trade, -0.10R, not a blend of both accounts (-0.07R), and it counts once', appC.netR === WKNET && fri(appC).n === 1 && fri(appC).r === -0.1 && appC.daysTraded === 2, [appC.netR, fri(appC)]);
+  (function () {
+    var rev = JSON.parse(JSON.stringify(WK)); rev[1].copyFollow = false; rev[2].copyFollow = true; var flip = [rev[0], rev[2], rev[1]];
+    data.currentSeries = flip; rebuildSeriesByDate();
+    var cc = window.__stWeekly.card('2026-10-26');
+    ok('...the same when the copy is listed first (it opened a moment before the Lead)', fri(cc).r === -0.1 && fri(cc).n === 1, fri(cc));
+    var mg = window.__stIdeaMerge(flip).filter(function (t) { return t._ideaN === 2; })[0];
+    ok('...money still adds every account, R is still the Lead\'s', !!mg && mg.costs === 62.45 && Math.abs(mg.actualGross - 25.72) < 0.001 && Math.abs(tradeRforMath(mg) - tradeRforMath(rev[1])) < 1e-9, mg && [mg.costs, mg.actualGross]);
+    data.currentSeries = JSON.parse(JSON.stringify(WK)); rebuildSeriesByDate();
+  })();
   // the server's card, from the function's own source
   var src = await (await fetch('/supabase/functions/weekly-summary/index.ts')).text();
   var part = src.slice(src.indexOf('// ---------- the week, in the member'), src.indexOf('// ---------- the words'));
@@ -111,7 +121,7 @@
   if (srvF) {
     var f = srvF({ s: { tz: 'Europe/London', tradingDays: [1, 2, 3, 5] }, un: 'Nestor', acc: data.accounts, cs: JSON.parse(JSON.stringify(WK)), h: [], rs: null, bh: [], nl: NL, wc: {}, toff: [] }, Date.parse('2026-11-01T18:00:00Z'));
     ok('the server\'s card: 2 trades, 1 W 1 BE', f.card.trades === 2 && f.card.wins === 1 && f.card.bes === 1 && f.trades === 2, f.card);
-    ok('the server\'s card: net R +4.65R, Friday one trade at -0.07R, 2 days traded', f.card.netR === 4.65 && fri(f.card).n === 1 && fri(f.card).r === -0.07 && f.card.daysTraded === 2, [f.card.netR, fri(f.card)]);
+    ok('the server\'s card: Friday one trade at the Lead\'s -0.10R, 2 days traded', f.card.netR === WKNET && fri(f.card).n === 1 && fri(f.card).r === -0.1 && f.card.daysTraded === 2, [f.card.netR, fri(f.card)]);
     ok('the server and the app agree', JSON.stringify([f.card.netR, f.card.trades, f.card.days]) === JSON.stringify([appC.netR, appC.trades, appC.days.map(function (d) { return { key: d.key, dow: d.dow, r: d.r, n: d.n }; })]), [f.card.days, appC.days]);
     var bc = f.card.rules.filter(function (x) { return x.id === 'bias'; })[0];
     ok('the server stores what was behind the flag', bc && bc.flagged === 1 && bc.hits && bc.hits.against_bias === 1 && !bc.hits.no_bias, bc);
