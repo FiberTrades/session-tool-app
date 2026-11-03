@@ -97902,7 +97902,8 @@ window.__stAZ = (function () {
   function wsrPopCheck(cb){ if (WSR.checking) return; WSR.checking = true;
     setTimeout(function(){ var w = null; try { w = window.open('about:blank', 'st-popcheck', 'popup,width=160,height=90,left=40,top=40'); } catch (e) {}
       var ok = !!w; try { if (w) w.close(); } catch (e) {} var o = wsrGet(); o.pop = ok; wsrSet(o); WSR.checking = false; if (cb) cb(ok); }, 5600); }
-  function wsrStart(){ var o = wsrGet(); if (!o.on || !wsrSlots().length || phone() || touchOnly() || popped || LV.solo) return;
+  /* LV.keepOut: this window was reloaded with charts out in their windows and Live Charts in the app: they carry on Live at once, whatever the setting and the tab this window lands on (3 Nov 2026: nothing took them until Charts was opened, and after 2 minutes they closed; the same during Replay) */
+  function wsrStart(){ var o = wsrGet(), kept = LV.keepOut || null; LV.keepOut = null; if ((!kept && (!o.on || !wsrSlots().length)) || phone() || touchOnly() || popped || LV.solo) return;
     var tries = 0, go = function(){ tries++;
       if (!((window.currentUser || window.__stLcForce) && lcLiveOK())) { if (tries < 120) setTimeout(go, 500); return; }   // signed in, with Charts (__stLcForce: the tests' stand-in)
       if (!window.__stLcForce && !window.__stJournalPulled && tries < 120) { setTimeout(go, 500); return; }   // the journal in first: the new-day question is decided from it
@@ -97917,11 +97918,11 @@ window.__stAZ = (function () {
          meanwhile by the member simply shows what is built. */
       var here = function(){ return tb.classList.contains('active'); };
       if (!here()) { lcWarm(true); lcShow(); }
-      var slots = wsrSlots(), t0 = Date.now(), done = function(){ var w0 = Date.now();
+      var slots = kept || wsrSlots(), t0 = Date.now(), done = function(){ var w0 = Date.now();
           (function wait(){ var outAll = slots.every(function(k){ return popOn(+k) || !(+k < CFG.layout); });   // its windows took their charts first (else leaving would stop them)
             if (!outAll && Date.now() - w0 < 15000) { setTimeout(wait, 300); return; }
             if (!here()) lcHide(); lcWarm(false); })(); };
-      var n = 0, ready = function(){ n++; if (S && panes.length === CFG.layout && panes.every(function(p){ return p.n > 0; })) { wsrOpenAll(false); setTimeout(done, 600); return; } if (n < 120) setTimeout(ready, 500); else done(); };
+      var n = 0, ready = function(){ n++; if (S && panes.length === CFG.layout && panes.every(function(p){ return p.n > 0; })) { if (!kept) wsrOpenAll(false); setTimeout(done, 600); return; } if (n < 120) setTimeout(ready, 500); else done(); };
       setTimeout(ready, 800); };
     go(); }
   // Live Charts' page built off screen and unseen: on the page, it lays out and draws as in the tab (charts need a size), nothing of it shows
@@ -97945,6 +97946,7 @@ window.__stAZ = (function () {
       try { p.chart.remove(); } catch (e) {} pc.appendChild(cv); } catch (e) {} }
   function satLetGo(i){ var o = POP[i]; if (!o) return; satFreeze(i); try { if (o.unwire) o.unwire(); } catch (e) {} try { o.w.__stFree = 1; } catch (e) {} o.shut = true; delete POP[i]; }
   function satLetGoAll(){ var out = []; Object.keys(POP).forEach(function(k){ if (popOn(+k)) out.push(+k); satLetGo(+k); }); return out; }
+  function LCW0(){ return /[?&](livecharts|practice|mv)=/.test(location.search); }
   function satPending(){ var x = LV.expect; return !!(x && Date.now() < x.until); }   // (a window taken meanwhile is built by that first build, not rebuilt now)
   function satAsk(){ var op = null; try { op = LCW ? window.opener : LV.handFrom; } catch (e) {}
     try { if (op && !op.closed && op.__stPractice && op.__stPractice._satHandOver) op.__stPractice._satHandOver(); } catch (e) {}
@@ -98061,7 +98063,7 @@ window.__stAZ = (function () {
   var LV = { inl: false, max: false, host: null, clk: 0, rq: 0, sig: '', paT: 0, paAt: 0, paSeen: {}, logBack: null, want: null, acctK: null };
   // the charts already out in windows of their own that this window is about to take (satWait): named by the window that handed them
   // over (?out=), or kept from before this window reloaded
-  try { var sx = JSON.parse(sessionStorage.getItem('st_satexp') || 'null'); sessionStorage.removeItem('st_satexp'); if (sx && Array.isArray(sx.s) && Date.now() - sx.at < 20000) { LV.expect = { s: sx.s, until: Date.now() + 15000 }; awayHold(sx.s); } } catch (e) {}
+  try { var sx = JSON.parse(sessionStorage.getItem('st_satexp') || 'null'); sessionStorage.removeItem('st_satexp'); if (sx && Array.isArray(sx.s) && Date.now() - sx.at < 20000) { if (!sx.sat && !LCW0()) LV.keepOut = sx.s.slice(); LV.expect = { s: sx.s, until: Date.now() + 15000 }; awayHold(sx.s); } } catch (e) {}
   try { var sxo = new URLSearchParams(location.search).get('out'); if (sxo) { LV.expect = { s: sxo.split(',').map(Number).filter(function(k){ return k >= 1; }), until: Date.now() + 180000 }; awayHold(LV.expect.s); } } catch (e) {}   // until its first build, however long its start takes
   function nowS(){ return Math.floor((Date.now() + (LV.toff || 0)) / 1000); }   // toff: the tests' weekday on a weekend
   // today's trading day; at a weekend the last one (Friday's)
@@ -99415,9 +99417,9 @@ window.__stAZ = (function () {
   // this app window going away (closed or reloaded): its chart windows stay as they are, as still pictures, until the next one takes them
   try { window.addEventListener('pagehide', function(){ var solo = LV.solo || LCW; if (!Object.keys(POP).length && !solo && !LV.sat) return;
       LV.bye = true;   // going: it takes no chart window now (satReady)
-      var ws = Object.keys(POP).map(function(k){ return POP[k] && POP[k].w; }).filter(Boolean), gs = satLetGoAll();
+      var hadSat = !!LV.sat, ws = Object.keys(POP).map(function(k){ return POP[k] && POP[k].w; }).filter(Boolean), gs = satLetGoAll();
       if (LV.sat) stageLetGo(gs);   // Live Charts' own window: a still picture, until the app window reloaded takes it again (or it becomes the app itself)
-      if (gs.length) try { sessionStorage.setItem('st_satexp', JSON.stringify({ s: gs, at: Date.now() })); } catch (e) {}
+      if (gs.length) try { sessionStorage.setItem('st_satexp', JSON.stringify({ s: gs, at: Date.now(), sat: hadSat })); } catch (e) {}
       // Live Charts' own window: the app gets its candles up to this second, so it has nothing to download before it draws them (Nestor,
       // 23 Oct 2026: "if i close the main chart the other 2 freeze for a second then live price resumes, can you stop this?")
       var seed = null; try { if (S && S.live && S.base) seed = { raw: S.sym.raw, day: S.day, base: S.base, baseTf: S.baseTf, digits: S.digits }; } catch (e) {}
@@ -99457,7 +99459,7 @@ window.__stAZ = (function () {
     try { if (!w || w.closed) return false; } catch (e) { return false; }
     if (LV.sat === w) return true;
     if (!lcLiveOK() || !window.__stSB) return null;   // not signed in yet (this window has just reloaded): it waits
-    if (S && !S.live && isOpen()) return null;   // a replay here: it waits (and after a while becomes the app itself)
+    if (S && !S.live && isOpen() && !LV.inl && !LV.max) return null;   // Back Testing over the app: it waits (and after a while becomes the app itself); Replay in the Charts tab goes with it (stageAttach)
     var d = null; try { d = w.document; } catch (e) {} if (!d || !d.body) return null;
     if (w.__stPrep !== ENG) { stagePrep(w); return null; }   // its look and its chart library first: then the move is only the move
     if (!w.LightweightCharts) return null;
@@ -99488,7 +99490,7 @@ window.__stAZ = (function () {
     try { d.title = 'Live Charts \u00b7 Session Terminal'; w.__stSym = S && S.sym ? S.sym.raw : (sym || CFG.sym || ''); } catch (e) {}
     stageWire(w); stageHostAll();
     lcAwayPaint(true); try { lcModePaint(); } catch (e) {}
-    if (S && S.live) { lvClkArm(); rebuild(); } else goLive(sym || CFG.sym);
+    if (S && S.live) { lvClkArm(); rebuild(); } else if (S && win.classList.contains('lcp')) rebuild(); else goLive(sym || CFG.sym);
     if (LV.satGhost) { var gh = LV.satGhost, chk = function(){ if (LV.satGhost !== gh) { try { gh.remove(); } catch (e) {} return; } var drawn = panes.some(function(p){ return p.el && p.el.ownerDocument === d && p.n > 0; });
         if (!drawn && Date.now() - LV.satGhostAt < 8000) { setTimeout(chk, 120); return; }
         LV.satGhost = null; gh.style.transition = 'opacity .18s ease'; gh.style.opacity = '0'; setTimeout(function(){ try { gh.remove(); } catch (e) {} }, 240); };
@@ -99621,7 +99623,7 @@ window.__stAZ = (function () {
       if (LV.inl || LV.max) { inlineMax(!LV.max); return; } if (phone() || landPhone()) { chartMax(!$('stpr-bg').classList.contains('chartmax')); return; } CFG.max = !$('stpr-bg').classList.contains('max'); save(); setMax(CFG.max); });
     $('stpr-cmx').addEventListener('click', function(){ chartMax(false); });
     $('stpr-pop').addEventListener('click', function(){ if (LV.sat && $('stpr-pop').ownerDocument !== document) { stageDetach(true); try { window.focus(); } catch (e) {} return; }   // in Live Charts' own window: back into the app (Nestor, 30 Oct 2026: "shouldnt this be a go back to the main app button when the chart is on a new external window already?")
-      if (S && S.live) lcPopOut(); else popOut(); });
+      if (S && (S.live || ((LV.inl || LV.max) && lcLiveOK() && $('stpr-win').classList.contains('lcp')))) lcPopOut(); else popOut(); });   // Replay in the Charts tab goes to Live Charts' own window as Live does, its chart windows left where they are (it was a second copy of the app, and they closed: 3 Nov 2026)
     $('stpr-win').addEventListener('click', WH.win = function(e){
       var t = e.target; if (!(t.closest && t.closest('.stpr-tg'))) flyShut();   // a click anywhere else closes a tools group
       if (t.closest && t.closest('#stpr-keysbtn')) { keysMenu($('stpr-keysbtn')); return; }

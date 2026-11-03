@@ -145,6 +145,66 @@
       if (ask(cw.document)) ask(cw.document).querySelector('[data-lca="0"]').click(); await W(150);
       check('...Stay on Live: still Live', P._s().live && !ask(cw.document));
       window.__stTM.acct = window.__stTM.__acct0;
+    }),
+
+    // ---- Replay started in the app, then "Open in a new window": Replay goes with it ----
+    appReplay: part(async function (check) {
+      var k; P._stageDetach(true); for (k = 0; k < 80 && (P._stage().on || !P._panes()[0] || P._panes()[0].el.ownerDocument !== document); k++) await W(150); await W(1000);
+      document.querySelector('[data-plrp]').click(); await W(250); ask(document).querySelector('[data-lca="1"]').click();
+      await waitReplay();
+      check('Replay in the app, its chart there, the chart windows where they are', !P._s().live && P._panes()[0].el.ownerDocument === document && P._panes()[1].el.ownerDocument === cw.document && P._panes()[2].el.ownerDocument === cw2.document, [P._s() && P._s().day]);
+      window.__rwDay = P._s().day;
+    }),
+    popFromReplay: part(async function (check) {
+      var wo = window.open, k, t0 = Date.now(); satW = null; window.open = function (u, n, f) { satW = wo.call(window, u, n, f); return satW; };
+      document.getElementById('stpr-pop').click(); window.open = wo;
+      for (k = 0; k < 100 && !(P._stage().on && satW && P._panes()[0] && P._panes()[0].el.ownerDocument === satW.document && P._panes()[0].n > 0); k++) await W(150);
+      for (k = 0; k < 60 && satW && !satW.closed && satW.innerWidth < 1024; k++) await W(150); await W(1200);
+      var d = satW && satW.document, win = d && d.getElementById('stpr-win');
+      check('Open in a new window during Replay: the chart opens in that window, within seconds', P._stage().on && P._panes()[0].el.ownerDocument === d && Date.now() - t0 < 19000, [P._stage(), Date.now() - t0, satW && satW.location.href]);
+      check('...still Replay, on the same day', P._s() && !P._s().live && P._s().day === window.__rwDay, [P._s() && P._s().live, P._s() && P._s().day, window.__rwDay]);
+      check('...Replay\'s controls there', !!win && win.classList.contains('pl-replay') && shown(d.querySelector('.plat-top #stpr-play')) && shown(d.querySelector('.plat-top #stpr-lvback')), win && win.className);
+      check('...not a second copy of the app', !!satW && /livecharts\.html/.test(satW.location.href), satW && satW.location.href);
+      check('...the chart windows where they were', inPlace(), inPlace());
+      var n0 = P._s().now; if (d) d.getElementById('stpr-fwd').click(); await W(300);
+      check('...and Forward there moves it on', P._s().now > n0, [n0, P._s().now]);
+    }),
+
+    // ---- the app window reloaded during Replay ----
+    rewire: part(async function (check) {
+      for (var i0 = 0; i0 < 200 && !(window.__stPractice && window.__stLC && window.__stLiveLine && window.__stSB); i0++) await W(100);
+      P = window.__stPractice; LC = window.__stLC; await W(500);
+      P._lvClock(T0 * 1000 - Date.now()); window.isSessionLive = function () { return true; };
+      document.querySelectorAll('.stc-gate.open').forEach(function (e) { e.classList.remove('open'); }); document.querySelectorAll('.modal-bg.show').forEach(function (e) { e.classList.remove('show'); });
+      window.STCloud.syncToken = '__TOK__';
+      check('the app window is back', !!P);
+    }),
+    afterReloadStage: part(async function (check) {
+      for (var k = 0; k < 200 && !(P._stage().on && P._s() && P._s().live && P._panes().length === 3 && P._panes().every(function (q) { return q.n > 0; }) && P._pops()[1] && P._pops()[1].ready && P._pops()[2] && P._pops()[2].ready); k++) await W(150);
+      await W(1000); satW = P._panes()[0] && P._panes()[0].el.ownerDocument.defaultView; cw = P._pops()[1] && P._pops()[1].w; cw2 = P._pops()[2] && P._pops()[2].w;
+      check('reloaded during Replay in Live Charts\' window: every chart Live, each in its own window, nothing in the app', !!(cw && cw2 && satW) && P._s().live && inPlace() && document.querySelectorAll('.stpr-pc').length === 0, [P._stage(), P._s() && P._s().live, Object.keys(P._pops()), P._panes().map(function (q) { return q.el.ownerDocument === document ? 'app' : 'win'; })]);
+      var d = satW.document, win = d.getElementById('stpr-win');
+      check('...Live\'s platform there, no Live button', win.classList.contains('lc') && !win.classList.contains('pl-replay') && !shown(d.getElementById('stpr-lvback')), win.className);
+    }),
+    noStageReplay: part(async function (check) {
+      var k; P._stageDetach(true); for (k = 0; k < 80 && (P._stage().on || !P._panes()[0] || P._panes()[0].el.ownerDocument !== document); k++) await W(150); await W(800);
+      var tb = document.querySelector('.tab[data-page="livecharts"]'); if (tb && !tb.classList.contains('active')) { tb.click(); await W(1500); }
+      document.querySelector('[data-plrp]').click(); await W(250); ask(document).querySelector('[data-lca="1"]').click();
+      await waitReplay();
+      check('Replay in the app, the chart windows out', !P._s().live && P._panes()[1].el.ownerDocument === cw.document, P._s() && P._s().day);
+    }),
+    afterReloadApp: part(async function (check) {
+      for (var k = 0; k < 200 && !(P._s() && P._s().live && P._pops()[1] && P._pops()[1].ready && P._pops()[2] && P._pops()[2].ready && P._panes()[1] && P._panes()[1].n > 0 && P._panes()[2] && P._panes()[2].n > 0); k++) await W(150);
+      await W(800); cw = P._pops()[1] && P._pops()[1].w; cw2 = P._pops()[2] && P._pops()[2].w;
+      check('reloaded during Replay in the app: the chart windows stay out, Live', !!(cw && cw2) && P._s() && P._s().live && P._panes()[1].el.ownerDocument === cw.document && P._panes()[2].el.ownerDocument === cw2.document, [P._s() && P._s().live, Object.keys(P._pops()), P._panes().length]);
+    }),
+    stageReplayAgain: part(async function (check) {
+      var tb = document.querySelector('.tab[data-page="livecharts"]'), k; if (tb && !tb.classList.contains('active')) { tb.click(); await W(1500); }
+      var wo = window.open; window.open = function (u, n, f) { satW = wo.call(window, u, n, f); return satW; }; P._lcPop(); window.open = wo;
+      for (k = 0; k < 140 && !(P._stage().on && satW && P._panes()[0] && P._panes()[0].el.ownerDocument === satW.document && P._panes()[0].n > 0); k++) await W(150);
+      await W(1200); var d = satW.document; d.querySelector('[data-plrp]').click(); await W(300); ask(d).querySelector('[data-lca="1"]').click();
+      await waitReplay();
+      check('Replay in Live Charts\' window again, ready to close the app', !P._s().live && P._stage().on && inPlace(), [P._stage(), inPlace()]);
     })
   };
 })();
