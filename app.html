@@ -2916,6 +2916,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   svg.eq-rv-on .eq-l { visibility: hidden; }
   .eq-rv { position: absolute; overflow: hidden; pointer-events: none; animation: eqRvO 0.9s cubic-bezier(0.4, 0, 0.2, 1) both; }
   .eq-rv > div { width: 100%; height: 100%; animation: eqRvI 0.9s cubic-bezier(0.4, 0, 0.2, 1) both; }
+  .eq-rv.eq-hold, .eq-rv.eq-hold > div { animation-play-state: paused; }
   @keyframes eqRvO { from { transform: translate3d(-100%, 0, 0); } to { transform: translate3d(0, 0, 0); } }
   @keyframes eqRvI { from { transform: translate3d(100%, 0, 0); } to { transform: translate3d(0, 0, 0); } }
   .tab:focus-visible, .btn:focus-visible, .option:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 1px solid var(--text-mid); outline-offset: 2px; }
@@ -22392,7 +22393,7 @@ try {
     btn.addEventListener('click', () => {
       const target = btn.dataset.page;
       const _apply = () => {
-      if (!document.getElementById('page-' + target).classList.contains('active')) window.__stEqDrawn = {};   // opening a page fills its equity line again (Nestor, 3 Nov 2026: "it now kust appears full all the time"); repaints while it is open still never restart it
+      if (!document.getElementById('page-' + target).classList.contains('active')) { window.__stEqDrawn = {}; window.__stEqHold = true; }   // opening a page fills its equity line again (Nestor, 3 Nov 2026: "it now kust appears full all the time"); repaints while it is open still never restart it
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
       btn.classList.add('active');
@@ -22411,7 +22412,7 @@ try {
       try { window.__stEnhanceGreetings && window.__stEnhanceGreetings(); } catch (e) {}
       };
       // Count the big KPI numbers up once the page (and any View Transition) has settled.
-      const _runCount = () => requestAnimationFrame(() => { try { animateStatNumbers(document.getElementById('page-' + target)); } catch (e) {} });
+      const _runCount = () => requestAnimationFrame(() => { try { animateStatNumbers(document.getElementById('page-' + target)); } catch (e) {} try { window.__stEqGo && window.__stEqGo(); } catch (e) {} });
       let _reduce = false;
       try { _reduce = matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
       let _vt = null;
@@ -31007,11 +31008,20 @@ try {
     const el = document.createElement('div'); el.className = 'eq-rv';
     el.style.cssText = 'left:' + chart.offsetLeft + 'px;top:' + chart.offsetTop + 'px;width:' + o.W + 'px;height:' + o.H + 'px;';
     el.innerHTML = '<div>' + svg + '</div>';
+    /* Opening a page, the fill waits until the page is on screen (window.__stEqGo): it began while the page was still being built and faded in, so on a big Statistics page it had run its course unseen and the line just "appeared full" (Nestor, 3 Nov 2026: "works now but not the one in statistics"). */
+    const hold = !!window.__stEqHold;
+    if (hold) el.classList.add('eq-hold');
     wrap.appendChild(el); chart.classList.add('eq-rv-on');
     const done = () => { if (chart._eqRv && chart._eqRv.el === el) eqRevealStop(chart); };
     el.addEventListener('animationend', e => { if (e.target === el) done(); });
-    chart._eqRv = { el, key: o.key, svg, t: setTimeout(done, 1300) };
+    chart._eqRv = { el, key: o.key, svg, done, t: setTimeout(done, hold ? 5000 : 1300) };
+    if (hold) (window.__stEqHeld = window.__stEqHeld || []).push(chart);
   }
+  window.__stEqGo = function () {
+    window.__stEqHold = false;
+    (window.__stEqHeld || []).forEach(chart => { const r = chart._eqRv; if (!r || !r.el.classList.contains('eq-hold')) return; r.el.classList.remove('eq-hold'); clearTimeout(r.t); r.t = setTimeout(r.done, 1300); });
+    window.__stEqHeld = [];
+  };
   function drawEquityChart(trades, opts) {
     opts = opts || {};
     const wrapId = opts.wrapId || 'equity-chart-wrap';

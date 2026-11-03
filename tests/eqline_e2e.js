@@ -37,6 +37,13 @@
     ok('a new trade (a new shape): it draws itself in once more', !!rv());
     await W(1300);
     var tabT = function () { document.querySelector('.tab[data-page="trades"]').click(); }, tabB = function () { document.querySelector('.tab[data-page="bias"]').click(); };
+    // 3 Nov 2026 ("works now but not the one in statistics"): a page still being built does not use up the fill. The page's work is held here on purpose, as a big journal does
+    tabB(); await W(400); var busy0 = performance.now(); tabT(); var held = rv(), heldPaused = !!held && held.getAnimations()[0].playState === 'paused', heldAt = held && held.getBoundingClientRect().right - ch().getBoundingClientRect().left;
+    while (performance.now() - busy0 < 1200) {}
+    ok('opened on a slow page: the fill has not started while it is being built', heldPaused || !held, [heldPaused, heldAt]);
+    await W(150); var late = rv(), lateR = late && late.getBoundingClientRect(), lateC = ch().getBoundingClientRect();
+    ok('...once on screen it starts from nearly nothing, so you see it fill', !!late && lateR.right - lateC.left < lateC.width * 0.6, late && [Math.round(lateR.right - lateC.left), Math.round(lateC.width)]);
+    await W(1300); ok('...and then it is the real line, whole', !rv() && !ch().classList.contains('eq-rv-on'));
     tabB(); await W(400); tabT(); await W(250);
     var r1 = rv(), cR = ch().getBoundingClientRect(), rR = r1 && r1.getBoundingClientRect();
     ok('3 Nov: back on Statistics, the same trades: the line fills again', !!r1 && ch().classList.contains('eq-rv-on'), !!r1);
