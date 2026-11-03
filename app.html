@@ -3317,7 +3317,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .exc-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
   /* Every measured trade, above the table (24 Oct 2026): one column per trade, how far it went against you (or for you), coloured
      by how it ended. The same _maeR / _mfeR the table averages, so the two always agree. */
-  .exc-heat { margin: 0 0 18px; }
+  .exc-heat { margin: 0 0 18px; padding: 16px 18px 16px; background: var(--bg); border: 1px solid var(--border-2); border-radius: var(--radius-card); box-shadow: var(--shadow-card); }   /* a box of its own, as the ones above and below it (Nestor, 3 Nov 2026: "this area should have its own box maybe?") */
+  @media (max-width: 600px) { .exc-heat { padding: 12px; } }
   .exc-heat-h { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .exc-heat-t { font-family: 'AppNum', 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-dim); }
   .exc-heat-c { position: relative; height: 200px; margin-top: 12px; }
@@ -5668,6 +5669,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .atl-row:not(.atl-head) { cursor: pointer; transition: background 120ms; }
   .st-accs { position: sticky; left: 0; display: flex; flex-wrap: wrap; gap: 4px 20px; width: fit-content; max-width: min(100%, calc(100vw - 72px)); box-sizing: border-box; padding: 2px 12px 9px; font-size: 11px; line-height: 1.5; color: var(--text-mid); }
   .st-acc { white-space: nowrap; } .st-acc b { font-weight: 500; margin-left: 6px; font-variant-numeric: tabular-nums; } .st-acc b.good { color: var(--good); } .st-acc b.bad { color: var(--bad); }
+  .st-cur-2 { display: inline-block; font-size: 11px; line-height: 1.25; text-align: center; white-space: nowrap; }
   .st-cur-sep { color: var(--text-dim); } .st-cur-v .good, .atl-cell .good, .modal-stat .v .good, .modal-trade-cell .good { color: var(--good); } .st-cur-v .bad, .atl-cell .bad, .modal-stat .v .bad, .modal-trade-cell .bad { color: var(--bad); }
   .st-acc-l { font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); }
   .atl-row:not(.atl-head):hover { background: var(--border-2); }
@@ -19118,6 +19120,8 @@ try {
     if (!ks.length) return fmtMoney(0);
     return ks.map(function (c) { var v = m[c]; return '<span class="' + (v > 0 ? 'good' : v < 0 ? 'bad' : 'be') + '">' + fmtMoney(v, { cur: c }) + '</span>'; }).join(stack ? '<br>' : ' <span class="st-cur-sep">\u00b7</span> ');
   }
+  // A table's money cell. Over more than one currency: a line each, each in its own colour (Nestor, 3 Nov 2026: "is this meant to be red? as it has the minus symbol?"; "these numbers are getting cut off").
+  function _moneyCell(list, fn, cls) { const m = moneyBy(list, fn); return Object.keys(m).length > 1 ? '<div class="history-cell"><span class="st-cur-v st-cur-2">' + _moneyHtml(list, fn, true) + '</span></div>' : '<div class="history-cell ' + cls + '">' + fmtMoneyBy(m) + '</div>'; }
   // Each account's own part of a trade counted once (Nestor, 3 Nov 2026: "should it be like this or all accounts R displayed?"): the totals take the Lead's R, this says what every account did, in its own money.
   function _ideaAccRows(t) {
     if (!t || !Array.isArray(t._ideaTrades) || t._ideaTrades.length < 2) return [];
@@ -29495,7 +29499,7 @@ try {
         <div class="history-cell">${wrCell}</div>
         <div class="history-cell">${wlbeCell}</div>
         <div class="history-cell ${netUnitCls(s)}">${fmtNetUnit(s)}</div>
-        <div class="history-cell ${plCls}">${plStr}</div>
+        ${s.count === 0 ? `<div class="history-cell ${plCls}">${plStr}</div>` : _moneyCell(dt, tt => tradeNetPL(tt) * tradeCopies(tt), plCls)}
         <div class="history-cell ${accCls}">${accStr}</div>
       </div>`;
     };
@@ -29614,7 +29618,8 @@ try {
         return;
       }
 
-      var money = function (v) { try { return String(fmtMoney(v)).replace(/^\+/, ''); } catch (e) { return String(Math.round(v)); } };
+      var _panelCur = null;   // the account being drawn: its own currency (TTT's dollars read as pounds, 3 Nov 2026)
+      var money = function (v) { try { return String(fmtMoney(v, _panelCur ? { cur: _panelCur } : {})).replace(/^\+/, ''); } catch (e) { return String(Math.round(v)); } };
 
 
       /* One place that decides what a rule is worth, because this panel used to disagree with
@@ -29645,6 +29650,7 @@ try {
       // `tail` is appended inside the verdict row — used to sit the journal-wide excluded-trades
       // note beside the verdict when there is only one account to sit beside.
       function blockFor(acc, tail) {
+        _panelCur = accCur(acc);
       var rr = acc.riskRules || {};
       var sb = (typeof acc.startingBalance === 'number') ? acc.startingBalance : 0;
       var ddAmount = ruleValue(rr, sb, 'maxDrawdownMode', 'maxDrawdownPct', 'maxDrawdownAmount');
@@ -29804,9 +29810,11 @@ try {
       // inbox carries trades that were never in scope. A row now has to survive all three tests.
       // window.__stMt5Missing() prints the reasoning per row if this is ever doubted again.
       try {
-        var _exc = data._mt5Excluded;
+        // Only the trades of the accounts on this panel, in their own money (Nestor, 3 Nov 2026: "this isnt right!!" - 28 test trades on the demo, worth £45.76, shown on the TTT 10K's card, in pounds). The whole list stays in Import from MT5.
+        var _exc = null, _excBy = (data._mt5Excluded && data._mt5Excluded.by) || {}, _excMap = data.mt5LoginMap || {}, _excCur = {};
+        Object.keys(_excBy).forEach(function (lg) { var ac = accounts.filter(function (a) { return a && a.id === _excMap[lg]; })[0]; if (!ac) return; _exc = _exc || { n: 0 }; _exc.n += _excBy[lg].n; var c = accCur(ac); _excCur[c] = (_excCur[c] || 0) + Math.abs(_excBy[lg].sum || 0); });
         if (_exc && _exc.n > 0) {
-          var _excMoney = money(Math.abs(_exc.sum || 0));
+          var _excMoney = fmtMoneyBy(_excCur, { noSign: true });
           noteHtml = '<div class="chal-verdict chal-verdict-note" style="border-color:' + WARN + '"><span class="chal-dot" style="background:' + WARN + '"></span><span>'
             + T(_exc.n + ' broker trade' + (_exc.n === 1 ? '' : 's') + ' not counted here (' + _excMoney + '). Restore from Import from MT5.',
                 _exc.n + (_exc.n === 1
@@ -30036,7 +30044,7 @@ try {
           <div class="history-cell">${wr}</div>
           <div class="history-cell">${wlbeCell}</div>
           <div class="history-cell ${plCls(s.netR)}">${netR}</div>
-          <div class="history-cell ${plCls(netGbp)}">${fmtMoneyBy(moneyBy(groups[sym], tr => (tradeNetPL(tr) || 0) * tradeCopies(tr)))}</div>
+          ${_moneyCell(groups[sym], tr => (tradeNetPL(tr) || 0) * tradeCopies(tr), plCls(netGbp))}
           <div class="history-cell ${plCls(netAcc)}">${accStr}</div>
         </div>`;
       });
@@ -54512,8 +54520,9 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       const n = _mt5ExcludedRows.length;
       const sum = _mt5ExcludedRows.reduce((s, r) => s + (parseFloat(r.pnl) || 0), 0);
       const prev = data._mt5Excluded || {};
-      if (prev.n !== n || Math.abs((prev.sum || 0) - sum) > 0.005) {
-        data._mt5Excluded = { n: n, sum: sum };
+      if (prev.n !== n || !prev.by || Math.abs((prev.sum || 0) - sum) > 0.005) {
+        const by = {}; _mt5ExcludedRows.forEach(r => { const k = r.login != null ? String(r.login) : ''; const o = by[k] || (by[k] = { n: 0, sum: 0 }); o.n++; o.sum += parseFloat(r.pnl) || 0; });
+        data._mt5Excluded = { n: n, sum: sum, by: by };
         try { saveData(); } catch (e) {}
         try { if (typeof renderTradesStats === 'function') renderTradesStats(); } catch (e) {}
       }
@@ -87936,9 +87945,26 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function groundOf(chart){ try { var b = chart.options().layout.background; return b.type === 'solid' ? b.color : (b.bottomColor || b.topColor || b.color); } catch (e) { return null; } }
   // The magnet (TradingView's): while it is on, a drawing's point lands on the open, high, low or close of the candle under the
   // mouse, whichever is nearest; Ctrl held does the opposite while it is held. One switch for every chart, kept in this browser.
-  var MAG = (function(){ var on = false; try { on = localStorage.getItem('st_magnet') === '1'; } catch (e) {}
-    return { on: function(){ return on; }, set: function(v){ on = !!v; try { localStorage.setItem('st_magnet', on ? '1' : '0'); } catch (e) {} try { window.dispatchEvent(new Event('st-magnet')); } catch (e) {} } }; })();
+  /* Weak and Strong, as TradingView's (Nestor, 3 Nov 2026: "make this work like tradingviews"). Strong: a point always lands on the nearest open, high, low or close of the candle under the mouse. Weak, the default: only when it is close to one, else it stays where the mouse is. Ctrl: the magnet off for that move. */
+  var MAG = (function(){ var on = false, mode = 'weak'; try { on = localStorage.getItem('st_magnet') === '1'; mode = localStorage.getItem('st_magnet_mode') === 'strong' ? 'strong' : 'weak'; } catch (e) {}
+    var told = function(){ try { localStorage.setItem('st_magnet', on ? '1' : '0'); localStorage.setItem('st_magnet_mode', mode); } catch (e) {} try { window.dispatchEvent(new Event('st-magnet')); } catch (e) {} };
+    return { on: function(){ return on; }, mode: function(){ return mode; }, set: function(v){ on = !!v; told(); }, setMode: function(m){ mode = m === 'strong' ? 'strong' : 'weak'; on = true; told(); } }; })();
+  var MAG_WEAK_PX = 10;   // how close, on screen, a weak magnet catches
   function snapOHLC(b, pr){ var best = pr, bd = Infinity; [b.open, b.high, b.low, b.close].forEach(function(v){ if (v == null || !isFinite(v)) return; var dd = Math.abs(v - pr); if (dd < bd) { bd = dd; best = v; } }); return best; }
+  function snapMag(b, pr, series){ var best = snapOHLC(b, pr); if (MAG.mode() !== 'weak' || !series) return best; try { var y0 = series.priceToCoordinate(pr), y1 = series.priceToCoordinate(best); if (y0 != null && y1 != null && Math.abs(y1 - y0) > MAG_WEAK_PX) return pr; } catch (e) {} return best; }
+  function magText(tr){ return !MAG.on() ? tr('Magnet: snap points to the candle\'s open, high, low or close. The arrow: weak or strong', 'Imán: ajustar los puntos a la apertura, máximo, mínimo o cierre de la vela. La flecha: débil o fuerte')
+    : MAG.mode() === 'strong' ? tr('Strong magnet on: points always snap to the candle\'s open, high, low or close (Ctrl: free)', 'Imán fuerte activado: los puntos siempre se ajustan a la apertura, máximo, mínimo o cierre de la vela (Ctrl: libre)')
+    : tr('Weak magnet on: points snap when close to the candle\'s open, high, low or close (Ctrl: free)', 'Imán débil activado: los puntos se ajustan cuando están cerca de la apertura, máximo, mínimo o cierre de la vela (Ctrl: libre)'); }
+  // the arrow on the magnet's right, in the toolbar down the left
+  function magCaret(ev, btn){ try { return !!(ev && btn && ev.clientX > 0 && btn.closest('.plat-left, .strp-plleft') && ev.clientX >= btn.getBoundingClientRect().right - 1); } catch (e) { return false; } }
+  function magMenu(btn, tr){ var d = btn.ownerDocument, old = d.querySelector('.st-magmenu'); if (old) { old.remove(); return; }
+    var r = btn.getBoundingClientRect(), m = d.createElement('div'); m.className = 'st-magmenu'; m.setAttribute('role', 'menu'); m.style.left = (r.right + 14) + 'px'; m.style.top = (r.top - 4) + 'px';
+    var row = function(k, nm){ return '<button type="button" role="menuitemradio" data-magm="' + k + '" aria-checked="' + (MAG.on() && MAG.mode() === k) + '">' + MAGI + '<span>' + nm + '</span></button>'; };
+    m.innerHTML = row('weak', tr('Weak magnet', 'Imán débil')) + row('strong', tr('Strong magnet', 'Imán fuerte'));
+    (btn.closest('.stpr-win, .strp-card') || d.body).appendChild(m);
+    var shut = function(){ m.remove(); d.removeEventListener('pointerdown', out, true); d.removeEventListener('keydown', key, true); }, out = function(e){ if (!m.contains(e.target)) shut(); }, key = function(e){ if (e.key === 'Escape') { e.stopPropagation(); shut(); } };
+    d.addEventListener('pointerdown', out, true); d.addEventListener('keydown', key, true);
+    m.addEventListener('click', function(e){ var b = e.target.closest && e.target.closest('[data-magm]'); if (!b) return; e.stopPropagation(); MAG.setMode(b.getAttribute('data-magm')); shut(); }); }
   var MAGI = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M4.2 2.5v5.6a3.8 3.8 0 0 0 7.6 0V2.5"/><path d="M4.2 5.1h2.5M9.3 5.1h2.5"/><path d="M6.7 2.5v5.6a1.3 1.3 0 0 0 2.6 0V2.5"/></svg>';
   // what a look is, per tool (anything else on a drawing - its points, words, alert, lock, visibility - is not)
   var KEYS = { hline: ['color', 'width', 'dash'], trend: ['color', 'width', 'dash', 'extL', 'extR'],
@@ -88899,7 +88925,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var dx = me.x - to.x, dy = me.y - to.y;
     if (/^(rect|range|fib|circle|ellipse)$/.test(d.type)) return diag(dx, dy);
     if (Math.abs(dy) < 0.35 * Math.abs(dx)) return 'ew-resize'; if (Math.abs(dx) < 0.35 * Math.abs(dy)) return 'ns-resize'; return diag(dx, dy); }
-  window.__stDrawBar = { cursor: dwCursor, make: make, KEYS: KEYS, durTxt: durTxt, icons: TICON, PAL: PAL, anchor: anchor, groundOf: groundOf, magnet: MAG, snapOHLC: snapOHLC, MAGI: MAGI, FIBS: FIBS, lookOf: lookOf, applyLook: applyLook, eff: eff, same: same, parseC: parseC, mkC: mkC, withA: withA, dash: dash,
+  window.__stDrawBar = { cursor: dwCursor, make: make, KEYS: KEYS, durTxt: durTxt, icons: TICON, PAL: PAL, anchor: anchor, groundOf: groundOf, magnet: MAG, snapOHLC: snapOHLC, snapMag: snapMag, magText: magText, magCaret: magCaret, magMenu: magMenu, MAGI: MAGI, FIBS: FIBS, lookOf: lookOf, applyLook: applyLook, eff: eff, same: same, parseC: parseC, mkC: mkC, withA: withA, dash: dash,
     DSTY: NDSTY, keysHtml: keysHtml, keyRows: keyRows, kit: { has: function(t){ return !!KT[t]; }, paint: kPaint, axis: kAxis, text: kText, hit: kHit, handles: kHandles, box: kBox, note: kNote, NOFF: NOFF,
       ltx: function(t){ return !!LTX[t]; }, lineText: function(d, X, P0, P1, o){ return kLTgeo(d, X, P0, P1, o); }, ltGeo: function(d, X){ return kLTk(d, X); }, ltDraw: kLTdraw, gapClip: kGapClip,
       txt: function(t){ return (K2[t] && K2[t].txt) || null; }, ted: function(d, X){ var o = K2[d.type]; return (o && o.ted) ? o.ted(d, X) : null; }, init: function(d){ var o = K2[d.type]; if (o && o.init) o.init(d); },
@@ -89736,11 +89762,11 @@ window.__stAZ = (function () {
      Only ever snaps to a REAL bar: past the last candle there is nothing to snap to, so the
      pointer price is kept and the drawing behaves normally out there. */
   function snapPx(pr,lg,e){ try{ if(!S||!S.bars||!S.bars.length) return pr;
-      var M=window.__stDrawBar&&window.__stDrawBar.magnet, mag=!!(M&&M.on()&&!(e&&e.ctrlKey)&&(S.activeTool!=='none'||(S.drag&&['body','box','esz','po','psl','ptp'].indexOf(S.drag.part)<0)));   /* the magnet (24 Oct 2026); a position's stop and target go where they are dragged (3 Nov 2026) */
+      var M=window.__stDrawBar&&window.__stDrawBar.magnet, mag=!!(M&&M.on()&&!(e&&e.ctrlKey)&&(S.activeTool!=='none'||(S.drag&&['body','box','esz','po'].indexOf(S.drag.part)<0)));   /* the magnet (24 Oct 2026) */
       if(!mag&&(!e||!e.ctrlKey||(M&&M.on()))) return pr;   /* the magnet on: Ctrl lets the point go free */
       var bi=Math.round(lg); if(bi<0||bi>S.bars.length-1) return pr;
-      var b=S.bars[bi]; if(!b) return pr; if(mag) return window.__stDrawBar.snapOHLC(b,pr);
-      return (Math.abs(pr-b.high)<=Math.abs(pr-b.low))?b.high:b.low; }catch(_){ return pr; } }
+      var b=S.bars[bi]; if(!b) return pr; if(mag) return window.__stDrawBar.snapMag(b,pr,series);
+      return window.__stDrawBar.snapOHLC(b,pr); }catch(_){ return pr; } }
   function toP(e){ var xy=evXY(e),lg=chart.timeScale().coordinateToLogical(xy.x),pr=series.coordinateToPrice(xy.y); if(lg==null||pr==null)return null; var maxI=(S&&S.bars?S.bars.length:0)+500; return {idx:Math.max(0,Math.min(maxI,Math.round(lg)))-_preN(),price:snapPx(pr,lg,e)}; }
   /* Right-click on the replay is a drawing surface, not an image. The browser's canvas menu offered
      Save image / Copy image / Inspect, and Inspect opens devtools over the chart - a dead end reached
@@ -91075,7 +91101,7 @@ window.__stAZ = (function () {
   var RLKI={on:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="7" width="9" height="6.5" rx="1.3"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>',
     off:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="7" width="9" height="6.5" rx="1.3"/><path d="M5.5 7V5a2.5 2.5 0 0 1 4.9-.7"/></svg>'};
   function rAllBtns(){ var h=el('strp-hideall'), l=el('strp-lockall'), mg=el('strp-magnet');
-    if(mg){ var mv=!!window.__stDrawBar.magnet.on(), mt=mv?L('Magnet on: points snap to the candle\'s open, high, low or close (Ctrl: free)','Imán activado: los puntos se ajustan a la apertura, máximo, mínimo o cierre de la vela (Ctrl: libre)'):L('Magnet: snap points to the candle\'s open, high, low or close','Imán: ajustar los puntos a la apertura, máximo, mínimo o cierre de la vela');
+    if(mg){ var mv=!!window.__stDrawBar.magnet.on(), mt=window.__stDrawBar.magText(L);
       mg.classList.toggle('on',mv); mg.title=mt; mg.setAttribute('aria-label',mt); mg.setAttribute('aria-pressed',mv?'true':'false'); }
     if(h){ var ht=RALL.hide?L('Show all drawings','Mostrar todos los dibujos'):L('Hide all drawings','Ocultar todos los dibujos'); h.classList.toggle('on',RALL.hide); h.title=ht; h.setAttribute('aria-label',ht); h.setAttribute('aria-pressed',RALL.hide?'true':'false'); }
     if(l){ var lt=RALL.lock?L('Unlock all drawings','Desbloquear todos los dibujos'):L('Lock all drawings','Bloquear todos los dibujos'), ic=RALL.lock?RLKI.on:RLKI.off; l.classList.toggle('on',RALL.lock); l.title=lt; l.setAttribute('aria-label',lt); l.setAttribute('aria-pressed',RALL.lock?'true':'false'); if(l._ic!==ic){ l.innerHTML=ic; l._ic=ic; } } }
@@ -91431,7 +91457,7 @@ window.__stAZ = (function () {
   el('strp-scrub').oninput=function(){ if(!S)return; pause(); S.cursor=(+el('strp-scrub').value)+1; render(true,true); };
   el('strp-undo').onclick=function(){ if(!S||S.hpos<=0)return; S.hpos--; S.drawings=clone(S.history[S.hpos]); S.sel=null; draw(); updUR(); updDel(); persistDrawings(); };
   el('strp-hideall').onclick=function(){ rHideAll(!RALL.hide); };
-  el('strp-magnet').onclick=function(){ var M=window.__stDrawBar.magnet; M.set(!M.on()); };
+  el('strp-magnet').onclick=function(ev){ var DB=window.__stDrawBar, M=DB.magnet; if(DB.magCaret(ev,this)){ DB.magMenu(this,L); return; } M.set(!M.on()); };
   window.addEventListener('st-magnet',function(){ try{ rAllBtns(); }catch(_){} });
   el('strp-lockall').onclick=function(){ rLockAll(!RALL.lock); };
   el('strp-redo').onclick=function(){ if(!S||S.hpos>=S.history.length-1)return; S.hpos++; S.drawings=clone(S.history[S.hpos]); S.sel=null; draw(); updUR(); updDel(); persistDrawings(); };
@@ -91586,6 +91612,8 @@ window.__stAZ = (function () {
        cannot promise one place and draw in another. Also nudges the chart's own crosshair when
        the build exposes that API; the marker is drawn either way, so it never depends on it. */
     if(S.activeTool!=='none'&&(!!e.ctrlKey!==!!(window.__stDrawBar.magnet&&window.__stDrawBar.magnet.on()))){ var sp=toP(e);   /* Ctrl, or the magnet (24 Oct 2026) */
+      if(sp&&sp.price===series.coordinateToPrice(evXY(e).y)) sp=null;   /* the dot only where it has really caught */
+      if(!sp&&S.snapPt){ S.snapPt=null; try{ chart.clearCrosshairPosition&&chart.clearCrosshairPosition(); }catch(_){} }
       if(sp){ S.snapPt=sp; try{ var _b=S.bars&&S.bars[sp.idx+_preN()]; if(_b&&chart.setCrosshairPosition) chart.setCrosshairPosition(sp.price,_b.time,series); }catch(_){} } }
     else if(S.snapPt){ S.snapPt=null; try{ chart.clearCrosshairPosition&&chart.clearCrosshairPosition(); }catch(_){} }
     /* Thinned by PIXEL distance, which is what the eye judges - the old test was in bars and price,
@@ -91945,6 +91973,12 @@ window.__stAZ = (function () {
   .stpr-tg.open .stpr-tgc { opacity: 1; color: var(--accent); }
   .stpr-tfl { position: absolute; top: calc(100% + 6px); left: -1px; z-index: 40; display: none; flex-direction: column; min-width: 224px; padding: 4px; background: var(--bg-elev2, #1b1a21); border: 1px solid var(--border-2, #332F3C); border-radius: 9px; box-shadow: 0 16px 36px rgba(0,0,0,.6); }
   .stpr-tg.open .stpr-tfl { display: flex; }
+  .st-magmenu { position: fixed; z-index: 9100; display: flex; flex-direction: column; min-width: 180px; padding: 4px; background: var(--pl-bg, #1b1a21); border: 1px solid var(--pl-line2, #332F3C); border-radius: 6px; box-shadow: 0 8px 22px rgba(0,0,0,.45); }
+  .st-magmenu button { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--pl-txt, #d1d4dc); font: 13px var(--pl-font, inherit); text-align: left; cursor: pointer; }
+  .st-magmenu button svg { width: 18px; height: 18px; flex: none; } .st-magmenu button[aria-checked="true"] { background: var(--pl-pane2, #2a2e39); color: #f472b6; }
+  @media (hover: hover) { .st-magmenu button:hover { background: var(--pl-pane2, #2a2e39); } }
+  :is(.stpr-win.plat .plat-left #stpr-magnet, .strp-card.strp-pl .strp-plleft #strp-magnet) { position: relative; overflow: visible; }
+  :is(.stpr-win.plat .plat-left #stpr-magnet, .strp-card.strp-pl .strp-plleft #strp-magnet)::after { content: ''; position: absolute; right: -9px; top: 0; bottom: 0; width: 11px; background: currentColor; opacity: .78; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Cpath d='M2.6 1.2v5.6L5.8 4z'/%3E%3C/svg%3E") center/9px no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Cpath d='M2.6 1.2v5.6L5.8 4z'/%3E%3C/svg%3E") center/9px no-repeat; }
   .stpr-tg.open.away .stpr-tfl { display: none; } .stpr-tg.open.away .stpr-tgc { opacity: .75; color: inherit; }   /* open in another chart window, not this one (21 Oct 2026) */
   .stpr-win .stpr-tb2 .stpr-tools > .stpr-tg.open.away:not(:has(.stpr-tgm.on)) { background: transparent; }
   .stpr-seg .stpr-tfl button { justify-content: flex-start; gap: 10px; height: 32px; min-width: 0; padding: 0 10px; border: 0; border-radius: 6px; color: #c9c6d2; font: 13px Inter, system-ui, sans-serif; text-align: left; white-space: nowrap; }
@@ -92478,6 +92512,7 @@ window.__stAZ = (function () {
   .stpr-snapi svg { width: 16px; height: 16px; flex: none; color: var(--text-mid); }
   .stpr-snapi kbd { margin-left: auto; font: inherit; font-size: 10.5px; color: var(--text-dim); }
   @media (hover: hover) { .stpr-snapi:hover { background: var(--bg-elev); } }
+  @media (hover: hover) { :is(.stpr-win.plat, .strp-card.strp-pl, .strp-card.strp-plsk) .stpr-snapi:hover { background: var(--pl-pane2); color: var(--pl-hi, var(--pl-txt)); } }   /* the charts' menu: --bg-elev is its own colour there, so a hover showed nothing (Nestor, 3 Nov 2026: "should these get highlighted when hovered over?") */
   @media (max-width: 760px) { .stpr-snapi kbd { display: none; } }
   /* the snapshot menu's divider and its "Hide trade sizes and money" switch (24 Oct 2026) */
   .stpr-snapsep { height: 1px; background: var(--border-2); margin: 4px 6px; }
@@ -95713,12 +95748,12 @@ window.__stAZ = (function () {
   function evXY(p, e){ var r = p.el.querySelector('.stpr-pc').getBoundingClientRect(), pt = e;
     if (e.touches && e.touches.length) pt = e.touches[0]; else if (e.changedTouches && e.changedTouches.length) pt = e.changedTouches[0];
     return { x: pt.clientX - r.left, y: pt.clientY - r.top }; }
-  // Hold Ctrl to clamp onto the candle under the cursor, whichever of its high or low is nearer. With the magnet on, a point being
+  // Hold Ctrl to snap onto the candle under the cursor, its nearest open, high, low or close. With the magnet on, a point being
   // placed or moved lands on the nearest of its open, high, low and close instead, and Ctrl lets it go free (TradingView's).
   function magOn(e){ var M = window.__stDrawBar && window.__stDrawBar.magnet; if (!M || !M.on() || (e && e.ctrlKey)) return false;
-    return DW.tool !== 'none' || !!(DW.drag && ['body', 'box', 'esz', 'po', 'psl', 'ptp'].indexOf(DW.drag.part) < 0); }   // a position's stop and target go where they are dragged (Nestor, 3 Nov 2026: "when dragging the TP up the tool attaches to the candles bottoms i hover over")
-  function snapPx(p, pr, L, e){ var b = p.bars && p.bars[Math.round(L)]; if (!b) return pr; if (magOn(e)) return window.__stDrawBar.snapOHLC(b, pr);
-    if (!e || !e.ctrlKey || window.__stDrawBar.magnet.on()) return pr; return Math.abs(pr - b.high) <= Math.abs(pr - b.low) ? b.high : b.low; }   // the magnet on: Ctrl lets the point go free
+    return DW.tool !== 'none' || !!(DW.drag && ['body', 'box', 'esz', 'po'].indexOf(DW.drag.part) < 0); }
+  function snapPx(p, pr, L, e){ var b = p.bars && p.bars[Math.round(L)]; if (!b) return pr; if (magOn(e)) return window.__stDrawBar.snapMag(b, pr, p.series);
+    if (!e || !e.ctrlKey || window.__stDrawBar.magnet.on()) return pr; return window.__stDrawBar.snapOHLC(b, pr); }   // the magnet on: Ctrl lets the point go free; off: Ctrl snaps
   function toP(p, e){ var xy = evXY(p, e), lg = p.chart.timeScale().coordinateToLogical(xy.x), pr = p.series.coordinateToPrice(xy.y); if (lg == null || pr == null) return null;
     var L = Math.round(lg), t = tOfL(p, L); return t == null ? null : { t: t, price: snapPx(p, pr, L, e) }; }
   function toPf(p, e){ var xy = evXY(p, e), ts = p.chart.timeScale(), lg = ts.coordinateToLogical(xy.x), pr = p.series.coordinateToPrice(xy.y); if (lg == null || pr == null) return null;
@@ -96680,7 +96715,7 @@ window.__stAZ = (function () {
   var LKI = { on: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="7" width="9" height="6.5" rx="1.3"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>',
     off: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="7" width="9" height="6.5" rx="1.3"/><path d="M5.5 7V5a2.5 2.5 0 0 1 4.9-.7"/></svg>' };
   function dwAllBtns(){ var h = $('stpr-hideall'), l = $('stpr-lockall'), mg = $('stpr-magnet');
-    if (mg) { var mv = !!window.__stDrawBar.magnet.on(), mt = mv ? T('Magnet on: points snap to the candle\'s open, high, low or close (Ctrl: free)', 'Imán activado: los puntos se ajustan a la apertura, máximo, mínimo o cierre de la vela (Ctrl: libre)') : T('Magnet: snap points to the candle\'s open, high, low or close', 'Imán: ajustar los puntos a la apertura, máximo, mínimo o cierre de la vela');
+    if (mg) { var mv = !!window.__stDrawBar.magnet.on(), mt = window.__stDrawBar.magText(T);
       mg.classList.toggle('on', mv); if (mg.title !== mt) { mg.title = mt; mg.setAttribute('aria-label', mt); } mg.setAttribute('aria-pressed', mv ? 'true' : 'false'); }
     if (h) { var hv = !!CFG.dwHide, ht = hv ? T('Show all drawings', 'Mostrar todos los dibujos') : T('Hide all drawings', 'Ocultar todos los dibujos'); h.classList.toggle('on', hv); if (h.title !== ht) { h.title = ht; h.setAttribute('aria-label', ht); } h.setAttribute('aria-pressed', hv ? 'true' : 'false'); }
     if (l) { var lv = !!CFG.dwLock, lt = lv ? T('Unlock all drawings', 'Desbloquear todos los dibujos') : T('Lock all drawings', 'Bloquear todos los dibujos'), ic = lv ? LKI.on : LKI.off; l.classList.toggle('on', lv); if (l.title !== lt) { l.title = lt; l.setAttribute('aria-label', lt); } l.setAttribute('aria-pressed', lv ? 'true' : 'false'); if (l._ic !== ic) { l.innerHTML = ic; l._ic = ic; } } }
@@ -97063,7 +97098,7 @@ window.__stAZ = (function () {
     if (DW.mz) { var q4 = toP(DW.mz.p, e); if (q4) { var W1 = Object.assign({}, msRaw(DW.mz.p)); if (DW.mz.edge === 'a') W1.zA = q4.t; else W1.zB = q4.t; msSet(DW.mz.p, W1); panes.forEach(function(q){ q._mini = null; }); dirty(); } return; }
     if (DW.penning) { var pp = DW.penP, xy = evXY(pp, e); DW.penning.tip = xy; var lp = DW.penning.px[DW.penning.px.length - 1];
       if (!lp || Math.hypot(xy.x - lp.x, xy.y - lp.y) >= 2) { var pf = toPf(pp, e); if (pf) { DW.penning.pts.push(pf); DW.penning.px.push(xy); } } dirty(); return; }
-    if (DW.tool !== 'none' && p && (!!e.ctrlKey !== !!(window.__stDrawBar.magnet && window.__stDrawBar.magnet.on()))) { var sp = toP(p, e); DW.snap = sp ? { p: p, q: sp } : null; dirty(); } else if (DW.snap) { DW.snap = null; dirty(); }
+    if (DW.tool !== 'none' && p && (!!e.ctrlKey !== !!(window.__stDrawBar.magnet && window.__stDrawBar.magnet.on()))) { var sp = toP(p, e), sxy = sp && evXY(p, e); DW.snap = (sp && sp.price !== p.series.coordinateToPrice(sxy.y)) ? { p: p, q: sp } : null; dirty(); } else if (DW.snap) { DW.snap = null; dirty(); }   // the dot only where it has really caught
     if (DW.pending) { if (p) { var q = toP(p, e); if (q) { if (/^(path|polyline|ghost)$/.test(DW.pending.type)) DW.pending.pts[DW.pending.pts.length - 1] = q; else if (DW.pending.st === 2) { if (DW.pending.type === 'channel') DW.pending.off = chanOff(p, DW.pending, q); else DW.pending.c = q; } else DW.pending.b = q; dirty(); } } return; }
     if (DW.drag && DW.drag.group) { var gg = DW.drag, q3 = toP(gg.p, e); if (!q3) return;
       if (!gg.moved) { var gm3 = evXY(gg.p, e); if (Math.abs(gm3.x - gg.x0) < 3 && Math.abs(gm3.y - gg.y0) < 3) return; gg.moved = true; }
@@ -98046,7 +98081,7 @@ window.__stAZ = (function () {
     d.getElementById('stpr-tb2').addEventListener('click', function(e){ if (satStar(e)) return; var b = e.target.closest && e.target.closest('.stpr-tbm button, [data-plsi], [data-plsiset], [data-pltheme], [data-plback], [data-plfull], [data-satf], [data-plssym]'); if (!b) return; e.preventDefault(); e.stopPropagation();   // (its timeframe button is its own)
       satFwd(w, d, b); });   // a tools group's button or arrow: the same one here
     var plf = d.getElementById('pl-satleft');   // the drawing tools down the left (the platform's look)
-    if (plf) plf.addEventListener('click', function(e){ if (satStar(e)) return; var b = e.target.closest && e.target.closest('button'); if (!b) return; e.preventDefault(); e.stopPropagation(); satFwd(w, d, b); });
+    if (plf) plf.addEventListener('click', function(e){ if (satStar(e)) return; var b = e.target.closest && e.target.closest('button'); if (!b) return; e.preventDefault(); e.stopPropagation(); if (b.id === 'stpr-magnet' && window.__stDrawBar.magCaret(e, b)) { window.__stDrawBar.magMenu(b, T); return; } satFwd(w, d, b); });
     satBar(); satBarWatch();
     on(d, 'visibilitychange', reLive);
     on(w, 'pagehide', function(){ satGone(i, w); });
@@ -99762,7 +99797,7 @@ window.__stAZ = (function () {
     $('stpr-undo').addEventListener('click', function(){ undoRedo(-1); });
     $('stpr-favbtn').addEventListener('click', function(){ var fp = favPane(); favSet(fp, !favOn(fp)); });   // that chart's bar only (a chart window's star: its own)
     $('stpr-hideall').addEventListener('click', function(){ hideAll(!CFG.dwHide); });
-    $('stpr-magnet').addEventListener('click', function(){ var M = window.__stDrawBar.magnet; M.set(!M.on()); flash(M.on() ? T('Magnet on: drawing points snap to the candle\'s open, high, low or close. Hold Ctrl to place one freely.', 'Imán activado: los puntos se ajustan a la apertura, máximo, mínimo o cierre de la vela. Mantén Ctrl para colocarlos libremente.') : T('Magnet off.', 'Imán desactivado.')); });
+    $('stpr-magnet').addEventListener('click', function(ev){ var DB = window.__stDrawBar, M = DB.magnet; if (DB.magCaret(ev, this)) { DB.magMenu(this, T); return; } M.set(!M.on()); flash(M.on() ? DB.magText(T) : T('Magnet off.', 'Imán desactivado.')); });
     window.addEventListener('st-magnet', function(){ dwAllBtns(); });
     $('stpr-lockall').addEventListener('click', function(){ lockAll(!CFG.dwLock); });
     $('stpr-redo').addEventListener('click', function(){ undoRedo(1); });

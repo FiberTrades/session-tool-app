@@ -85,6 +85,7 @@
     ok('the magnet button beside Lock all, off', mg && mg.previousElementSibling.id === 'stpr-lockall' && mg.getAttribute('aria-pressed') === 'false');
     mg.click(); await W(30);
     ok('a click: on, lit, remembered in this browser', window.__stDrawBar.magnet.on() && mg.classList.contains('on') && mg.getAttribute('aria-pressed') === 'true' && localStorage.getItem('st_magnet') === '1');
+    window.__stDrawBar.magnet.setMode('strong');   // TradingView's Strong: always (Weak: tests/posmagnet_e2e.js)
     var onOHLC = function (q) { var L = P._lOfT(0, q.t), b = pane().bars[L]; return !!b && [b.open, b.high, b.low, b.close].indexOf(q.price) >= 0; };
     var t2 = await draw2('trend', X0 + 10, 160, X1 + 30, 230);
     ok('with it on, both points land on the open, high, low or close of their candles', onOHLC(t2.a) && onOHLC(t2.b), [t2.a, t2.b]);
