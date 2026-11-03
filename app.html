@@ -5665,6 +5665,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .atl-row.atl-head { font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-dim); position: sticky; top: 0; z-index: 1; }
   .atl-row.atl-head .atl-cell { background: var(--bg-elev2); color: var(--text-mid); }
   .atl-row:not(.atl-head) { cursor: pointer; transition: background 120ms; }
+  .st-accs { position: sticky; left: 0; display: flex; flex-wrap: wrap; gap: 4px 20px; width: fit-content; max-width: min(100%, calc(100vw - 72px)); box-sizing: border-box; padding: 2px 12px 9px; font-size: 11px; line-height: 1.5; color: var(--text-mid); }
+  .st-acc { white-space: nowrap; } .st-acc b { font-weight: 500; margin-left: 6px; font-variant-numeric: tabular-nums; } .st-acc b.good { color: var(--good); } .st-acc b.bad { color: var(--bad); }
+  .st-acc-l { font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); }
   .atl-row:not(.atl-head):hover { background: var(--border-2); }
   /* News marker. Rides inside the symbol cell rather than claiming a thirteenth column — the row
      is already twelve wide, and a whole column would be empty on most trades. */
@@ -19085,6 +19088,22 @@ try {
       return m;
     });
   }
+  // Each account's own part of a trade counted once (Nestor, 3 Nov 2026: "should it be like this or all accounts R displayed?"): the totals take the Lead's R, this says what every account did, in its own money.
+  function _ideaAccRows(t) {
+    if (!t || !Array.isArray(t._ideaTrades) || t._ideaTrades.length < 2) return [];
+    return t._ideaTrades.map(function (x) {
+      var a = (data.accounts || []).find(function (q) { return q && q.id === x.accountId; });
+      return { name: (a && a.name) || (x.mt5Login ? 'MT5 ' + x.mt5Login : '?'), lead: x === t._ideaLead, r: tradeRforMath(x), net: tradeNetPL(x), cur: tradeCur(x) };
+    });
+  }
+  function _ideaRTxt(v) { return (v > 0 ? '+' : v < 0 ? '\u2212' : '') + Math.abs(v).toFixed(2) + 'R'; }
+  function _ideaAccLine(t) {
+    var rows = _ideaAccRows(t); if (!rows.length) return '';
+    var cl = function (v) { return v > 0 ? 'good' : v < 0 ? 'bad' : 'be'; };
+    return '<div class="st-accs">' + rows.map(function (x) {
+      return '<span class="st-acc"><span class="st-acc-n">' + escHtmlGlobal(x.name) + (x.lead ? ' <span class="st-acc-l">' + window._stT('Lead', 'Líder') + '</span>' : '') + '</span> <b class="' + cl(x.r) + '">' + _ideaRTxt(x.r) + '</b> <b class="' + cl(x.net) + '">' + fmtMoney(x.net, { cur: x.cur }) + '</b></span>';
+    }).join('') + '</div>';
+  }
   // One per idea, each still the real trade (its own account's money) - for the Community post. _ideaN = accounts.
   function _ideaFirsts(list) {
     return _ideaMerge(list).map(function (m) { return (m && m._ideaTrades) ? Object.assign({}, m._ideaTrades[0], { _ideaN: m._ideaN }) : m; });
@@ -19117,8 +19136,8 @@ try {
     try {
       getAllLifetimeTrades().forEach(function (t) {
         var id = t && t.ideaId; if (!id) return;
-        var ts = Date.parse(t.openTs) || 0;
-        if (!first[id] || ts < first[id].ts) first[id] = { ts: ts, tid: t.id };
+        var ts = Date.parse(t.openTs) || 0, fl = !!(t.copyOf || t.copyFollow);   // the same Lead as _ideaMerge's: a copy can open a moment before it
+        if (!first[id] || (first[id].fl && !fl) || (first[id].fl === fl && ts < first[id].ts)) first[id] = { ts: ts, tid: t.id, fl: fl };
       });
     } catch (e) {}
     return function (t) { var id = t && t.ideaId; return !!(id && first[id] && first[id].tid !== t.id); };
@@ -28043,7 +28062,8 @@ try {
         const rTxt = _sh.rv != null ? _sh.r + 'R' : '';
         const pipsTxt = _sh.pv != null ? ` · ${_sh.p}` : '';
         dot.setAttribute('data-tip', _tipDot.replace('{N}', i + 1).replace('{RESULT}', t.result).replace('{R}', rTxt).replace('{PIPS}', pipsTxt).replace('{DATE}', dateStr)
-          + (t._ideaN > 1 ? ' \u00b7 ' + window._stT('on ' + t._ideaN + ' accounts', 'en ' + t._ideaN + ' cuentas') : ''));
+          + (t._ideaN > 1 ? ' \u00b7 ' + window._stT('on ' + t._ideaN + ' accounts', 'en ' + t._ideaN + ' cuentas') : '')
+          + _ideaAccRows(t).map(x => ' \u00b7 ' + x.name + ' ' + _ideaRTxt(x.r) + ' ' + fmtMoney(x.net, { cur: x.cur })).join(''));
         dot.addEventListener('click', () => openEditTradeModal(t.id));
       }
       dotsWrap.appendChild(dot);
@@ -36426,7 +36446,7 @@ try {
         + '<div class="atl-cell atl-c-risksl">' + riskStr + ' <span class="atl-sub">\u00b7 ' + slStr + '</span></div>'
         + '<div class="atl-cell atl-c-gross ' + (gross > 0 ? 'good' : gross < 0 ? 'bad' : 'be') + '">' + fmtMoney(gross) + '</div>'
         + '<div class="atl-cell atl-c-net ' + (net > 0 ? 'good' : net < 0 ? 'bad' : 'be') + '">' + fmtMoney(net) + '</div>'
-        + '</div>';
+        + '</div>' + _ideaAccLine(tr);
     });
 
     table.innerHTML = html;
@@ -36912,12 +36932,7 @@ try {
     netEl.className = 'modal-net ' + (net > 0 ? 'good' : net < 0 ? 'bad' : '');
 
     // Day-level R + pips totals (across all trades on this day, win/lose/be combined the usual way).
-    const dayTotalR = dayTrades.reduce((s, t) => {
-      const m = tradeCopies(t);
-      if (t.result === 'Win') return s + ((parseFloat(t.r) || 0) * m);
-      if (t.result === 'Lose') return s - m;
-      return s;
-    }, 0);
+    const dayTotalR = dayTrades.reduce((s, t) => s + tradeRforMath(t) * tradeCopies(t), 0);   // after costs, as its rows, Statistics and Your week (Nestor, 3 Nov 2026: a break-even "keep it after costs"); it read +0.00R over a -0.10R row
     const dayTotalPips = dayTrades.reduce((s, t) => s + (tradePipsForMath(t) * tradeCopies(t)), 0);
     const dayPipsTracked = dayTrades.filter(t => tradeHasTrackedPips(t)).reduce((s, t) => s + tradeCopies(t), 0);
     const dayTotalRStr = (dayTotalR >= 0 ? '+' : '') + dayTotalR.toFixed(2) + 'R';
@@ -37146,7 +37161,7 @@ try {
         <div class="modal-trade-cell center">${rStr} <span class="modal-trade-sub-inline">· ${pStr}</span></div>
         <div class="modal-trade-cell center ${cls}">${fmtMoney(tn)}</div>
         <div class="modal-trade-cell center">${formatMinutes(hm)}</div>
-      </div>`;
+      </div>${_ideaAccLine(t)}`;
     });
     document.getElementById('modal-trades').innerHTML = tHtml;
     document.querySelectorAll('#modal-trades .modal-trade-row[data-id]').forEach(row => {
