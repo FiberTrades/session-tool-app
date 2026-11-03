@@ -106,19 +106,18 @@
     ok('...then a finger drag moves it', JSON.stringify(pos) !== p0, [pos.a, pos.b]);
     DW.sel = null; DW.list = []; P._render(); await W(80);
 
-    // ---- the Session Indicator's zone: its edge is clicked first too ----
+    // ---- the Session Indicator's zone: its edge drags on the first press (Nestor, 3 Nov 2026), unlike a drawing ----
     C.mini = true; C.miniLink = true; C.showPer = {}; var bi = pane().bars[Math.max(0, nB - 40)].time; C.miniS = { auto: false, zA: bi, detach: true }; P._miniFresh(); P._render(); await until(function () { var z = pane()._mz; return z && z.x0 > 20; }, 2500);
     var mz = pane()._mz, zA0 = C.miniS.zA, zy = (mz.y0 + mz.y1) / 2;
     ok('(a zone started by hand, its left edge on screen)', mz && mz.x0 > 20 && mz.x0 < r.width - 100, mz);
-    ok('the zone\'s edge, not selected: a hand', cur(mz.x0, zy) === 'pointer', ch.style.cursor);
-    var v6 = view(); await drag(mz.x0, zy, mz.x0 - 70, zy); await W(200);
-    ok('dragged, not selected: the zone\'s start stays, the chart moves', C.miniS.zA === zA0 && Math.abs(view().from - v6.from) > 1, [zA0, C.miniS.zA, view(), v6]);
-    await W(200); mz = pane()._mz; zy = (mz.y0 + mz.y1) / 2; click(mz.x0, zy); await W(60);
-    ok('a click on the edge: selected (it stays lit), the two-headed arrow', DW.mzSel === pane() && cur(mz.x0, zy) === 'ew-resize', [!!DW.mzSel, ch.style.cursor]);
+    ok('the zone\'s edge: the two-headed arrow straight away', cur(mz.x0, zy) === 'ew-resize', ch.style.cursor);
+    var v6 = view(), w6 = JSON.stringify(C.miniS); click(mz.x0, zy); await W(80);
+    ok('a click with no drag changes nothing, and the chart stays', JSON.stringify(C.miniS) === w6 && Math.abs(view().from - v6.from) < 0.01, [w6, JSON.stringify(C.miniS)]);
     await drag(mz.x0, zy, mz.x0 - 60, zy); await until(function () { return pane()._mz && pane()._mz.x0 < mz.x0 - 20; }, 1500);
-    ok('selected: dragging its edge moves the zone\'s start', C.miniS.zA < zA0, [zA0, C.miniS.zA]);
-    click(r.width * 0.6, 12); await W(60);
-    ok('a click elsewhere lets it go', DW.mzSel == null, !!DW.mzSel);
+    ok('pressed and dragged at once: the zone\'s start moves', C.miniS.zA < zA0, [zA0, C.miniS.zA]);
+    ok('...and the chart does not', Math.abs(view().from - v6.from) < 0.01, [view(), v6]);
+    await W(200); var v7a = view(), zA7 = C.miniS.zA; await drag(r.width * 0.6, r.height * 0.4, r.width * 0.6 - 70, r.height * 0.4); await W(200);
+    ok('a drag off its edge is still the chart\'s', C.miniS.zA === zA7 && Math.abs(view().from - v7a.from) > 1, [view(), v7a]);
     C.mini = false; C.miniS = {}; P._miniFresh(); P.close(); await W(150);
 
     // ---- Trade Replay ----
@@ -153,6 +152,19 @@
     var rh = null; for (var yy = 20; yy < q.height - 40 && !rh; yy += 12) for (var xx = 20; xx < q.width - 80 && !rh; xx += 12) { rev('mousemove', xx, yy, { buttons: 0 }); if (chart.style.cursor === 'pointer') rh = [xx, yy]; }
     if (rh) { rev('mousedown', rh[0] + 6, rh[1] + 6); rev('mouseup', rh[0] + 6, rh[1] + 6); await W(80); }
     ok('...a click on it: selected', S.sel === 0, [S.sel, rh]);
+    // Trade Replay's zone: the same (3 Nov 2026)
+    S.drawings = []; S.sel = null; var PR = window.__stPractice, MPn = R._mp();
+    if (document.getElementById('strp-mini') && !document.getElementById('strp-mini').checked) { document.getElementById('strp-mini').click(); await W(500); }
+    ok('Trade Replay: its Session Indicator is on', document.getElementById('strp-mini').checked);
+    var rZ = null; for (var rk = 0; rk < 30 && !rZ; rk++) { MPn = R._mp(); if (MPn && MPn._mz) rZ = MPn._mz; await W(100); }
+    ok('...its zone is drawn', !!rZ, rZ);
+    if (rZ) { var bT = S.bars.filter(function (b) { var bx = sc.timeToCoordinate(b.time); return bx != null && bx > q.width * 0.4 && bx < q.width * 0.6; })[0].time, W0r = Object.assign({}, PR._msRaw(MPn), { auto: false, detach: true, zA: bT }); PR._msSet(MPn, W0r); await W(200); MPn._mini = null; await W(300); rZ = MPn._mz;
+      var rx0 = rZ.x0, ry0 = (rZ.y0 + rZ.y1) / 2;
+      ok('Trade Replay: the zone\'s edge is the two-headed arrow straight away', rcur(rx0, ry0) === 'ew-resize', [chart.style.cursor, rx0, ry0]);
+      var rW = JSON.stringify(PR._msRaw(MPn)); rev('mousedown', rx0, ry0); rev('mouseup', rx0, ry0); await W(60);
+      ok('...a click with no drag changes nothing', JSON.stringify(PR._msRaw(MPn)) === rW, [rW, JSON.stringify(PR._msRaw(MPn))]);
+      var rv0 = sc.getVisibleLogicalRange(); await rdrag(rx0, ry0, rx0 - 60, ry0); await W(120);
+      ok('...pressed and dragged at once: its start moves, the chart does not', PR._msRaw(MPn).zA < bT && Math.abs(sc.getVisibleLogicalRange().from - rv0.from) < 0.01, [bT, PR._msRaw(MPn).zA, rv0, sc.getVisibleLogicalRange()]); }
     R.close && R.close(); await W(100);
   } catch (e) { ok('test ran', false, String(e && e.stack || e)); }
   return JSON.stringify(out);

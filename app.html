@@ -90628,10 +90628,8 @@ window.__stAZ = (function () {
   function miniEdgeAt(xy){ var mz=MSHOW&&MP&&MP._mz, P=window.__stPractice; if(!mz||!P||!P._ms||(P._miniOn&&!P._miniOn('zone',MP))) return null;
     if(xy.y<mz.y0-4||xy.y>mz.y1+4) return null; var o0=P._ms(MP); return Math.abs(xy.x-mz.x0)<6?'a':((!o0.detach&&mz.x1!=null&&Math.abs(xy.x-mz.x1)<6)?'b':null); }
   function miniEdgeDown(e,xy){ if(e.touches) return false; var ed=miniEdgeAt(xy), P=window.__stPractice; if(!ed) return false;
-    if(!S.mzSel){ S.mzPick={x0:xy.x,y0:xy.y}; return false; }   /* the zone's edge too: clicked first (it stays lit), then it moves */
-    e.stopPropagation(); e.preventDefault(); var W0=Object.assign({},P._msRaw(MP));
-    if(W0.auto!==false){ W0.auto=false; W0.zA=MP._mz.tA; W0.detach=true; flash(L('Range zone moved by hand: Auto (follow structure) is off in its settings.','Zona del rango movida a mano: Auto está apagado en sus ajustes.')); }
-    P._msSet(MP,W0); S.mzDrag={edge:ed}; MP.mzHot=true; return true; }
+    e.stopPropagation(); e.preventDefault();   /* the zone's edge drags on the first press (Nestor, 3 Nov 2026: "make the P/D zone draggable instantly"); a press that never moves changes nothing */
+    S.mzDrag={edge:ed,x0:xy.x,tA:MP._mz.tA,idle:true}; MP.mzHot=true; return true; }
   el('strp-mini').onchange=function(ev){ MSHOW=!!ev.target.checked; try{ localStorage.setItem('st_replay_mini',MSHOW?'1':'0'); }catch(_){} if(MP){ MP._mini=null; MP._mz=null; } miniPaint(); };
   el('strp-miniset').onclick=function(ev){ ev.preventDefault(); ev.stopPropagation(); miniSettings(); };   // a gear inside the switch's label: never the switch
   var OH0=null;
@@ -91417,8 +91415,8 @@ window.__stAZ = (function () {
       else { if(S.pending.st===2) S.pending.off=chanOff(S.pending,p); else S.pending.b=p; pendDone(); }
       draw(); return; }
     /* An object is clicked first, then it moves, as in Live and Replay (Nestor, 2 Nov 2026): a press on one not selected is the chart's; let go without moving, it is selected (_ptrUp) */
-    S.pick=null; S.mzPick=null; var h=hit(xy.x,xy.y), hPick=false; if(h&&h.i!==S.sel){ if(!e.touches||e.touches.length===1) S.pick={d:S.drawings[h.i],x0:xy.x,y0:xy.y}; h=null; hPick=true; }
-    if(h){ e.stopPropagation(); e.preventDefault(); S.mzSel=false; S.sel=h.i; S.noProps=true; updDel(); S.drag={i:h.i,part:h.part,start:p,orig:clone(S.drawings[h.i]),x0:xy.x,y0:xy.y,lock:rlk(S.drawings[h.i])};
+    S.pick=null; var h=hit(xy.x,xy.y), hPick=false; if(h&&h.i!==S.sel){ if(!e.touches||e.touches.length===1) S.pick={d:S.drawings[h.i],x0:xy.x,y0:xy.y}; h=null; hPick=true; }
+    if(h){ e.stopPropagation(); e.preventDefault(); S.sel=h.i; S.noProps=true; updDel(); S.drag={i:h.i,part:h.part,start:p,orig:clone(S.drawings[h.i]),x0:xy.x,y0:xy.y,lock:rlk(S.drawings[h.i])};
       /* Bind a side handle to ONE point for the whole gesture. Which of a/b holds an edge is
          worked out from their current order, and that order flips the moment you drag one edge
          past the other - so resolving it per mousemove handed the handle to the opposite point
@@ -91426,7 +91424,7 @@ window.__stAZ = (function () {
          chart. Decided once, here, and held until the button comes up. */
       try{ var _dd=S.drawings[h.i];
         if(h.part==='l'||h.part==='r'){ var _aL=(_dd.a.idx<=_dd.b.idx); S.drag.pt=(((h.part==='l')===_aL)?'a':'b'); }
-        else if(h.part==='t'||h.part==='bo'){ var _aT=(_dd.a.price>=_dd.b.price); S.drag.pt=(((h.part==='t')===_aT)?'a':'b'); } }catch(_){} draw(); } else { if(!hPick&&miniEdgeDown(e,xy)) return; if(S.mzSel){ S.mzSel=false; if(MP) MP.mzHot=false; } if(S.sel!=null||(S.selMulti&&S.selMulti.length)){ S.sel=null; clearMulti(); updDel(); draw(); } }
+        else if(h.part==='t'||h.part==='bo'){ var _aT=(_dd.a.price>=_dd.b.price); S.drag.pt=(((h.part==='t')===_aT)?'a':'b'); } }catch(_){} draw(); } else { if(!hPick&&miniEdgeDown(e,xy)) return; if(S.sel!=null||(S.selMulti&&S.selMulti.length)){ S.sel=null; clearMulti(); updDel(); draw(); } }
   }
   /* TOUCH. Lightweight Charts consumes touch events on the chart and calls preventDefault, so
      the browser never synthesizes the mousedown the badge handler above listens for: on a phone
@@ -91471,12 +91469,14 @@ window.__stAZ = (function () {
     }catch(_){} }
   if(_RAW) try{ document.addEventListener('pointerrawupdate',_ptrTrack,true); }catch(_){}
   function _ptrMoveAll(e){ if(!S) return;
-    if(S.pick||S.mzPick){ var pk0=S.pick||S.mzPick, pq0=evXY(e); if(Math.hypot(pq0.x-pk0.x0,pq0.y-pk0.y0)>(e.touches?8:4)){ S.pick=null; S.mzPick=null; } }   /* it moved: the chart is being dragged, nothing is selected */
+    if(S.pick){ var pk0=S.pick, pq0=evXY(e); if(Math.hypot(pq0.x-pk0.x0,pq0.y-pk0.y0)>(e.touches?8:4)){ S.pick=null; } }   /* it moved: the chart is being dragged, nothing is selected */
     if(!_RAW) _ptrTrack(e);
     if(S.marq){ var mxy=evXY(e); S.marq.x1=mxy.x; S.marq.y1=mxy.y; return; }
     if(S.meas&&S.meas.live){ var qm=toP(e); if(qm) S.meas.d.b=qm; return; }
     if(S.pdn&&(e.touches||(e.buttons&1))){ var pm=evXY(e); if(Math.hypot(pm.x-S.pdn.x,pm.y-S.pdn.y)>10) S.pdn.far=true; }   /* a two-point drawing being dragged out */
-    if(S.mzDrag){ var q4=toP(e), PR4=window.__stPractice; if(q4&&MP&&PR4){ var bi4=Math.max(0,Math.min(Math.min(S.cursor,S.bars.length)-1,q4.idx+_preN())), W1=Object.assign({},PR4._msRaw(MP));
+    if(S.mzDrag){ var q4=toP(e), PR4=window.__stPractice; if(S.mzDrag.idle&&MP&&PR4){ if(Math.abs(evXY(e).x-S.mzDrag.x0)<3) return; S.mzDrag.idle=false; var W2=Object.assign({},PR4._msRaw(MP));
+        if(W2.auto!==false){ W2.auto=false; W2.zA=S.mzDrag.tA; W2.detach=true; PR4._msSet(MP,W2); flash(L('Range zone moved by hand: Auto (follow structure) is off in its settings.','Zona del rango movida a mano: Auto está apagado en sus ajustes.')); } }
+      if(q4&&MP&&PR4){ var bi4=Math.max(0,Math.min(Math.min(S.cursor,S.bars.length)-1,q4.idx+_preN())), W1=Object.assign({},PR4._msRaw(MP));
         if(S.mzDrag.edge==='a') W1.zA=S.bars[bi4].time; else W1.zB=S.bars[bi4].time; PR4._msSet(MP,W1); } return; }
     /* Show WHERE Ctrl will put the point before the click, not after. toP() already applies the
        snap, so the marker is by construction the exact coordinate that would be committed - it
@@ -91525,16 +91525,15 @@ window.__stAZ = (function () {
       var prev=S._newsHover; S._newsHover=nh?{i:nh.i,j:nh.j}:null;
       if(nh){ newsCard(nh); } else if(prev&&!S._newsPinned){ newsCard(null); }
       /* the drawing under the mouse: a position tool shows its tags while it is there */
-      var hh=hit(xy.x,xy.y); S.hov=hh?hh.i:null; var onEdge=!hh&&!nh&&!!miniEdgeAt(xy); if(MP) MP.mzHot=onEdge||!!S.mzSel;
+      var hh=hit(xy.x,xy.y); S.hov=hh?hh.i:null; var onEdge=!hh&&!nh&&!!miniEdgeAt(xy); if(MP) MP.mzHot=onEdge;
       var osc=rScale(xy.x,xy.y);   /* the scales: their own resize cursor, as TradingView's */
-      chartEl.style.cursor=osc?(osc==='price'?'ns-resize':'ew-resize'):nh?'pointer':(hh?((hh.i!==S.sel||!S.drawings[hh.i]||rlk(S.drawings[hh.i]))?'pointer':window.__stDrawBar.cursor(S.drawings[hh.i],hh.part,P,xy)):(onEdge?(S.mzSel?'ew-resize':'pointer'):'crosshair')); }
+      chartEl.style.cursor=osc?(osc==='price'?'ns-resize':'ew-resize'):nh?'pointer':(hh?((hh.i!==S.sel||!S.drawings[hh.i]||rlk(S.drawings[hh.i]))?'pointer':window.__stDrawBar.cursor(S.drawings[hh.i],hh.part,P,xy)):(onEdge?'ew-resize':'crosshair')); }
       else { S.hov=null; if(S._newsHover&&!S._newsPinned){ S._newsHover=null; newsCard(null); } } }  }
   function _ptrUp(){ if(!S) return;
     if(S.pick){ var pk1=S.pick, pki=S.drawings.indexOf(pk1.d); S.pick=null; if(pki>=0&&S.activeTool==='none'){ S.sel=pki; clearMulti(); S.noProps=false; updDel(); renderProps(); draw(); } return; }   /* pressed and let go without moving: selected */
-    if(S.mzPick){ S.mzPick=null; S.mzSel=true; if(MP) MP.mzHot=true; draw(); }   /* clicked: the zone's edge is in hand */
     if(S.meas&&S.meas.live){ var md=S.meas.d; S.meas.live=false; if(md.a.idx===md.b.idx&&md.a.price===md.b.price) S.meas=null; return; }   /* a Shift-click with no drag: nothing to keep */
     if(S.pdn){ var pd=S.pdn; S.pdn=null; if(pd.far&&S.pending){ if(S.pending.st===1) S.pending.st=2; else pendDone(); return; } }   /* dragged out: let go, it is drawn */
-    if(S.mzDrag){ S.mzDrag=null; if(MP) MP.mzHot=!!S.mzSel; try{ window.__stPractice._cfgSave(); }catch(_){} return; }
+    if(S.mzDrag){ var mzMoved=!S.mzDrag.idle; S.mzDrag=null; if(mzMoved) try{ window.__stPractice._cfgSave(); }catch(_){} return; }
     if(S.marq){ var mr=marqNorm(S.marq); S.marq=null;
       /* A band smaller than a few pixels is a Ctrl-click, not a drag - treat it as clearing the
          selection rather than selecting everything it happens to touch. */
@@ -96141,7 +96140,7 @@ window.__stAZ = (function () {
           if (y0 != null) { g.textBaseline = 'top'; g.fillText('▲', xb + 3, y0 + 2); }
           if (y1 != null) { g.textBaseline = 'bottom'; g.fillText('▼', xb + 3, y1 - 2); } }
         // drawn by hand: its edges can be dragged (the left one always, the right one when it has an end)
-        if (DW.mzHover === p || DW.mzSel === p || (DW.mz && DW.mz.p === p) || p.mzHot) { g.strokeStyle = '#f472b6'; g.lineWidth = 2; g.beginPath(); g.moveTo(Math.round(xa) + .5, Math.min(y0, y1)); g.lineTo(Math.round(xa) + .5, Math.max(y0, y1));
+        if (DW.mzHover === p || (DW.mz && DW.mz.p === p) || p.mzHot) { g.strokeStyle = '#f472b6'; g.lineWidth = 2; g.beginPath(); g.moveTo(Math.round(xa) + .5, Math.min(y0, y1)); g.lineTo(Math.round(xa) + .5, Math.max(y0, y1));
           if (!o.detach) { g.moveTo(Math.round(xb) + .5, Math.min(y0, y1)); g.lineTo(Math.round(xb) + .5, Math.max(y0, y1)); } g.stroke(); g.lineWidth = 1; } } }
     // his volume profile's arrows: offset candles right of the zone's box (its right edge: now + Extend Right)
     if (miniOn('zone') && M.zone && o.vpOn && M.vp) vpDraw(g, M.vp, X(n - 1 + (+o.ext || 0) + (+o.vpOff || 0)), Y, o, pw, ink);
@@ -96857,7 +96856,7 @@ window.__stAZ = (function () {
   function isOpen(){ return !!(S && ($('stpr-bg').classList.contains('show') || LV.inl)); }
   function paneOf(e){ var t = e.target; for (var i = 0; i < panes.length; i++) { var pc = panes[i].el.querySelector('.stpr-pc'); if (pc && t && pc.contains(t)) return panes[i]; } return null; }
   function dwDown(e){
-    if (!isOpen() || drag) return; DW.pick = null; DW.mzPick = null; if (DW.meas && !DW.meas.live) { DW.meas = null; dirty(); }   // a Shift-measure goes with the next click
+    if (!isOpen() || drag) return; DW.pick = null; if (DW.meas && !DW.meas.live) { DW.meas = null; dirty(); }   // a Shift-measure goes with the next click
     if (e.target && e.target.closest && e.target.closest('.stpr-pathok')) { if (e.cancelable) e.preventDefault(); e.stopPropagation(); pathDone(); dirty(); return; }   // Done: the path ends where it is
     var p = paneOf(e); if (!p) return; flyShut();
     if (e.button != null && e.button !== 0) return;   // left button only; a touch has none
@@ -96910,7 +96909,7 @@ window.__stAZ = (function () {
        be clicked on then you can drag them and change settings, if i just click and drag them the chart should move, not the drawing or object"):
        a press on one not selected is the chart's (below); let go without moving, it is selected (dwUp). A finger the same. */
     if (h && h.i !== DW.sel) { if (!touch || e.touches.length === 1) DW.pick = { p: p, d: DW.list[h.i], x0: xy.x, y0: xy.y }; h = null; var hPick = true; }
-    if (h) { e.stopPropagation(); e.preventDefault(); DW.mzSel = null; DW.sel = h.i; DW.multi = null; DW.noProps = true; updDel(); DW.drag = { p: p, i: h.i, part: h.part, start: q, orig: clone(DW.list[h.i]), x0: xy.x, y0: xy.y, lock: lkd(DW.list[h.i]) };
+    if (h) { e.stopPropagation(); e.preventDefault(); DW.sel = h.i; DW.multi = null; DW.noProps = true; updDel(); DW.drag = { p: p, i: h.i, part: h.part, start: q, orig: clone(DW.list[h.i]), x0: xy.x, y0: xy.y, lock: lkd(DW.list[h.i]) };
       // a side handle is bound to ONE point for the whole drag, so dragging an edge past the other one cannot hand it over
       var dd = DW.list[h.i];
       if (h.part === 'l' || h.part === 'r') DW.drag.pt = ((h.part === 'l') === (dd.a.t <= dd.b.t)) ? 'a' : 'b';
@@ -96920,11 +96919,8 @@ window.__stAZ = (function () {
     // (Nestor, 17 Oct 2026: "i cant move the P/D zone?"); the first drag turns Auto (follow structure) off
     var mz = showOn(p, 'mini') && miniOn('zone', p) && p._mz;
     if (mz && !touch && !hPick && xy.y >= mz.y0 - 4 && xy.y <= mz.y1 + 4) { var o0 = ms(p), ed = Math.abs(xy.x - mz.x0) < 6 ? 'a' : (!o0.detach && Math.abs(xy.x - mz.x1) < 6 ? 'b' : null);
-      if (ed && DW.mzSel !== p) DW.mzPick = { p: p, x0: xy.x, y0: xy.y };   // the zone's edge too: clicked first (it stays lit), then it moves
-      else if (ed) { e.stopPropagation(); e.preventDefault(); var W0 = Object.assign({}, msRaw(p));
-        if (W0.auto !== false) { W0.auto = false; W0.zA = mz.tA; W0.detach = true; flash(T('Range zone moved by hand: Auto (follow structure) is off in its settings.', 'Zona del rango movida a mano: Auto está apagado en sus ajustes.')); }
-        msSet(p, W0); DW.mz = { p: p, edge: ed }; panes.forEach(function(q){ q._mini = null; }); dirty(); return; } }
-    if (DW.mzSel) { DW.mzSel = null; dirty(); }
+      // the zone's edge drags on the first press, unlike a drawing (Nestor, 3 Nov 2026: "make the P/D zone draggable instantly, so you dont have to click on it first then drag!"); a press that never moves changes nothing
+      if (ed) { e.stopPropagation(); e.preventDefault(); DW.mz = { p: p, edge: ed, x0: xy.x, tA: mz.tA, idle: true }; dirty(); return; } }
     if (DW.sel != null || (DW.multi && DW.multi.length)) { DW.sel = null; DW.multi = null; updDel(); }
     // A plain press on the chart is the chart being moved. Auto-fit is switched off before the drag starts, so it moves up
     // and down as well as sideways (Nestor, 15 Oct 2026: "i hate how the charts feel stuck and its only when i drag the
@@ -96944,7 +96940,7 @@ window.__stAZ = (function () {
     DW.noProps = true; updDel(); dirty(); }
   function dwMove(e){
     if (!isOpen()) return; var p = paneOf(e);
-    if (DW.pick || DW.mzPick) { var pk = DW.pick || DW.mzPick, pq = evXY(pk.p, e); if (Math.hypot(pq.x - pk.x0, pq.y - pk.y0) > (e.touches ? 8 : 4)) { DW.pick = null; DW.mzPick = null; } }   // it moved: the chart is being dragged, nothing is selected
+    if (DW.pick) { var pk = DW.pick, pq = evXY(pk.p, e); if (Math.hypot(pq.x - pk.x0, pq.y - pk.y0) > (e.touches ? 8 : 4)) { DW.pick = null; } }   // it moved: the chart is being dragged, nothing is selected
     if (DW.lp && e.touches) { var lq = evXY(DW.lp.p, e); if (Math.hypot(lq.x - DW.lp.x, lq.y - DW.lp.y) > 8) { clearTimeout(DW.lp.tm); DW.lp = null; } }   // it moved: the chart is being dragged
     // a finger moves the crosshair only after a long press (or while it draws); a drag of the chart leaves it be (TradingView's app)
     var fing = !!e.touches, cxOk = !fing || DW.lpOn === p || DW.tool !== 'none' || DW.drag || DW.pending || DW.penning;
@@ -96954,6 +96950,8 @@ window.__stAZ = (function () {
     if (DW.marq) { var mxy = evXY(DW.marq.p, e); DW.marq.x1 = mxy.x; DW.marq.y1 = mxy.y; dirty(); return; }
     if (DW.meas && DW.meas.live) { var qm = toP(DW.meas.p, e); if (qm) { DW.meas.d.b = qm; dirty(); } return; }
     if (DW.pdn && (e.touches || (e.buttons & 1))) { var pm = evXY(DW.pdn.p, e); if (Math.hypot(pm.x - DW.pdn.x, pm.y - DW.pdn.y) > 10) DW.pdn.far = true; }   // a two-point drawing being dragged out
+    if (DW.mz && DW.mz.idle) { if (Math.abs(evXY(DW.mz.p, e).x - DW.mz.x0) < 3) return; DW.mz.idle = false; var W0 = Object.assign({}, msRaw(DW.mz.p));
+      if (W0.auto !== false) { W0.auto = false; W0.zA = DW.mz.tA; W0.detach = true; msSet(DW.mz.p, W0); flash(T('Range zone moved by hand: Auto (follow structure) is off in its settings.', 'Zona del rango movida a mano: Auto está apagado en sus ajustes.')); } }
     if (DW.mz) { var q4 = toP(DW.mz.p, e); if (q4) { var W1 = Object.assign({}, msRaw(DW.mz.p)); if (DW.mz.edge === 'a') W1.zA = q4.t; else W1.zB = q4.t; msSet(DW.mz.p, W1); panes.forEach(function(q){ q._mini = null; }); dirty(); } return; }
     if (DW.penning) { var pp = DW.penP, xy = evXY(pp, e); DW.penning.tip = xy; var lp = DW.penning.px[DW.penning.px.length - 1];
       if (!lp || Math.hypot(xy.x - lp.x, xy.y - lp.y) >= 2) { var pf = toPf(pp, e); if (pf) { DW.penning.pts.push(pf); DW.penning.px.push(xy); } } dirty(); return; }
@@ -97001,16 +96999,15 @@ window.__stAZ = (function () {
       var hh = hit(p, xy2.x, xy2.y), hv = hh ? hh.i : null; if (DW.hov !== hv || DW.hovP !== p) { DW.hov = hv; DW.hovP = p; dirty(); }
       var onPl = onPlus(p, xy2) ? p : null; if (DW.plusHov !== onPl) { DW.plusHov = onPl; dirty(); } if (onPl) { p.el.querySelector('.stpr-pc').style.cursor = 'pointer'; return; }
       var osc = onScale(p, xy2.x, xy2.y);   // the scales: their own resize cursor, as TradingView's
-      p.el.querySelector('.stpr-pc').style.cursor = osc ? (osc === 'price' ? 'ns-resize' : 'ew-resize') : nh ? 'pointer' : (nearLine(p, xy2.y) ? 'ns-resize' : (hh ? dwCur(p, hh, xy2) : (onEdge ? (DW.mzSel === p ? 'ew-resize' : 'pointer') : 'crosshair'))); }
+      p.el.querySelector('.stpr-pc').style.cursor = osc ? (osc === 'price' ? 'ns-resize' : 'ew-resize') : nh ? 'pointer' : (nearLine(p, xy2.y) ? 'ns-resize' : (hh ? dwCur(p, hh, xy2) : (onEdge ? 'ew-resize' : 'crosshair'))); }
   }
   // the mouse on a drawing: the hand until it is selected (a click selects it); selected, the hand on its body and a two-headed arrow on its handles
   function dwCur(p, h, m){ var d = DW.list[h.i]; if (!d || h.i !== DW.sel || lkd(d)) return 'pointer'; return window.__stDrawBar.cursor(d, h.part, function(z){ return Pt(p, z); }, m); }
   function dwUp(){
     if (DW.lp || DW.lpOn) lpOff();   // the crosshair stays where the finger lifted, until the next touch
     if (DW.meas && DW.meas.live) { var md = DW.meas.d, mhi = DW.meas.hi; DW.meas.live = false; if (md.a.t === md.b.t && md.a.price === md.b.price) { DW.meas = null; if (mhi != null) togSel(mhi); } dirty(); return; }   // a Shift-click with no drag: nothing to keep (on a drawing: it joins the selection)
-    if (DW.mz) { DW.mz = null; save(); dirty(); return; }
+    if (DW.mz) { var mzMoved = !DW.mz.idle; DW.mz = null; if (mzMoved) save(); dirty(); return; }
     if (DW.asTemp) { var a = DW.asTemp; DW.asTemp = null; if (a.dy < 5) try { a.p.chart.priceScale('right').applyOptions({ autoScale: true }); } catch (x) {} }
-    if (DW.mzPick) { DW.mzSel = DW.mzPick.p; DW.mzPick = null; dirty(); }   // clicked: the zone's edge is in hand
     if (!S) return;
     if (DW.pick) { var pk0 = DW.pick, pki = DW.list.indexOf(pk0.d); DW.pick = null; if (pki >= 0 && DW.tool === 'none') { DW.sel = pki; DW.multi = null; DW.noProps = false; updDel(); dirty(); } return; }   // pressed and let go without moving: selected
     if (DW.pdn) { var pd = DW.pdn; DW.pdn = null; if (pd.far && DW.pending) { if (DW.pending.st === 1) { DW.pending.st = 2; if (DW.pending.type !== 'channel') DW.pending.c = { t: DW.pending.b.t, price: DW.pending.b.price }; } else pendDone(); dirty(); return; } }   // dragged out: let go, it is drawn

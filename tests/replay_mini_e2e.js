@@ -49,9 +49,9 @@
     mz = R._mp()._mz; var zA0 = C.miniS.zA;
     ok('(a zone started by hand, its left edge on screen)', mz && mz.x0 > 20 && mz.x0 < r.width - 100, mz);
     mev('mousemove', mz.x0, (mz.y0 + mz.y1) / 2); await W(40);
-    ok('the mouse on its edge: a hand, until it is clicked (2 Nov 2026)', chart.style.cursor === 'pointer', chart.style.cursor);
-    var zy0 = (mz.y0 + mz.y1) / 2; mev('mousedown', mz.x0, zy0); mev('mouseup', mz.x0, zy0); await W(40); mev('mousemove', mz.x0, zy0); await W(40);
-    ok('clicked: the drag cursor', chart.style.cursor === 'ew-resize', chart.style.cursor);
+    ok('the mouse on its edge: the drag cursor straight away (3 Nov 2026)', chart.style.cursor === 'ew-resize', chart.style.cursor);
+    var zy0 = (mz.y0 + mz.y1) / 2, ms0 = JSON.stringify(C.miniS); mev('mousedown', mz.x0, zy0); mev('mouseup', mz.x0, zy0); await W(40);
+    ok('a click with no drag changes nothing', JSON.stringify(C.miniS) === ms0, [ms0, JSON.stringify(C.miniS)]);
     mev('mousedown', mz.x0, (mz.y0 + mz.y1) / 2); mev('mousemove', mz.x0 - 40, (mz.y0 + mz.y1) / 2, { held: true }); mev('mousemove', mz.x0 - 80, (mz.y0 + mz.y1) / 2, { held: true }); mev('mouseup', mz.x0 - 80, (mz.y0 + mz.y1) / 2); await until(function () { var z = R._mp()._mz; return z && z.x0 < mz.x0 - 40; });
     ok('dragging its left edge moves the zone\'s start earlier', C.miniS.zA < zA0 && C.miniS.auto === false && R._mp()._mz.x0 < mz.x0 - 40, [zA0, C.miniS.zA]);
     // ---- the volume profile ----
