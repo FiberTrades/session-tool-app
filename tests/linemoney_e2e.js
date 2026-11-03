@@ -21,7 +21,7 @@
     ok('no vpu, moved 5 pips: from MT5\'s profit (624.30 / 5 pips) - the TP +£2,497', Math.abs(M(x2, 1.11953) - 2497.2) < 1, M(x2, 1.11953));
     ok('no vpu, barely moved: R x the risk at its stop now (5R x £500 = £2,500), never the £560 seen before the anchor', r5(M(x, 1.11953)) === 2500, M(x, 1.11953));
     var src = await fetch('/app.html', { cache: 'no-store' }).then(function (r) { return r.text(); });
-    ok('the tags and their hover use it (mon(l.price)), and a drag\'s question too', /mon = function\(pr\)\{ var m = plMoneyAt\(x, pr\)/.test(src) && /esc\(mon\(l\.price\) \+ plR\(rr, 1\)\)/.test(src) && /plMoneyAt\(x, pr\) : NaN;   \/\/ the same money as its tag/.test(src));
+    ok('the tags and their hover use it (mon(l.price)), and a drag\'s question too', /mon = function\(pr\)\{ var m = plMoneyAt\(x, pr\)/.test(src) && /esc\(mon\(l\.price\)\.replace\(/.test(src) && /plMoneyAt\(x, pr\) : NaN;   \/\/ the same money as its tag/.test(src));
   } catch (e) { ok('test ran', false, String(e && e.stack || e)); }
   return out;
 })()

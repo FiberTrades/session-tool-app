@@ -28,6 +28,13 @@
     var nc = rw.querySelector('.atl-c-net'); ok('Trade Log: its net says each currency, on its own line', /−£50\.05/.test(txt(nc)) && /\+\$13\.32/.test(txt(nc)) && !/36\.73/.test(txt(nc)), txt(nc));
     var mb = moneyBy([mg], function (x) { return tradeNetPL(x); }); ok('money by currency: £ and $ apart', Math.abs(mb.GBP + 50.05) < 0.001 && Math.abs(mb.USD - 13.32) < 0.001, mb);
     var inU = _ideaInCur(filterByScope(getAllLifetimeTrades()), 'USD'); ok('the dollar view has the copy, at its own R', inU.length === 1 && inU[0].id === 'l1' && Math.abs(tradeRforMath(inU[0]) - 13.32 / 49.95) < 0.001, inU.map(function (x) { return x.id; }));
+    var hd = document.querySelector('#alltrades-table .atl-head .atl-c-net'); ok('Trade Log: its Net heading names no currency over two', /^net$/i.test(txt(hd)), txt(hd));
+    // the Trade Log in Session Review names the Lead and the Follows, whichever row comes first (3 Nov 2026)
+    var rvT = [{ id: 'r1', accountId: B.id, symbol: 'EUR/USD', result: 'Lose', ideaId: 'x', openTs: iso, copyFollow: true }, { id: 'r2', accountId: A.id, symbol: 'EUR/USD', result: 'Lose', ideaId: 'x', openTs: iso }];
+    var rv0 = data.review; data.review = { trades: rvT }; renderTrades(); await W(100);
+    var rvTxt = txt(document.getElementById('trades-list') || document.body), iL = rvTxt.indexOf('Lead, answers shared'), iF = rvTxt.indexOf('Follow, answers shared');
+    ok('Session Review: the row listed first is the Follow, the second the Lead, each said so, answers shared on both', iL > 0 && iF > 0 && iF < iL, [iF, iL, rvTxt.slice(0, 200)]);
+    data.review = rv0; renderTrades();
     window.__alShot = 1;
     var day = d.toDateString(); openDayModal(day); await W(300);
     var mod = document.querySelector('#modal-trades .st-accs');
@@ -36,10 +43,12 @@
     ok('...its row is not called a copy: the row is the Lead\'s', row1 && !/copy/.test(txt(row1)), txt(row1));
     var mstat = Array.prototype.filter.call(document.querySelectorAll('#day-modal-bg .modal-stat'), function (x) { return /net r/i.test(x.textContent); })[0];
     ok('...the day\'s Net R is after costs, as its rows (+4.72R and -0.10R)', /\+4\.62R/.test(txt(mstat)), txt(mstat));
+    var hr = Array.prototype.map.call(document.querySelectorAll('#modal-trades .modal-trade-row.headers .modal-trade-cell'), txt); ok('the day\'s window: the same', hr.indexOf('Net') >= 0 || hr.some(function (x) { return /^net$/i.test(x); }), hr);
     var dn = txt(document.getElementById('modal-net')); ok('the day\'s window: its Net P&L per currency, not -£36.73', /\+£2,307\.51/.test(dn) && /\+\$13\.32/.test(dn) && !/36\.73/.test(dn), dn);
     document.getElementById('day-modal-bg').classList.remove('show');
     data.viewScope = A.id; data.activeAccountId = A.id; renderAllTrades(); await W(150);
     ok('one account in view: its own trades, no line', !document.querySelector('#alltrades-table .st-accs'), document.querySelectorAll('#alltrades-table .st-accs').length);
+    var hd1 = document.querySelector('#alltrades-table .atl-head .atl-c-net'); ok('one account, one currency: the heading keeps it', /£/.test(txt(hd1)), txt(hd1));
     data.viewScope = 'lifetime'; renderAllTrades(); document.querySelector('.tab[data-page="stats"]').click(); await W(400);
     var tips = Array.prototype.map.call(document.querySelectorAll('[data-tip]'), function (e) { return e.getAttribute('data-tip'); }).filter(function (x) { return /on 2 accounts/.test(x); });
     ok('Series of 10: its dot\'s hover names both', tips.length >= 1 && /FTMO 70K −0\.10R/.test(tips[0]) && /TTT 10K \+0\.27R/.test(tips[0]), tips[0]);

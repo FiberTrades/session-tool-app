@@ -25,9 +25,10 @@
     if (L0) L0.openIdeas = function () { return idea ? [idea] : []; }; else window.__stLive = { openIdeas: function () { return idea ? [idea] : []; } };
     // a sell closed earlier today, from its MT5 history (first stop and target)
     var b0 = p.bars[p.bars.length - 60], b0x = p.bars[p.bars.length - 40], e0 = b0.close;
-    var hist = [{ ticket: 9000, symbol: sym, direction: 'sell', lots: 1, entry_price: e0, exit_price: e0 - 0.0008, open_time: new Date(b0.time * 1000).toISOString(), close_time: new Date(b0x.time * 1000).toISOString(), pnl: 80, risk_gbp: 40, login: '',
+    var hist = [{ ticket: 9000, symbol: sym, direction: 'sell', lots: 1, entry_price: e0, exit_price: e0 - 0.0008, open_time: new Date(b0.time * 1000).toISOString(), close_time: new Date(b0x.time * 1000).toISOString(), pnl: 80, risk_gbp: 40, login: '90001234',
       sl_moves: [[b0.time, e0 + 0.0004], [b0.time + 300, e0]], tp_moves: [[b0.time, e0 - 0.0020]], sl_pips: 4, tp_pips: 20 }];
     C.tbFrom = b0.time - 3600;   // "today" for the test
+    C.lvLg = '90001234'; C.tbSince = b0.time - 7200;   // the account the chart trades with: a closed row counts only on its own account (28 Oct 2026)
     P._lvTr(hist); P._render(); await W(400);
     var d0 = trade('tb:9000'), d1 = trade('tb:9001');
     ok('a trade closed today: a Short position drawing from its open to its close, with the stop and target it was taken with', d0 && d0.type === 'short' && d0.a.t === b0.time && d0.b.t === b0x.time && Math.abs(d0.sl - (e0 + 0.0004)) < 1e-9 && Math.abs(d0.tp - (e0 - 0.0020)) < 1e-9 && !d0.live, d0);
@@ -40,7 +41,7 @@
     ok('a click on a trade\'s box takes it like any drawing', h && list()[h.i] === d0, h);
     // the open trade closes: its box ends at the close and stays
     var xT = p.bars[p.bars.length - 3].time; idea = null;
-    P._lvTr(hist.concat([{ ticket: 9001, symbol: sym, direction: 'sell', lots: 1, entry_price: op, exit_price: op - 0.0010, open_time: new Date(b1.time * 1000).toISOString(), close_time: new Date(xT * 1000).toISOString(), pnl: 100, risk_gbp: 40, login: '' }]));
+    P._lvTr(hist.concat([{ ticket: 9001, symbol: sym, direction: 'sell', lots: 1, entry_price: op, exit_price: op - 0.0010, open_time: new Date(b1.time * 1000).toISOString(), close_time: new Date(xT * 1000).toISOString(), pnl: 100, risk_gbp: 40, login: '90001234' }]));
     P._render(); await W(300); d1 = trade('tb:9001');
     ok('the trade closes: its box stays, ending at the close', d1 && !d1.live && d1.b.t === xT && Math.abs(d1.sl - (op + rp)) < 1e-9, d1);
     // deleted by hand: it does not come back
