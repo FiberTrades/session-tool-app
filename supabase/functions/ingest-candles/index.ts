@@ -36,6 +36,23 @@ function backfill(feed: string): { pace: number; days: number } {
   // waiting it finishes its depth and tops up as before; EA 9.20 keeps a waiting timeframe current.
   return { pace: Math.min(4, Math.max(1, n(f.pace ?? c.pace, 1))), days: n(f.days ?? c.days, feed === "ftmo-demo" ? 7 : 0) };
 }
+// One member's MT5 per broker server and symbol sends the deep history (3 Nov 2026, Nestor: "i think so yes"): candles were always stored once, but each MT5 uploaded them.
+// The others hear "days": HELD_DAYS and keep only recent candles and the hourly top-up, picking up from where they stopped if the one sending goes quiet (st_candle_uploader).
+const HELD_DAYS = 7;
+async function tokenId(token: string): Promise<string> {
+  const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  return [...new Uint8Array(h)].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 32);
+}
+async function leads(feed: string, symbol: string, token: string): Promise<boolean> {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/st_candle_uploader`, {
+      method: "POST",
+      headers: { "content-type": "application/json", apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` },
+      body: JSON.stringify({ p_feed: feed, p_symbol: symbol, p_who: await tokenId(token) }),
+    });
+    return r.ok ? (await r.json()) !== false : true;
+  } catch { return true; }   // can't tell: as it was, every MT5 sends
+}
 // where a feed's bars are read: its own rows, or the legacy table
 function storeUrl(feed: string, symbol: string, tf: number, cols: string, lo: number, hi: number, limit: number): string {
   return `${SUPABASE_URL}/rest/v1/${feed ? "candles_feed" : "candles"}?select=${cols}${feed ? `&feed=eq.${encodeURIComponent(feed)}` : ""}` +
@@ -146,7 +163,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const tf     = Number(body?.tf);
   const bars   = body?.bars;
   const feed   = feedId(body?.feed);   // "" = an EA before 9.19: the legacy table
-  const ok = (o: Record<string, unknown>) => json(feed ? { ...o, ...backfill(feed) } : o);   // a 9.19 EA's answer carries the pace
+  // a 9.19 EA's answer carries the pace, and how far back to go
+  const ok = async (o: Record<string, unknown>) => {
+    if (!feed) return json(o);
+    const bf = backfill(feed);
+    if (bf.days === 0 && typeof token === "string" && token && typeof symbol === "string" && symbol && !(await leads(feed, symbol, token))) bf.days = HELD_DAYS;
+    return json({ ...o, ...bf });
+  };
   if (!token || typeof token !== "string") return json({ error: "missing token" }, 401);
   if (!symbol || typeof symbol !== "string" || !tf || !Array.isArray(bars))
     return json({ error: "missing symbol / tf / bars" }, 400);
