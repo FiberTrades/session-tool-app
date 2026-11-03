@@ -24,6 +24,7 @@
     openNow = [];
     stage = window.open('about:blank', 'st_stage_test', 'width=800,height=500');
     for (var q = 0; q < 100 && !(window.__stPractice && window.__stPractice._lv); q++) await W(100);   /* the charts' code arrives a moment after the app */
+    var focusApp = false; document.hasFocus = function () { return focusApp; };   // the mouse is in Live Charts' window
     var lv = window.__stPractice._lv(), satReal = lv.sat; lv.sat = stage; rows = ROWS;
     await W(200);
     await ask();
@@ -31,7 +32,8 @@
     var card = stage.document.getElementById('st-import-ask');
     var cr = card && card.getBoundingClientRect(), cw = stage.innerWidth, ch = stage.innerHeight;
     ok('3 Nov 2026: in the middle of Live Charts\' window, not at the bottom', !!cr && Math.abs((cr.left + cr.right) / 2 - cw / 2) <= 2 && Math.abs((cr.top + cr.bottom) / 2 - ch / 2) <= 2, cr && [cr.left, cr.right, cr.top, cr.bottom, cw, ch]);
-    ok('...and in the Live Charts window too, where he is looking', !!card && /2 synced/.test(card.textContent), card && card.textContent);
+    ok('3 Nov 2026: in Live Charts\' window, where he is working', !!card && /2 synced/.test(card.textContent), card && card.textContent);
+    ok('...and only there: the app window shows neither the message nor its dimmed screen', getComputedStyle(document.getElementById('toast')).display === 'none' && getComputedStyle(document.getElementById('rule-backdrop')).display === 'none', getComputedStyle(document.getElementById('toast')).display);
     var cb = card && card.getBoundingClientRect();
     ok('...fully on screen in that window', cb && cb.left >= 0 && cb.right <= stage.innerWidth && cb.bottom <= stage.innerHeight, cb && [cb.left, cb.right, cb.bottom, stage.innerWidth, stage.innerHeight]);
     var calls = 0, btns = card ? card.querySelectorAll('button') : [];
@@ -47,6 +49,11 @@
     ok('a new close asks again', shown() && !!card2, { card: card2 && card2.textContent, toast: document.getElementById('toast').className + ' | ' + document.getElementById('toast').textContent });
     if (card2) card2.querySelectorAll('button')[0].click(); await W(800);
     ok('Import there opens the import window in the app and clears the prompt', !shown() && !stage.document.getElementById('st-import-ask') && !!document.querySelector('#mt5-modal-bg.show'), [].map.call(document.querySelectorAll('.modal-bg.show'), function (x) { return x.id; }));
+    ok('...answered: the app window is back to normal', !document.body.classList.contains('st-toast-away'), document.body.className);
+    try { document.getElementById('mt5-modal-bg').classList.remove('show'); } catch (e) {}
+    await W(15600); focusApp = true; rows = rows.concat([row(179686998, 541419576)]); await W(50); await ask();
+    ok('working in the app window: it asks there, on screen, and Live Charts\' window stays clear', shown() && getComputedStyle(document.getElementById('toast')).display !== 'none' && !stage.document.getElementById('st-import-ask'), [shown(), !!stage.document.getElementById('st-import-ask')]);
+    var dx = document.getElementById('toast-dismiss-btn'); if (dx) dx.click(); await W(200);
     lv.sat = satReal; liveObj.openList = oReal; window.isSessionLive = liveReal;
   } catch (e) { out.push({ name: 'test ran', ok: false, got: String(e && e.stack || e) }); }
   try { if (stage) stage.close(); } catch (e) {}

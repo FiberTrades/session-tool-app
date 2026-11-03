@@ -29,7 +29,7 @@
     var row1 = document.querySelector('#modal-trades .modal-trade-row[data-id]');
     ok('...its row is not called a copy: the row is the Lead\'s', row1 && !/copy/.test(txt(row1)), txt(row1));
     var mstat = Array.prototype.filter.call(document.querySelectorAll('#day-modal-bg .modal-stat'), function (x) { return /net r/i.test(x.textContent); })[0];
-    ok('...the day\'s Net R is after costs, as the row (-0.10R), not +0.00R', /[-−]0\.10R/.test(txt(mstat)), txt(mstat));
+    ok('...the day\'s Net R is after costs, as its rows (+4.72R and -0.10R)', /\+4\.62R/.test(txt(mstat)), txt(mstat));
     document.getElementById('day-modal-bg').classList.remove('show');
     data.viewScope = A.id; data.activeAccountId = A.id; renderAllTrades(); await W(150);
     ok('one account in view: its own trades, no line', !document.querySelector('#alltrades-table .st-accs'), document.querySelectorAll('#alltrades-table .st-accs').length);
