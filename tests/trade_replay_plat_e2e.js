@@ -39,6 +39,21 @@
     ok('in that order, left to right', xs.every(function (x, j) { return !j || x > xs[j - 1]; }), xs.map(Math.round));
     var over = []; Array.prototype.forEach.call(top.querySelectorAll('*'), function (e) { if (e.closest('.strp-plleft, #strp-menu, #strp-tgls, .strp-spdmenu, .stpr-tfl, .strp-tfbox')) return; var r = e.getBoundingClientRect(); if (r.width && r.height && (r.right > tr.right + 1 || r.left < tr.left - 1)) over.push(e.id || e.className); });
     ok('nothing in the top bar runs past it', !over.length, over.slice(0, 6));
+    // 3 Nov 2026 ("the x doesnt fit well on the row, also can you make trade replay look as similar to replay as possible? i notice some of the buttons are not in the right place"): Replay's order and sizes
+    var L = function (s) { return $(s).getBoundingClientRect().left; }, lvl = ['#strp-fs', '#strp-close', '#strp-snapbtn', '#strp-lookbtn'].map(function (s) { var r = $(s).getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height), Math.round(r.top)].join(); });
+    ok('the X and full screen: the size and height of the buttons beside them', lvl.every(function (v) { return v === lvl[0]; }), lvl);
+    ok('...side by side at the end of the row, no line between', Math.abs($('#strp-close').getBoundingClientRect().left - $('#strp-fs').getBoundingClientRect().right) < 4 && $('#strp-close').getBoundingClientRect().right <= tr.right - 4, [$('#strp-fs').getBoundingClientRect().right, $('#strp-close').getBoundingClientRect().left]);
+    if (vis($('#strp-cmpbtn'))) ok('Compare beside the symbol, before the timeframes, as on Replay', L('#strp-side') < L('#strp-cmpbtn') && L('#strp-cmpbtn') < L('#strp-tfs'));
+    ok('undo, redo, layers, news in Replay\'s order, then a gap, then snapshot, settings, theme', L('#strp-undo') < L('#strp-redo') && L('#strp-redo') < L('#strp-layersbtn') && L('#strp-layersbtn') < L('#strp-newsbtn') && L('#strp-newsbtn') < L('#strp-snapbtn') && L('#strp-snapbtn') < L('#strp-lookbtn') && L('#strp-lookbtn') < L('.strp-plth') && L('.strp-plth') < L('#strp-fs'));
+    var pl0 = $('#strp-play').getBoundingClientRect(); ok('Play: Replay\'s small square, its icon alone', Math.round(pl0.width) === 29 && Math.round(pl0.height) === 28 && !!$('#strp-play svg') && !vis($('#strp-play .strp-ptx')), [pl0.width, pl0.height]);
+    ok('back and forward: Replay\'s icons, its size', !!$('#strp-back svg') && !!$('#strp-fwd svg') && Math.round($('#strp-back').getBoundingClientRect().width) === 34, Math.round($('#strp-back').getBoundingClientRect().width));
+    ok('the symbol in Replay\'s type', getComputedStyle($('#strp-sym')).fontSize === '13px' && getComputedStyle($('#strp-sym')).fontWeight === '400', getComputedStyle($('#strp-sym')).font);
+    var cmB = $('.strp-plcur'), rl = Array.prototype.filter.call($('.strp-plleft').querySelectorAll('button'), function (b) { return !b.classList.contains('stpr-tgc') && vis(b); }).map(function (b) { return b.id || b.getAttribute('data-gtool') || b.getAttribute('data-tool') || (b.classList.contains('strp-plcur') ? 'cross' : ''); });
+    ok('the left rail in Replay\'s order: cross, lines, fib, position, shapes, text, emoji, then hide, lock, magnet, bin', rl.join() === 'cross,lines,fib,fore,shapes,notes,emoji,strp-hideall,strp-lockall,strp-magnet,strp-del,strp-treebtn', rl);
+    ok('...the cross lit with no tool picked', cmB.classList.contains('on'));
+    $('#strp-tools [data-gtool="fore"]').click(); await W(40); ok('...a position picked: its button lit, the cross not, and the cross puts it down', R._s().activeTool === 'long' && $('#strp-tools [data-gtool="fore"]').classList.contains('on') && !cmB.classList.contains('on'), R._s().activeTool);
+    cmB.click(); await W(40); ok('...back to no tool', R._s().activeTool === 'none' && cmB.classList.contains('on'), R._s().activeTool);
+    var lg = $('.strp-plg'), lv0 = $('#strp-live'); ok('on the chart: the symbol\'s name, timeframe, Trade Replay and O H L C, as on Replay; the trade\'s line under it', lg && vis(lg) && /Euro.*Dollar · \d+ · Trade Replay/.test(lg.textContent) && /O1\.\d+H1\.\d+L1\.\d+C1\.\d+/.test(lg.textContent) && lg.getBoundingClientRect().bottom <= lv0.getBoundingClientRect().top + 2, lg && lg.textContent);
     ok('the timeframes as a row of buttons, the chart\'s one lit', $('#strp-tfs').querySelectorAll('button').length >= 6 && !!$('#strp-tfs button.on') && !vis($('#strp-tfbtn')));
     var left = $('.strp-plleft'), lr = left && left.getBoundingClientRect(), cw = $('#strp-cw').getBoundingClientRect();
     ok('the drawing tools down the left, beside the chart', left && vis($('#strp-tools')) && left.contains($('#strp-tools')) && lr.right <= cw.left + 1 && Math.abs(lr.top - cw.top) < 3 && Math.abs(lr.bottom - cw.bottom) < 3, lr && [Math.round(lr.top), Math.round(lr.bottom), Math.round(cw.top), Math.round(cw.bottom)]);
@@ -97,6 +112,7 @@
       ok('on again: the platform\'s look', card.classList.contains('strp-pl') && inTop('#strp-play') && left.contains($('#strp-tools')));
     }
     if (LT && !card.classList.contains('strp-pllt')) { $('.strp-plth').click(); await W(500); }
+    if ($('.strp-plg')) { $('#strp-close').click(); await W(300); await openIt(); ok('closed and opened again: the title line is back', /Trade Replay/.test($('.strp-plg').textContent) && /O1\.\d+/.test($('.strp-plg').textContent), $('.strp-plg').textContent); }
     ok('no errors', !errs.length, errs);
   } catch (e) { ok('the test ran', false, String(e && e.stack || e)); }
   return JSON.stringify(out);

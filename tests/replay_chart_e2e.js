@@ -41,7 +41,8 @@
     var dg = String(S.entry).split('.')[1].length, f = function (v) { return Number(v).toFixed(dg); };
     ok('a click on a candle shows its O H L C', oh.classList.contains('on') && oh.textContent.indexOf('O' + f(bar.open) + 'H' + f(bar.high) + 'L' + f(bar.low) + 'C' + f(bar.close)) === 0, oh.textContent);
     var lv = document.getElementById('strp-live');
-    ok('under the P&L panel', oh.getBoundingClientRect().top >= lv.getBoundingClientRect().bottom, [oh.getBoundingClientRect().top, lv.getBoundingClientRect().bottom]);
+    if (document.querySelector('.strp-plg')) ok('...in the chart\'s title line, above the P&L panel, as on Replay', document.querySelector('.strp-plg').textContent.indexOf('O' + f(bar.open) + 'H' + f(bar.high)) >= 0 && document.querySelector('.strp-plg').getBoundingClientRect().bottom <= lv.getBoundingClientRect().top + 2, document.querySelector('.strp-plg').textContent);
+    else ok('under the P&L panel', oh.getBoundingClientRect().top >= lv.getBoundingClientRect().bottom, [oh.getBoundingClientRect().top, lv.getBoundingClientRect().bottom]);
     pev('pointerdown', bx, by); pev('pointermove', bx + 40, by + 10); pev('pointerup', bx + 40, by + 10); await W(30);
     ok('a drag clears it', !oh.classList.contains('on'));
     tap(bx, by); await W(30); chart.dispatchEvent(new WheelEvent('wheel', { clientX: r.left + bx, clientY: r.top + by, deltaY: 50, bubbles: true, cancelable: true })); await W(30);
