@@ -17529,7 +17529,7 @@ try {
     data.settings.statsPeriod = p;
     if (p === 'custom') { data.settings.statsFrom = from || ''; data.settings.statsTo = to || ''; }
     try { saveData(); } catch (e) {}
-    statsPeriodPop(false); renderTradesStats();
+    window.__stEqDrawn = {}; statsPeriodPop(false); renderTradesStats();
   }
   function statsPeriodPop(open) {
     var old = document.getElementById('stats-period-pop'), btn = document.getElementById('stats-period-btn'), T = window._stT;
@@ -22359,6 +22359,7 @@ try {
     btn.addEventListener('click', () => {
       const target = btn.dataset.page;
       const _apply = () => {
+      if (!document.getElementById('page-' + target).classList.contains('active')) window.__stEqDrawn = {};   // opening a page fills its equity line again (Nestor, 3 Nov 2026: "it now kust appears full all the time"); repaints while it is open still never restart it
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
       btn.classList.add('active');
@@ -30950,11 +30951,18 @@ try {
     const h = curs.map(c => '<button type="button" data-eqcur="' + c + '" aria-pressed="' + (c === on) + '" title="' + c + '">' + curSymOf(c).trim() + '</button>').join('');
     if (sw.innerHTML !== h) sw.innerHTML = h;
   }
-  /* The line draws itself in once per shape. It used to be a dash animated on the page's own thread, so anything else the page did (the rest of Statistics drawing, a chart window's ticks) made it
+  /* The line draws itself in each time its page opens, and once per new shape while it stays open. It used to be a dash animated on the page's own thread, so anything else the page did (the rest of Statistics drawing, a chart window's ticks) made it
      stop and start. Now a copy of the line is uncovered by two opposite CSS transforms, which the browser's compositor runs on its own; a repaint never restarts it, and a change of width alone is not a new shape. */
   function eqRevealStop(chart) { const r = chart._eqRv; if (r) { chart._eqRv = null; clearTimeout(r.t); try { r.el.remove(); } catch (e) {} } chart.classList.remove('eq-rv-on'); }
   function eqReveal(wrap, chart, o) {
     const dn = window.__stEqDrawn = window.__stEqDrawn || {};
+    const svg = '<svg viewBox="0 0 ' + o.W + ' ' + o.H + '" width="' + o.W + '" height="' + o.H + '" style="display:block"><defs>' + o.defsInner + '</defs><path d="' + o.areaPath + '" fill="' + o.areaFill + '" stroke="none"/><path d="' + o.path + '" fill="none" stroke="' + o.lineStroke + '" stroke-width="2"/></svg>';
+    const live = chart._eqRv;
+    if (live && live.key === o.key) {   /* the page settling mid-draw (a new width, a label): the same draw carries on with the new picture, rather than the line jumping to full */
+      if (live.svg !== svg) { live.svg = svg; live.el.style.width = o.W + 'px'; live.el.style.height = o.H + 'px'; live.el.firstChild.innerHTML = svg; }
+      return;
+    }
+    if (live) eqRevealStop(chart);
     if (dn[o.key]) return;
     if (!chart.getClientRects().length) return;   // a page not on screen: its first real look draws it in
     dn[o.key] = 1;
@@ -30963,11 +30971,11 @@ try {
     if (getComputedStyle(wrap).position === 'static') wrap.style.position = 'relative';
     const el = document.createElement('div'); el.className = 'eq-rv';
     el.style.cssText = 'left:' + chart.offsetLeft + 'px;top:' + chart.offsetTop + 'px;width:' + o.W + 'px;height:' + o.H + 'px;';
-    el.innerHTML = '<div><svg viewBox="0 0 ' + o.W + ' ' + o.H + '" width="' + o.W + '" height="' + o.H + '" style="display:block"><defs>' + o.defsInner + '</defs><path d="' + o.areaPath + '" fill="' + o.areaFill + '" stroke="none"/><path d="' + o.path + '" fill="none" stroke="' + o.lineStroke + '" stroke-width="2"/></svg></div>';
+    el.innerHTML = '<div>' + svg + '</div>';
     wrap.appendChild(el); chart.classList.add('eq-rv-on');
     const done = () => { if (chart._eqRv && chart._eqRv.el === el) eqRevealStop(chart); };
     el.addEventListener('animationend', e => { if (e.target === el) done(); });
-    chart._eqRv = { el, t: setTimeout(done, 1300) };
+    chart._eqRv = { el, key: o.key, svg, t: setTimeout(done, 1300) };
   }
   function drawEquityChart(trades, opts) {
     opts = opts || {};
@@ -31152,7 +31160,7 @@ try {
       ${yLabels}
       <text x="${W - PAD.right}" y="${H - 6}" font-size="13" font-weight="700" fill="#ffffff" text-anchor="end" font-family="DM Mono, monospace">${t('lbl.trade')} ${trades.length}</text>`;
     /* Painted again with nothing changed, nothing is touched: no restart, the hover line stays (Nestor, 2 Nov 2026: "the series of 10 and statistics graph self filling line twitches still"). */
-    if (chart._eqHtml !== _eqHtml) { chart._eqHtml = _eqHtml; eqRevealStop(chart); chart.innerHTML = _eqHtml; }
+    if (chart._eqHtml !== _eqHtml) { chart._eqHtml = _eqHtml; chart.innerHTML = _eqHtml; }
     eqReveal(wrap, chart, { key: chartId + '|' + values.map(v => Math.round(v * 100)).join(','), defsInner, areaPath, areaFill, path, lineStroke, W, H });
     // --- Hover interaction: store latest geometry; wire listeners once ---
     chart._eq = { values, dates, isR, x, y, PAD, W, cur: isR ? null : eqCur };
