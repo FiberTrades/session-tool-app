@@ -583,6 +583,19 @@
     window.__stLive.openIdeas = function () { bxr.tick.at = Date.now(); return [{ main: bxr, rows: [bxr] }]; };
     for (k = 0; k < 30 && !box(); k++) await W(250);
     check('an open trade: its box on the chart, running', box() && box().type === 'long' && box().live, box());
+    // only where it filled goes on the chart (3 Nov 2026): a market order from here stays off it until its stop is on the fill
+    var bxh = { symbol: 'EURUSD', ticket: 88003, login: 90001234, direction: 'short', lots: 2, openedAt: Date.now(), risk0: 100, risk: 100, tick: { op: lx + 0.0005, rpx: 0.00045, sl: -1, tp: 5, r: 0, pnl: 0, px: lx, at: Date.now(), dg: 5, lad: '' } }, oi2 = window.__stLive.openIdeas, ord0 = P._lv().ord;
+    var box3 = function () { return (P._dr().list || []).filter(function (d) { return d && d.trade === 'tb:88003'; })[0]; }, tagN = function () { return Array.prototype.filter.call(document.querySelectorAll('.pl-tag'), function (t) { return /^SELL/.test(t.textContent) && /2 /.test(t.textContent); }).length; };
+    P._lv().ord = { st: 'ok', dir: -1, rd: 0.0004, sym: rawx, at: Date.now(), kind: null };
+    window.__stLive.openIdeas = function () { bxh.tick.at = Date.now(); return [{ main: bxh, rows: [bxh] }]; };
+    await W(1200);
+    check('a market order just filled, its stop not yet on the fill: no box and no lines from the first figures', !box3() && tagN() === 0, [box3(), tagN()]);
+    bxh.tick.rpx = 0.0004; for (k = 0; k < 30 && !box3(); k++) await W(250);
+    check('...its stop on the fill: the box and lines appear, right the first time', box3() && Math.abs(box3().sl - (bxh.tick.op + 0.0004)) < 1e-7, box3());
+    var bxh2 = Object.assign({}, bxh, { ticket: 88004, tick: Object.assign({}, bxh.tick, { rpx: 0.0006 }) }); P._lv().ord.at = Date.now() - 5000; window.__stLive.openIdeas = function () { bxh2.tick.at = Date.now(); return [{ main: bxh2, rows: [bxh2] }]; };
+    var box4 = function () { return (P._dr().list || []).filter(function (d) { return d && d.trade === 'tb:88004'; })[0]; }; for (k = 0; k < 30 && !box4(); k++) await W(250);
+    check('...a stop that stays different (the EA clamped it): shown after a few seconds, never hidden', !!box4(), box4());
+    window.__stLive.openIdeas = oi2; P._lv().ord = ord0; (function () { var L3 = P._dr().list || []; [box3(), box4()].forEach(function (b) { var i3 = L3.indexOf(b); if (i3 >= 0) L3.splice(i3, 1); }); })(); await W(300);
     // the stop corrected just after the fill (3 Nov 2026: "the position tool doesnt coincide with the trade line SL?"): a new trade's box takes it; later it stays what the trade was taken with
     var bxs = { symbol: 'EURUSD', ticket: 88002, login: 90001234, direction: 'short', lots: 16.77, openedAt: Date.now(), risk0: 100, risk: 100, tick: { op: lx + 0.0005, rpx: 0.00045, sl: -1, tp: 5, r: 0, pnl: 0, px: lx, at: Date.now(), dg: 5, lad: '' } };
     var box2 = function () { return (P._dr().list || []).filter(function (d) { return d && d.trade === 'tb:88002'; })[0]; }, oi1 = window.__stLive.openIdeas;

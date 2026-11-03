@@ -98147,7 +98147,7 @@ window.__stAZ = (function () {
     var rk = 0; try { rk = riskMoney(v.rd) || 0; } catch (er) {}
     var rc = null; try { rc = window.__stRules ? window.__stRules.check({ login: e.lg, symbol: e.raw, riskMoney: rk }) : null; } catch (er) {}
     if (rc && !rc.ok) { eaMsg(rc.why, { k: 'pre', head: T('Order not sent', 'Orden no enviada') + ' · ' + e.raw, red: false }); return false; }
-    var o = LV.ord = { st: 'sent', dir: v.dir, lots: lotsFor(v.rd), sym: e.raw, at: Date.now(), kind: v.kind || null, setup: String(CFG.lvSetup || ''), why: PL.why || '' };   // setup + why (plTagFill)
+    var o = LV.ord = { st: 'sent', dir: v.dir, lots: lotsFor(v.rd), rd: v.rd, sym: e.raw, at: Date.now(), kind: v.kind || null, setup: String(CFG.lvSetup || ''), why: PL.why || '' };   // setup + why (plTagFill)
     S.exec = false; S.pv = null; render();
     window.__stTM.acct({ login: e.lg, sym: e.raw, a: 'open', cp: v.sl.toFixed(dg), ci: v.kind ? (v.kind === 'limit' ? 'l' : 's') + v.entry.toFixed(dg) : 'm', riskMoney: rk }).then(function(r){
       if (LV.ord !== o) return; o.done = Date.now();
@@ -99004,11 +99004,16 @@ window.__stAZ = (function () {
   // the open trades a chart shows (its lines, the Trade Manager's rows): the account it trades with only (lvMarkLgs, as the marks - 29 Oct
   // 2026: another account picked, its trades take their place); a trade without a login, or no account known yet, shows as before
   function lvMyIdeas(sym){ var lgs = lvMarkLgs(); return lvIdeas(sym).filter(function(i){ var lg = i.r && i.r.login; return !lgs.length || lg == null || lg === '' || lgs.indexOf(String(lg)) >= 0; }); }
+  /* What is on the chart once an order goes is where it filled, nothing before it (Nestor, 3 Nov 2026: "whatever price i get filled at can that be the only thing it gets displayed on my chart? ... i see the SL, entry and tp move lower, it looks terrible"). A market order
+     from this chart stays off it until the EA has its stop on the fill, at the distance asked for: 4 seconds at most, as the EA may have clamped it. */
+  function lvSettling(r, tk){ var o = LV.ord; if (!o || o.kind || !(o.rd > 0) || !(Date.now() - o.at < 4000) || canon(o.sym) !== canon(r.symbol)) return false;
+    var u = 0.00001; try { u = lvPip() * 0.05; } catch (e) {} return Math.abs(+tk.rpx - o.rd) > u; }
   function lvIdeas(sym){ sym = sym || (S && S.sym); var out = []; if (!sym) return out; try { var L0 = (window.__stLive && window.__stLive.openIdeas) ? window.__stLive.openIdeas() : [];
       var lgs = lvMarkLgs(), tkOk = function(x){ return x && x.tick && isFinite(x.tick.op) && isFinite(x.tick.rpx); };
       L0.forEach(function(idea){ var rows = (idea && idea.rows) || [idea && (idea.main || idea)];   // the chart's own account's row with its prices, else any with them (a copy opened first has none yet)
         var r = rows.filter(function(x){ return tkOk(x) && (!lgs.length || lgs.indexOf(String(x.login)) >= 0); })[0] || rows.filter(tkOk)[0] || (idea && (idea.main || idea));
         if (!r || !r.symbol || canon(r.symbol) !== sym.key) return; var tk = r.tick || {}; if (!(isFinite(tk.op) && isFinite(tk.rpx))) return;
+        if (lvSettling(r, tk)) return;
         out.push({ r: r, tk: tk, long: r.direction !== 'short', at: Math.floor((r.openedAt || Date.parse(r.opened_at) || 0) / 1000) }); }); } catch (e) {} return out; }
   function lvLevels(x){ try { return (window.__stLiveBox && window.__stLiveBox.levels) ? window.__stLiveBox.levels(x.r) : []; } catch (e) { return []; } }
   // ---- The member's closed trades on the live chart (Nestor, 19 Oct 2026: "how come i dont see the trade mark around 10:01 of the trade
