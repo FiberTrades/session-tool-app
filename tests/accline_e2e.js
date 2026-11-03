@@ -22,6 +22,12 @@
     ok('...each account: its name, its own R, its own money', /FTMO 70K Lead −0\.10R −£50\.05/.test(t0) && /TTT 10K \+0\.27R \+\$13\.32/.test(t0), t0);
     ok('...the Lead first', t0.indexOf('FTMO 70K') < t0.indexOf('TTT 10K'), t0);
     var rw = ln[0].previousElementSibling; ok('...right under its own row', rw && rw.classList.contains('atl-row'), rw && rw.className);
+    // a total per currency, pounds and dollars never added (3 Nov 2026)
+    var mg = filterByScope(getAllLifetimeTrades()).filter(function (x) { return x._ideaN === 2; })[0];
+    ok('the combined row: only the Lead\'s pounds in its own figures', !!mg && Math.abs(tradeNetPL(mg) + 50.05) < 0.001 && mg.risk === 500, mg && [tradeNetPL(mg), mg.risk]);
+    var nc = rw.querySelector('.atl-c-net'); ok('Trade Log: its net says each currency, on its own line', /−£50\.05/.test(txt(nc)) && /\+\$13\.32/.test(txt(nc)) && !/36\.73/.test(txt(nc)), txt(nc));
+    var mb = moneyBy([mg], function (x) { return tradeNetPL(x); }); ok('money by currency: £ and $ apart', Math.abs(mb.GBP + 50.05) < 0.001 && Math.abs(mb.USD - 13.32) < 0.001, mb);
+    var inU = _ideaInCur(filterByScope(getAllLifetimeTrades()), 'USD'); ok('the dollar view has the copy, at its own R', inU.length === 1 && inU[0].id === 'l1' && Math.abs(tradeRforMath(inU[0]) - 13.32 / 49.95) < 0.001, inU.map(function (x) { return x.id; }));
     window.__alShot = 1;
     var day = d.toDateString(); openDayModal(day); await W(300);
     var mod = document.querySelector('#modal-trades .st-accs');
@@ -30,6 +36,7 @@
     ok('...its row is not called a copy: the row is the Lead\'s', row1 && !/copy/.test(txt(row1)), txt(row1));
     var mstat = Array.prototype.filter.call(document.querySelectorAll('#day-modal-bg .modal-stat'), function (x) { return /net r/i.test(x.textContent); })[0];
     ok('...the day\'s Net R is after costs, as its rows (+4.72R and -0.10R)', /\+4\.62R/.test(txt(mstat)), txt(mstat));
+    var dn = txt(document.getElementById('modal-net')); ok('the day\'s window: its Net P&L per currency, not -£36.73', /\+£2,307\.51/.test(dn) && /\+\$13\.32/.test(dn) && !/36\.73/.test(dn), dn);
     document.getElementById('day-modal-bg').classList.remove('show');
     data.viewScope = A.id; data.activeAccountId = A.id; renderAllTrades(); await W(150);
     ok('one account in view: its own trades, no line', !document.querySelector('#alltrades-table .st-accs'), document.querySelectorAll('#alltrades-table .st-accs').length);

@@ -5668,6 +5668,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .atl-row:not(.atl-head) { cursor: pointer; transition: background 120ms; }
   .st-accs { position: sticky; left: 0; display: flex; flex-wrap: wrap; gap: 4px 20px; width: fit-content; max-width: min(100%, calc(100vw - 72px)); box-sizing: border-box; padding: 2px 12px 9px; font-size: 11px; line-height: 1.5; color: var(--text-mid); }
   .st-acc { white-space: nowrap; } .st-acc b { font-weight: 500; margin-left: 6px; font-variant-numeric: tabular-nums; } .st-acc b.good { color: var(--good); } .st-acc b.bad { color: var(--bad); }
+  .st-cur-sep { color: var(--text-dim); } .st-cur-v .good, .atl-cell .good, .modal-stat .v .good, .modal-trade-cell .good { color: var(--good); } .st-cur-v .bad, .atl-cell .bad, .modal-stat .v .bad, .modal-trade-cell .bad { color: var(--bad); }
   .st-acc-l { font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); }
   .atl-row:not(.atl-head):hover { background: var(--border-2); }
   /* News marker. Rides inside the symbol cell rather than claiming a thirteenth column — the row
@@ -17724,7 +17725,7 @@ try {
     const seen = {}; scopeAccountsList().forEach(a => { seen[accCur(a)] = 1; }); (trades || []).forEach(t => { seen[tradeCur(t)] = 1; });
     const main = accCur(null); return Object.keys(seen).sort((a, b) => (a === main ? -1 : b === main ? 1 : a.localeCompare(b)));
   }
-  function moneyBy(list, fn) { const m = {}; (list || []).forEach(t => { const c = tradeCur(t); m[c] = (m[c] || 0) + (Number(fn(t)) || 0); }); return m; }
+  function moneyBy(list, fn) { const m = {}; (list || []).forEach(t => { (t && Array.isArray(t._ideaTrades) ? t._ideaTrades : [t]).forEach(x => { const c = tradeCur(x); m[c] = (m[c] || 0) + (Number(fn(x)) || 0); }); }); return m; }   // a copied trade: each account in its own currency
   function fmtMoneyBy(m, opts) {
     const main = accCur(null), ks = Object.keys(m || {}).sort((a, b) => (a === main ? -1 : b === main ? 1 : a.localeCompare(b)));
     if (!ks.length) return fmtMoney(0, opts);
@@ -19080,15 +19081,33 @@ try {
       if (_lead !== g[0]) g = [_lead].concat(g.filter(function (t) { return t !== _lead; }));
       var m = Object.assign({}, _lead);
       m._ideaLead = _lead;
-      m.actualGross = g.reduce(function (sm, t) { return sm + tradeGross(t); }, 0);
-      m.costs = g.reduce(function (sm, t) { return sm + tradeCosts(t); }, 0);
-      var rk = g.reduce(function (sm, t) { return sm + (parseFloat(t.risk) || 0); }, 0);
+      // Pounds and dollars are never added (Nestor, 3 Nov 2026: a total per currency, "yes!"): the row's own figures are the accounts in the Lead's currency; moneyBy and _ideaInCur read the others from _ideaTrades.
+      var _lc = tradeCur(_lead), same = g.filter(function (t) { return tradeCur(t) === _lc; });
+      m.actualGross = same.reduce(function (sm, t) { return sm + tradeGross(t); }, 0);
+      m.costs = same.reduce(function (sm, t) { return sm + tradeCosts(t); }, 0);
+      var rk = same.reduce(function (sm, t) { return sm + (parseFloat(t.risk) || 0); }, 0);
       if (rk > 0) m.risk = rk;
       // Its % is the money of every account over their combined size (getTradeAccountSB reads this).
-      m._sbSum = g.reduce(function (sm, t) { return sm + (getTradeAccountSB(t) || 0); }, 0);
+      m._sbSum = same.reduce(function (sm, t) { return sm + (getTradeAccountSB(t) || 0); }, 0);
       m._ideaN = g.length; m._ideaTrades = g;
       return m;
     });
+  }
+  // A currency's view of a list with copied trades in it: a merged row counts in a currency through the accounts it has there, which may not be the Lead's.
+  function _ideaInCur(list, c) {
+    var out = [];
+    (list || []).forEach(function (t) {
+      if (!t || !Array.isArray(t._ideaTrades)) { if (tradeCur(t) === c) out.push(t); return; }
+      if (tradeCur(t) === c) { out.push(t); return; }
+      _ideaMerge(t._ideaTrades.filter(function (x) { return tradeCur(x) === c; })).forEach(function (x) { out.push(x); });
+    });
+    return out;
+  }
+  // Money per currency for a list, in spans coloured by their own sign; one line each when stack is true.
+  function _moneyHtml(list, fn, stack) {
+    var m = moneyBy(list, fn), main = accCur(null), ks = Object.keys(m).sort(function (a, b) { return a === main ? -1 : b === main ? 1 : a.localeCompare(b); });
+    if (!ks.length) return fmtMoney(0);
+    return ks.map(function (c) { var v = m[c]; return '<span class="' + (v > 0 ? 'good' : v < 0 ? 'bad' : 'be') + '">' + fmtMoney(v, { cur: c }) + '</span>'; }).join(stack ? '<br>' : ' <span class="st-cur-sep">\u00b7</span> ');
   }
   // Each account's own part of a trade counted once (Nestor, 3 Nov 2026: "should it be like this or all accounts R displayed?"): the totals take the Lead's R, this says what every account did, in its own money.
   function _ideaAccRows(t) {
@@ -29114,7 +29133,7 @@ try {
     // Account Balance KPI — just the £ amount. The lifetime % change moved out of here
     // and into the equity chart subtitle below where it sits next to the curve it summarises.
     const balEl = document.getElementById('kpi-balance');
-    if (_multi) { const _bal = {}; _curs.forEach(c => { _bal[c] = baselineIn(c) - paidOutIn(c); }); allTime.forEach(t => { const c = tradeCur(t); _bal[c] = (_bal[c] || 0) + (tradeGross(t) - tradeCosts(t)) * tradeCopies(t); });
+    if (_multi) { const _bal = {}; _curs.forEach(c => { _bal[c] = baselineIn(c) - paidOutIn(c); }); allTime.forEach(t => { (Array.isArray(t._ideaTrades) ? t._ideaTrades : [t]).forEach(x => { const c = tradeCur(x); _bal[c] = (_bal[c] || 0) + (tradeGross(x) - tradeCosts(x)) * tradeCopies(x); }); });
       balEl.innerHTML = statCurRows(_bal, (c, v) => { const b0 = baselineIn(c), pc = b0 > 0 ? (v - b0) / b0 * 100 : null, fm0 = x => escHtmlGlobal(fmtMoney(x, { noSign: true, cur: c }));
         return '<span class="zk-cv">' + fm0(v) + '</span>' + (pc == null ? '' : '<span class="zk-cp ' + (pc > 0.004 ? 'good' : pc < -0.004 ? 'bad' : '') + '">' + (pc >= 0 ? '+' : '\u2212') + Math.abs(pc).toFixed(2) + '%</span>')
           + (b0 > 0 ? '<small>' + escHtmlGlobal(zT('from ' + fmtMoney(b0, { noSign: true, cur: c }) + ' start', 'desde ' + fmtMoney(b0, { noSign: true, cur: c }) + ' inicial')) + '</small>' : ''); });
@@ -30056,7 +30075,7 @@ try {
       sec.style.display = '';
       // Net money per calendar day, copy-weighted like every other money figure.
       const byDay = {}, _ccur = accCur(_scAcc);
-      (_multi ? all.filter(t => tradeCur(t) === _ccur) : all).forEach(t => {   // its own account's currency (27 Oct 2026)
+      (_multi ? _ideaInCur(all, _ccur) : all).forEach(t => {   // its own account's currency (27 Oct 2026)
         const k = t.date ? new Date(t.date).toDateString() : null;
         if (!k) return;
         byDay[k] = (byDay[k] || 0) + tradeNetPL(t) * tradeCopies(t);
@@ -30213,7 +30232,7 @@ try {
     // accounts in more than one currency (27 Oct 2026): the money charts in the equity curve's currency, the money words per currency
     const zc = statsChartCur(all), zcur = zc || statsCurs(all)[0];
     const fm = v => (typeof fmtMoney === 'function' ? fmtMoney(Math.abs(v), { noSign: true, cur: zcur }) : String(Math.round(Math.abs(v))));
-    const allM = zc ? all.filter(t => tradeCur(t) === zc) : all;
+    const allM = zc ? _ideaInCur(all, zc) : all;
     const chron = allM.slice().sort((a, b) => (Date.parse(a.date) || 0) - (Date.parse(b.date) || 0));
     let cum = 0; const cumNet = chron.map(t => (cum += net(t))); cum = 0; const cumR = (zc ? all.slice().sort((a, b) => (Date.parse(a.date) || 0) - (Date.parse(b.date) || 0)) : chron).map(t => (cum += rOf(t)));   // R: every currency
     const gross = all.reduce((s, t) => s + tradeGross(t) * cp(t), 0), costs = all.reduce((s, t) => s + tradeCosts(t) * cp(t), 0);
@@ -30307,7 +30326,7 @@ try {
   let _ddCur = null;
   function ddData(allTime) {
     const dc = statsChartCur(allTime || []); _ddCur = dc || statsCurs(allTime || [])[0];   // several currencies: the equity curve's (27 Oct 2026)
-    const tr = (dc ? (allTime || []).filter(t => tradeCur(t) === dc) : (allTime || [])).slice().sort(_tradeChronoCompare);
+    const tr = (dc ? _ideaInCur(allTime || [], dc) : (allTime || [])).slice().sort(_tradeChronoCompare);
     const base = dc ? baselineIn(dc) : ((typeof getScopedBaseline === 'function') ? getScopedBaseline() : 0);
     const pts = [{ v: base, r: 0, d: null }];
     let pl = 0, rr = 0;
@@ -31065,7 +31084,7 @@ try {
       // being created no longer steps a curve it has nothing to do with.
       // Accounts in more than one currency (27 Oct 2026): one currency at a time - the switch beside the curve picks it
       const _ec = opts.noCur ? null : statsChartCur(trades), _ecs = _ec ? statsCurs(trades) : null;
-      if (_ec) trades = trades.filter(t => tradeCur(t) === _ec);
+      if (_ec) trades = _ideaInCur(trades, _ec);
       eqCurSwitch(chartId, _ecs, _ec);
       eqCur = _ec || statsCurs(trades)[0];
       const totalBaseline = _ec ? baselineIn(_ec) : ((typeof getScopedBaseline === 'function') ? getScopedBaseline() : 0);
@@ -36455,8 +36474,9 @@ try {
         + '<div class="atl-cell atl-c-entryexit">' + eeStr + '</div>'
         + '<div class="atl-cell atl-c-hold">' + formatMinutes(holdMinutes(tr)) + '</div>'
         + '<div class="atl-cell atl-c-risksl">' + riskStr + ' <span class="atl-sub">\u00b7 ' + slStr + '</span></div>'
-        + '<div class="atl-cell atl-c-gross ' + (gross > 0 ? 'good' : gross < 0 ? 'bad' : 'be') + '">' + fmtMoney(gross) + '</div>'
-        + '<div class="atl-cell atl-c-net ' + (net > 0 ? 'good' : net < 0 ? 'bad' : 'be') + '">' + fmtMoney(net) + '</div>'
+        + (tr._ideaTrades ? '<div class="atl-cell atl-c-gross">' + _moneyHtml([tr], x => tradeGross(x), true) + '</div><div class="atl-cell atl-c-net">' + _moneyHtml([tr], x => tradeNetPL(x), true) + '</div>'
+          : '<div class="atl-cell atl-c-gross ' + (gross > 0 ? 'good' : gross < 0 ? 'bad' : 'be') + '">' + fmtMoney(gross) + '</div>'
+          + '<div class="atl-cell atl-c-net ' + (net > 0 ? 'good' : net < 0 ? 'bad' : 'be') + '">' + fmtMoney(net) + '</div>')
         + '</div>' + _ideaAccLine(tr);
     });
 
@@ -36939,8 +36959,9 @@ try {
     // Prefix the corner P&L with a small uppercase "NET" label — disambiguates
     // what the figure represents at a glance, and matches the weekly/monthly
     // modals which use the same prefix.
-    netEl.innerHTML = `<span class="modal-net-label">${t('lbl.net_pnl')}</span>${fmtMoney(net)}`;
-    netEl.className = 'modal-net ' + (net > 0 ? 'good' : net < 0 ? 'bad' : '');
+    const _dayCurs = Object.keys(moneyBy(dayTrades, x => tradeNetPL(x))).length;
+    netEl.innerHTML = `<span class="modal-net-label">${t('lbl.net_pnl')}</span>` + (_dayCurs > 1 ? '<span class="st-cur-v">' + _moneyHtml(dayTrades, x => tradeNetPL(x) * tradeCopies(x)) + '</span>' : fmtMoney(net));
+    netEl.className = 'modal-net ' + (_dayCurs > 1 ? '' : (net > 0 ? 'good' : net < 0 ? 'bad' : ''));
 
     // Day-level R + pips totals (across all trades on this day, win/lose/be combined the usual way).
     const dayTotalR = dayTrades.reduce((s, t) => s + tradeRforMath(t) * tradeCopies(t), 0);   // after costs, as its rows, Statistics and Your week (Nestor, 3 Nov 2026: a break-even "keep it after costs"); it read +0.00R over a -0.10R row
@@ -36998,7 +37019,7 @@ try {
 
     document.getElementById('modal-stats').innerHTML = `
       <div class="modal-stat"><div class="label">${t('dmodal.wlbe')}</div><div class="v"><span class="wlbe-w">${wins}</span><span class="wlbe-sep">/</span><span class="wlbe-l">${losses}</span><span class="wlbe-sep">/</span><span class="wlbe-be">${bes}</span></div></div>
-      <div class="modal-stat"><div class="label">${t('dmodal.gross_pnl')}</div><div class="v ${gross > 0 ? 'good' : gross < 0 ? 'bad' : ''}">${fmtMoney(gross)}</div></div>
+      <div class="modal-stat"><div class="label">${t('dmodal.gross_pnl')}</div><div class="v ${_dayCurs > 1 ? '' : (gross > 0 ? 'good' : gross < 0 ? 'bad' : '')}">${_dayCurs > 1 ? _moneyHtml(dayTrades, x => tradeGross(x) * tradeCopies(x), true) : fmtMoney(gross)}</div></div>
       <div class="modal-stat"><div class="label">${t('dmodal.net_r')}</div><div class="v ${dayTotalRCls}">${dayTotalRStr}</div></div>
       <div class="modal-stat"><div class="label">${t('dmodal.net_acc')}</div><div class="v ${dayNetPctCls}">${dayNetPctStr}</div></div>`;
 
@@ -37170,7 +37191,7 @@ try {
         <div class="modal-trade-cell center">${tSide(t.side) || '—'}</div>
         <div class="modal-trade-cell center"><span class="modal-tag ${tagCls}">${tResult(t.result)}</span></div>
         <div class="modal-trade-cell center">${rStr} <span class="modal-trade-sub-inline">· ${pStr}</span></div>
-        <div class="modal-trade-cell center ${cls}">${fmtMoney(tn)}</div>
+        <div class="modal-trade-cell center ${t._ideaTrades ? '' : cls}">${t._ideaTrades ? _moneyHtml([t], x => tradeNetPL(x), true) : fmtMoney(tn)}</div>
         <div class="modal-trade-cell center">${formatMinutes(hm)}</div>
       </div>${_ideaAccLine(t)}`;
     });
