@@ -31020,13 +31020,23 @@ try {
   }
   /* The line draws itself in each time its page opens, and once per new shape while it stays open. It used to be a dash animated on the page's own thread, so anything else the page did (the rest of Statistics drawing, a chart window's ticks) made it
      stop and start. Now a copy of the line is uncovered by two opposite CSS transforms, which the browser's compositor runs on its own; a repaint never restarts it, and a change of width alone is not a new shape. */
-  function eqRevealStop(chart) { const r = chart._eqRv; if (r) { chart._eqRv = null; clearTimeout(r.t); try { r.el.remove(); } catch (e) {} } chart.classList.remove('eq-rv-on'); }
+  function eqRevealStop(chart) { const r = chart._eqRv; if (r) { chart._eqRv = null; clearTimeout(r.t); try { if (r.io) r.io.disconnect(); } catch (e) {} try { r.el.remove(); } catch (e) {} } chart.classList.remove('eq-rv-on'); }
+  /* Over the chart itself. An svg has no offsetLeft / offsetTop, so "undefinedpx" left the copy in the page's flow, one chart's height under the graph, with the real line hidden (Nestor, 3 Nov 2026: "the grapgh line is under the graph then it jumps up"; on Statistics that was off the screen, so the line just "already filled up when i see it"). */
+  function eqRevealPlace(wrap, chart, el) { const w = wrap.getBoundingClientRect(), c = chart.getBoundingClientRect(); el.style.left = (c.left - w.left - wrap.clientLeft + wrap.scrollLeft) + 'px'; el.style.top = (c.top - w.top - wrap.clientTop + wrap.scrollTop) + 'px'; }
+  function eqRevealSeen(chart) { const c = chart.getBoundingClientRect(), vh = window.innerHeight || document.documentElement.clientHeight, a = Math.min(c.bottom, vh) - Math.max(c.top, 0); return c.height > 0 && a >= c.height * 0.25; }
+  /* The fill starts when the chart is on screen: at once if it is, else the moment it is scrolled to. */
+  function eqRevealGo(chart) { const r = chart._eqRv; if (!r || !r.el.classList.contains('eq-hold')) return;
+    const start = () => { if (chart._eqRv !== r) return; try { if (r.io) r.io.disconnect(); } catch (e) {} r.io = null; r.el.classList.remove('eq-hold'); clearTimeout(r.t); r.t = setTimeout(r.done, 1300); };
+    clearTimeout(r.t); if (eqRevealSeen(chart) || typeof IntersectionObserver === 'undefined') { start(); return; }
+    if (!r.io) { r.io = new IntersectionObserver(() => { if (eqRevealSeen(chart)) start(); }, { threshold: [0, 0.25, 0.5, 0.75, 1] }); r.io.observe(chart); } }
   function eqReveal(wrap, chart, o) {
     const dn = window.__stEqDrawn = window.__stEqDrawn || {};
     const svg = '<svg viewBox="0 0 ' + o.W + ' ' + o.H + '" width="' + o.W + '" height="' + o.H + '" style="display:block"><defs>' + o.defsInner + '</defs><path d="' + o.areaPath + '" fill="' + o.areaFill + '" stroke="none"/><path d="' + o.path + '" fill="none" stroke="' + o.lineStroke + '" stroke-width="2"/></svg>';
     const live = chart._eqRv;
     if (live && live.key === o.key) {   /* the page settling mid-draw (a new width, a label): the same draw carries on with the new picture, rather than the line jumping to full */
       if (live.svg !== svg) { live.svg = svg; live.el.style.width = o.W + 'px'; live.el.style.height = o.H + 'px'; live.el.firstChild.innerHTML = svg; }
+      eqRevealPlace(wrap, chart, live.el);
+      if (live.el.classList.contains('eq-hold')) { if (window.__stEqHold) { const hl = window.__stEqHeld = window.__stEqHeld || []; if (hl.indexOf(chart) < 0) hl.push(chart); } else eqRevealGo(chart); }   // still waiting from an earlier look at the page
       return;
     }
     if (live) eqRevealStop(chart);
@@ -31037,20 +31047,21 @@ try {
     eqRevealStop(chart);
     if (getComputedStyle(wrap).position === 'static') wrap.style.position = 'relative';
     const el = document.createElement('div'); el.className = 'eq-rv';
-    el.style.cssText = 'left:' + chart.offsetLeft + 'px;top:' + chart.offsetTop + 'px;width:' + o.W + 'px;height:' + o.H + 'px;';
+    el.style.cssText = 'width:' + o.W + 'px;height:' + o.H + 'px;';
+    eqRevealPlace(wrap, chart, el);
     el.innerHTML = '<div>' + svg + '</div>';
     /* Opening a page, the fill waits until the page is on screen (window.__stEqGo): it began while the page was still being built and faded in, so on a big Statistics page it had run its course unseen and the line just "appeared full" (Nestor, 3 Nov 2026: "works now but not the one in statistics"). */
     const hold = !!window.__stEqHold;
-    if (hold) el.classList.add('eq-hold');
+    el.classList.add('eq-hold');
     wrap.appendChild(el); chart.classList.add('eq-rv-on');
     const done = () => { if (chart._eqRv && chart._eqRv.el === el) eqRevealStop(chart); };
     el.addEventListener('animationend', e => { if (e.target === el) done(); });
-    chart._eqRv = { el, key: o.key, svg, done, t: setTimeout(done, hold ? 5000 : 1300) };
-    if (hold) (window.__stEqHeld = window.__stEqHeld || []).push(chart);
+    chart._eqRv = { el, key: o.key, svg, done, t: 0, io: null };
+    if (hold) (window.__stEqHeld = window.__stEqHeld || []).push(chart); else eqRevealGo(chart);
   }
   window.__stEqGo = function () {
     window.__stEqHold = false;
-    (window.__stEqHeld || []).forEach(chart => { const r = chart._eqRv; if (!r || !r.el.classList.contains('eq-hold')) return; r.el.classList.remove('eq-hold'); clearTimeout(r.t); r.t = setTimeout(r.done, 1300); });
+    (window.__stEqHeld || []).forEach(eqRevealGo);
     window.__stEqHeld = [];
   };
   function drawEquityChart(trades, opts) {
