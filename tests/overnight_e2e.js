@@ -33,6 +33,12 @@
     window.__stLive.upsert(row(7006, { closed_at: new Date().toISOString(), pnl: 50 }));
     ok('opened yesterday, closed today: it counts today, not deleted', dels.indexOf(7006) < 0, dels);
 
+    // 3 Nov 2026 ("what does SELLO mean?"): the feed keeps a trade's size, for the chart's tag
+    window.__stLive.upsert(row(7010, { opened_at: new Date().toISOString(), lots: 16.77, op: 1.12, rpx: 0.0004, px: 1.12 }));
+    var idea = (window.__stLive.openIdeas() || []).filter(function (i) { return ((i.rows || [i.main])[0] || {}).ticket === 7010; })[0], lot = function () { var q = (window.__stLive.openIdeas() || []).filter(function (i) { return ((i.rows || [i.main])[0] || {}).ticket === 7010; })[0]; return q && (q.rows || [q.main])[0].lots; };
+    ok('a trade\'s size reaches the chart from the live feed', lot() === 16.77, lot());
+    window.__stLive.upsert(row(7010, { opened_at: new Date().toISOString(), op: 1.12, rpx: 0.0004, px: 1.12 }));
+    ok('...and stays when a report leaves it out', lot() === 16.77, lot());
     window.__stLive.upsert(row(7001, { closed_at: new Date().toISOString(), pnl: 80 }));
     ok('the overnight trade closing today: no longer open, row kept for today', !window.__stLive.isOpen(7001) && dels.indexOf(7001) < 0, dels);
     window.__stLiveDeleteRow = delR;

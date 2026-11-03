@@ -29,6 +29,8 @@
     await ask();
     ok('in the session, flat: the prompt comes, for both trades', shown() && /2 synced/.test(document.getElementById('toast').textContent), document.getElementById('toast').textContent);
     var card = stage.document.getElementById('st-import-ask');
+    var cr = card && card.getBoundingClientRect(), cw = stage.innerWidth, ch = stage.innerHeight;
+    ok('3 Nov 2026: in the middle of Live Charts\' window, not at the bottom', !!cr && Math.abs((cr.left + cr.right) / 2 - cw / 2) <= 2 && Math.abs((cr.top + cr.bottom) / 2 - ch / 2) <= 2, cr && [cr.left, cr.right, cr.top, cr.bottom, cw, ch]);
     ok('...and in the Live Charts window too, where he is looking', !!card && /2 synced/.test(card.textContent), card && card.textContent);
     var cb = card && card.getBoundingClientRect();
     ok('...fully on screen in that window', cb && cb.left >= 0 && cb.right <= stage.innerWidth && cb.bottom <= stage.innerHeight, cb && [cb.left, cb.right, cb.bottom, stage.innerWidth, stage.innerHeight]);

@@ -583,6 +583,23 @@
     window.__stLive.openIdeas = function () { bxr.tick.at = Date.now(); return [{ main: bxr, rows: [bxr] }]; };
     for (k = 0; k < 30 && !box(); k++) await W(250);
     check('an open trade: its box on the chart, running', box() && box().type === 'long' && box().live, box());
+    // the stop corrected just after the fill (3 Nov 2026: "the position tool doesnt coincide with the trade line SL?"): a new trade's box takes it; later it stays what the trade was taken with
+    var bxs = { symbol: 'EURUSD', ticket: 88002, login: 90001234, direction: 'short', lots: 16.77, openedAt: Date.now(), risk0: 100, risk: 100, tick: { op: lx + 0.0005, rpx: 0.00045, sl: -1, tp: 5, r: 0, pnl: 0, px: lx, at: Date.now(), dg: 5, lad: '' } };
+    var box2 = function () { return (P._dr().list || []).filter(function (d) { return d && d.trade === 'tb:88002'; })[0]; }, oi1 = window.__stLive.openIdeas;
+    window.__stLive.openIdeas = function () { bxs.tick.at = Date.now(); return [{ main: bxs, rows: [bxs] }]; };
+    for (k = 0; k < 30 && !box2(); k++) await W(250);
+    check('a new trade: its box has the first stop', box2() && Math.abs(box2().sl - (bxs.tick.op + 0.00045)) < 1e-7, box2());
+    var tp2a = box2().tp; bxs.tick.rpx = 0.0004;
+    for (k = 0; k < 30 && Math.abs(box2().sl - (bxs.tick.op + 0.0004)) > 1e-7; k++) await W(250);
+    check('...the EA sets the stop on the real fill: the box follows, on the trade\'s line', Math.abs(box2().sl - (bxs.tick.op + 0.0004)) < 1e-7 && Math.abs(box2().tp - (bxs.tick.op - 5 * 0.0004)) < 1e-7, [box2().sl, box2().tp, tp2a]);
+    var e2 = Array.prototype.filter.call(document.querySelectorAll('.pl-tag'), function (t) { return /SELL/.test(t.textContent); })[0]; for (k = 0; k < 20 && !e2; k++) { await W(250); e2 = Array.prototype.filter.call(document.querySelectorAll('.pl-tag'), function (t) { return /SELL/.test(t.textContent); })[0]; }
+    var ek = e2 && e2.querySelector('.k'), el2 = ek && ek.querySelector('.pl-lots');
+    check('...its tag: SELL and the size, with a gap between them, never a 0', !!el2 && ek.textContent === 'SELL 16.77' && parseFloat(getComputedStyle(el2).marginLeft) >= 3, ek && ek.textContent);
+    bxs.openedAt = Date.now() - 40000; bxs.tick.rpx = 0.0007; await W(1500);
+    check('...past its first moments the box stays what the trade was taken with', Math.abs(box2().sl - (bxs.tick.op + 0.0004)) < 1e-7, box2().sl);
+    delete bxs.lots; await W(600); e2 = Array.prototype.filter.call(document.querySelectorAll('.pl-tag'), function (t) { return /SELL/.test(t.textContent); })[0];
+    check('...no size known: just SELL', !!e2 && e2.querySelector('.k').textContent === 'SELL', e2 && e2.querySelector('.k').textContent);
+    window.__stLive.openIdeas = oi1; (function () { var L2 = P._dr().list || [], i2 = L2.indexOf(box2()); if (i2 >= 0) L2.splice(i2, 1); })(); await W(300);
     window.__stLive.openIdeas = function () { return []; };
     P._lvTr([{ ticket: 88001, symbol: 'EURUSD', direction: 'buy', lots: 1, entry_price: bxr.tick.op, exit_price: lx, open_time: new Date(tx0 * 1000).toISOString(), close_time: new Date(Bx[Bx.length - 5].time * 1000).toISOString(), pnl: 50, risk_gbp: 100, login: '90001234', sl_pips: 7, tp_pips: 14 }]);
     for (k = 0; k < 30 && box() && box().live; k++) await W(250);

@@ -19608,6 +19608,7 @@ try {
         rows[k] = { ticket: Number(row.ticket), direction: row.direction || ex.direction || 'long', pnl: (row.pnl != null ? row.pnl : ex.pnl), closed: (row.closed_at != null) || ex.closed || false, symbol: row.symbol || ex.symbol || '',
                     login: (row.login != null && row.login !== '') ? String(row.login) : (ex.login || null),   // the MT5 account it is on: the app's trade commands go to that account's EA (18 Oct 2026)
                     risk: (row.risk != null && isFinite(Number(row.risk)) && Number(row.risk) > 0) ? Number(row.risk) : ex.risk,
+                    lots: (row.lots != null && Number(row.lots) > 0) ? Number(row.lots) : ex.lots,   // the size on the chart's tag and its money at a level (Nestor, 3 Nov 2026: "what does SELLO mean?": 16.77 lots were never kept here, so it read SELL 0)
                     seenAt: isFinite(_seen) ? _seen : (ex.seenAt || Date.now()), openedAt: isFinite(_opn) ? _opn : (ex.openedAt || Date.now()),
                     // EA 8.88 (2 Oct 2026): the running result every 5 s for the Session Live trade card, and what the trade was taken with
                     risk0: ex.risk0 || ((row.risk != null && Number(row.risk) > 0) ? Number(row.risk) : undefined),
@@ -54621,7 +54622,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
     const d = w.document, old = d.getElementById('st-import-ask'); if (old) old.remove();
     const lt = !!d.querySelector('.stpr-win.pl-lt');
     const card = d.createElement('div'); card.id = 'st-import-ask'; card.setAttribute('role', 'alert');
-    card.style.cssText = 'position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:100000;display:flex;align-items:center;gap:14px;max-width:calc(100vw - 32px);padding:12px 14px 12px 16px;border-radius:10px;font:13px/1.35 Inter,system-ui,sans-serif;'
+    card.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:100000;display:flex;align-items:center;gap:14px;max-width:calc(100vw - 32px);padding:12px 14px 12px 16px;border-radius:10px;font:13px/1.35 Inter,system-ui,sans-serif;'
       + (lt ? 'background:#fff;color:#131722;border:1px solid #d6d9e0;box-shadow:0 6px 18px rgba(0,0,0,.18);' : 'background:#1e222d;color:#d1d4dc;border:1px solid #363a45;box-shadow:0 6px 18px rgba(0,0,0,.55);');
     const btn = (txt, on) => { const b = d.createElement('button'); b.type = 'button'; b.textContent = txt; b.style.cssText = 'flex:none;height:30px;padding:0 12px;border-radius:7px;cursor:pointer;font:600 12px Inter,system-ui,sans-serif;' + (on ? 'background:#f472b6;color:#000;border:1px solid #f472b6;' : 'background:transparent;color:inherit;border:1px solid ' + (lt ? '#d6d9e0' : '#363a45') + ';'); return b; };
     const m = d.createElement('span'); m.textContent = msg; card.appendChild(m);
@@ -92949,6 +92950,7 @@ window.__stAZ = (function () {
   .pl-tag[hidden] { display: none !important; }
   .pl-tag > span, .pl-tag > button { display: flex; align-items: center; padding: 0 7px; }
   .pl-tag .k, .pl-tag .k2 { color: #ffffff; }
+  .pl-tag .pl-lots { margin-left: 4px; }
   .pl-tag .v, .pl-tag .v2, .pl-tag .xx { margin: 1px 0; background: #131722; color: #d1d4dc; }   /* the chart's dark inside the tag's colour, never a white box (Nestor, 26 Oct 2026); green above zero, red below */
   .pl-tag .v, .pl-tag .xx { margin-right: 1px; border-radius: 0 2px 2px 0; } .pl-tag .v2 { margin-right: 0; }
   .pl-tag .v.u, .pl-tag .v2.u { color: #22ab94; } .pl-tag .v.d, .pl-tag .v2.d { color: #ff5c69; }
@@ -98981,6 +98983,9 @@ window.__stAZ = (function () {
         var g = tbLevels(F, x, pip); if (!g) return;
         d = { type: x.dir > 0 ? 'long' : 'short', a: { t: x.eTs, price: x.entry }, b: { t: x.open ? Math.max(now, x.eTs + 60) : Math.max(x.xTs || 0, x.eTs + 60), price: x.entry }, sl: g.sl, tp: g.tp, trade: key };
         if (x.open) d.live = 1; L.push(d); made[key] = 1; has[key] = 1; ch = true; mk = true; return; }
+      /* The EA sets the stop exactly its distance from the real fill a moment after the fill, so a box made from the first figures sat off the trade's lines (Nestor, 3 Nov 2026: "the position tool doesnt coincide with the trade line SL?").
+         For its first 30 seconds it takes the trade's figures; after that it is what the trade was taken with, and the member's. */
+      if (d.live && x.open && Date.now() / 1000 - x.eTs < 30 && !(DW.drag && DW.list[DW.drag.i] === d)) { var g2 = tbLevels(F, x, pip); if (g2 && (Math.abs(g2.sl - d.sl) > pip * 0.01 || Math.abs(g2.tp - d.tp) > pip * 0.01)) { d.sl = g2.sl; d.tp = g2.tp; ch = true; } }
       if (d.live && !x.open && x.xTs > 0) { delete d.live; d.b = { t: Math.max(x.xTs, d.a.t + 60), price: d.a.price }; ch = true; } });   // closed: it ends there
     var seen = {}; for (var i = 0; i < L.length; i++) { var q = L[i]; if (!q || !q.trade) continue; if (seen[q.trade]) { L.splice(i, 1); i--; ch = true; } else seen[q.trade] = 1; }   // one box a trade (two devices may both have made it)
     LV.tbSeen[raw] = seen;
@@ -100629,9 +100634,9 @@ window.__stAZ = (function () {
     Object.keys(byT).forEach(function(k){ var g = byT[k], x = g.x, tk = x.tk, r = x.r, d = x.long ? 1 : -1, risk = +(r.risk0 || r.risk) || 0, lots = +r.lots || 0, R = isFinite(+tk.r) ? +tk.r : NaN, pnl = isFinite(+tk.pnl) ? +tk.pnl : null;
       var at = function(pr){ return tk.rpx > 0 ? d * (pr - tk.op) / tk.rpx : NaN; }, mon = function(pr){ var m = plMoneyAt(x, pr); return isFinite(m) ? plSg(m, cur) + '  ·  ' : ''; };
       var be = false; g.ls.forEach(function(q){ if (/^SL/.test(q.t) && /BE/.test(q.t)) be = true; });
-      var side = (x.long ? 'BUY ' : 'SELL ') + (Math.round(lots * 100) / 100), sideH = (x.long ? 'BUY ' : 'SELL ') + '<span class="pl-lots">' + (Math.round(lots * 100) / 100) + '</span>';   // sideH: the size in a span of its own, blurred in Streamer mode (27 Oct 2026)
+      var sideW0 = x.long ? 'BUY' : 'SELL', lotsTxt = String(Math.round(lots * 100) / 100), sideH = sideW0 + (lots > 0 ? ' <span class="pl-lots">' + lotsTxt + '</span>' : ''), sideH2 = sideW0 + (lots > 0 ? ' <span class="pl-lots">' + lotsTxt + esc(' ' + T('lots', 'lotes')) + '</span>' : '');   // the size in a span of its own, blurred in Streamer mode (27 Oct 2026); none known: no number, never a 0
       want.push({ key: k + '|e', tag: 1, y: yOf(p, tk.op), c: '#2962ff', tk: k,
-        html: '<span class="k">' + sideH + '</span><span class="v' + plSgc(R) + '">' + (isFinite(R) ? plR(R) : '') + (be ? ' · BE' : '') + '</span><span class="k2">' + sideH + esc(' ' + T('lots', 'lotes')) + '</span><span class="v2' + plSgc(pnl != null ? pnl : R) + '">' + (pnl != null ? '<span class="pl-mny">' + plSg(pnl, cur) + '</span>  ·  ' : '') + (isFinite(R) ? plR(R) : '') + '</span><button type="button" class="xx" data-plx="' + esc(k) + '" title="' + esc(T('Close this trade in MT5', 'Cerrar esta operación en MT5')) + '">✕</button>' });
+        html: '<span class="k">' + sideH + '</span><span class="v' + plSgc(R) + '">' + (isFinite(R) ? plR(R) : '') + (be ? ' · BE' : '') + '</span><span class="k2">' + sideH2 + '</span><span class="v2' + plSgc(pnl != null ? pnl : R) + '">' + (pnl != null ? '<span class="pl-mny">' + plSg(pnl, cur) + '</span>  ·  ' : '') + (isFinite(R) ? plR(R) : '') + '</span><button type="button" class="xx" data-plx="' + esc(k) + '" title="' + esc(T('Close this trade in MT5', 'Cerrar esta operación en MT5')) + '">✕</button>' });
       g.ls.forEach(function(q){ var l = q.l, t = q.t, rr = at(l.price), wait = l.k && LT.k === l.k && LT.wait;
         if (t === 'Entry' || t === 'Entrada' || (/^SL/.test(t) && be)) return;
         if (/^SL/.test(t) || t === 'TP') { var kk = /^SL/.test(t) ? 'SL' : 'TP', v = wait ? T('sending…', 'enviando…') : (kk === 'TP' && isFinite(rr) ? (rr < 0 ? '−' : '') + Math.abs(rr).toFixed(1) + 'R' : plR1(rr));
