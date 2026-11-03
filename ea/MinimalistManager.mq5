@@ -1053,6 +1053,17 @@ bool SendOneX(int dir,double volume,double entry,double slPrice,double tpPrice)
                 : trade.SellStop(volume,entry,_Symbol,slPrice,tpPrice,ORDER_TIME_GTC,0,cm);
   }
 
+// v9.21 (Nestor's 70K, 3 Nov 2026, 08:03 UTC: a 4.0-pip sell filled 0.5 pips better, and the Lead's file, written by another chart, told the copies 4.5 before
+// the stop was moved onto the fill: 1.11 lots instead of about 1.25, and sl_pips 4.5 in the record for good). What was asked for, for that chart to read: the order's
+// prices and the distances from the fill they stand for. A terminal variable per symbol, the time last; only a market order sets it.
+string CpRqKey(string sym,string f){ return "MMC_RQ"+f+"_"+sym; }
+void CpRqSet(string sym,double sl,double tp,double slDist,double tpDist)
+  {
+   GlobalVariableSet(CpRqKey(sym,"S"),sl); GlobalVariableSet(CpRqKey(sym,"T"),tp);
+   GlobalVariableSet(CpRqKey(sym,"D"),slDist); GlobalVariableSet(CpRqKey(sym,"P"),tpDist);
+   GlobalVariableSet(CpRqKey(sym,"W"),(double)TimeGMT());
+  }
+
 //==================================================================
 //  DAILY TRADE LIMIT  (timezone-aware; resets at the user's local midnight)
 //==================================================================
@@ -1610,6 +1621,13 @@ void PlaceTrade()
         }
       tpPrice=entry+dir*(dist+AimNetPx());         // v9.17: MT5's TP at the EA's trigger (the aim + the slippage learnt)
      }
+   if(g_orderKind==OK_MARKET)
+     {
+      double rqD=slPips*g_pip; if(g_maxSL>0 && rqD>g_maxSL*g_pip) rqD=g_maxSL*g_pip;   // as the re-anchor below: the stop this trade ends up with
+      CpRqSet(_Symbol,slPrice,tpPrice,rqD,(tpPrice>0)?MathAbs(tpPrice-entry):0.0);     // v9.21
+     }
+   else GlobalVariableDel(CpRqKey(_Symbol,"W"));
+   ulong rqT0=GetTickCount64();
    if(!SendOne(dir,NormalizeVolume(total),entry,slPrice,tpPrice)){ Warn("Order failed."); return; }
 
    // Remember the exact distances the user asked for, so OnTradeTransaction can re-anchor
@@ -1630,18 +1648,29 @@ void PlaceTrade()
    if(g_orderKind==OK_MARKET)
      {
       double realOpen=0.0, curSL=0.0, curTP=0.0; ulong fixTk=0;
-      for(int _i=PositionsTotal()-1;_i>=0;_i--)
+      // v9.21: the position is in MT5's list a moment after the send returns. This used to look once, find nothing and leave the stop to
+      // AnchorFillSLTP, which waits behind this whole thread (+1.85 s on 3 Nov). Now it waits a moment, for THIS order's position: an
+      // older trade on the symbol is not touched. Not there in 300 ms: AnchorFillSLTP, as before.
+      ulong rqW0=GetTickCount64();
+      while(true)
         {
-         ulong _tk=PositionGetTicket(_i);
-         if(!PositionSelectByTicket(_tk)) continue;
-         if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
-         if(PositionGetInteger(POSITION_MAGIC)!=InpMagic) continue;
-         realOpen=PositionGetDouble(POSITION_PRICE_OPEN);
-         curSL   =PositionGetDouble(POSITION_SL);
-         curTP   =PositionGetDouble(POSITION_TP);
-         fixTk   =_tk;
-         break;
+         for(int _i=PositionsTotal()-1;_i>=0;_i--)
+           {
+            ulong _tk=PositionGetTicket(_i);
+            if(!PositionSelectByTicket(_tk)) continue;
+            if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
+            if(PositionGetInteger(POSITION_MAGIC)!=InpMagic) continue;
+            if(g_sendOrder>0 && (ulong)PositionGetInteger(POSITION_IDENTIFIER)!=g_sendOrder) continue;
+            realOpen=PositionGetDouble(POSITION_PRICE_OPEN);
+            curSL   =PositionGetDouble(POSITION_SL);
+            curTP   =PositionGetDouble(POSITION_TP);
+            fixTk   =_tk;
+            break;
+           }
+         if(fixTk>0 || GetTickCount64()-rqW0>=300) break;
+         Sleep(10);
         }
+      PrintFormat("MTM fill: send %I64u ms, position seen %I64u ms later%s",rqW0-rqT0,GetTickCount64()-rqW0,(fixTk>0)?"":" - NOT seen, left to the on-fill re-anchor");
       if(fixTk>0 && realOpen>0 && g_pip>0)
         {
          double tol=g_pip*0.05;
@@ -1693,8 +1722,12 @@ void PlaceTrade()
                // Diagnostic: log every re-anchor so the Experts tab shows the fill price and
                // the exact SL/TP distances applied. If SL/TP still read 0.2 off after this,
                // these lines say whether the modify ran, and whether the broker accepted it.
+               ulong rqM0=GetTickCount64();
                bool okMod=trade.PositionModify(fixTk,wantSL,g_tpOn[0]?wantTP:curTP);
                if(okMod && g_tpOn[0]) AimSetB(fixTk,wantTP);   // v9.17: the TP the EA set
+               if(okMod && wantSL>0) GlobalVariableSet(RiskKey(fixTk),MathAbs(realOpen-wantSL));   // v9.21: as AnchorFillSLTP (v9.04): R is the anchored stop, which now lands here
+               if(okMod) g_anchorPending=false;   // v9.21: done. Left set, the on-fill re-anchor arrived later and moved a stop dragged in those first moments back (found on the demo, 3 Nov 2026)
+               PrintFormat("MTM re-anchor took %I64u ms, %I64u ms after the send began",GetTickCount64()-rqM0,GetTickCount64()-rqT0);
                double appTP=g_tpOn[0]?wantTP:curTP;
                Print("MTM re-anchor: fill=",DoubleToString(realOpen,g_digits),
                      "  SL ",DoubleToString(curSL,g_digits),"->",DoubleToString(wantSL,g_digits),
@@ -1714,6 +1747,7 @@ void PlaceTrade()
                   " matched the click within ",DoubleToString(tol/g_pip,2),
                   " pips - SL=",DoubleToString(curSL,g_digits)," TP=",DoubleToString(curTP,g_digits),
                   " already at the requested distance, no change.");
+         if(!needSL && !needTP) g_anchorPending=false;   // v9.21: nothing left for the on-fill re-anchor
         }
      }
 
@@ -7332,6 +7366,22 @@ ulong CpSeen(ulong id)
 //   X|id                                                           (confirmed closed or cancelled)
 // sig leaves out what changes every second (age), so the file is rewritten on a real change and
 // otherwise once a second. Copies of another Lead are never published, so a chain can't loop.
+// v9.21: what a Follow is told about a position only just opened by this EA: while it still has the very prices the market order went out with, the stop and target
+// the re-anchor is about to put there, so a copy sizes and stamps on the distance asked for, from its first order. Anything else (a stop moved by hand or already
+// re-anchored, a pending order's fill, a position past a few seconds) is told as it is.
+void CpRqApply(string sym,int dir,double op,long age,double &sl,double &tp)
+  {
+   if(age>5 || !GlobalVariableCheck(CpRqKey(sym,"W"))) return;
+   if((double)TimeGMT()-GlobalVariableGet(CpRqKey(sym,"W"))>10.0) return;
+   double pt=SymbolInfoDouble(sym,SYMBOL_POINT); int dg=(int)SymbolInfoInteger(sym,SYMBOL_DIGITS);
+   double slD=GlobalVariableGet(CpRqKey(sym,"D")), tpD=GlobalVariableGet(CpRqKey(sym,"P"));
+   if(slD>0 && sl>0 && MathAbs(sl-GlobalVariableGet(CpRqKey(sym,"S")))<=pt*0.6)
+     {
+      double was=sl; sl=NormalizeDouble(op-dir*slD,dg);
+      if(MathAbs(sl-was)>pt*0.5) PrintFormat("COPIER: Lead file: %s stop told as %s (the order's %s, not on the fill yet), open %s",sym,DoubleToString(sl,dg),DoubleToString(was,dg),DoubleToString(op,dg));
+     }
+   if(tpD>0 && tp>0 && MathAbs(tp-GlobalVariableGet(CpRqKey(sym,"T")))<=pt*0.6) tp=NormalizeDouble(op+dir*tpD,dg);
+  }
 void CpLeadLines(string &lines[],string &sig)
   {
    ArrayResize(lines,0); sig="";
@@ -7347,9 +7397,11 @@ void CpLeadLines(string &lines[],string &sig)
       int    dg =(int)SymbolInfoInteger(sym,SYMBOL_DIGITS);
       int    dir=(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY) ? 1 : -1;
       long   age=srvNow-(long)PositionGetInteger(POSITION_TIME); if(age<0) age=0;
+      double pubSL=PositionGetDouble(POSITION_SL), pubTP=PositionGetDouble(POSITION_TP);
+      if(PositionGetInteger(POSITION_MAGIC)==InpMagic) CpRqApply(sym,dir,PositionGetDouble(POSITION_PRICE_OPEN),age,pubSL,pubTP);   // v9.21
       string core=StringFormat("P|%I64u|%s|%d|-1|%s|%s|%s|%s",id,sym,dir,
                   DoubleToString(PositionGetDouble(POSITION_VOLUME),2),DoubleToString(PositionGetDouble(POSITION_PRICE_OPEN),dg),
-                  DoubleToString(PositionGetDouble(POSITION_SL),dg),DoubleToString(PositionGetDouble(POSITION_TP),dg));
+                  DoubleToString(pubSL,dg),DoubleToString(pubTP,dg));
       int n=ArraySize(lines); ArrayResize(lines,n+1);
       lines[n]=core+StringFormat("|%I64d|%I64u",age,CpSeen(id));
       sig+=core+";";
