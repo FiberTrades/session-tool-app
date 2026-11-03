@@ -18865,7 +18865,7 @@ try {
   function _stFlushRedraw() {
     if (!__stRedrawPending || document.hidden || _stEditing()) return;
     /* Not under the mouse (Nestor, 2 Nov 2026: "many buttons on the app when i hover over them they flicker"): this rebuilds whole pages, the button under the pointer is replaced, and its hover look drops and comes back. It waits for the pointer to leave, 8 seconds at most. */
-    try { if (__stRedrawHeld < 8 && document.querySelector('button:hover, a:hover, select:hover, [role="button"]:hover, .btn:hover, .tab:hover')) { __stRedrawHeld++; setTimeout(_stFlushRedraw, 1000); return; } } catch (e) {}
+    try { if (__stRedrawHeld < 8 && document.querySelector('button:hover, a:hover, select:hover, [role="button"]:hover, .btn:hover, .tab:hover, .cal-day[data-date]:hover, .cal-week-summary:hover')) { __stRedrawHeld++; setTimeout(_stFlushRedraw, 1000); return; } } catch (e) {}
     __stRedrawHeld = 0;
     __stRedrawPending = false;
     try { refreshAllSurfaces(); } catch (e) {}
@@ -36575,12 +36575,41 @@ try {
       return (w + l) > 0 ? Math.round(w / (w + l) * 100) : null;
     } catch(e) { return null; }
   };
+  /* The calendar is painted again by every sync and refresh. Rewriting it replaced each day under the mouse: the hover look dropped and came back, and a press on one cell with the release on its replacement was no click at all
+     (Nestor, 3 Nov 2026: "the buttons from calendar still flicker when hovering over them and i have to click a few time on a day or week for it to open"). Now the same picture touches nothing, clicks are read on the grid, and if the month really did change mid-press the release still opens it. */
+  function calSetHtml(el, h) { if (el._calHtml === h) return false; el._calHtml = h; el.innerHTML = h; return true; }
+  function calCellKey(c) { return c.dataset.date || c.dataset.weekKey; }
+  function calOpenCell(el) {
+    if (el.dataset.date) { openDayModal(el.dataset.date); return; }
+    const monday = new Date(el.dataset.monday);
+    const friday = new Date(el.dataset.friday);
+    // Use FULL Monday-Friday day bounds (Mon 00:00 → Fri 23:59:59). The calendar cell counts
+    // trades by toDateString() across Mon-Fri, so the modal must use the same boundaries —
+    // otherwise the cell shows N trades but the modal shows fewer. Previously we applied the
+    // session-day cutoff here (Mon 22:00 → Fri 22:00) which excluded trades on Monday morning.
+    monday.setHours(0, 0, 0, 0);
+    friday.setHours(23, 59, 59, 999);
+    if (typeof openWeeklyReviewModal === 'function') openWeeklyReviewModal(monday, friday);
+  }
+  function calWireGrid(grid) {
+    if (grid._calWired) return;
+    grid._calWired = true;
+    const cellOf = e => e.target && e.target.closest ? e.target.closest('.cal-day[data-date]:not(.cal-day-noclick), .cal-week-summary.clickable') : null;
+    let down = null, openedAt = 0;
+    grid.addEventListener('pointerdown', e => { const c = cellOf(e); down = c ? { el: c, key: calCellKey(c) } : null; });
+    grid.addEventListener('pointerup', e => {
+      const d = down; down = null;
+      const c = cellOf(e);
+      if (d && c && !d.el.isConnected && calCellKey(c) === d.key) { openedAt = Date.now(); calOpenCell(c); }
+    });
+    grid.addEventListener('click', e => { const c = cellOf(e); if (c && Date.now() - openedAt > 500) calOpenCell(c); });
+  }
   function renderCalendar() {
     const calTitleDate = new Date(calendarYear, calendarMonth, 1);
     const titleEl = document.getElementById('cal-month-title');
     // The month, then the year a shade lighter (TradeZella treatment, 3 Oct 2026); textContent still reads "September 2026".
     const _calMonthName = calTitleDate.toLocaleDateString(tLocale(), { month: 'long' }).replace(/^./, c => c.toUpperCase());
-    titleEl.innerHTML = '<span class="cal-mt-m">' + _calMonthName + '</span> <span class="cal-mt-y">' + calTitleDate.getFullYear() + '</span>';
+    calSetHtml(titleEl, '<span class="cal-mt-m">' + _calMonthName + '</span> <span class="cal-mt-y">' + calTitleDate.getFullYear() + '</span>');
     const grouped = tradesGroupedByDate();
     const firstDay = new Date(calendarYear, calendarMonth, 1);
     const lastDay = new Date(calendarYear, calendarMonth + 1, 0);
@@ -36706,34 +36735,17 @@ try {
         currentRow++;
       }
     }
-    grid.innerHTML = html;
+    calWireGrid(grid);
+    if (calSetHtml(grid, html)) {
     // Tag every cell with its grid column (cal-c1..cal-c8) so phone view can hide the
     // weekend columns (cal-c1 = Sunday, cal-c7 = Saturday) cleanly via CSS.
     grid.querySelectorAll('[style*="grid-column"]').forEach(el => {
       const m = (el.getAttribute('style') || '').match(/grid-column:\s*(\d+)/);
       if (m) el.classList.add('cal-c' + m[1]);
     });
-    grid.querySelectorAll('.cal-day[data-date]').forEach(el => {
-      // Weekends (Sunday = cal-c1, Saturday = cal-c7) are not clickable — no day notes there.
-      if (el.classList.contains('cal-c1') || el.classList.contains('cal-c7')) {
-        el.classList.add('cal-day-noclick');
-        return;
-      }
-      el.addEventListener('click', () => openDayModal(el.dataset.date));
-    });
-    grid.querySelectorAll('.cal-week-summary.clickable').forEach(el => {
-      el.addEventListener('click', () => {
-        const monday = new Date(el.dataset.monday);
-        const friday = new Date(el.dataset.friday);
-        // Use FULL Monday-Friday day bounds (Mon 00:00 → Fri 23:59:59). The calendar cell counts
-        // trades by toDateString() across Mon-Fri, so the modal must use the same boundaries —
-        // otherwise the cell shows N trades but the modal shows fewer. Previously we applied the
-        // session-day cutoff here (Mon 22:00 → Fri 22:00) which excluded trades on Monday morning.
-        monday.setHours(0, 0, 0, 0);
-        friday.setHours(23, 59, 59, 999);
-        if (typeof openWeeklyReviewModal === 'function') openWeeklyReviewModal(monday, friday);
-      });
-    });
+    // Weekends (Sunday = cal-c1, Saturday = cal-c7) are not clickable — no day notes there.
+    grid.querySelectorAll('.cal-day[data-date].cal-c1, .cal-day[data-date].cal-c7').forEach(el => el.classList.add('cal-day-noclick'));
+    }
 
     // Month summary header
     const monthTrades = [];
@@ -36764,12 +36776,12 @@ try {
                        monthNet > 0 ? 'good' : monthNet < 0 ? 'bad' : 'be';
       // Five tiles (TradeZella treatment, Nestor 3 Oct 2026): Month total, Trades, Trading days, WR, Best / worst day.
       const tile = (label, val, extra) => `<div class="cms-tile${extra ? ' ' + extra : ''}"><span class="cms-l">${label}</span><span class="cms-v">${val}</span></div>`;
-      summary.innerHTML = tile(t('cal.month_total'), `<span class="total ${monthCls}">${fmtMoney(monthNet)}</span>`, 'cms-total')
+      calSetHtml(summary, tile(t('cal.month_total'), `<span class="total ${monthCls}">${fmtMoney(monthNet)}</span>`, 'cms-total')
         + tile(t('cal.trades'), monthTrades.length)
         + tile(t('cal.trading_days'), monthDays)
         + (monthWR !== null ? tile(t('cal.wr'), monthWR + '%') : '')
-        + (bestDay !== null ? tile(t('cal.best_worst'), `<span class="good">${fmtMoneyShort(bestDay)}</span><span class="cms-sep">/</span><span class="bad">${fmtMoneyShort(worstDay)}</span>`) : '');
-    } else summary.innerHTML = `<div style="color:var(--text-dim);font-size:10px;">${t('cal.no_trades_month')}</div>`;
+        + (bestDay !== null ? tile(t('cal.best_worst'), `<span class="good">${fmtMoneyShort(bestDay)}</span><span class="cms-sep">/</span><span class="bad">${fmtMoneyShort(worstDay)}</span>`) : ''));
+    } else calSetHtml(summary, `<div style="color:var(--text-dim);font-size:10px;">${t('cal.no_trades_month')}</div>`);
     summary.classList.toggle('cms', monthTrades.length > 0);
   }
 
