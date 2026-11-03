@@ -16948,6 +16948,8 @@ try {
       // size until you log a trade - the P&L is only counted from setup onwards.
       // Defaults to startingBalance, so a fresh account behaves exactly as before.
       if (typeof acc.balanceAtSetup !== 'number') acc.balanceAtSetup = acc.startingBalance;
+      // A cloud account is made with a stand-in size of 10,000 until its MT5 reports the real one, and the baseline stayed behind (Nestor, 3 Nov 2026: a member's 5K and 25K "the app reads it as a 10k account", +100% and -60%).
+      if (acc.balanceAtSetup === 10000 && acc.startingBalance > 0 && acc.startingBalance !== 10000) acc.balanceAtSetup = acc.startingBalance;
     });
     // One-time backfill: existing users who migrated before the time-aware balance
     // fix have acc_main.createdAt set to migration-time, which (incorrectly) excludes
@@ -17200,6 +17202,8 @@ try {
   function genAccountId() {
     return 'acc_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
   }
+  function setAccountStart(acc, n) { if (!acc) return; if (typeof acc.balanceAtSetup !== 'number' || acc.balanceAtSetup === acc.startingBalance) acc.balanceAtSetup = n; acc.startingBalance = n; }
+  window.__stSetAccountStart = setAccountStart;
   function newAccountBlank(name, startingBalance, accountType) {
     return {
       id: genAccountId(),
@@ -41773,7 +41777,7 @@ try {
     // a derived sum now, so we have to write to the account directly. Then resync
     // the effective sum (typically same as v when only one account exists).
     const acc = (typeof getActiveAccount === 'function') ? getActiveAccount() : null;
-    if (acc) acc.startingBalance = v;
+    if (acc) setAccountStart(acc, v);
     if (typeof syncEffectiveStartingBalance === 'function') syncEffectiveStartingBalance();
     saveData();
     document.getElementById('balance-modal-bg').classList.remove('show');
@@ -42201,7 +42205,7 @@ try {
     if (balRaw && !isNaN(balV) && balV > 0) {
       data.settings.startingBalance = balV;
       const acc = (typeof getActiveAccount === 'function') ? getActiveAccount() : null;
-      if (acc) acc.startingBalance = balV;
+      if (acc) setAccountStart(acc, balV);
       if (typeof syncEffectiveStartingBalance === 'function') syncEffectiveStartingBalance();
       const settingInput = document.getElementById('setting-balance');
       if (settingInput) settingInput.value = balV;
@@ -57799,7 +57803,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
           const n = parseFloat(v.replace('%', ''));
           if (k === 'start') {
             if (!(n > 0)) { done = false; say(L('Type an amount above 0.', 'Escribe una cantidad mayor que 0.'), !blur); return; }
-            acc.startingBalance = n; syncEffectiveStartingBalance(); saveData(); renderSettingsAccountsList();
+            setAccountStart(acc, n); syncEffectiveStartingBalance(); saveData(); renderSettingsAccountsList();
             // the starting balance is what every account-% figure and the % risk rules are measured from: every surface, once
             try { if (typeof refreshAllSurfaces === 'function') refreshAllSurfaces(); } catch (e) {}
             return;
@@ -81221,7 +81225,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     (D().accounts || []).forEach(function (a) { if (!a) return; var c = facts(a).cur; if (c && /^[A-Z]{3}$/.test(c) && a.currency !== c) { a.currency = c; changed = true; } });
     (D().accounts || []).forEach(function (a) { if (!a || !(a._nameAuto || a._sbAuto)) return; var f = facts(a);
       if (a._sbAuto && f.start > 0) { var n = 0; try { n = getAllLifetimeTrades().filter(function (x) { return x.accountId === a.id; }).length; } catch (e) {}
-        if (!n) { a.startingBalance = f.start; changed = true; } delete a._sbAuto; }
+        if (!n) { window.__stSetAccountStart(a, f.start); changed = true; } delete a._sbAuto; }
       if (a._nameAuto && f.firm && f.start > 0) { var nm = f.firm + ' ' + (f.start >= 1000 ? Math.round(f.start / 1000) + 'K' : Math.round(f.start)), k = 2, base = nm;
         while (window.__stNameTaken && window.__stNameTaken(nm, a.id)) nm = base + ' (' + (k++) + ')';
         a.name = nm; delete a._nameAuto; changed = true; } });
