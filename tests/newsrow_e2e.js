@@ -93,6 +93,16 @@
     hov(g5.spots[0].x, g5.y); await W(80); it5 = Array.prototype.slice.call(p.card.querySelectorAll('.strp-nc-item'));
     check('...the US flag: the four USD releases first, lit', it5.length === 5 && it5.slice(0, 4).every(function (x) { return /USD · /.test(x.textContent) && x.classList.contains('on'); }) && !it5[4].classList.contains('on'), it5.map(function (x) { return x.textContent.slice(0, 18) + (x.classList.contains('on') ? '*' : ''); }));
     hov(pw() * 0.5, ph() * 0.3); await W(60);
+    // 3 Nov 2026: two releases at different times on one wide candle: each says its own time, soonest first, the header only the day
+    var t3 = 1793718000, r3 = [{ at: new Date((t3 + 960) * 1000).toISOString(), currency: 'USD', title: 'Congressional Elections', impact: 'High' }, { at: new Date(t3 * 1000).toISOString(), currency: 'USD', title: 'JOLTS Job Openings', impact: 'Medium', forecast: '7.15M', previous: '7.08M' }];
+    P._newsCardBody(p, { e: r3[0], list: r3, ccy: 'USD', x: pw() * 0.5, y: ph() - 20, r: 11 }, pw());
+    var i3 = Array.prototype.slice.call(p.card.querySelectorAll('.strp-nc-item')), tm3 = i3.map(function (x) { var e = x.querySelector('.strp-nc-tm'); return e ? e.textContent : ''; }), wh3 = p.card.querySelector('.strp-nc-when').textContent;
+    check('one wide candle, two times: each release shows its own, soonest first', i3.length === 2 && /JOLTS/.test(i3[0].textContent) && /Elections/.test(i3[1].textContent) && /^\d\d:\d\d$/.test(tm3[0]) && /^\d\d:\d\d$/.test(tm3[1]) && tm3[0] !== tm3[1], [tm3, i3.map(function (x) { return x.textContent.slice(0, 26); })]);
+    check('...the header says the day and how many, no single time', /2 (releases|publicaciones)/.test(wh3) && !/\d\d:\d\d/.test(wh3), wh3);
+    var r4 = [{ at: new Date(t3 * 1000).toISOString(), currency: 'USD', title: 'A', impact: 'High' }, { at: new Date(t3 * 1000).toISOString(), currency: 'USD', title: 'B', impact: 'Medium' }];
+    P._newsCardBody(p, { e: r4[0], list: r4, ccy: 'USD', x: pw() * 0.5, y: ph() - 20, r: 11 }, pw());
+    check('...two at the same time: one time, in the header, as before', !p.card.querySelector('.strp-nc-tm') && /\d\d:\d\d/.test(p.card.querySelector('.strp-nc-when').textContent), p.card.querySelector('.strp-nc-when').textContent);
+    p.card.style.display = 'none'; if (p.ncArr) p.ncArr.style.display = 'none';
     // the session boxes' names: under the legend, as the weekday names (no higher than max(60, the legend's bottom + 10), under the names when they show)
     var ps = p.series.priceScale(), m0 = ps.options().scaleMargins; ps.applyOptions({ scaleMargins: { top: 0, bottom: 0.25 } }); await W(400);
     var calls = [], fT = CanvasRenderingContext2D.prototype.fillText, sR = CanvasRenderingContext2D.prototype.strokeRect, box = null;
