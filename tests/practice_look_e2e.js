@@ -28,7 +28,8 @@
     q('[data-lksw="bg"]').click(); await W(30);
     ok('a colour swatch opens the picker under its row: 80 colours, any colour, opacity 100%', q('.stpr-lkp[data-lkfor="bg"]') && menu.querySelectorAll('[data-lkcol]').length === 80 && q('[data-lkcus]') && q('[data-lkop]').value === '100');
     q('[data-lkcol="#ffffff"]').click(); await W(40);
-    ok('white picked: both charts turn white, saved, the picker stays open on it', C.look.bg === '#ffffff' && co(0).layout.background.color === '#ffffff' && co(1).layout.background.color === '#ffffff' && q('[data-lkcol="#ffffff"]').classList.contains('on'), [C.look, co(1).layout.background]);
+    ok('white picked: both charts turn white, saved, and the palette goes away (3 Nov 2026)', C.look.bg === '#ffffff' && co(0).layout.background.color === '#ffffff' && co(1).layout.background.color === '#ffffff' && !q('.stpr-lkp'), [C.look, co(1).layout.background]);
+    q('[data-lksw="bg"]').click(); await W(30); ok('...its square opens it again, the colour ringed', q('[data-lkcol="#ffffff"]').classList.contains('on'));
     var op = q('[data-lkop]'); op.value = '60'; fire(op, 'input'); await W(30);
     ok('the opacity slider makes it 60%: rgba(255,255,255,0.6), the swatch and the number follow', C.look.bg === 'rgba(255,255,255,0.6)' && co(0).layout.background.color === 'rgba(255,255,255,0.6)' && /60%/.test(q('.stpr-lkop b').textContent) && /0\.6/.test(q('[data-lksw="bg"] i').style.getPropertyValue('--c')), C.look.bg);
     op.value = '100'; fire(op, 'input'); await W(20);
