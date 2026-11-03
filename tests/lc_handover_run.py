@@ -222,7 +222,8 @@ def main():
         wl3 = where(L)
         check("...chart 3 sent back: drawn in Live Charts' window with chart 1", wl3.get('drawn') == [0, 2] and wl3.get('out') == [1], wl3)
         b = json.loads(ev(L, """JSON.stringify((function(){ var b = document.querySelector('.stpr-pane[data-i="2"] [data-popc="2"]'); if (!b) return null; var r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })())""") or 'null')
-        if b:
+        if b:   # the mouse comes over the chart first: since 29 Oct 2026 a chart's tile only takes a click while its chart is hovered
+            L.call('Input.dispatchMouseEvent', type='mouseMoved', x=b['x'], y=b['y']); time.sleep(0.3)
             for t in ('mousePressed', 'mouseReleased'):
                 L.call('Input.dispatchMouseEvent', type=t, x=b['x'], y=b['y'], button='left', clickCount=1)
         new3 = None
@@ -244,6 +245,7 @@ def main():
         ev(M, "document.getElementById('stpr-pop').click(); 1", gesture=True)
         L = attach(lambda u: 'livecharts.html' in u)
         watch('Live Charts to its own window a third time', ids, L, 40, done, max_gap=500)
+        L.call('Page.addScriptToEvaluateOnNewDocument', source='window.__stLcForce = true;')   # the app it becomes needs the stand-in's switch from its first line: set after it loaded, it came too late on a busy machine
         app_id = next((t['id'] for t in targets() if t.get('url', '').split('?')[0].endswith('/' + PAGE) and 'livecharts' not in t.get('url', '')), None)
         print('    (closing the app window %s; the windows: %s)' % (app_id, [t.get('url', '')[-45:] for t in targets()]))
         try: print('    (/json/close:', urllib.request.urlopen('http://127.0.0.1:%d/json/close/%s' % (dbg_port, app_id), timeout=5).read()[:80], ')')

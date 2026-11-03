@@ -3,7 +3,7 @@ charts if i reload the main one with the EA and one of the other charts is minim
 main external chart and i have to open it again on a new window").
 
 Live Charts in its own window, its chart 2 in a chart window. The chart window is frozen (what the browser does to a minimised
-window's timers), Live Charts' window is reloaded, 25 s pass, the chart window wakes: it must re-attach, not close itself.
+window's timers), the app window (which draws them all since 23 Oct 2026) is reloaded, 25 s pass, the chart window wakes: it must re-attach, not close itself.
     python tests/minimized_reload_run.py
     E2E_APP=old.html python tests/minimized_reload_run.py
 """
@@ -56,25 +56,24 @@ def main():
         ev(M, 'window.__stPractice._lcPop(); 1', True)
         lc = None
         for _ in range(60):
-            lc = next((t for t in targets() if 'livecharts=1' in t.get('url', '')), None)
+            lc = next((t for t in targets() if 'livecharts.html' in t.get('url', '')), None)
             if lc: break
             time.sleep(0.5)
         L = bt.CDP(lc['webSocketDebuggerUrl']); L.call('Page.enable'); L.call('Runtime.enable')
-        L.call('Page.addScriptToEvaluateOnNewDocument', source='window.__stLcForce = true;'); ev(L, 'window.__stLcForce = true; 1')
-        check("Live Charts' window: two charts", until(L, "(function(){ var P = window.__stPractice, s = P && P._s(); return !!(s && s.live && P._lv().solo && P._panes().length === 2 && P._panes()[1].n); })()", 90))
-        ev(L, 'window.__stPractice._pop(1); 1', True)
-        check('its chart 2 in a chart window', until(L, "(function(){ var P = window.__stPractice, o = P._pops()[1]; return !!(o && o.ready && P._panes()[1].el.ownerDocument === o.w.document && P._panes()[1].n); })()", 60))
+        check("Live Charts' window: two charts", until(M, "(function(){ var P = window.__stPractice, s = P && P._s(); return !!(s && s.live && P._stage().on && P._panes().length === 2 && P._panes()[1].n); })()", 90))
+        ev(L, 'window.__stPractice._pop(1); 1', True)   # (opened by the window clicked in: the gesture has to be there)
+        check('its chart 2 in a chart window', until(M, "(function(){ var P = window.__stPractice, o = P._pops()[1]; return !!(o && o.ready && P._panes()[1].el.ownerDocument === o.w.document && P._panes()[1].n); })()", 60))
         cw = next((t for t in targets() if 'chart.html' in t.get('url', '')), None)
         C2 = bt.CDP(cw['webSocketDebuggerUrl']); C2.call('Page.enable'); C2.call('Runtime.enable')
-        # minimised: frozen, no timers run
+        # minimised: frozen, no timers run. The window that draws everything since 23 Oct 2026 is the app window: that is the one reloaded
         C2.call('Page.setWebLifecycleState', state='frozen'); time.sleep(1)
-        L.call('Page.reload'); time.sleep(1.5)
-        until(L, "(function(){ var P = window.__stPractice, s = P && P._s(); return !!(s && s.live && P._lv().solo); })()", 90)
+        M.call('Page.reload'); time.sleep(1.5)
+        until(M, "(function(){ var P = window.__stPractice, s = P && P._s(); return !!(s && s.live && P._stage().on); })()", 90)
         time.sleep(25)   # longer than the old 20 s wait
         C2.call('Page.setWebLifecycleState', state='active')
         time.sleep(1)
-        ok = until(L, "(function(){ var P = window.__stPractice, o = P._pops()[1]; return !!(o && o.ready && !o.w.closed && P._panes()[1] && P._panes()[1].el.ownerDocument === o.w.document && P._panes()[1].n); })()", 40)
-        st = ev(L, "(function(){ var P = window.__stPractice, ps = P._panes(); return JSON.stringify({ n: ps.length, here: ps.filter(function(p){ return p.el.ownerDocument === document; }).length, pops: Object.keys(P._pops()) }); })()")
+        ok = until(M, "(function(){ var P = window.__stPractice, o = P._pops()[1]; return !!(o && o.ready && !o.w.closed && P._panes()[1] && P._panes()[1].el.ownerDocument === o.w.document && P._panes()[1].n); })()", 40)
+        st = ev(M, "(function(){ var P = window.__stPractice, ps = P._panes(); return JSON.stringify({ n: ps.length, inStage: ps.filter(function(p){ return p.el.ownerDocument !== document && !(P._pops()[p.i]); }).length, pops: Object.keys(P._pops()) }); })()")
         check('woken up after the reload: chart 2 back in its own window, not in Live Charts\' window', ok, st)
         check('...and the chart window is still open', any('chart.html' in t.get('url', '') for t in targets()), [t.get('url') for t in targets()])
     except Exception as e:
