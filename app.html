@@ -31904,16 +31904,19 @@ try {
           const p = document.getElementById('combo-diag-progress');
           // Re-read the trades here: the scope may have changed since this was rendered, and
           // analysing is worth doing across everything, not just the current period filter.
-          const scoped = (typeof filterByScope === 'function') ? filterByScope(getAllLifetimeTrades()) : getAllLifetimeTrades();
+          // The real rows, never the combined row of a copied trade (3 Nov 2026): a stamp on that throwaway copy was lost at once, so the same trade was measured and every surface redrawn non-stop, about 5 times a second, for as long as the page was open.
+          const scoped = (typeof filterByScopeRaw === 'function') ? filterByScopeRaw(getAllLifetimeTrades()) : getAllLifetimeTrades();
           // "Needs analysing" is decided by _excAt — a stamp meaning "a run measured this" — NOT
           // by whether it produced an R. A trade with no logged stop has nothing to divide by, so
           // it yields pips and no R forever; keying off R kept those trades in the queue on every
           // single run. Trades cached before _excAt existed have no stamp, so they top up once.
-          const todo = scoped.filter(x => x.mt5Ticket && !x._excNone && !x._excAt);
+          const tried = window.__stExcTried || (window.__stExcTried = new Set());   // once per page at most: a read that keeps failing waits for the next visit, not a loop
+          const todo = scoped.filter(x => x.mt5Ticket && !x._excNone && !x._excAt && !tried.has(x));
           if (!todo.length) return;             // nothing new: say nothing, do nothing
           window.__stExcRunning = true;
           for (let i = 0; i < todo.length; i++) {
             if (p) p.textContent = t('exc.working').replace('{D}', String(i + 1)).replace('{N}', String(todo.length));
+            tried.add(todo[i]);
             try {
               const x = await window.__stReplay.excursions(todo[i]);
               if (x) {
