@@ -21860,7 +21860,7 @@ try {
                  settings: GROUPS.map(function (g) { return t(g.label) + ': ' + g.fmt(x); }).join('; ') };
       });
     }
-    function apply(r) { if (!r || !r.login || !r.settings) return; rows[key(r)] = r; try { if (window.__stEAUpdate) window.__stEAUpdate.soon(); } catch (e) {}
+    function apply(r) { if (!r || !r.login || !r.settings) return; rows[key(r)] = r; try { if (window.__stEAUpdate) window.__stEAUpdate.soon(); } catch (e) {} try { if (window.__stAccAuto) window.__stAccAuto(); } catch (e) {}
       try { if (r.settings.currency && window.__stAdoptCurrency) window.__stAdoptCurrency(r.login, r.settings.currency); } catch (e) {} }   // the account's own currency, once (25 Oct 2026)
     function logged(r) {
       if (!r || r.id == null) return;
@@ -57375,6 +57375,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
         // Payouts (prop firm only) - each row a label and hint left, its value or control in one column right
         const _prop = acc.kind === 'challenge' && !acc.separate;
         const _linked = Object.values(data.mt5LoginMap || {}).indexOf(acc.id) !== -1;
+        const _startMt5 = !!(window.__stStartFromMt5 && window.__stStartFromMt5(acc));
         const _row = (label, hint, right, k) => `<div class="set-row"${k ? ` data-sx-row="${k}"` : ''}><div class="set-l"><span class="settings-label">${label}</span>${hint ? `<p class="settings-hint">${hint}</p>` : ''}</div><div class="set-r">${right}</div></div>`;
         const _pen = (k) => `<button type="button" class="sx-pen" data-sx-edit="${k}" data-id="${acc.id}" title="${_L('Change', 'Cambiar')}" aria-label="${_L('Change', 'Cambiar')}">${_SX_PEN}</button>`;
         const _chips = (() => { try { return window.__stAccChips ? window.__stAccChips(acc, true) : ''; } catch (e) { return ''; } })();   // one line (27 Oct 2026)
@@ -57394,9 +57395,9 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
                 : _L('A prop firm account gets the firm’s rules and Prop Firm Progress; a test account counts nowhere else.', 'Una cuenta de prop firm tiene las reglas de la firma y el Progreso de prop firm; una de prueba no cuenta en ningún otro sitio.'), actions[0], 'type')}
               <div class="sacc-slot" data-slot="stage"></div>
               <div class="sacc-slot" data-slot="facts"></div>
-              ${_row(_L('Starting balance', 'Saldo inicial'), _L('What it started with. Every % for this account is measured from it.', 'Con lo que empezó. Cada % de esta cuenta se mide desde él.')
+              ${_row(_L('Starting balance', 'Saldo inicial'), (_startMt5 ? _L('From MT5: its first deposit. Every % for this account is measured from it.', 'De MT5: su primer depósito. Cada % de esta cuenta se mide desde él.') : _L('What it started with. Every % for this account is measured from it.', 'Con lo que empezó. Cada % de esta cuenta se mide desde él.'))
                 + (_linked ? '' : ` <button type="button" class="settings-account-match" data-id="${acc.id}">${_L("Doesn't match your broker?", '¿No coincide con tu bróker?')}</button>`),
-                `<span class="sx-v">${fmt(acc.startingBalance, { noSign: true, cur: accCur(acc) })}</span>${_pen('start')}`, 'start')}
+                `<span class="sx-v">${fmt(acc.startingBalance, { noSign: true, cur: accCur(acc) })}</span>${_startMt5 ? '' : _pen('start')}`, 'start')}
               ${_openedDs ? _row(_L('Opened', 'Creada'), '', `<span class="sx-v">${_openedDs}</span>`) : ''}
               ${_arch ? _row(isArchived ? _L('Archived', 'Archivada') : _L('Archive or delete', 'Archivar o borrar'), isArchived ? _L('Its trades are kept. Unarchive it to use it again.', 'Sus operaciones se guardan. Desarchívala para volver a usarla.')
                 : _L('Archived accounts keep their trades and move to the bottom of the list.', 'Las cuentas archivadas guardan sus operaciones y pasan al final de la lista.'), _arch) : ''}
@@ -80932,11 +80933,14 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
 
   // ---- what MT5 says: the broker, the server, the first deposit, the currency (EA 9.12), or the cloud card's server
   function facts(acc) {
-    var f = { firm: '', company: '', server: '', start: null, cur: '' };
+    var f = { firm: '', company: '', server: '', start: null, sure: false, cur: '' };
     loginsOf(acc).forEach(function (lg) {
       eaRows(lg).forEach(function (r) { var s = r.settings || {};
         if (s.company && !f.company) f.company = s.company; if (s.server && !f.server) f.server = s.server;
-        if (+s.start_bal > 0 && f.start == null) f.start = +s.start_bal; if (s.currency && !f.cur) f.cur = s.currency; });
+        // EA 9.22: start_bal is the first deposit or 0 (none found). Before it, a broker hiding the deposit sent the current balance, so an older row is only a hint
+        var nw = parseFloat(r.ea_version) >= 9.22;
+        if (+s.start_bal > 0) { if (nw && !f.sure) { f.start = +s.start_bal; f.sure = true; } else if (f.start == null) f.start = +s.start_bal; }
+        if (s.currency && !f.cur) f.cur = s.currency; });
       if (!f.server) { var c = cloudOf(lg); if (c && c.server) f.server = c.server; }
     });
     var src = f.company + ' ' + f.server + ' ' + (acc.name || '');
@@ -81243,17 +81247,27 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
   }
   // keep: only what MT5 and the server report (a repaint while the member may be typing in a rules box)
   function autoFill() {
-    var changed = false;
+    var changed = false, sized = false;
+    // MT5's first deposit is the account's size (Nestor, 4 Nov 2026: "why would it ever be wrong if the data is being pulled from the cloud?"), whatever was typed before it connected
+    (D().accounts || []).forEach(function (a) { if (!a) return; var f = facts(a); if (f.sure && Math.abs((a.startingBalance || 0) - f.start) >= 0.005) { window.__stSetAccountStart(a, f.start); changed = sized = true; } });
     // its currency is what its MT5 reports (27 Oct 2026: OneFunded's USD beside the 70K's GBP)
     (D().accounts || []).forEach(function (a) { if (!a) return; var c = facts(a).cur; if (c && /^[A-Z]{3}$/.test(c) && a.currency !== c) { a.currency = c; changed = true; } });
     (D().accounts || []).forEach(function (a) { if (!a || !(a._nameAuto || a._sbAuto)) return; var f = facts(a);
       if (a._sbAuto && f.start > 0) { var n = 0; try { n = getAllLifetimeTrades().filter(function (x) { return x.accountId === a.id; }).length; } catch (e) {}
-        if (!n) { window.__stSetAccountStart(a, f.start); changed = true; } delete a._sbAuto; }
+        if (!n) { window.__stSetAccountStart(a, f.start); changed = sized = true; } delete a._sbAuto; }
       if (a._nameAuto && f.firm && f.start > 0) { var nm = f.firm + ' ' + (f.start >= 1000 ? Math.round(f.start / 1000) + 'K' : Math.round(f.start)), k = 2, base = nm;
         while (window.__stNameTaken && window.__stNameTaken(nm, a.id)) nm = base + ' (' + (k++) + ')';
         a.name = nm; delete a._nameAuto; changed = true; } });
+    if (sized) { try { syncEffectiveStartingBalance(); } catch (e) {} }
     if (changed) { try { saveData(); } catch (e) {} setTimeout(redraw, 0); }
+    if (sized) { try { refreshAllSurfaces(); } catch (e) {} }   // every account-% figure and % rule is measured from it
   }
+  // Settings needn't be open: the size follows MT5's report as it arrives, once the member's own journal is here
+  var autoT = 0;
+  window.__stAccAuto = function () { clearTimeout(autoT); autoT = setTimeout(function () {
+    try { if (window.__MV || !window.currentUser || !window.__stJournalPulled || new URLSearchParams(location.search).get('mv') || (window.__stIsDetachedWindow && window.__stIsDetachedWindow())) return; autoFill(); } catch (e) {} }, 400); };
+  // the size is MT5's when MT5 says so: no pencil. The pencil stays with no MT5, no deposit found, or an older EA's figure that disagrees with the account
+  window.__stStartFromMt5 = function (acc) { if (!acc || !loginsOf(acc).length) return false; var f = facts(acc); return f.start > 0 && (f.sure || Math.abs((acc.startingBalance || 0) - f.start) < 0.005); };
   // what's typed in the cloud forms survives every repaint of the panel (Nestor, 30 Oct 2026, moving Aurora's account: "as soon as you
   // click outside those fields the information gets deleted so its impossible to click on connect to the cloud"): the panel repainted
   // the moment the focus left a field, and the forms come back empty

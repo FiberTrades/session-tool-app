@@ -53,12 +53,14 @@
     pen('name').click(); await W(150);
     box().value = 'FTMO Main - Challenge'; key(box(), 'Enter'); await W(300);
     ok('Enter: renamed - the line and the box say so, the stage kept', a1.name === 'FTMO Main - Challenge' && /FTMO Main - Challenge/.test(item(a1.id).querySelector('.sacc-head').textContent) && !box() && item(a1.id).querySelector('[data-sacc-stage="Challenge"]').getAttribute('aria-pressed') === 'true', a1.name);
-    // ---- the starting balance
+    // ---- the starting balance: MT5's on a connected account (4 Nov 2026), the pencil's without one
+    ok('connected: no pencil on the starting balance', !pen('start'));
+    var _map = D.mt5LoginMap; D.mt5LoginMap = {}; window.renderSettingsAccountsList(); await W(300);
     pen('start').click(); await W(150);
     ok('the starting balance\'s pencil: a box with 70000', box() && box().value === '70000');
     box().value = '75000'; box().blur(); await W(300);
     ok('leaving the box saves it: £75,000.00', a1.startingBalance === 75000 && /£75,000\.00/.test(item(a1.id).querySelector('[data-sx-row="start"]').textContent), a1.startingBalance);
-    a1.startingBalance = 70000; window.renderSettingsAccountsList(); await W(300);
+    a1.startingBalance = 70000; D.mt5LoginMap = _map; window.renderSettingsAccountsList(); await W(300);
     // ---- the payout share
     item(a1.id).querySelector('[data-sx-edit="split"]').click(); await W(150);
     ok('Your share\'s pencil: a box with 90', box() && box().value === '90');

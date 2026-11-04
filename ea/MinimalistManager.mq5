@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "9.21"
+#property version   "9.22"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -205,6 +205,7 @@ void   CopySetRole(ENUM_COPY_ROLE r);
 int    g_cpFollowers=0;                        // Lead: follow accounts linked to it (running or not), for Session Terminal
 string CpSettingsJson();                       // the copier part of the settings sent to Session Terminal
 double CpAccountSize();                        // v9.12: the broker, server and first deposit go with the settings too
+double CpFirstDeposit();                       // v9.22: the deposit alone, 0 when none is found
 string JsonSafe(string v){ StringReplace(v,"\\","/"); StringReplace(v,"\"","'"); StringReplace(v,"\r"," "); StringReplace(v,"\n"," "); return v; }
 // Hotkeys on a Follow account (close all, close half, cancel pending) also reach its copies.
 bool   CpMine(long mg){ return mg==InpMagic || (g_copyRole==CR_FOLLOW && mg==InpCopyMagic); }
@@ -4099,15 +4100,15 @@ void LiveSettingsTick()
       if(body!=g_setPend){ g_setPend=body; g_setPendAt=now; return; }   // still changing: wait
       if(now-g_setPendAt<3) return;                                     // settled for 3s: send
      }
-   else if(now-g_setAt<300) return;                                     // unchanged: backstop only
+   else if(now-g_setAt<(CpFirstDeposit()>0 ? 300 : 60)) return;         // unchanged: backstop only (v9.22: sooner while the first deposit isn't in yet)
    g_setSig=body; g_setPend=body; g_setAt=now;
    // The money one trade risks right now - a % setting follows the balance. Shown by the app,
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.21\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\",\"cloud\":%s,\"company\":\"%s\",\"server\":\"%s\",\"start_bal\":%s}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.22\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\",\"cloud\":%s,\"company\":\"%s\",\"server\":\"%s\",\"start_bal\":%s}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY),g_inCloud?"true":"false",
-                            JsonSafe(AccountInfoString(ACCOUNT_COMPANY)),JsonSafe(AccountInfoString(ACCOUNT_SERVER)),DoubleToString(CpAccountSize(),2)));   // v9.12: the Accounts tab's "Read from MT5" line
+                            JsonSafe(AccountInfoString(ACCOUNT_COMPANY)),JsonSafe(AccountInfoString(ACCOUNT_SERVER)),DoubleToString(CpFirstDeposit(),2)));   // v9.12: the Accounts tab's "Read from MT5" line
   }
 // v8.86 (Nestor, 2 Oct 2026: "nudges for when my trade gets moved to BE, TP hit, SL hit, taken out for BE"):
 // why a position closed - the broker's stop loss, take profit or stop out, by hand, or by the EA.
@@ -4500,7 +4501,7 @@ void LwOpen()
 // v9.06: MT5's Algo Trading button (and this EA's own "Allow Algo Trading") - off, no order can be placed, from here or from the app
 bool AlgoOn(){ return TerminalInfoInteger(TERMINAL_TRADE_ALLOWED)!=0 && MQLInfoInteger(MQL_TRADE_ALLOWED)!=0; }
 int  g_lwAl=-1;                       // v9.06: Algo Trading as last told to the app
-string LwHi(){ return StringFormat("{\"v\":\"9.21\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d,\"cl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0,g_inCloud?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
+string LwHi(){ return StringFormat("{\"v\":\"9.22\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d,\"cl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0,g_inCloud?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
 // v9.06 (Nestor, 19 Oct 2026: "whatever messages appear in MT5 i need to also see them in the app"): every message this EA writes on its
 // chart (Flash) goes to Session Terminal too, which shows it on Live Charts. Only while the line is up; nothing is queued.
 void LwMsg(string m)
@@ -7074,6 +7075,13 @@ double CpAccountSize()
         }
      }
    return (g_acctSize>0) ? g_acctSize : AccountInfoDouble(ACCOUNT_BALANCE);
+  }
+// v9.22 (Nestor, 4 Nov 2026: a 10K account down to 9.5K must still read as 10K): the app takes the account's size from this, so never
+// the current balance standing in - history not loaded yet, or a broker not showing the deposit, says 0 and the app waits or asks.
+double CpFirstDeposit()
+  {
+   CpAccountSize();
+   return (g_acctSize>0 && g_acctSizeLogin==AccountInfoInteger(ACCOUNT_LOGIN)) ? g_acctSize : 0.0;
   }
 // "FTMO 70K": the firm's first word and the account size, rounded to the thousand.
 // The firm's short name, for the panel title and the Lead's copier card alike (8.85, Nestor 30 Sep: the title used
