@@ -487,6 +487,27 @@ def reseed(acc, ad, s):
     return True
 
 
+SEEK = "/opt/st/seek-server.sh"      # finds a broker's server in the throwaway MT5 (cloud/seek-server.sh)
+SEEK_AGAIN = 6 * 3600                # a name not found is looked for again after this long
+seeking = {}                         # server name, lower case -> {"proc", "at"}
+
+
+def seek(acc):
+    """A server MT5 doesn't know (4 Nov 2026, Troy's Tradeify; Nestor: "make sure when a user adds a new broker server the app works to
+    find it and recognize it"). True while a search for it runs. When it grows the list, reseed() gives it to this account at the next look."""
+    sv = str(acc["server"] or "")
+    if not os.path.exists(SEEK) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._-]{1,63}", sv):
+        return False
+    e = seeking.get(sv.lower())
+    if e and e["proc"].poll() is None:
+        return True
+    if e and time.time() - e["at"] < SEEK_AGAIN:
+        return False
+    log("looking for server", acc["login"], sv)
+    seeking[sv.lower()] = {"proc": subprocess.Popen(["timeout", "300", "bash", SEEK, sv], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL), "at": time.time()}
+    return True
+
+
 def check(acc):
     s = state.get(acc["id"]) or {}
     ad = adir_of(acc)
@@ -517,6 +538,9 @@ def check(acc):
         # doesn't know (a broker missing from SEED_SERVERS - add it with cloud/seed-servers.sh) or a name typed differently.
         # Before, the account sat on "MT5 is starting" for good. MT5 keeps running and trying.
         if reseed(acc, ad, s):                   # a newer server list than its own copy: in, and MT5 started again
+            return
+        if not s.get("ever_signed") and seek(acc):   # not on the list: MT5's company search for it
+            report(acc, "starting", "Looking for %s in MT5's broker search. This takes a minute or two." % acc["server"])
             return
         report(acc, "starting", "MT5 has not reached the server %s yet. Check it is written exactly as your broker shows it "
                                 "(in MT5: File > Login to Trade Account), then remove the account and add it again." % acc["server"])

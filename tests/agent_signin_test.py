@@ -17,7 +17,7 @@ ns['report'] = lambda acc, st, msg='': calls['report'].append((st, msg))
 ns['stop'] = lambda a, wipe_dir=None: calls['stop'].append(a['login'])
 ns['log'] = lambda *a: None
 ns['fx_paused'] = lambda: False
-ns['subprocess'] = types.SimpleNamespace(run=lambda *a, **k: None)
+ns['subprocess'] = types.SimpleNamespace(run=lambda *a, **k: None, Popen=lambda *a, **k: None, DEVNULL=None)
 ns['SEED_SERVERS'] = os.path.join(T, 'no-such-list')       # reseed() has nothing to offer: the message is what's left
 ns['adir_of'] = lambda acc: os.path.join(T, str(acc['login']))
 ok = []
@@ -115,6 +115,29 @@ L = 9000012; terminal(L, {'20261104': ["EM\t0\t07:42:59.620\tStartup\tsuccessful
                                        "KJ\t0\t07:43:00.002\tTerminal\tWindows 11 build 22000 on Wine 11.20", "JJ\t0\t07:43:05.800\tNetwork\t'%s': authorized on Broker-Trade" % L]})
 rep, st, _ = run(L, 300)
 expect('a start as on uk1: running', is_running(rep), rep)
+
+# 10. A broker new to the cloud (4 Nov 2026, Troy's Tradeify): never signed in, the broker says nothing: it is looked for, once, and not told to remove the account.
+_seek = os.path.join(T, 'seek-server.sh'); open(_seek, 'w').close(); ns['SEEK'] = _seek
+class FakeProc:
+    rc = None
+    def poll(self): return self.rc
+_proc = FakeProc(); _started = []
+ns['subprocess'].Popen = lambda a, **k: (_started.append(a), _proc)[1]
+L = 9000020; terminal(L, {'20261104': [START]})
+rep, st, _ = run(L, 300)
+expect('a server MT5 does not know: looked for, and says so', rep and 'Looking for Broker-Trade' in rep[-1][1] and not told_to_remove(rep) and len(_started) == 1 and _started[0][-1] == 'Broker-Trade', (rep, _started))
+rep, st, _ = run(L, 310)
+expect('...one search at a time', len(_started) == 1 and 'Looking for' in rep[-1][1], (rep, _started))
+_proc.rc = 2
+rep, st, _ = run(L, 320)
+expect('...not found: the member is told to check the name, and it is not searched again at once', len(_started) == 1 and 'written exactly' in rep[-1][1], (rep, _started))
+ns['seeking'].clear(); _proc.rc = None; _started.clear()
+L = 9000021; terminal(L, {'20261104': [START]})
+rep, st, _ = run(L, 300, ever_signed=True)
+expect('an account that has signed in here before is never searched for', not _started, _started)
+_acc = {'id': 'abad', 'login': 9000022, 'server': 'Bad;name$(id)'}
+expect('a server name that could reach a shell is refused', ns['seek'](_acc) is False and not _started, _started)
+ns['seeking'].clear()
 
 shutil.rmtree(T, ignore_errors=True)
 print('\n%d checks, %d failed' % (len(ok), ok.count(False)))
