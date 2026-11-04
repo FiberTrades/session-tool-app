@@ -76,13 +76,16 @@ for W, H in [(1500, 940), (1100, 800), (1024, 800)]:
 
         # ---- ticker on
         c.eval("""(async function(){data.settings.tickerEnabled=true;applyTickerBarState();window.scrollTo(0,0);for(var i=0;i<150&&!document.querySelector('#ticker-widget-host iframe');i++)await new Promise(function(r){setTimeout(r,100)});await new Promise(function(r){setTimeout(r,5000)});return 1})()""")
-        a = c.eval(Q + "('ticker-open')"); real = whites(shot('on_rest'))
+        a = c.eval(Q + "('ticker-open')"); restim = shot('on_rest'); real = whites(restim)
         check(tag + 'on, at rest: our copy is invisible', a['op'] == '0' and a['word']['w'] == 0, a)
         mouse(W - 14, 17)
         b = c.eval(Q + "('ticker-open')"); im = shot('on_hover'); ours = whites(im)
         check(tag + 'on, mouse on it: it grows and says Ticker', b['hover'] and b['op'] == '1' and b['word']['w'] > 30 and b['wop'] == '1', b)
         check(tag + '...drawn, not clipped (the word\'s pixels show)', any(im.getpixel((x, 17))[0] > 150 for x in range(int(b['word']['l']), int(b['word']['r']))), b['word'])
         check(tag + '...the copy\'s mark lands on the real one', real and ours and all(abs(p - q) <= 1 for p, q in zip(real, ours)), [real, ours])
+        box = [(x, y) for x in range(W - 25, W - 5) for y in range(10, 24)]
+        diff = sum(abs(restim.getpixel(q)[0] - im.getpixel(q)[0]) for q in box) / len(box)
+        check(tag + "...and it is the same drawing: their pixels and ours match", diff < 4, diff)
         mouse(b['pill']['l'] + 6, 17)
         check(tag + '...stays open with the mouse on the word', c.eval(Q + "('ticker-open')")['word']['w'] > 30)
         mouse(W // 2, H - 100)
