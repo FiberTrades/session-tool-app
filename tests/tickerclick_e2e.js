@@ -25,7 +25,8 @@
     var r = logoBtn.getBoundingClientRect();
     ok('off: the bar is gone', bar.hidden && open.offsetWidth === 0, open.offsetWidth);
     ok('off: the logo shows in the top right corner', r.width > 0 && Math.abs(r.right - document.documentElement.clientWidth) <= 1 && r.top >= 0 && r.top <= 8, [r.left, r.top, r.right, r.bottom]);
-    ok('...small, the mark and no word', r.width <= 30 && r.height <= 26 && logoBtn.textContent.trim() === '', [r.width, r.height, logoBtn.textContent]);
+    var wd = logoBtn.querySelector('.tk-pill-t').getBoundingClientRect(), pl = logoBtn.querySelector('.tk-pill').getBoundingClientRect();
+    ok('...small, the mark and no word until the mouse is on it', r.width <= 30 && r.height <= 26 && wd.width === 0 && Math.abs(pl.width - r.width) <= 1, [r.width, r.height, wd.width, pl.width]);
     var mk = logoBtn.querySelector('svg').getBoundingClientRect();
     ok('...with the mark where the logo in the tape sits', Math.abs(r.right - mk.right - 6) <= 1, [r.right, mk.right]);
     ok('...has the mark', !!logoBtn.querySelector('svg path'));
@@ -42,7 +43,7 @@
       for (var q = 0; q < 60 && stack.length === 1 && stack[0] === document.documentElement; q++) { await W(100); stack = document.elementsFromPoint(rr.left + rr.width / 2, rr.top + rr.height / 2); }
       var pos = stack.indexOf(logoBtn), under = pos >= 0 ? stack.slice(pos + 1) : stack;
       var hit = under.find(function (e) { return !logoBtn.contains(e) && e.closest && e.closest('button,a,input,select,textarea,[role=button],[onclick],.tab'); });
-      seen.push({ p: tabs[n].getAttribute('data-page'), on: document.querySelector('.page.active') && document.querySelector('.page.active').id, top: pos === 0, over: pos > 0 ? at(stack[0]) : null, w: rr.width, hit: at(hit) });
+      seen.push({ p: tabs[n].getAttribute('data-page'), on: document.querySelector('.page.active') && document.querySelector('.page.active').id, top: logoBtn.contains(stack[0]), over: logoBtn.contains(stack[0]) ? null : at(stack[0]), w: rr.width, hit: at(hit) });
     }
     ok('it covers no control on any tab', seen.every(function (x) { return !x.hit; }), seen);
     ok('nothing paints over it on any tab', seen.every(function (x) { return x.top || !x.w; }), seen);
@@ -79,6 +80,7 @@
     ok('on: a click on the symbols still reaches TradingView', pr.every(function (h) { return h && h.tagName === 'IFRAME'; }), pr.map(at));
     var lg = document.elementFromPoint(b.width - 14, mid);
     ok("on: TradingView's logo at the right end lands on the settings button", lg === open, at(lg));
+    ok('on: at rest our copy of the logo is invisible, so the real one shows', getComputedStyle(open.querySelector('.tk-pill')).opacity === '0', getComputedStyle(open.querySelector('.tk-pill')).opacity);
     var s = getComputedStyle(open);
     ok('on: it can be seen through', s.backgroundColor === 'rgba(0, 0, 0, 0)' && s.borderTopWidth === '0px', s.backgroundColor);
     ok('on: it shows as clickable', s.cursor === 'pointer', s.cursor);
