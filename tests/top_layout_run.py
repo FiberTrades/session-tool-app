@@ -142,7 +142,7 @@ def desk(W, H):
         check(tag + 'TV on: from the title, equal gaps, TIME 150px short of the TV',
               tv and abs(cs[0]['c']['l'] - on['h1']['l']) <= 3 and max(gaps) - min(gaps) <= 1 and all(abs(g - want) <= 2 for g in gaps) and tv['l'] - cs[-1]['c']['r'] >= 60,
               {'gaps': gaps, 'want': round(want, 1), 'to_tv': tv and tv['l'] - cs[-1]['c']['r'], 'first': cs[0]['c'], 'h1': on['h1']})
-        check(tag + 'TV on: text left-aligned in each cell', all(abs(x['v']['l'] - x['c']['l']) <= 2 and abs(x['lab']['l'] - x['c']['l']) <= 2 for x in cs), [[x['c']['l'], x['v']['l'], x['lab']['l']] for x in cs])
+        check(tag + 'TV on: each title centred over its value', all(abs((x['v']['l'] + x['v']['r']) / 2 - (x['lab']['l'] + x['lab']['r']) / 2) <= 2 for x in cs), [[x['v'], x['lab']] for x in cs])   # centred since 30 Oct 2026, his ask
         check(tag + 'TV off: no TV, header without tv-on', off['tv'] is None and not off['tvOn'], [off['tv'], off['tvOn']])
         check(tag + 'TV off: the info beside the title', off['meta']['l'] > off['h1']['r'], [off['h1'], off['meta']])
         ws = [x['c']['w'] for x in off['cells']]
