@@ -21,12 +21,12 @@
     data._mt5Excluded = { n: 28, sum: -45.76, by: { '333': { n: 28, sum: -45.76 } } };
     document.querySelector('.tab[data-page="trades"]').click(); await W(600); renderTradesStats(); await W(300);
     var pg = document.getElementById('page-trades'), body = pg.textContent;
-    ok('the demo\'s test trades: no line on the prop accounts\' cards', !/not counted here/.test(body), (body.match(/.{40}not counted here.{30}/) || [''])[0]);
+    ok('the demo\'s test trades: no line on the prop accounts\' cards', !/not in your journal/.test(body), (body.match(/.{40}not in your journal.{30}/) || [''])[0]);
     ok('the TTT card in dollars, the FTMO card in pounds', /TTT 10K[\s\S]{0,120}\$10,000/.test(body) && !/TTT 10K[\s\S]{0,120}£10,000/.test(body) && /FTMO 70K[\s\S]{0,120}£70,000|£71,213/.test(body), (body.match(/TTT 10K.{0,120}/) || [''])[0]);
     data._mt5Excluded = { n: 3, sum: -30, by: { '222': { n: 2, sum: -20 }, '333': { n: 1, sum: -10 } } };
     renderTradesStats(); await W(300);
-    var nt = (pg.textContent.match(/\d+ broker trades? not counted here \([^)]*\)/) || [''])[0];
-    ok('its own trades: said, counted for its accounts only, in its money', nt === '2 broker trades not counted here ($20.00)', nt);
+    var nt = (pg.textContent.match(/\d+ MT5 trades? not in your journal \([^)]*\)/) || [''])[0];
+    ok('its own trades: said, counted for its accounts only, in its money', nt === '2 MT5 trades not in your journal ($20.00)', nt);
     data._mt5Excluded = null;
     renderTradesStats(); await W(300);
     // the table's cell

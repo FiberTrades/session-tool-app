@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "9.22"
+#property version   "9.23"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -206,6 +206,7 @@ int    g_cpFollowers=0;                        // Lead: follow accounts linked t
 string CpSettingsJson();                       // the copier part of the settings sent to Session Terminal
 double CpAccountSize();                        // v9.12: the broker, server and first deposit go with the settings too
 double CpFirstDeposit();                       // v9.22: the deposit alone, 0 when none is found
+double CpDepositsTotal();                      // v9.23: every deposit, for a personal account's top-ups
 string JsonSafe(string v){ StringReplace(v,"\\","/"); StringReplace(v,"\"","'"); StringReplace(v,"\r"," "); StringReplace(v,"\n"," "); return v; }
 // Hotkeys on a Follow account (close all, close half, cancel pending) also reach its copies.
 bool   CpMine(long mg){ return mg==InpMagic || (g_copyRole==CR_FOLLOW && mg==InpCopyMagic); }
@@ -4071,6 +4072,7 @@ string   g_setSig="";      // settings last sent
 string   g_setPend="";     // settings seen changing, waiting to settle
 datetime g_setPendAt=0;
 datetime g_setAt=0;
+double   g_setBal=-1.0;   // v9.23: the balance last reported
 string LiveSettingsBody()
   {
    int du=DistUnitFor(_Symbol);
@@ -4100,15 +4102,17 @@ void LiveSettingsTick()
       if(body!=g_setPend){ g_setPend=body; g_setPendAt=now; return; }   // still changing: wait
       if(now-g_setPendAt<3) return;                                     // settled for 3s: send
      }
+   else if(MathAbs(AccountInfoDouble(ACCOUNT_BALANCE)-g_setBal)>=0.005){ if(now-g_setAt<3) return; }   // v9.23: the balance moved: told, not left for the backstop
    else if(now-g_setAt<(CpFirstDeposit()>0 ? 300 : 60)) return;         // unchanged: backstop only (v9.22: sooner while the first deposit isn't in yet)
-   g_setSig=body; g_setPend=body; g_setAt=now;
+   g_setSig=body; g_setPend=body; g_setAt=now; g_setBal=AccountInfoDouble(ACCOUNT_BALANCE);
    // The money one trade risks right now - a % setting follows the balance. Shown by the app,
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.22\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\",\"cloud\":%s,\"company\":\"%s\",\"server\":\"%s\",\"start_bal\":%s}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.23\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\",\"cloud\":%s,\"company\":\"%s\",\"server\":\"%s\",\"start_bal\":%s,\"bal\":%s,\"dep_total\":%s}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY),g_inCloud?"true":"false",
-                            JsonSafe(AccountInfoString(ACCOUNT_COMPANY)),JsonSafe(AccountInfoString(ACCOUNT_SERVER)),DoubleToString(CpFirstDeposit(),2)));   // v9.12: the Accounts tab's "Read from MT5" line
+                            JsonSafe(AccountInfoString(ACCOUNT_COMPANY)),JsonSafe(AccountInfoString(ACCOUNT_SERVER)),DoubleToString(CpFirstDeposit(),2),   // v9.12: the Accounts tab's "Read from MT5" line
+                            DoubleToString(g_setBal,2),DoubleToString(CpDepositsTotal(),2)));   // v9.23: a connected account's balance is MT5's own (ACCOUNT_BALANCE, never the risk override), and its top-ups
   }
 // v8.86 (Nestor, 2 Oct 2026: "nudges for when my trade gets moved to BE, TP hit, SL hit, taken out for BE"):
 // why a position closed - the broker's stop loss, take profit or stop out, by hand, or by the EA.
@@ -4501,7 +4505,7 @@ void LwOpen()
 // v9.06: MT5's Algo Trading button (and this EA's own "Allow Algo Trading") - off, no order can be placed, from here or from the app
 bool AlgoOn(){ return TerminalInfoInteger(TERMINAL_TRADE_ALLOWED)!=0 && MQLInfoInteger(MQL_TRADE_ALLOWED)!=0; }
 int  g_lwAl=-1;                       // v9.06: Algo Trading as last told to the app
-string LwHi(){ return StringFormat("{\"v\":\"9.22\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d,\"cl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0,g_inCloud?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
+string LwHi(){ return StringFormat("{\"v\":\"9.23\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d,\"cl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0,g_inCloud?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
 // v9.06 (Nestor, 19 Oct 2026: "whatever messages appear in MT5 i need to also see them in the app"): every message this EA writes on its
 // chart (Flash) goes to Session Terminal too, which shows it on Live Charts. Only while the line is up; nothing is queued.
 void LwMsg(string m)
@@ -5417,12 +5421,16 @@ void SyncEnqueue(ulong posId)
    int n=ArraySize(g_syncQueue); ArrayResize(g_syncQueue,n+1); g_syncQueue[n]=posId;
   }
 
+// v9.23 (Nestor, 4 Nov 2026: "we need to fix these"): the first look after a start covers the account's whole history, so any old trade can be
+// imported; the later ones (every 3 minutes, after a reconnect) keep to the recent days. SyncFlush sends a few at a time.
+bool g_syncAllDone=false;
 void SyncCatchUp()
   {
    if(StringLen(g_syncTokenEff)==0) return;
-   datetime from=TimeCurrent()-(datetime)InpSyncDays*86400;
-   if(!HistorySelect(from,TimeCurrent())) return;
+   datetime recent=TimeCurrent()-(datetime)InpSyncDays*86400;
+   if(!HistorySelect(g_syncAllDone ? recent : 0,TimeCurrent())) return;
    int deals=HistoryDealsTotal();
+   if(deals>0) g_syncAllDone=true;
    for(int i=0;i<deals;i++)
      {
       ulong dt=HistoryDealGetTicket(i);
@@ -5431,7 +5439,7 @@ void SyncCatchUp()
       // joins the position queue; it gets its own, and its own kind of post.
       if(HistoryDealGetInteger(dt,DEAL_TYPE)==DEAL_TYPE_BALANCE)
         {
-         if(HistoryDealGetDouble(dt,DEAL_PROFIT)<0) BalEnqueue(dt);
+         if(HistoryDealGetDouble(dt,DEAL_PROFIT)<0 && (datetime)HistoryDealGetInteger(dt,DEAL_TIME)>=recent) BalEnqueue(dt);   // v9.23: an old payout is already in MT5's balance: nothing to ask
          continue;
         }
       long de=HistoryDealGetInteger(dt,DEAL_ENTRY);
@@ -7082,6 +7090,24 @@ double CpFirstDeposit()
   {
    CpAccountSize();
    return (g_acctSize>0 && g_acctSizeLogin==AccountInfoInteger(ACCOUNT_LOGIN)) ? g_acctSize : 0.0;
+  }
+// v9.23 (Nestor, 4 Nov 2026: "i want top ups counted for personal accounts"): looked up again only when the balance has moved.
+double g_depTotal=0.0, g_depAtBal=-1.0;
+double CpDepositsTotal()
+  {
+   double b=AccountInfoDouble(ACCOUNT_BALANCE);
+   if(g_depTotal>0 && MathAbs(b-g_depAtBal)<0.005) return g_depTotal;
+   if(!HistorySelect(0,TimeCurrent()+86400)) return g_depTotal;
+   double tot=0.0;
+   for(int i=HistoryDealsTotal()-1;i>=0;i--)
+     {
+      ulong d=HistoryDealGetTicket(i);
+      if(d==0 || HistoryDealGetInteger(d,DEAL_TYPE)!=DEAL_TYPE_BALANCE) continue;
+      double p=HistoryDealGetDouble(d,DEAL_PROFIT);
+      if(p>0) tot+=p;
+     }
+   if(tot>0){ g_depTotal=tot; g_depAtBal=b; }
+   return g_depTotal;
   }
 // "FTMO 70K": the firm's first word and the account size, rounded to the thousand.
 // The firm's short name, for the panel title and the Lead's copier card alike (8.85, Nestor 30 Sep: the title used

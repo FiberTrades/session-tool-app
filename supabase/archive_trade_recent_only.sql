@@ -1,0 +1,3 @@
+-- 4 Nov 2026 (applied as migration archive_trade_recent_only): EA 9.23 sends a member's whole MT5 history for import, not 90 days.
+-- Trades this old never reached trades_verified, so they stay out of it and past leaderboards don't move. In st_archive_trade(), first line:
+--   if new.close_time < now() - interval '100 days' then return new; end if;

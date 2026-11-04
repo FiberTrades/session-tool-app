@@ -67,6 +67,45 @@
     it = await open(G);
     ok('older EA agrees: no pencil', !it.querySelector('[data-sx-edit="start"]') && /From MT5/.test(startRow(it).textContent), startRow(it).textContent);
 
+    // EA 9.23: the balance is MT5's, whatever the journal holds (Nestor, 4 Nov 2026)
+    var bal = function (lg, v, st, b, dep) { window.__stEA.apply({ login: lg, symbol: 'EURUSD', ea_version: v, updated_at: now(), settings: { currency: 'USD', company: 'Some Firm Ltd', server: 'Firm-Live', start_bal: st, bal: b, dep_total: dep } }); };
+    var P = acc('acc_noimport', 'Nothing imported', 10000); D.accounts.push(P); D.mt5LoginMap['7010'] = P.id;
+    bal('7010', '9.23', 10000, 9500, 10000); await W(800);
+    var sp = window.__stAccountStats(P);
+    ok('10K at 9.5K, no trade imported: 10,000 start, 9,500 balance, -5%', P.startingBalance === 10000 && Math.round(sp.current) === 9500 && Math.round(sp.pct * 100) / 100 === -5, [P.startingBalance, sp.current, sp.pct]);
+    ok('...kept with the account for the next start', Math.round(P.balanceAtSetup) === 9500, P.balanceAtSetup);
+    D.currentSeries.push(trade('t_p1', P.id, -500));
+    sp = window.__stAccountStats(P);
+    ok('its old losing trades imported: still 9,500, not 9,000', Math.round(sp.current) === 9500 && Math.round(sp.baseline) === 10000, [sp.current, sp.baseline]);
+    bal('7010', '9.23', 10000, 9400, 10000); D.currentSeries.push(trade('t_p2', P.id, -100));
+    ok('a new trade closes: 9,400', Math.round(window.__stAccountStats(P).current) === 9400, window.__stAccountStats(P).current);
+    D.activeAccountId = P.id; data.viewScope = P.id;
+    await W(800);
+    var Q = acc('acc_paid', 'Paid out', 10000); Q.payouts = [{ id: 'po1', amount: 1000, status: 'paid', date: '2026-10-01' }]; D.accounts.push(Q); D.mt5LoginMap['7011'] = Q.id;
+    bal('7011', '9.23', 10000, 10000, 10000); await W(800);
+    var sq = window.__stAccountStats(Q);
+    ok('a paid payout: balance MT5\'s, the % still what the trading made', Math.round(sq.current) === 10000 && Math.round(sq.pct) === 10, [sq.current, sq.pct]);
+    // top-ups
+    var T1 = acc('acc_top', 'Personal topped up', 5000); T1.kind = 'personal'; D.accounts.push(T1); D.mt5LoginMap['7012'] = T1.id;
+    bal('7012', '9.23', 5000, 10000, 10000); await W(800);
+    var st1 = window.__stAccountStats(T1);
+    ok('personal, 5K then 5K more: size 10,000, balance 10,000, 0%: added money is not profit', T1.startingBalance === 10000 && Math.round(st1.current) === 10000 && Math.round(st1.pct) === 0, [T1.startingBalance, st1.current, st1.pct]);
+    var T2 = acc('acc_prop_top', 'Prop extra deposit', 5000); D.accounts.push(T2); D.mt5LoginMap['7013'] = T2.id;
+    bal('7013', '9.23', 5000, 5500, 7000); await W(800);
+    ok('prop firm: stays on its first deposit', T2.startingBalance === 5000, T2.startingBalance);
+    var TF = window.__stMt5TopUp(T1);
+    ok('the row can say it: 5,000 + 5,000 added', TF && TF.first === 5000 && TF.added === 5000, TF);
+    // no 9.23 yet: as before
+    ok('an older EA: no balance from MT5, the journal\'s as before', window.__stMt5Bal(A) == null && Math.round(window.__stAccountStats(A).current) === 9500, [window.__stMt5Bal(A), window.__stAccountStats(A).current]);
+
+    // the copier before MT5 has signed in (Troy, 4 Nov 2026)
+    var TR = acc('acc_wait', 'Tradeify', 5000); D.accounts.push(TR); D.mt5LoginMap['118156'] = TR.id;
+    var _cl = window.__stMt5c.cloud; window.__stMt5c.cloud = function () { return [{ login: 118156, server: 'TradeifyVenturesFX-Server', status: 'starting', app_trading: true }]; };
+    window.__stAccOpenId = TR.id; window.renderSettingsAccountsList(); await W(500);
+    var wi = document.querySelector('#settings-accounts-list .sacc-item[data-account-id="acc_wait"]'), ws = wi && wi.querySelector('select[data-mt5c-role="118156"]');
+    ok('not signed in: the copier is not offered, and says why', !!ws && ws.disabled && /once its MT5 has signed in/.test(wi.textContent), ws && ws.disabled);
+    window.__stMt5c.cloud = _cl;
+
     // mentor view never writes
     window.__MV = true; var M = acc('acc_mv', 'Mentor view', 3000); D.accounts.push(M); D.mt5LoginMap['7009'] = M.id;
     row('7009', '9.22', 10000); await W(800);

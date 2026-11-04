@@ -351,8 +351,8 @@ function reasonOf(v: unknown) { const x = String(v ?? ""); return ["sl", "tp", "
 // as a CHANGE to the settings. So is the trade copier's state (EA 8.83: role, the Lead a Follow
 // account copies, how many follow accounts a Lead has) - it is how the app groups copies, not a
 // risk setting the member changed. Nor is where the EA runs (EA 9.11, 23 Oct 2026: "cloud" - on Session Terminal's server),
-// nor the account's broker, server and first deposit (EA 9.12: what the Accounts tab reads from MT5).
-const VOLATILE = new Set(["risk_money", "trades_today", "currency", "copy_role", "copy_lead", "copy_followers", "cloud", "company", "server", "start_bal"]);
+// nor the account's broker, server and first deposit (EA 9.12: what the Accounts tab reads from MT5), its balance and total deposits (EA 9.23).
+const VOLATILE = new Set(["risk_money", "trades_today", "currency", "copy_role", "copy_lead", "copy_followers", "cloud", "company", "server", "start_bal", "bal", "dep_total"]);
 function changedKeys(a: any, b: any): string[] {
   const out: string[] = [];
   const keys = new Set([...Object.keys(a ?? {}), ...Object.keys(b ?? {})]);

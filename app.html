@@ -17666,12 +17666,22 @@ try {
     }
     return _noSep(trades.slice());
   }
+  // A connected account's balance is MT5's (Nestor, 4 Nov 2026: "i dont understand why the user has to import the trades they took when their account wasnt connected"). Every balance
+  // figure is this baseline plus the journal's trades, less the paid payouts, so the baseline is whatever makes that sum MT5's balance: the trades not in the journal are in it.
+  function accMt5Baseline(a, bal) {
+    var all = (typeof getTradesWithLog === 'function') ? getTradesWithLog() : getAllLifetimeTrades(), made = a.createdAt ? new Date(a.createdAt).getTime() : 0, net = 0, paid = 0;
+    all.forEach(function (t) { if (!t || !t.date) return; if (t.accountId ? t.accountId !== a.id : new Date(t.date).getTime() < made - 3600000) return; net += (tradeGross(t) - tradeCosts(t)) * tradeCopies(t); });
+    if (window.__stPayouts) window.__stPayouts.list(a).forEach(function (p) { if (p && p.status === 'paid') paid += parseFloat(p.amount) || 0; });
+    return bal - net + paid;
+  }
   function accBaseline(a) {
     if (!a) return 0;
+    try { var _b = window.__stMt5Bal ? window.__stMt5Bal(a) : null; if (_b != null) return accMt5Baseline(a, _b); } catch (e) {}
     return (typeof a.balanceAtSetup === 'number' && a.balanceAtSetup > 0)
       ? a.balanceAtSetup
       : (a.startingBalance || 0);
   }
+  window.__stAccBaseline = accBaseline;
   // The balance the scope's accounts were ALREADY at when they were added to the app.
   // The Account Balance KPI must build on this, not on the nominal size - otherwise an
   // account you had already been trading shows its nominal figure plus your logged P&L,
@@ -29816,10 +29826,10 @@ try {
         if (_exc && _exc.n > 0) {
           var _excMoney = fmtMoneyBy(_excCur, { noSign: true });
           noteHtml = '<div class="chal-verdict chal-verdict-note" style="border-color:' + WARN + '"><span class="chal-dot" style="background:' + WARN + '"></span><span>'
-            + T(_exc.n + ' broker trade' + (_exc.n === 1 ? '' : 's') + ' not counted here (' + _excMoney + '). Restore from Import from MT5.',
+            + T(_exc.n + ' MT5 trade' + (_exc.n === 1 ? '' : 's') + ' not in your journal (' + _excMoney + '). Add or delete ' + (_exc.n === 1 ? 'it' : 'them') + ' in Import from MT5.',
                 _exc.n + (_exc.n === 1
-                  ? ' operación del bróker no contada aquí (' + _excMoney + '). Restáurala desde Importar de MT5.'
-                  : ' operaciones del bróker no contadas aquí (' + _excMoney + '). Restáuralas desde Importar de MT5.'))
+                  ? ' operación de MT5 fuera de tu diario (' + _excMoney + '). Añádela o bórrala en Importar de MT5.'
+                  : ' operaciones de MT5 fuera de tu diario (' + _excMoney + '). Añádelas o bórralas en Importar de MT5.'))
             + '</span></div>';
         }
       } catch (e) {}
@@ -54437,27 +54447,6 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       && Math.abs(l.net - net) <= tol
       && (day === null || l.day === null || Math.abs(l.day - day) <= 1));
   }
-  // The day the journal actually begins — the earliest trade in it. The EA re-scans 90 days of
-  // broker history on every start, so the inbox routinely holds trades from BEFORE the trader
-  // started journaling. Those are not missing; they were never in scope. Without this the list
-  // faithfully reported thirteen trades from 30 April to 15 May as absent from a journal that does
-  // not begin until 26 May — every one of them correct, and every one of them useless.
-  function _mt5JournalStartDay() {
-    let min = null;
-    const scan = (arr) => {
-      (arr || []).forEach(t => {
-        if (!t || !t.date) return;
-        const d = _mt5Day(t.date);
-        if (d != null && (min === null || d < min)) min = d;
-      });
-    };
-    try {
-      scan(allReviewTrades());
-      scan(data.currentSeries);
-      (data.history || []).forEach(h => scan(h && h.trades));
-    } catch (e) {}
-    return min;
-  }
   // Deliberately removed from the excluded list: the trader looked at it and said "not mine / don't
   // want it". Distinct from a dismissal, which only means "not now" and is what put most of these
   // rows here in the first place — this one is an answer, so it silences the Challenge panel's
@@ -54488,13 +54477,10 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
   function _mt5ExcludedFrom(all) {
     const worn = _mt5WornTickets();
     const idx = _mt5LoggedIndex();
-    const start = _mt5JournalStartDay();
     const binTk = new Set(((window.__stBin && window.__stBin.list()) || []).map(e => e.trade && e.trade.mt5Ticket).filter(x => x != null).map(String));
     return (all || []).filter(r => {
       if (!_mt5RowIsValid(r)) return false;
-      // Predates the journal → out of scope, not missing. One day of slack so a trade on the very
-      // first journalled day is never dropped by a timezone boundary.
-      if (start !== null) { const d = _mt5Day(r.close_time); if (d !== null && d < start - 1) return false; }
+      // A trade older than the journal's first is listed too (Nestor, 4 Nov 2026: "we need to fix these"); it used to be left out with no word. Added or deleted once, it stops being said.
       if (_mt5IsIgnored(r.ticket)) return false;   // answered: stop listing it and stop counting it
       if (_mt5GoneRow(r)) return false;            // its account was deleted: answered too
       if (binTk.has(String(r.ticket))) return false;   // deleted from the Trade Log: it is in Deleted trades, not missing
@@ -57129,7 +57115,8 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       const cps = (typeof tradeCopies === 'function') ? tradeCopies : (() => 1);
       const totalNet = eligible.reduce((s, t) => s + ((tradeGross(t) - tradeCosts(t)) * cps(t)), 0);
       const startingBalance = acc.startingBalance || 0;                    // the nominal size - what % rules key off
-      const baseline = (typeof acc.balanceAtSetup === 'number' && acc.balanceAtSetup > 0)
+      const baseline = (window.__stMt5Bal && window.__stMt5Bal(acc) != null) ? window.__stAccBaseline(acc)   // MT5's balance, whatever the journal holds
+        : (typeof acc.balanceAtSetup === 'number' && acc.balanceAtSetup > 0)
         ? acc.balanceAtSetup
         : startingBalance;                                                 // where the account actually stood at setup
       // PAID payouts left the account, so `current` drops by them and keeps matching the broker.
@@ -57375,7 +57362,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
         // Payouts (prop firm only) - each row a label and hint left, its value or control in one column right
         const _prop = acc.kind === 'challenge' && !acc.separate;
         const _linked = Object.values(data.mt5LoginMap || {}).indexOf(acc.id) !== -1;
-        const _startMt5 = !!(window.__stStartFromMt5 && window.__stStartFromMt5(acc));
+        const _startMt5 = !!(window.__stStartFromMt5 && window.__stStartFromMt5(acc)); let _topUp = null;
         const _row = (label, hint, right, k) => `<div class="set-row"${k ? ` data-sx-row="${k}"` : ''}><div class="set-l"><span class="settings-label">${label}</span>${hint ? `<p class="settings-hint">${hint}</p>` : ''}</div><div class="set-r">${right}</div></div>`;
         const _pen = (k) => `<button type="button" class="sx-pen" data-sx-edit="${k}" data-id="${acc.id}" title="${_L('Change', 'Cambiar')}" aria-label="${_L('Change', 'Cambiar')}">${_SX_PEN}</button>`;
         const _chips = (() => { try { return window.__stAccChips ? window.__stAccChips(acc, true) : ''; } catch (e) { return ''; } })();   // one line (27 Oct 2026)
@@ -57395,7 +57382,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
                 : _L('A prop firm account gets the firm’s rules and Prop Firm Progress; a test account counts nowhere else.', 'Una cuenta de prop firm tiene las reglas de la firma y el Progreso de prop firm; una de prueba no cuenta en ningún otro sitio.'), actions[0], 'type')}
               <div class="sacc-slot" data-slot="stage"></div>
               <div class="sacc-slot" data-slot="facts"></div>
-              ${_row(_L('Starting balance', 'Saldo inicial'), (_startMt5 ? _L('From MT5: its first deposit. Every % for this account is measured from it.', 'De MT5: su primer depósito. Cada % de esta cuenta se mide desde él.') : _L('What it started with. Every % for this account is measured from it.', 'Con lo que empezó. Cada % de esta cuenta se mide desde él.'))
+              ${_row(_L('Starting balance', 'Saldo inicial'), (_startMt5 ? ((_topUp = window.__stMt5TopUp && window.__stMt5TopUp(acc)) ? _L('From MT5: ', 'De MT5: ') + fmt(_topUp.first, { noSign: true, cur: accCur(acc) }) + _L(' first deposit + ', ' de primer depósito + ') + fmt(_topUp.added, { noSign: true, cur: accCur(acc) }) + _L(' added. Every % for this account is measured from it.', ' añadidos. Cada % de esta cuenta se mide desde él.') : _L('From MT5: its first deposit. Every % for this account is measured from it.', 'De MT5: su primer depósito. Cada % de esta cuenta se mide desde él.')) : _L('What it started with. Every % for this account is measured from it.', 'Con lo que empezó. Cada % de esta cuenta se mide desde él.'))
                 + (_linked ? '' : ` <button type="button" class="settings-account-match" data-id="${acc.id}">${_L("Doesn't match your broker?", '¿No coincide con tu bróker?')}</button>`),
                 `<span class="sx-v">${fmt(acc.startingBalance, { noSign: true, cur: accCur(acc) })}</span>${_startMt5 ? '' : _pen('start')}`, 'start')}
               ${_openedDs ? _row(_L('Opened', 'Creada'), '', `<span class="sx-v">${_openedDs}</span>`) : ''}
@@ -80933,16 +80920,20 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
 
   // ---- what MT5 says: the broker, the server, the first deposit, the currency (EA 9.12), or the cloud card's server
   function facts(acc) {
-    var f = { firm: '', company: '', server: '', start: null, sure: false, cur: '' };
+    var f = { firm: '', company: '', server: '', start: null, sure: false, bal: null, dep: 0, size: null, cur: '' }, startAt = 0, balAt = 0;
     loginsOf(acc).forEach(function (lg) {
       eaRows(lg).forEach(function (r) { var s = r.settings || {};
         if (s.company && !f.company) f.company = s.company; if (s.server && !f.server) f.server = s.server;
         // EA 9.22: start_bal is the first deposit or 0 (none found). Before it, a broker hiding the deposit sent the current balance, so an older row is only a hint
-        var nw = parseFloat(r.ea_version) >= 9.22;
-        if (+s.start_bal > 0) { if (nw && !f.sure) { f.start = +s.start_bal; f.sure = true; } else if (f.start == null) f.start = +s.start_bal; }
+        var nw = parseFloat(r.ea_version) >= 9.22, at = Date.parse(r.updated_at) || 0;
+        // two MT5s on one account (a new login for the next stage): the one heard from last
+        if (+s.start_bal > 0) { if (nw && (!f.sure || at > startAt)) { f.start = +s.start_bal; f.sure = true; startAt = at; f.dep = +s.dep_total || 0; } else if (f.start == null) f.start = +s.start_bal; }
+        if (s.bal != null && isFinite(+s.bal) && at >= balAt) { f.bal = +s.bal; balAt = at; }   // EA 9.23
         if (s.currency && !f.cur) f.cur = s.currency; });
       if (!f.server) { var c = cloudOf(lg); if (c && c.server) f.server = c.server; }
     });
+    // a personal account's size counts its top-ups (Nestor, 4 Nov 2026), so added money never reads as profit; a prop firm's is its first deposit
+    if (f.sure) f.size = (acc.kind !== 'challenge' && f.dep > f.start) ? f.dep : f.start;
     var src = f.company + ' ' + f.server + ' ' + (acc.name || '');
     f.firm = /ftmo/i.test(src) ? 'FTMO' : (f.company ? f.company.replace(/^the\s+/i, '').split(/\s+/)[0] : '');
     return f;
@@ -81115,9 +81106,10 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
       var app = c ? !!c.app_trading : tm;
       h += row(T('Trading from the app', 'Operar desde la app'), c ? T('Set when it was added to the cloud.', 'Se eligió al añadirla a la nube.') : T('Switched on the EA panel in MT5 (App trading).', 'Se activa en el panel del EA en MT5 (App trading).'),
         chip(app ? '' : 'idle', app ? T('On', 'Activado') : T('Off', 'Desactivado')));
-      var cr = roleOf(lg), old = !!v && parseFloat(v) < 9.1;
-      h += row(T('Trade copier', 'Copiador'), T('A Lead’s trades are copied by its Follow accounts, each at its own risk.', 'Las cuentas Seguidor copian las operaciones del Líder, cada una con su propio riesgo.'),
-        '<select class="settings-input mt5c-pick" data-mt5c-role="' + esc(lg) + '"' + (old ? ' disabled' : '') + '>' + [['off', T('Off', 'Apagado')], ['lead', T('Lead', 'Líder')], ['follow', T('Follow', 'Seguidor')]].map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === cr ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>');
+      // not signed in yet: no EA to take the role, so a choice here only went back to Off (Troy, 4 Nov 2026: "every time I change it to follow ... it switches back to off")
+      var cr = roleOf(lg), old = !!v && parseFloat(v) < 9.1, cpWait = !!c && c.status !== 'running' && !v;
+      h += row(T('Trade copier', 'Copiador'), cpWait ? T('Set this once its MT5 has signed in.', 'Elígelo cuando su MT5 haya iniciado sesión.') : T('A Lead’s trades are copied by its Follow accounts, each at its own risk.', 'Las cuentas Seguidor copian las operaciones del Líder, cada una con su propio riesgo.'),
+        '<select class="settings-input mt5c-pick" data-mt5c-role="' + esc(lg) + '"' + ((old || cpWait) ? ' disabled' : '') + '>' + [['off', T('Off', 'Apagado')], ['lead', T('Lead', 'Líder')], ['follow', T('Follow', 'Seguidor')]].map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === cr ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>');
       // its charts on the server: no row here since 24 Oct 2026 - a symbol opened in Live Charts is added by itself (__stCloudWantSym)
     });
     return h;
@@ -81249,7 +81241,9 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
   function autoFill() {
     var changed = false, sized = false;
     // MT5's first deposit is the account's size (Nestor, 4 Nov 2026: "why would it ever be wrong if the data is being pulled from the cloud?"), whatever was typed before it connected
-    (D().accounts || []).forEach(function (a) { if (!a) return; var f = facts(a); if (f.sure && Math.abs((a.startingBalance || 0) - f.start) >= 0.005) { window.__stSetAccountStart(a, f.start); changed = sized = true; } });
+    (D().accounts || []).forEach(function (a) { if (!a) return; var f = facts(a); if (f.sure && Math.abs((a.startingBalance || 0) - f.size) >= 0.005) { window.__stSetAccountStart(a, f.size); changed = sized = true; }
+      // kept with the account, so the next start and a mentor's view show it before MT5's report arrives
+      if (f.bal != null && window.__stJournalPulled) { var ab = window.__stAccBaseline(a); if (ab > 0 && Math.abs((a.balanceAtSetup || 0) - ab) >= 0.005) { a.balanceAtSetup = ab; changed = sized = true; } } });
     // its currency is what its MT5 reports (27 Oct 2026: OneFunded's USD beside the 70K's GBP)
     (D().accounts || []).forEach(function (a) { if (!a) return; var c = facts(a).cur; if (c && /^[A-Z]{3}$/.test(c) && a.currency !== c) { a.currency = c; changed = true; } });
     (D().accounts || []).forEach(function (a) { if (!a || !(a._nameAuto || a._sbAuto)) return; var f = facts(a);
@@ -81268,6 +81262,8 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     try { if (window.__MV || !window.currentUser || !window.__stJournalPulled || new URLSearchParams(location.search).get('mv') || (window.__stIsDetachedWindow && window.__stIsDetachedWindow())) return; autoFill(); } catch (e) {} }, 400); };
   // the size is MT5's when MT5 says so: no pencil. The pencil stays with no MT5, no deposit found, or an older EA's figure that disagrees with the account
   window.__stStartFromMt5 = function (acc) { if (!acc || !loginsOf(acc).length) return false; var f = facts(acc); return f.start > 0 && (f.sure || Math.abs((acc.startingBalance || 0) - f.start) < 0.005); };
+  window.__stMt5Bal = function (acc) { if (!acc || !loginsOf(acc).length) return null; return facts(acc).bal; };
+  window.__stMt5TopUp = function (acc) { var f = (acc && loginsOf(acc).length) ? facts(acc) : null; return (f && f.sure && f.size > f.start) ? { first: f.start, added: f.size - f.start } : null; };
   // what's typed in the cloud forms survives every repaint of the panel (Nestor, 30 Oct 2026, moving Aurora's account: "as soon as you
   // click outside those fields the information gets deleted so its impossible to click on connect to the cloud"): the panel repainted
   // the moment the focus left a field, and the forms come back empty
@@ -85241,6 +85237,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     return d.accounts.filter(function(a){ return a && a.status === 'active' && a.kind !== 'personal' && !funded(a) && !a.demo && !a.separate; });
   }
   // The account's trades, as computeAccountStats picks them: tagged to it, or untagged and dated after it was made.
+  function acctBase(acc, sb){ if(window.__stMt5Bal && window.__stMt5Bal(acc) != null) return window.__stAccBaseline(acc); return (typeof acc.balanceAtSetup === 'number' && acc.balanceAtSetup > 0) ? acc.balanceAtSetup : sb; }   // MT5's balance when it reports one
   function tradesOf(acc){
     var all = []; try{ all = (typeof getTradesWithLog === 'function') ? getTradesWithLog() : getAllLifetimeTrades(); }catch(e){ return []; }   // the Trade Log's too (getTradesWithLog)
     var made = acc.createdAt ? new Date(acc.createdAt).getTime() : 0, SKEW = 3600000;
@@ -85259,7 +85256,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       var tg = ruleVal(rr, sb, 'profitTargetMode', 'profitTargetPct', 'profitTargetAmount'); if(!(tg > 0)) return null;
       var st = window.__stAccountStats ? window.__stAccountStats(acc) : null;
       if(!st || !(st.current >= sb + tg)) return null;
-      var base = (typeof acc.balanceAtSetup === 'number' && acc.balanceAtSetup > 0) ? acc.balanceAtSetup : sb;
+      var base = acctBase(acc, sb);
       var dd = ruleVal(rr, sb, 'maxDrawdownMode', 'maxDrawdownPct', 'maxDrawdownAmount'), ddType = rr.ddType || 'static';
       var dl = ruleVal(rr, sb, 'maxLossMode', 'maxLossPct', 'maxLossAmount');
       var cps = (typeof tradeCopies === 'function') ? tradeCopies : function(){ return 1; };
@@ -85461,7 +85458,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       var mt = parseInt(rr.maxTrades, 10) || 0;
       var fdl = ruleVal(rr, sb, 'firmDailyMode', 'firmDailyPct', 'firmDailyAmount');   // the firm's own daily limit (1 Oct 2026)
       if(!(tg > 0) && !(dd > 0) && !(fdl > 0)) return null;   // no firm rules: nothing to judge
-      var base = (typeof acc.balanceAtSetup === 'number' && acc.balanceAtSetup > 0) ? acc.balanceAtSetup : sb;
+      var base = acctBase(acc, sb);
       var cps = (typeof tradeCopies === 'function') ? tradeCopies : function(){ return 1; };
       var pays = []; try{ pays = (window.__stPayouts ? window.__stPayouts.list(acc) : []).filter(function(p){ return p && p.status === 'paid' && p.paidOn; })
         .map(function(p){ return { day: dayKey(p.paidOn), amt: parseFloat(p.amount) || 0 }; }).sort(function(a, b){ return a.day < b.day ? -1 : a.day > b.day ? 1 : 0; }); }catch(e){}
