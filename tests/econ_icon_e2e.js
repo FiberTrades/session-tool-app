@@ -11,6 +11,7 @@
     var gap = Math.round(b.left - a.right);
     out.push({ name: 'the search icon right after the label', ok: gap >= 4 && gap <= 16, got: { gap: gap, label: [Math.round(a.left), Math.round(a.right)], icon: [Math.round(b.left), Math.round(b.right)], bar: [Math.round(h.left), Math.round(h.right)] } });
     out.push({ name: 'on the label\'s line, vertically centred with it', ok: Math.abs((a.top + a.bottom) / 2 - (b.top + b.bottom) / 2) <= 3, got: [a.top, a.bottom, b.top, b.bottom] });
+    out.push({ name: 'label and icon together are centred in the box (4 Nov 2026)', ok: Math.abs((a.left + b.right) / 2 - (h.left + h.right) / 2) <= 2, got: [a.left, b.right, h.left, h.right] });
     out.push({ name: 'still a search icon (an svg) and still in the bar', ok: !!ic.querySelector('svg') && b.left >= h.left && b.right <= h.right, got: ic.innerHTML.slice(0, 40) });
     // Calendar: the "Replay · All Trades History" bar, the same fix (25 Oct 2026)
     document.querySelector('.tab[data-page="tradeview"]').click(); await W(900);

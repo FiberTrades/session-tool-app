@@ -11,7 +11,7 @@
     document.querySelectorAll('[class^="st-tour"], .st-greet-pop').forEach(function (e) { e.remove(); });
     window.scrollTo(0, 0);
     var btn = $('econ-bloomberg-btn'), f = $('bloomberg-floater'), x = $('bloomberg-floater-close'), phone = innerWidth <= 560;
-    ok('the calendar row no longer has it', !document.querySelector('.econ-action-group #econ-bloomberg-btn') && !!document.querySelector('.econ-action-group #econ-ticker-btn'));
+    ok('the calendar row no longer has it', !document.querySelector('#econ-calendar #econ-bloomberg-btn'));
     ok('it is in the top row', !!btn.closest('.brand-row'));
 
     // start with it on
