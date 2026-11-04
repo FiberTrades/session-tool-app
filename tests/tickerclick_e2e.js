@@ -76,22 +76,22 @@
     var b = bar.getBoundingClientRect(), mid = b.top + b.height / 2;
     var pts = [4, 0.25 * b.width, 0.5 * b.width, 0.75 * b.width, b.width - 40];
     var pr = pts.map(function (x) { return document.elementFromPoint(x, mid); });
-    ok('on: a click anywhere on the tape lands on the settings button', pr.every(function (h) { return h === open; }), pr.map(at));
+    ok('on: a click on the symbols still reaches TradingView', pr.every(function (h) { return h && h.tagName === 'IFRAME'; }), pr.map(at));
     var lg = document.elementFromPoint(b.width - 14, mid);
-    ok("on: TradingView's logo in the tape is still their link", lg && lg.tagName === 'IFRAME', at(lg));
+    ok("on: TradingView's logo at the right end lands on the settings button", lg === open, at(lg));
     var s = getComputedStyle(open);
     ok('on: it can be seen through', s.backgroundColor === 'rgba(0, 0, 0, 0)' && s.borderTopWidth === '0px', s.backgroundColor);
     ok('on: it shows as clickable', s.cursor === 'pointer', s.cursor);
     open.click();
     await W(100);
-    ok('on: clicking the tape opens the ticker settings', bg.classList.contains('show') && $('tk-onoff').checked === true);
+    ok('on: clicking the logo opens the ticker settings', bg.classList.contains('show') && $('tk-onoff').checked === true);
     bg.classList.remove('show');
     ok('no sideways scroll', document.documentElement.scrollWidth <= innerWidth, document.documentElement.scrollWidth);
 
     // pinned or not, it stays over the tape
     bar.classList.remove('ticker-bar--sticky');
     var o2 = open.getBoundingClientRect(), b2 = bar.getBoundingClientRect();
-    ok('scrolls-away mode: still over the tape', Math.abs(o2.top - b2.top) <= 2 && Math.abs(o2.left - b2.left) <= 2 && Math.abs(o2.height - b2.height) <= 3, [o2.top, b2.top, o2.height, b2.height]);
+    ok('scrolls-away mode: still over the logo', Math.abs(o2.top - b2.top) <= 2 && Math.abs(o2.right - b2.right) <= 2 && Math.abs(o2.height - b2.height) <= 3, [o2.top, b2.top, o2.height, b2.height]);
     bar.classList.add('ticker-bar--sticky');
 
     // ======== the calendar's title and glass, in the middle of the box
