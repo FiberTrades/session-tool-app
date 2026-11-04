@@ -423,14 +423,25 @@ def launch(acc):
     report(acc, "starting", "MT5 is starting")
 
 
-def journal_lines(ad):
-    """Today's and yesterday's MT5 journal, newest last (UTF-16)."""
+def journal_lines(ad, since=0):
+    """This MT5's journal from its own start line on, newest last (UTF-16), however many days back that is - a connection
+    that never drops logs "authorized on" once. 4 Nov 2026: an apt upgrade restarted this agent and two OneFunded MT5s, signed
+    in the day before, were told to remove their account for 50 minutes. Only the dated files count: logs/ also holds
+    metaeditor.log, which sorted last and took yesterday's place. since: when this agent started the MT5 itself - a newest
+    file older than that is the MT5 before it, nothing of this start has been written yet."""
+    files = sorted(f for f in glob.glob(os.path.join(ad, "logs", "*.log")) if re.fullmatch(r"\d{8}\.log", os.path.basename(f)))
+    if files and os.path.getmtime(files[-1]) < since:
+        return []
     out = []
-    for f in sorted(glob.glob(os.path.join(ad, "logs", "*.log")))[-2:]:
+    for f in reversed(files):
         try:
-            out += open(f, "rb").read().decode("utf-16-le", "ignore").splitlines()
+            lines = open(f, "rb").read().decode("utf-16-le", "ignore").splitlines()
         except Exception:
-            pass
+            continue
+        for i in range(len(lines) - 1, -1, -1):
+            if "\tTerminal\t" in lines[i] and " started for " in lines[i]:
+                return lines[i:] + out
+        out = lines + out
     return out
 
 
@@ -479,8 +490,8 @@ def reseed(acc, ad, s):
 def check(acc):
     s = state.get(acc["id"]) or {}
     ad = adir_of(acc)
-    lines = journal_lines(ad)
-    signed = any(("authorized on" in l) and str(acc["login"]) in l for l in lines[-400:])
+    lines = journal_lines(ad, s.get("started", 0) if s.get("proc") else 0)   # no proc: adopted, its start line is all there is
+    signed = any(("authorized on" in l) and str(acc["login"]) in l for l in lines)
     bad = next((l for l in reversed(lines[-200:]) if "authorization" in l.lower() and "failed" in l.lower()), None)
     if s.get("ini") and (signed or time.time() - s.get("started", 0) > BOOT_INI_TTL):
         try:
@@ -501,9 +512,7 @@ def check(acc):
         # market closed, 23 Oct 2026): nothing wrong with the account, and MT5 keeps trying by itself, so leave it running
         report(acc, "starting", "%s is not letting anyone sign in right now (%s). MT5 keeps trying." % (acc["server"], why))
         return
-    if signed:
-        s["signed_once"] = s.get("started")   # this start has signed in: its log may later scroll past "authorized on"
-    if not signed and s.get("started") and s.get("signed_once") != s.get("started") and time.time() - s["started"] > NO_SIGNIN:
+    if not signed and s.get("started") and time.time() - s["started"] > NO_SIGNIN:
         # Never signed in and the broker said nothing (25 Oct 2026, other brokers than FTMO): most often a server this MT5
         # doesn't know (a broker missing from SEED_SERVERS - add it with cloud/seed-servers.sh) or a name typed differently.
         # Before, the account sat on "MT5 is starting" for good. MT5 keeps running and trying.
