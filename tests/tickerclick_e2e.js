@@ -25,8 +25,7 @@
     var r = logoBtn.getBoundingClientRect();
     ok('off: the bar is gone', bar.hidden && open.offsetWidth === 0, open.offsetWidth);
     ok('off: the logo shows in the top right corner', r.width > 0 && Math.abs(r.right - document.documentElement.clientWidth) <= 1 && r.top >= 0 && r.top <= 8, [r.left, r.top, r.right, r.bottom]);
-    ok('...small', r.width <= 100 && r.height <= 26, [r.width, r.height]);
-    ok('...and says Ticker', /^ticker$/i.test(logoBtn.textContent.trim()) && logoBtn.querySelector('.ticker-logo-t').getBoundingClientRect().right <= logoBtn.querySelector('svg').getBoundingClientRect().left, logoBtn.textContent);
+    ok('...small, the mark and no word', r.width <= 30 && r.height <= 26 && logoBtn.textContent.trim() === '', [r.width, r.height, logoBtn.textContent]);
     var mk = logoBtn.querySelector('svg').getBoundingClientRect();
     ok('...with the mark where the logo in the tape sits', Math.abs(r.right - mk.right - 6) <= 1, [r.right, mk.right]);
     ok('...has the mark', !!logoBtn.querySelector('svg path'));
@@ -39,6 +38,8 @@
     for (var n = 0; n < tabs.length; n++) {
       tabs[n].click(); await W(300); await settle(); window.scrollTo(0, 0); await W(100);
       var rr = logoBtn.getBoundingClientRect(), stack = document.elementsFromPoint(rr.left + rr.width / 2, rr.top + rr.height / 2);
+      // Charts is slow to start its animation, so settle() can pass before it begins: while it runs, the stack is only <html>.
+      for (var q = 0; q < 60 && stack.length === 1 && stack[0] === document.documentElement; q++) { await W(100); stack = document.elementsFromPoint(rr.left + rr.width / 2, rr.top + rr.height / 2); }
       var pos = stack.indexOf(logoBtn), under = pos >= 0 ? stack.slice(pos + 1) : stack;
       var hit = under.find(function (e) { return !logoBtn.contains(e) && e.closest && e.closest('button,a,input,select,textarea,[role=button],[onclick],.tab'); });
       seen.push({ p: tabs[n].getAttribute('data-page'), on: document.querySelector('.page.active') && document.querySelector('.page.active').id, top: pos === 0, over: pos > 0 ? at(stack[0]) : null, w: rr.width, hit: at(hit) });
