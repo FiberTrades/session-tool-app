@@ -25,7 +25,10 @@
     var r = logoBtn.getBoundingClientRect();
     ok('off: the bar is gone', bar.hidden && open.offsetWidth === 0, open.offsetWidth);
     ok('off: the logo shows in the top right corner', r.width > 0 && Math.abs(r.right - document.documentElement.clientWidth) <= 1 && r.top >= 0 && r.top <= 8, [r.left, r.top, r.right, r.bottom]);
-    ok('...small', r.width <= 30 && r.height <= 26, [r.width, r.height]);
+    ok('...small', r.width <= 100 && r.height <= 26, [r.width, r.height]);
+    ok('...and says Ticker', /^ticker$/i.test(logoBtn.textContent.trim()) && logoBtn.querySelector('.ticker-logo-t').getBoundingClientRect().right <= logoBtn.querySelector('svg').getBoundingClientRect().left, logoBtn.textContent);
+    var mk = logoBtn.querySelector('svg').getBoundingClientRect();
+    ok('...with the mark where the logo in the tape sits', Math.abs(r.right - mk.right - 6) <= 1, [r.right, mk.right]);
     ok('...has the mark', !!logoBtn.querySelector('svg path'));
     var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
     ok('...and nothing sits on it', logoBtn.contains(document.elementFromPoint(cx, cy)), at(document.elementFromPoint(cx, cy)));
@@ -48,7 +51,10 @@
     var f = $('bloomberg-floater'), bb = $('econ-bloomberg-btn'), hits = function (a, b) { return !(a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top); };
     r = logoBtn.getBoundingClientRect();
     if (!bb.hidden) ok('clear of the Bloomberg button', !hits(r, bb.getBoundingClientRect()), [r.left, bb.getBoundingClientRect().right]);
-    if (!f.hidden) ok('clear of the Bloomberg window', !hits(r, f.getBoundingClientRect()), [r.left, f.getBoundingClientRect().right]);
+    if (!bb.hidden) { var bq = bb.getBoundingClientRect(); ok('...its whole top edge still presses the button', bb.contains(document.elementFromPoint(bq.right - 16, bq.top + 1)), at(document.elementFromPoint(bq.right - 16, bq.top + 1))); }
+    if (f.hidden) { bb.click(); await W(800); }
+    ok('clear of the Bloomberg window', !f.hidden && !hits(logoBtn.getBoundingClientRect(), f.getBoundingClientRect()), [logoBtn.getBoundingClientRect().left, f.getBoundingClientRect().right]);
+    $('bloomberg-floater-close').click(); await W(600);
 
     // clicking the logo
     ok('settings closed to begin with', !bg.classList.contains('show'));
