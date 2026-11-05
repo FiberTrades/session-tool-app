@@ -43,22 +43,23 @@ insert into public.firm_lookups (firm, company, is_prop, status, note) values
   ('Tradeify', 'Tradeify Ventures Limited', true, 'ok', 'seeded 5 Nov 2026')
 on conflict (firm) do nothing;
 
+-- All read on the firms' own pages, 5 Nov 2026. Without paid add-ons (TTT's Drawdown Upgrade makes 4/8 into 5/10). Tradeify Classic really is 5% then 10%.
 insert into public.firm_rules (firm, program, plan, rules, trust, source_url) values
   ('FTMO', '2step', '', '{"target":{"Challenge":10,"Verification":5,"Funded":null},"daily":5,"dd":10,"ddType":"static","cons":null,"split":80}', 'firm', 'https://ftmo.com/en/trading-objectives/'),
   ('FTMO', '1step', '', '{"target":{"Challenge":10,"Funded":null},"daily":3,"dd":10,"ddType":"trailing","cons":50,"split":80}', 'firm', 'https://ftmo.com/en/1-step-challenge/'),
-  ('OneFunded', '1step', 'Flash', '{"target":{"Challenge":10,"Funded":null},"daily":4,"dd":8,"ddType":"static","cons":{"Challenge":50,"Funded":50},"split":80,"bySize":{"100000":{"cons":{"Challenge":50,"Funded":30}}}}', 'firm', 'https://help.onefunded.com/'),
-  ('OneFunded', '2step', 'Core', '{"target":{"Challenge":8,"Verification":5,"Funded":null},"daily":5,"dd":10,"ddType":"static","cons":{"Funded":50},"split":80,"bySize":{"100000":{"cons":{"Challenge":50,"Verification":50,"Funded":30}}}}', 'firm', 'https://help.onefunded.com/'),
-  ('OneFunded', '2step', 'Value', '{"target":{"Challenge":8,"Verification":6,"Funded":null},"daily":4,"dd":8,"ddType":"static","cons":{"Funded":50},"split":80,"bySize":{"100000":{"cons":{"Challenge":40,"Verification":40,"Funded":30}}}}', 'firm', 'https://help.onefunded.com/'),
-  ('OneFunded', 'instant', 'Instant', '{"target":{"Funded":null},"daily":3,"dd":6,"ddType":"static","cons":15,"split":null}', 'found', 'https://fundedtrading.com/propfirm/onefunded/'),
-  ('TTT', '1step', 'Standard', '{"target":{"Challenge":10,"Funded":null},"daily":4,"dd":8,"ddType":"trailing","cons":null,"split":null}', 'found', 'https://help.tttmarkets.com/help/1-step-challenge/what-are-the-drawdown-limits-on-the-1-step-challenge'),
-  ('TTT', '1step', 'Lite', '{"target":{"Challenge":5,"Funded":null},"daily":null,"dd":null,"ddType":null,"cons":null,"split":null}', 'found', 'https://fundedtrading.com/propfirm/ttt-markets/'),
-  ('TTT', '2step', 'Standard', '{"target":{"Challenge":8,"Verification":5,"Funded":null},"daily":null,"dd":8,"ddType":null,"cons":null,"split":null}', 'found', 'https://help.tttmarkets.com/help/2-step-challenge/what-are-the-drawdown-limits-on-the-2-step-challenge'),
-  ('TTT', '2step', 'Lite', '{"target":{"Challenge":5,"Verification":5,"Funded":null},"daily":3,"dd":5,"ddType":null,"cons":null,"split":null}', 'found', 'https://fundedtrading.com/propfirm/ttt-markets/'),
-  ('TTT', 'instant', 'Instant Funding', '{"target":{"Funded":null},"daily":0,"dd":6,"ddType":"static","cons":null,"split":null}', 'firm', 'https://help.tttmarkets.com/help/instant-funding/what-are-the-drawdown-rules-on-instant-funding'),
-  ('TTT', 'instant', 'Instant Lite', '{"target":{"Funded":null},"daily":0,"dd":3,"ddType":"static","cons":null,"split":null}', 'firm', 'https://help.tttmarkets.com/help/instant-lite/what-are-the-drawdown-and-risk-limits-on-instant-lite'),
-  ('Tradeify', '1step', 'Daily', '{"target":{"Challenge":10,"Funded":null},"daily":0,"dd":5,"ddType":"trailing_lock","cons":40,"split":80}', 'found', 'https://thetrustedprop.com/prop-firms/tradeify-fx'),
-  ('Tradeify', '2step', 'Classic', '{"target":{"Challenge":5,"Verification":10,"Funded":null},"daily":3,"dd":10,"ddType":"static","cons":null,"split":80}', 'found', 'https://thetrustedprop.com/prop-firms/tradeify-fx'),
-  ('Tradeify', 'instant', 'Direct', '{"target":{"Funded":null},"daily":3,"dd":6,"ddType":"trailing_lock","cons":20,"split":80}', 'found', 'https://thetrustedprop.com/prop-firms/tradeify-fx')
+  ('OneFunded', '1step', 'Flash', '{"target":{"Challenge":10,"Funded":null},"daily":4,"dd":8,"ddType":"static","cons":{"Challenge":50,"Funded":50},"split":80,"bySize":{"100000":{"cons":{"Challenge":50,"Funded":30}}}}', 'firm', 'https://help.onefunded.com/flash-challenge/'),
+  ('OneFunded', '2step', 'Core', '{"target":{"Challenge":8,"Verification":5,"Funded":null},"daily":5,"dd":10,"ddType":"static","cons":{"Funded":50},"split":80,"bySize":{"100000":{"cons":{"Challenge":50,"Verification":50,"Funded":30}}}}', 'firm', 'https://help.onefunded.com/core-challenge/'),
+  ('OneFunded', '2step', 'Value', '{"target":{"Challenge":8,"Verification":6,"Funded":null},"daily":4,"dd":8,"ddType":"static","cons":{"Funded":50},"split":80,"bySize":{"100000":{"cons":{"Challenge":40,"Verification":40,"Funded":30}}}}', 'firm', 'https://help.onefunded.com/value-challenge/'),
+  ('OneFunded', 'instant', 'Instant', '{"target":{"Funded":null},"daily":3,"dd":6,"ddType":"static","cons":15,"split":60}', 'firm', 'https://help.onefunded.com/instant-challenge/'),
+  ('TTT', '1step', 'Standard', '{"target":{"Challenge":10,"Funded":null},"daily":4,"dd":8,"ddType":"trailing","cons":null,"split":80}', 'firm', 'https://help.tttmarkets.com/help/1-step-challenge/what-are-the-drawdown-limits-on-the-1-step-challenge'),
+  ('TTT', '1step', 'Lite', '{"target":{"Challenge":5,"Funded":null},"daily":3,"dd":5,"ddType":"trailing","cons":null,"split":80}', 'firm', 'https://help.tttmarkets.com/help/1-step-lite/what-are-the-drawdown-limits-on-the-1-step-lite-challenge'),
+  ('TTT', '2step', 'Standard', '{"target":{"Challenge":8,"Verification":5,"Funded":null},"daily":4,"dd":8,"ddType":"static","cons":null,"split":80}', 'firm', 'https://help.tttmarkets.com/help/2-step-challenge/what-are-the-drawdown-limits-on-the-2-step-challenge'),
+  ('TTT', '2step', 'Lite', '{"target":{"Challenge":5,"Verification":5,"Funded":null},"daily":3,"dd":5,"ddType":"static","cons":null,"split":80}', 'firm', 'https://help.tttmarkets.com/help/2-step-lite/what-are-the-drawdown-limits-on-the-2-step-lite-challenge'),
+  ('TTT', 'instant', 'Instant Funding', '{"target":{"Funded":null},"daily":0,"dd":6,"ddType":"static","cons":null,"split":70}', 'firm', 'https://tttmarkets.com/'),
+  ('TTT', 'instant', 'Instant Lite', '{"target":{"Funded":null},"daily":0,"dd":3,"ddType":"static","cons":null,"split":80}', 'firm', 'https://tttmarkets.com/'),
+  ('Tradeify', '1step', 'Daily', '{"target":{"Challenge":10,"Funded":null},"daily":0,"dd":5,"ddType":"trailing_lock","cons":{"Challenge":40},"split":80}', 'firm', 'https://help.tradeifyfx.co/en/articles/16975953-daily-1-step-guide'),
+  ('Tradeify', '2step', 'Classic', '{"target":{"Challenge":5,"Verification":10,"Funded":null},"daily":3,"dd":10,"ddType":"static","cons":null,"split":80}', 'firm', 'https://help.tradeifyfx.co/en/articles/16976039-classic-2-step-guide'),
+  ('Tradeify', 'instant', 'Direct', '{"target":{"Funded":null},"daily":3,"dd":6,"ddType":"trailing_lock","cons":20,"split":80}', 'firm', 'https://help.tradeifyfx.co/en/articles/16976051-direct-instant-funding-guide')
 on conflict (firm, program, plan) do nothing;
 
 -- The weekly check: once a day it looks at the two firms looked at longest ago, each at most once a week.
