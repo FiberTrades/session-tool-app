@@ -186,6 +186,20 @@
       var d = satW.document, win = d.getElementById('stpr-win');
       check('...Live\'s platform there, no Live button', win.classList.contains('lc') && !win.classList.contains('pl-replay') && !shown(d.getElementById('stpr-lvback')), win.className);
     }),
+    // his report, 4 Nov 2026: "replay button doesnt work?" in Live Charts' window, after a night of reloading the app
+    pressAfterReload: part(async function (check) {
+      var d = satW.document, b = d.querySelector('[data-plrp]');
+      check('after the app reloads: Replay in Live Charts\' window', shown(b));
+      var r = b.getBoundingClientRect(), top = d.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      check('...nothing lies over it', b.contains(top), top && (top.id || top.className));
+      b.click(); await W(300);
+      check('...pressing it asks in that window', !!ask(d) && shown(ask(d).querySelector('.lc-ask')), [!!ask(d), !!ask(document)]);
+      if (!ask(d)) return;
+      ask(d).querySelector('[data-lca="1"]').click(); await waitReplay();
+      check('...and it turns into Replay', P._s() && !P._s().live && inPlace(), [P._s() && P._s().live, inPlace()]);
+      d.getElementById('stpr-lvback').click(); await W(300); if (ask(d)) ask(d).querySelector('[data-lca="1"]').click(); await waitLive(); await W(1000);
+      check('...and back to Live', P._s() && P._s().live && inPlace(), [P._s() && P._s().live, inPlace()]);
+    }),
     noStageReplay: part(async function (check) {
       var k; P._stageDetach(true); for (k = 0; k < 80 && (P._stage().on || !P._panes()[0] || P._panes()[0].el.ownerDocument !== document); k++) await W(150); await W(800);
       var tb = document.querySelector('.tab[data-page="livecharts"]'); if (tb && !tb.classList.contains('active')) { tb.click(); await W(1500); }

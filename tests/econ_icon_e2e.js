@@ -19,6 +19,9 @@
     if (innerWidth > 760) {
       var c = at.getBoundingClientRect(), d = ai.getBoundingClientRect();
       var g2 = Math.round(d.left - c.right);
+      var hb = ah.getBoundingClientRect(), cn = ah.querySelector('.alltrades-count').getBoundingClientRect();
+      out.push({ name: 'Calendar: the history bar\'s title and glass centred in it (5 Nov 2026)', ok: Math.abs((c.left + d.right) / 2 - (hb.left + hb.right) / 2) <= 2, got: [c.left, d.right, hb.left, hb.right] });
+      out.push({ name: '...the count still at its right, clear of them', ok: cn.right > hb.right - 90 && cn.left > d.right + 8, got: [cn.left, cn.right, d.right, hb.right] });
       out.push({ name: "Calendar: the history bar's search icon right after its title", ok: g2 >= 4 && g2 <= 16 && Math.abs((c.top + c.bottom) / 2 - (d.top + d.bottom) / 2) <= 3, got: { gap: g2, title: [Math.round(c.left), Math.round(c.right)], icon: [Math.round(d.left), Math.round(d.right)] } });
     } else {
       out.push({ name: "Calendar on a phone: the history bar's icon stays hidden, as before", ok: getComputedStyle(ai).display === 'none', got: getComputedStyle(ai).display });

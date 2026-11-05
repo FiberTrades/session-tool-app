@@ -87,6 +87,41 @@ def main():
 
         cdp.eval(src)
         part('setup')
+        if os.environ.get('RW_PRESS'):   # his report, 4 Nov 2026: Replay in Live Charts' window can't be pressed, in a chart window it can. A REAL mouse press, the favourite bar off, floating, up in the top bar
+            stop.set(); time.sleep(.5)
+            st = next(t for t in targets(dbg) if 'livecharts.html' in t.get('url', ''))
+            L = SESS.get(st['id']) or bt.CDP(st['webSocketDebuggerUrl']); L.call('Page.enable'); L.call('Runtime.enable'); L.call('Page.bringToFront')
+            try: L.call('Emulation.setFocusEmulationEnabled', enabled=True)
+            except Exception: pass
+            L.call('Emulation.setDeviceMetricsOverride', width=1960, height=940, deviceScaleFactor=1, mobile=False); time.sleep(1.5)
+            L.eval("""(function(){ window.__L=[]; var d=function(t){ if(!t) return null; return t.tagName+'#'+(t.id||'')+'.'+String(t.className&&t.className.baseVal===undefined?t.className:'').slice(0,40); };
+              ['pointerdown','mousedown','pointerup','mouseup','click'].forEach(function(n){ window.addEventListener(n,function(e){ window.__L.push('cap '+n+' '+d(e.target)); },true); window.addEventListener(n,function(e){ window.__L.push('end '+n+' prevented='+e.defaultPrevented); }); }); return 1; })()""")
+            def press(what):
+                g = json.loads(L.eval("""(function(){ var b=document.querySelector('.plat-top [data-plrp]'), q=b.getBoundingClientRect(), x=q.left+q.width/2, y=q.top+q.height/2, top=document.elementFromPoint(x,y), up=document.querySelector('.stpr-favbar.up'), fl=document.querySelector('.stpr-favbar.show:not(.up)'), R=function(e){ if(!e) return null; var r=e.getBoundingClientRect(); return [Math.round(r.left),Math.round(r.top),Math.round(r.right),Math.round(r.bottom)]; };
+                   window.__L.length=0; return JSON.stringify({x:x,y:y,btn:R(b),top:top&&(top.tagName+'#'+top.id+'.'+String(top.className).slice(0,40)),inBtn:b.contains(top),up:up&&up.classList.contains('show')?R(up):null,fl:R(fl)}); })()"""))
+                for ty, kw in (('mouseMoved', {}), ('mousePressed', {'button': 'left', 'clickCount': 1}), ('mouseReleased', {'button': 'left', 'clickCount': 1})):
+                    L.call('Input.dispatchMouseEvent', type=ty, x=g['x'], y=g['y'], **kw); time.sleep(.12)
+                time.sleep(.5)
+                r = json.loads(L.eval("""JSON.stringify({asked:!!document.getElementById('lc-ask-bg'),log:window.__L.slice(0,12)})"""))
+                app = cdp.eval("!!document.getElementById('lc-ask-bg')")
+                print(('PASS ' if r['asked'] else 'FAIL '), what, json.dumps(g)[:260], 'asked here', r['asked'], 'asked in app', app, flush=True); print('    ', r['log'], flush=True)
+                L.eval("(function(){ var a=document.getElementById('lc-ask-bg'); if(a) a.querySelector('[data-lca=\"0\"]').click(); return 1; })()"); cdp.eval("(function(){ var a=document.getElementById('lc-ask-bg'); if(a) a.remove(); return 1; })()"); time.sleep(.4)
+                return r['asked']
+            ok = press('bar off')
+            L.eval("document.getElementById('stpr-favbtn').click(); 1"); time.sleep(1); ok = press('bar floating') and ok
+            cdp.eval("(function(){ var C=window.__stPractice._cfg(); C.fav=['trend','hline','hray','ray','rect','text','brush','note']; C.favDockW={m:{x:0}}; return 1; })()"); L.eval("document.getElementById('stpr-favbtn').click(); 1"); time.sleep(.5); L.eval("document.getElementById('stpr-favbtn').click(); 1"); time.sleep(1); ok = press('bar up in the top bar') and ok
+            # as his screen: Check my bias showing, the last chart touched in a chart window, the app's window not the one in front
+            cdp.eval("window.__stPlanCheck = window.__stPlanCheck || function(){ return true; }; 1"); time.sleep(1.5); ok = press('Check my bias showing') and ok
+            ct = next(t for t in targets(dbg) if 'chart.html?slot=1' in t.get('url', ''))
+            C1 = SESS.get(ct['id']) or bt.CDP(ct['webSocketDebuggerUrl']); C1.call('Runtime.enable'); C1.call('Page.bringToFront')
+            for ty, kw in (('mouseMoved', {}), ('mousePressed', {'button': 'left', 'clickCount': 1}), ('mouseReleased', {'button': 'left', 'clickCount': 1})):
+                C1.call('Input.dispatchMouseEvent', type=ty, x=500, y=350, **kw); time.sleep(.1)
+            time.sleep(1); L.call('Page.bringToFront'); time.sleep(.5); ok = press('after a click in the chart window') and ok
+            ok = press('...pressed again') and ok
+            q = C1.eval("(function(){ var b=document.querySelector('#stpr-tb2 [data-plrp], [data-plrp]'); if(!b) return 'none'; var r=b.getBoundingClientRect(); return JSON.stringify({x:r.left+r.width/2,y:r.top+r.height/2,top:!!b.closest('.plat-top'),cls:b.className}); })()")
+            print('     chart window button', q, flush=True)
+            shot(dbg, 'livecharts.html', 'rw_press.png')
+            return 0 if ok else 1
         if os.environ.get('RW_CLOSE_NOSTAGE'):   # the app window closed during Replay with no Live Charts' window: nothing is left to draw the chart windows
             part('appReplay')
             before = [t['id'] for t in targets(dbg) if 'chart.html' in t.get('url', '')]
@@ -134,6 +169,7 @@ def main():
         part('popFromReplay')
         shot(dbg, 'livecharts.html', 'rw_pop_from_replay.png')
         ids = reload_app(); part('afterReloadStage'); same_windows(ids, 'reloaded with Live Charts\' window: the same windows, none closed or reopened')
+        part('pressAfterReload')
         part('noStageReplay')
         ids = reload_app(); part('afterReloadApp'); same_windows(ids, 'reloaded with Replay in the app: the same chart windows, none closed or reopened')
         part('stageReplayAgain')
@@ -165,6 +201,15 @@ def main():
         ok = now == charts0
         results.append({'name': '...the same chart windows, none closed or reopened', 'ok': ok, 'got': [charts0, now]})
         print('PASS ' if ok else 'FAIL ', results[-1]['name'], '' if ok else [charts0, now], flush=True)
+        # Replay pressed in that window, now the app itself (his report, 4 Nov 2026)
+        press = L.eval("""(async function(){ var W=function(ms){return new Promise(function(r){setTimeout(r,ms)})}, P=window.__stPractice, b=document.querySelector('[data-plrp]');
+          if(!b) return JSON.stringify({btn:false}); var q=b.getBoundingClientRect(), top=document.elementFromPoint(q.left+q.width/2,q.top+q.height/2), shown=q.width>0; b.click(); await W(400);
+          var bg=document.getElementById('lc-ask-bg'); if(!bg) return JSON.stringify({btn:true,shown:shown,top:top&&(top.id||top.className),asked:false,plon:P._plat&&P._plat().on});
+          bg.querySelector('[data-lca=\"1\"]').click(); for(var k=0;k<160&&!(P._s()&&!P._s().live&&P._panes().length&&P._panes()[0].n>0);k++) await W(150);
+          return JSON.stringify({btn:true,shown:shown,asked:true,live:!!(P._s()&&P._s().live),day:P._s()&&P._s().day}); })()""")
+        o = json.loads(press or '{}'); ok = bool(o.get('asked') and o.get('live') is False)
+        results.append({'name': "...Replay pressed there: it asks, then turns into Replay", 'ok': ok, 'got': o})
+        print('PASS ' if ok else 'FAIL ', results[-1]['name'], '' if ok else o, flush=True)
         stop.set()
         bad = [r for r in results if not r.get('ok')]
         print('\n%d checks, %d failed' % (len(results), len(bad)))
