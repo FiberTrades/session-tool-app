@@ -51,6 +51,47 @@
     ok('a firm with two plans asks which, with a button each', pl.length === 2 && pl[0].getBoundingClientRect().height >= 28, pl.length);
     pl[1].click(); await W(500); var fromB = itemB().querySelector('.sacc-rulesfrom');
     ok('pressing a plan: its rules in, and the source line under it', B.firmPlan === 'Value' && B.riskRules.maxDrawdownPct === 8 && B.riskRules.firmDailyPct === 4 && !!fromB && /OneFunded/.test(fromB.textContent), [B.firmPlan, B.riskRules, fromB && fromB.textContent]);
+    // exact: the share per withdrawal, and a daily limit measured from the day's high (Nestor, 5 Nov 2026: "can you make it exact?")
+    window.__stFirmTest.rows = window.__stFirmTest.rows.concat([{ id: 20, firm: 'Exact', program: '1step', plan: 'Standard', trust: 'firm', source_url: 'https://exact.test/r', checked_at: '2026-11-05', rules: { target: { Challenge: 10, Funded: null }, daily: 4, dailyType: 'trailing', dd: 8, ddType: 'trailing', cons: null, split: 80, splits: [50, 70, 80] } }, { id: 21, firm: 'Exact', program: '1step', plan: 'Lite', trust: 'firm', source_url: 'https://exact.test/l', checked_at: '2026-11-05', rules: { target: { Challenge: 5, Funded: null }, daily: 3, dd: 5, ddType: 'trailing', cons: null, split: 90 } }]);
+    await FRA.load();
+    var X = mk('MT5 20', 'Exact Capital Ltd', 'Exact-Live', { _rulesAuto: true, firmPlan: 'Standard', program: '1step' }); X.kind = 'challenge'; X.startingBalance = 10000; FRA.auto();
+    ok('the firm\'s rules fill in: from the day\'s high, and the share per withdrawal', X.riskRules.firmDailyType === 'trailing' && X.riskRules.firmDailyPct === 4 && (X.payoutSplits || []).join() === '50,70,80' && X.payoutSplit === 80, [X.riskRules.firmDailyType, X.payoutSplits]);
+    var P5 = window.__stPayouts, payout = function (id, day) { return { id: id, amount: 1000, status: 'paid', requestedOn: day, paidOn: day }; };
+    X.payouts = [payout('c', '2026-03-01'), payout('a', '2026-01-01'), payout('d', '2026-04-01'), payout('b', '2026-02-01')];
+    var got = ['a', 'b', 'c', 'd'].map(function (i) { return P5.received(X, X.payouts.filter(function (q) { return q.id === i; })[0]); });
+    ok('each payout gets its own share, by date, the last one holding after that', got.join() === '500,700,800,800', got);
+    X.payouts[0].received = 123; ok('a figure typed for a payout still wins', P5.received(X, X.payouts[0]) === 123, P5.received(X, X.payouts[0]));
+    X.payouts = [payout('a', '2026-01-01')]; ok('the next payout\'s share', window.__stPayoutShare(X, null) === 70, window.__stPayoutShare(X, null));
+    X.payouts = [];
+    var day = '2026-06-01', tr = function (hh, pnl) { return { id: 'x' + hh + pnl, date: day + 'T' + hh + ':00:00', actualGross: pnl, result: pnl > 0 ? 'Win' : 'Lose', costs: 0, accountId: X.id, symbol: 'EURUSD' }; };
+    var up = [tr('08', 300), tr('09', -350), tr('10', -100)];
+    var v1 = window.__stPropStatus(X, up);
+    ok('from the day\'s high: +300 then −450 is 450 off the high, past a 400 limit, on a day only −150', v1 && v1.status === 'failed' && v1.failure && v1.failure.rule === 'firmDailyLoss' && v1.failure.fromDayHigh === 450 && v1.failure.dayResult === -150, v1 && [v1.status, v1.failure && v1.failure.fromDayHigh, v1.failure && v1.failure.dayResult]);
+    delete X.riskRules.firmDailyType;
+    var v2 = window.__stPropStatus(X, up);
+    ok('from the day\'s start, the same day is fine', v2 && v2.status !== 'failed', v2 && v2.status);
+    X.riskRules.firmDailyType = 'trailing';
+    // the member's own changes
+    X.riskRules.firmDailyPct = 5; X.riskRules.maxDrawdownPct = 10; X.payoutSplit = 90; delete X.payoutSplits;
+    var sx = FRA.src(X); ok('what they changed is named, with the way back', /You changed/.test(sx) && /daily limit/.test(sx) && /maximum loss/.test(sx) && /your share/.test(sx) && /data-sacc-fr-reset/.test(sx), sx);
+    window.__stAccOpenId = X.id; window.renderSettingsAccountsList(); await W(1200);
+    var itemX = function () { return document.querySelector('#settings-accounts-list .sacc-item[data-account-id="' + X.id + '"]'); };
+    var fnd = itemX().querySelector('[data-sacc-stage="Funded"]');
+    ok('the stage has a button', !!fnd); if (fnd) { fnd.click(); await W(1200); }
+    ok('another stage: their own figures stay', X.riskRules.firmDailyPct === 5 && X.riskRules.maxDrawdownPct === 10 && X.payoutSplit === 90 && !X.payoutSplits && X.riskRules.firmDailyType === 'trailing', [X.riskRules.firmDailyPct, X.riskRules.maxDrawdownPct, X.payoutSplit]);
+    ok('...and the target is that stage\'s', X.riskRules.profitTargetPct == null, X.riskRules.profitTargetPct);
+    ok('...and it still says they changed them', /You changed/.test(FRA.src(X)), FRA.src(X));
+    var rb = itemX().querySelector('[data-sacc-fr-reset]');
+    ok('the button is there, and in sans', !!rb && !/Fraunces/.test(getComputedStyle(rb).fontFamily), rb && getComputedStyle(rb).fontFamily);
+    if (rb) { rb.click(); await W(1200); }
+    ok('pressing it: the firm\'s rules, share per withdrawal too, nothing marked as theirs', X.riskRules.firmDailyPct === 4 && X.riskRules.maxDrawdownPct === 8 && (X.payoutSplits || []).join() === '50,70,80' && !/You changed/.test(FRA.src(X)), [X.riskRules.firmDailyPct, X.riskRules.maxDrawdownPct, X.payoutSplits]);
+    X.riskRules.firmDailyPct = 5; var lb = itemX().querySelector('[data-sacc-plan="Lite"]'); ok('another plan has a button', !!lb); if (lb) { lb.click(); await W(1200); }
+    ok('another plan is another set of rules: that plan\'s figures, and no day\'s high or steps it doesn\'t have', X.riskRules.firmDailyPct === 3 && X.riskRules.maxDrawdownPct === 5 && !X.riskRules.firmDailyType && !X.payoutSplits && X.payoutSplit === 90, [X.riskRules.firmDailyPct, X.riskRules.firmDailyType, X.payoutSplits, X.payoutSplit]);
+    // the control is reachable from the account's own rules
+    var sel = document.getElementById('settings-risk-firm-daily-type');
+    ok('the firm daily limit has a measured-from choice, in its own row', !!sel && !!sel.closest('.set-row'), sel && !!sel.closest('.set-row'));
+    // an account set before this has no record: pressing a stage behaves as it did
+    var Y = mk('MT5 21', 'Exact Capital Ltd', 'Exact-Live', { firmPlan: 'Standard', program: '1step', riskRules: { firmDailyPct: 2 } }); Y.kind = 'challenge'; ok('no record, nothing named as theirs', !/You changed/.test(FRA.src(Y)), FRA.src(Y));
     // a mentor's view: nothing written, nothing looked up, however the list gets drawn
     window.__MV = true; var M2 = mk('MT5 9', 'Mentor Only Capital Ltd', 'MentorOnly-Live', { _rulesAuto: true }); var seen = (window.__stFirmTest.learned || []).length; window.renderSettingsAccountsList(); await W(800);
     ok('mentor view: no search, and the account is left as it was', (window.__stFirmTest.learned || []).length === seen && M2.kind === 'personal' && !!M2._rulesAuto, [window.__stFirmTest.learned, M2.kind]); window.__MV = false;

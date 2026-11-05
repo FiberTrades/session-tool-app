@@ -28,6 +28,8 @@ create table if not exists public.firm_lookups (
   looked_at timestamptz not null default now(),
   note text
 );
+alter table public.firm_rules add column if not exists previous jsonb, add column if not exists changed_at timestamptz;
+alter table public.firm_lookups add column if not exists page_sig jsonb, add column if not exists watched_at timestamptz, add column if not exists due boolean not null default false, add column if not exists rechecks int not null default 0, add column if not exists new_plans jsonb;
 alter table public.firm_rules enable row level security;
 alter table public.firm_lookups enable row level security;
 drop policy if exists firm_rules_read on public.firm_rules;
@@ -51,19 +53,19 @@ insert into public.firm_rules (firm, program, plan, rules, trust, source_url) va
   ('OneFunded', '2step', 'Core', '{"target":{"Challenge":8,"Verification":5,"Funded":null},"daily":5,"dd":10,"ddType":"static","cons":{"Funded":50},"split":80,"bySize":{"100000":{"cons":{"Challenge":50,"Verification":50,"Funded":30}}}}', 'firm', 'https://help.onefunded.com/core-challenge/'),
   ('OneFunded', '2step', 'Value', '{"target":{"Challenge":8,"Verification":6,"Funded":null},"daily":4,"dd":8,"ddType":"static","cons":{"Funded":50},"split":80,"bySize":{"100000":{"cons":{"Challenge":40,"Verification":40,"Funded":30}}}}', 'firm', 'https://help.onefunded.com/value-challenge/'),
   ('OneFunded', 'instant', 'Instant', '{"target":{"Funded":null},"daily":3,"dd":6,"ddType":"static","cons":15,"split":60}', 'firm', 'https://help.onefunded.com/instant-challenge/'),
-  ('TTT', '1step', 'Standard', '{"target":{"Challenge":10,"Funded":null},"daily":4,"dd":8,"ddType":"trailing","cons":null,"split":80}', 'firm', 'https://help.tttmarkets.com/help/1-step-challenge/what-are-the-drawdown-limits-on-the-1-step-challenge'),
-  ('TTT', '1step', 'Lite', '{"target":{"Challenge":5,"Funded":null},"daily":3,"dd":5,"ddType":"trailing","cons":null,"split":80}', 'firm', 'https://help.tttmarkets.com/help/1-step-lite/what-are-the-drawdown-limits-on-the-1-step-lite-challenge'),
-  ('TTT', '2step', 'Standard', '{"target":{"Challenge":8,"Verification":5,"Funded":null},"daily":4,"dd":8,"ddType":"static","cons":null,"split":80}', 'firm', 'https://help.tttmarkets.com/help/2-step-challenge/what-are-the-drawdown-limits-on-the-2-step-challenge'),
+  ('TTT', '1step', 'Standard', '{"target":{"Challenge":10,"Funded":null},"daily":4,"dailyType":"trailing","dd":8,"ddType":"trailing","cons":null,"split":80,"splits":[50,70,80]}', 'firm', 'https://help.tttmarkets.com/help/1-step-challenge/what-are-the-drawdown-limits-on-the-1-step-challenge'),
+  ('TTT', '1step', 'Lite', '{"target":{"Challenge":5,"Funded":null},"daily":3,"dailyType":"trailing","dd":5,"ddType":"trailing","cons":null,"split":80,"splits":[50,70,80]}', 'firm', 'https://help.tttmarkets.com/help/1-step-lite/what-are-the-drawdown-limits-on-the-1-step-lite-challenge'),
+  ('TTT', '2step', 'Standard', '{"target":{"Challenge":8,"Verification":5,"Funded":null},"daily":4,"dd":8,"ddType":"static","cons":null,"split":80,"splits":[70,80]}', 'firm', 'https://help.tttmarkets.com/help/2-step-challenge/what-are-the-drawdown-limits-on-the-2-step-challenge'),
   ('TTT', '2step', 'Lite', '{"target":{"Challenge":5,"Verification":5,"Funded":null},"daily":3,"dd":5,"ddType":"static","cons":null,"split":80}', 'firm', 'https://help.tttmarkets.com/help/2-step-lite/what-are-the-drawdown-limits-on-the-2-step-lite-challenge'),
-  ('TTT', 'instant', 'Instant Funding', '{"target":{"Funded":null},"daily":0,"dd":6,"ddType":"static","cons":null,"split":70}', 'firm', 'https://tttmarkets.com/'),
-  ('TTT', 'instant', 'Instant Lite', '{"target":{"Funded":null},"daily":0,"dd":3,"ddType":"static","cons":null,"split":80}', 'firm', 'https://tttmarkets.com/'),
+  ('TTT', 'instant', 'Instant Funding', '{"target":{"Funded":null},"daily":0,"dd":6,"ddType":"static","cons":null,"split":70,"splits":[50,55,60,65,70]}', 'firm', 'https://tttmarkets.com/'),
+  ('TTT', 'instant', 'Instant Lite', '{"target":{"Funded":null},"daily":0,"dd":3,"ddType":"static","cons":null,"split":90,"splits":[80,85,90]}', 'firm', 'https://tttmarkets.com/'),
   ('Tradeify', '1step', 'Daily', '{"target":{"Challenge":10,"Funded":null},"daily":0,"dd":5,"ddType":"trailing_lock","cons":{"Challenge":40},"split":80}', 'firm', 'https://help.tradeifyfx.co/en/articles/16975953-daily-1-step-guide'),
   ('Tradeify', '2step', 'Classic', '{"target":{"Challenge":5,"Verification":10,"Funded":null},"daily":3,"dd":10,"ddType":"static","cons":null,"split":80}', 'firm', 'https://help.tradeifyfx.co/en/articles/16976039-classic-2-step-guide'),
   ('Tradeify', 'instant', 'Direct', '{"target":{"Funded":null},"daily":3,"dd":6,"ddType":"trailing_lock","cons":20,"split":80}', 'firm', 'https://help.tradeifyfx.co/en/articles/16976051-direct-instant-funding-guide')
 on conflict (firm, program, plan) do nothing;
 
 -- The weekly check: once a day it looks at the two firms looked at longest ago, each at most once a week.
--- select cron.schedule('firm-rules-check', '30 3 * * *', $job$
+-- select cron.schedule('firm-rules-check', '30 * * * *', $job$
 --   select net.http_post(
 --     url := 'https://figozyxoyobixadhqewr.supabase.co/functions/v1/firm-rules',
 --     headers := jsonb_build_object('content-type', 'application/json',
