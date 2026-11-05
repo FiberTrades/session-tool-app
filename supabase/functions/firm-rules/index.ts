@@ -3,10 +3,10 @@
 //   op "learn"  (a signed-in member): the firms this member's MT5s report that the app has not looked up yet. It searches the web for one, keeps
 //               what it finds in firm_rules as trust 'found' (the app says the firm hasn't confirmed it). A broker is remembered as is_prop false.
 //               The firm's name comes from the member's own ea_settings rows, never from the request.
-//   op "check"  (pg_cron hourly, x-cron-key; Nestor, 5 Nov 2026: "alwyas be checking and learning the new rules for all brokers"). One step a run:
-//               a company a member's MT5 reports that is new; then one firm's pages read for changed percentages (no AI); then one reading by AI:
-//               a firm whose pages changed, or a week old; a broker every 30 days. A difference is read again next hour: two readings that agree,
-//               from the firm's own site, change the row (the old one is kept for Undo). Anything else waits in `proposed` for the admin.
+//   op "check"  (pg_cron hourly, x-cron-key; Nestor, 5 Nov 2026: "the AI doesnt have to look for new rules for existing broker rules ... only maybe
+//               once per month? is mainly new added prop firms/brokers"). The hour is for noticing a company a member's MT5 reports that is new: that one
+//               is looked up straight away. A firm or broker already known gets one reading a month. A difference is read once more next hour: two readings
+//               that agree, from the firm's own site, change the row (the old one is kept for Undo). Anything else waits in `proposed` for the admin.
 //   op "review" (the admin): accept or keep a proposal, undo a change, or mark a row confirmed by the firm.
 //   op "dry"    (the admin): searches for { company } and returns what it finds, stores nothing.
 //
@@ -26,10 +26,7 @@ const MAX_FETCHES = 6;
 const FETCH_TOKENS = 12000;   // a page at most: a reading on whole pages came to 340,000 tokens, about $1.45
 const CLAUDE_TIMEOUT_MS = 130000;
 const LEARN_PER_DAY = 10;   // searches for new firms across all members, a day
-const WATCHED_EVERY_DAYS = 30;   // a firm whose pages are watched for changed figures: the watch is the constant check, this the backstop
-const BLIND_EVERY_DAYS = 7;      // a firm with no page the watch can read
-const BROKER_EVERY_DAYS = 30;
-const PAGE_READ_GAP_DAYS = 3;    // a page that keeps moving (a marketing figure) isn't read more often than this
+const KNOWN_EVERY_DAYS = 30;     // a firm or broker already known: one reading a month
 const READINGS_PER_DAY = 6;      // the most the check spends in a day, whatever is due
 const MAX_READINGS = 3;   // a difference read this many times without two agreeing goes to the admin
 const RETRY_FAILED_DAYS = 7;
@@ -181,21 +178,6 @@ async function checkFirm(firm: string, company: string): Promise<Any> {
   await admin.from("firm_lookups").update({ is_prop: r.isProp, status: r.isProp && !(have || []).length && !r.programs.length ? "none" : "ok", looked_at: now, due: more, rechecks: more ? rechecks : 0, new_plans: seenPlans, note: changes + " changes" + (again ? ", reading again" : "") }).eq("firm", firm);
   return { firm, changes, again };
 }
-// the percentages on a page: what a rule change moves, and a date or a script's random token doesn't
-export function pageSig(html: string): string { return [...new Set(html.match(/(?<![\d.,])\d{1,3}(?:\.\d)?\s?%/g) || [])].map((x) => x.replace(/\s/g, "")).filter((x) => parseFloat(x) <= 100).sort().join(",").slice(0, 3000); }
-async function watchOne(): Promise<Any> {
-  const { data: rows } = await admin.from("firm_lookups").select("firm,page_sig").neq("is_prop", false).order("watched_at", { ascending: true, nullsFirst: true }).limit(1);
-  const f = rows?.[0]; if (!f) return null;
-  const { data: have } = await admin.from("firm_rules").select("source_url").eq("firm", f.firm);
-  const urls = [...new Set((have || []).map((x: Any) => x.source_url).filter((u: string) => ownSite(u, f.firm)))].slice(0, 8) as string[];
-  const sig: Record<string, string> = { ...(f.page_sig || {}) }; let moved = false;
-  for (const u of urls) {
-    try { const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 12000); const r = await fetch(u, { signal: ctl.signal, headers: { "user-agent": "SessionTerminal-rules-check" } }); clearTimeout(t); if (!r.ok) continue; const v = pageSig(await r.text()); if (!v) continue; if (sig[u] && sig[u] !== v) moved = true; sig[u] = v; } catch (_) { /* a page that doesn't answer waits for the next look */ }
-  }
-  const up: Any = { watched_at: new Date().toISOString(), page_sig: sig }; if (moved) up.due = true;
-  await admin.from("firm_lookups").update(up).eq("firm", f.firm);
-  return { watched: f.firm, moved };
-}
 // a company a member's MT5 reports that has never been looked up, whoever it belongs to
 async function newCompany(): Promise<Any> {
   const { data: mine } = await admin.from("ea_settings").select("settings").not("settings->>company", "is", null).limit(5000);
@@ -228,15 +210,13 @@ Deno.serve(async (req) => {
     if (body.op === "check") {
       if (!byCron) return json({ error: "forbidden" }, 403);
       const fresh = await newCompany(); if (fresh) return json({ learned: fresh });
-      const watched = await watchOne();
       const { count: read } = await admin.from("ai_usage").select("id", { count: "exact", head: true }).eq("mode", "firmrules").gt("created_at", new Date(Date.now() - 864e5).toISOString());
-      if ((read ?? 0) >= READINGS_PER_DAY) return json({ watched, resting: read });
-      const { data: L } = await admin.from("firm_lookups").select("firm,company,is_prop,status,due,rechecks,looked_at,page_sig").order("looked_at");
-      const older = (x: Any, n: number) => !x.looked_at || Date.parse(x.looked_at) < Date.now() - n * 864e5, seesPages = (x: Any) => x.page_sig && Object.keys(x.page_sig).length > 0;
-      const list = (L || []) as Any[];
-      const f = list.find((x) => x.due && (x.rechecks > 0 || older(x, PAGE_READ_GAP_DAYS))) || list.find((x) => x.is_prop === true && older(x, seesPages(x) ? WATCHED_EVERY_DAYS : BLIND_EVERY_DAYS)) || list.find((x) => x.is_prop === false && older(x, BROKER_EVERY_DAYS)) || list.find((x) => x.is_prop == null && older(x, RETRY_FAILED_DAYS));
-      if (!f) return json({ watched });
-      return json({ watched, checked: await checkFirm(f.firm, f.company || f.firm) });
+      if ((read ?? 0) >= READINGS_PER_DAY) return json({ resting: read });
+      const { data: L } = await admin.from("firm_lookups").select("firm,company,is_prop,status,due,looked_at").order("looked_at");
+      const older = (x: Any, n: number) => !x.looked_at || Date.parse(x.looked_at) < Date.now() - n * 864e5, list = (L || []) as Any[];
+      const f = list.find((x) => x.due) || list.find((x) => x.is_prop != null && older(x, KNOWN_EVERY_DAYS)) || list.find((x) => x.is_prop == null && older(x, RETRY_FAILED_DAYS));
+      if (!f) return json({ nothing: "due" });
+      return json({ checked: await checkFirm(f.firm, f.company || f.firm) });
     }
     const user = await userOf(req);
     if (!user) return json({ error: "sign in" }, 401);

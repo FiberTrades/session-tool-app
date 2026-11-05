@@ -29,7 +29,7 @@ create table if not exists public.firm_lookups (
   note text
 );
 alter table public.firm_rules add column if not exists previous jsonb, add column if not exists changed_at timestamptz;
-alter table public.firm_lookups add column if not exists page_sig jsonb, add column if not exists watched_at timestamptz, add column if not exists due boolean not null default false, add column if not exists rechecks int not null default 0, add column if not exists new_plans jsonb;
+alter table public.firm_lookups add column if not exists due boolean not null default false, add column if not exists rechecks int not null default 0, add column if not exists new_plans jsonb;
 alter table public.firm_rules enable row level security;
 alter table public.firm_lookups enable row level security;
 drop policy if exists firm_rules_read on public.firm_rules;
