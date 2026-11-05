@@ -33,9 +33,9 @@
     ok('a computer: the platform\'s look, nearly the whole screen', card.classList.contains('strp-pl') && cr.width >= Math.min(1500, innerWidth - 40) && cr.height >= Math.min(900, innerHeight - 40), [card.className, Math.round(cr.width), Math.round(cr.height)]);
     ok('its old header is gone', !vis($('.strp-head')));
     var top = $('#strp-tb'), tr = top.getBoundingClientRect(), inTop = function (s) { var el = $(s); return !!el && top.contains(el) && !(el.closest('.strp-plleft')) && vis(el); };
-    var want = ['.strp-plmark', '#strp-sym', '#strp-side', '#strp-tfs', '#strp-back', '#strp-play', '#strp-fwd', '#strp-spd', '.strp-tjg', '.strp-res', '#strp-undo', '#strp-layersbtn', '#strp-snapbtn', '#strp-lookbtn', '.strp-plth', '#strp-fs', '#strp-close'];
-    ok('the top bar: the mark, the symbol, the side, the timeframes, the playback, the result, the chart\'s tools, full screen and close', want.every(inTop), want.filter(function (s) { return !inTop(s); }));
-    var xs = ['#strp-sym', '#strp-tfs', '#strp-play', '.strp-res', '#strp-close'].map(function (s) { return $(s).getBoundingClientRect().left; });
+    var want = ['.strp-plmark', '#strp-sym', '#strp-side', '#strp-tfs', '.strp-tjg', '.strp-res', '#strp-undo', '#strp-layersbtn', '#strp-snapbtn', '#strp-lookbtn', '.strp-plth', '#strp-fs', '#strp-close'];
+    ok('the top bar: the mark, the symbol, the side, the timeframes, the trade, the result, the chart\'s tools, full screen and close', want.every(inTop), want.filter(function (s) { return !inTop(s); }));
+    var xs = ['#strp-sym', '#strp-tfs', '.strp-tjg', '.strp-res', '#strp-close'].map(function (s) { return $(s).getBoundingClientRect().left; });
     ok('in that order, left to right', xs.every(function (x, j) { return !j || x > xs[j - 1]; }), xs.map(Math.round));
     var over = []; Array.prototype.forEach.call(top.querySelectorAll('*'), function (e) { if (e.closest('.strp-plleft, #strp-menu, #strp-tgls, .strp-spdmenu, .stpr-tfl, .strp-tfbox')) return; var r = e.getBoundingClientRect(); if (r.width && r.height && (r.right > tr.right + 1 || r.left < tr.left - 1)) over.push(e.id || e.className); });
     ok('nothing in the top bar runs past it', !over.length, over.slice(0, 6));
@@ -46,11 +46,21 @@
     if (vis($('#strp-cmpbtn'))) ok('Compare beside the symbol, before the timeframes, as on Replay', L('#strp-side') < L('#strp-cmpbtn') && L('#strp-cmpbtn') < L('#strp-tfs'));
     ok('undo, redo, layers, news in Replay\'s order, then a gap, then snapshot, settings, theme', L('#strp-undo') < L('#strp-redo') && L('#strp-redo') < L('#strp-layersbtn') && L('#strp-layersbtn') < L('#strp-newsbtn') && L('#strp-newsbtn') < L('#strp-snapbtn') && L('#strp-snapbtn') < L('#strp-lookbtn') && L('#strp-lookbtn') < L('.strp-plth') && L('.strp-plth') < L('#strp-fs'));
     if (vis($('#strp-rec'))) ok('Record: before the snapshot, as on Replay', L('#strp-newsbtn') < L('#strp-rec') && L('#strp-rec') < L('#strp-snapbtn') && !!$('#strp-rec .rd'));
-    var pl0 = $('#strp-play').getBoundingClientRect(); ok('Play: Replay\'s small square, its icon alone', Math.round(pl0.width) === 29 && Math.round(pl0.height) === 28 && !!$('#strp-play svg') && !vis($('#strp-play .strp-ptx')), [pl0.width, pl0.height]);
-    ok('back and forward: Replay\'s icons, its size', !!$('#strp-back svg') && !!$('#strp-fwd svg') && Math.round($('#strp-back').getBoundingClientRect().width) === 34, Math.round($('#strp-back').getBoundingClientRect().width));
+    var pc = $('[data-rrc="strp-play"]'), pl0 = pc.getBoundingClientRect(); ok('one Play: none up top, Replay\'s pink one on the bottom row', !vis($('#strp-play')) && !vis($('#strp-back')) && !vis($('#strp-fwd')) && !vis($('#strp-spd')) && $('#strp-ct').contains(pc) && Math.round(pl0.height) === 30 && getComputedStyle(pc).backgroundColor === 'rgb(244, 114, 182)' && (innerWidth <= 1240 ? !vis(pc.querySelector('.strp-ptx')) : /Play/.test(pc.textContent)), [pl0.width, pl0.height, pc.textContent]);
+    ok('...the whole window, as Replay', mb.classList.contains('strp-full') && Math.abs(card.getBoundingClientRect().width - innerWidth) < 2 && Math.abs(card.getBoundingClientRect().height - innerHeight) < 2, [card.getBoundingClientRect().width, card.getBoundingClientRect().height]);
+    var dy = $('.strp-plday'); ok('...the day as Replay shows it, the exact entry time on its tooltip', /^\w+ 1 \w+ '26$/.test(dy.textContent.trim()) && /2026-10-01/.test(dy.title) && /\d\d:\d\d/.test(dy.title), [dy.textContent, dy.title]);
+    var sb0 = [].slice.call(document.querySelectorAll('.strp-plses [data-rses]')); ok('...the sessions inside the trade\'s candles', sb0.length >= 1 && $('#strp-ct').contains(sb0[0]), sb0.map(function (b) { return b.textContent; }));
+    if (sb0.length) { var S0 = R._s(), at0 = +sb0[0].getAttribute('data-rses'); sb0[0].click(); await W(300); var cb0 = S0.bars[Math.max(0, S0.cursor - 1)]; ok('...pressed: the replay goes there, the session lit', cb0.time >= at0 && cb0.time - at0 < 3600 && document.querySelector('.strp-plses [data-rses="' + at0 + '"]').classList.contains('on'), [cb0.time, at0]); }
+    var fvB = $('#strp-plfav'), fvBar = $('#strp-cw .stpr-favbar'); try { localStorage.setItem('st_replay_fav', '0'); } catch (e) {} fvB.click(); await W(200);
+    ok('the star shows the favourite tools bar in the chart', fvBar.classList.contains('show') && vis(fvBar) && $('.strp-plleft').contains(fvB) && fvB.classList.contains('on'), fvBar.className);
+    var star0 = $('#strp-tools .stpr-tfl [data-tool="trend"] .stpr-fav'), had = (PR._cfg().fav || []).indexOf('trend') >= 0; if (had) { star0.click(); await W(120); } star0.click(); await W(200);
+    var fvT = fvBar.querySelector('[data-fvt="trend"]'); ok('...a tool\'s star in its menu puts it on the bar', !!fvT && star0.classList.contains('on'), fvBar.textContent);
+    if (fvT) { fvT.click(); await W(150); ok('...pressed: that tool, lit on the bar', R._s().activeTool === 'trend' && fvBar.querySelector('[data-fvt="trend"]').classList.contains('on'), R._s().activeTool); fvBar.querySelector('[data-fvt="trend"]').click(); await W(120); }
+    fvB.click(); await W(150); ok('...the star again hides it', !vis(fvBar) && !fvB.classList.contains('on'));
+    ok('back and forward: Replay\'s icons, its size', !!$('[data-rrc="strp-back"] svg') && !!$('[data-rrc="strp-fwd"] svg') && !!$('[data-rrc="strp-restart"] svg'), $('.strp-plrpt').children.length);
     ok('the symbol in Replay\'s type', getComputedStyle($('#strp-sym')).fontSize === '13px' && getComputedStyle($('#strp-sym')).fontWeight === '400', getComputedStyle($('#strp-sym')).font);
     var cmB = $('.strp-plcur'), rl = Array.prototype.filter.call($('.strp-plleft').querySelectorAll('button'), function (b) { return !b.classList.contains('stpr-tgc') && vis(b); }).map(function (b) { return b.id || b.getAttribute('data-gtool') || b.getAttribute('data-tool') || (b.classList.contains('strp-plcur') ? 'cross' : ''); });
-    ok('the left rail in Replay\'s order: cross, lines, fib, position, shapes, text, emoji, then hide, lock, magnet, bin', rl.join() === 'cross,lines,fib,fore,shapes,notes,emoji,strp-hideall,strp-lockall,strp-magnet,strp-del,strp-treebtn', rl);
+    ok('the left rail in Replay\'s order: cross, lines, fib, position, shapes, text, emoji, then hide, lock, magnet, bin', rl.join() === 'cross,lines,fib,fore,shapes,notes,emoji,strp-hideall,strp-lockall,strp-magnet,strp-del,strp-treebtn,strp-plfav', rl);
     ok('...the cross lit with no tool picked', cmB.classList.contains('on'));
     $('#strp-tools [data-gtool="fore"]').click(); await W(40); ok('...a position picked: its button lit, the cross not, and the cross puts it down', R._s().activeTool === 'long' && $('#strp-tools [data-gtool="fore"]').classList.contains('on') && !cmB.classList.contains('on'), R._s().activeTool);
     cmB.click(); await W(40); ok('...back to no tool', R._s().activeTool === 'none' && cmB.classList.contains('on'), R._s().activeTool);
@@ -85,10 +95,10 @@
     var tg = $('#strp-tgls'), tgr = tg.getBoundingClientRect(), lb = $('#strp-layersbtn').getBoundingClientRect();
     ok('Show on chart opens under its button', vis(tg) && tgr.top >= lb.bottom - 1 && tgr.top - lb.bottom < 20, [Math.round(tgr.top), Math.round(lb.bottom)]);
     $('#strp-layersbtn').click(); await W(200);
-    $('#strp-spdcur').click(); await W(200);
-    var sm = $('.strp-spdmenu'), smr = sm.getBoundingClientRect();
-    ok('the speed menu opens down, on screen', vis(sm) && smr.top >= tr.bottom - 1 && smr.bottom <= innerHeight, [Math.round(smr.top), Math.round(smr.bottom)]);
-    $('#strp-spdcur').click(); await W(150); if ($('#strp-spd').classList.contains('open')) { document.body.click(); await W(100); }
+    $('[data-rrc="strp-spdcur"]').click(); await W(200);
+    var sm = $('#strp-menu'), smr = sm.getBoundingClientRect();
+    ok('the speed menu opens up from the bottom row, on screen', vis(sm) && smr.top >= 0 && smr.bottom <= $('[data-rrc="strp-spdcur"]').getBoundingClientRect().top + 1, [Math.round(smr.top), Math.round(smr.bottom)]);
+    document.body.click(); await W(150);
 
     // ---- the theme: the platform's own ----
     $('.strp-plth').click(); await W(500);
@@ -98,7 +108,7 @@
     // ---- full screen ----
     $('#strp-fs').click(); await W(600);
     var fr = card.getBoundingClientRect();
-    ok('full screen: the whole window, the same layout', mb.classList.contains('strp-full') && Math.abs(fr.width - innerWidth) < 2 && Math.abs(fr.height - innerHeight) < 2 && vis($('#strp-tools')), [Math.round(fr.width), Math.round(fr.height)]);
+    ok('its full-screen button: a smaller window, the same layout', !mb.classList.contains('strp-full') && fr.width < innerWidth && fr.height < innerHeight && vis($('#strp-tools')), [Math.round(fr.width), Math.round(fr.height)]);
     var lr2 = left.getBoundingClientRect(), cw2 = $('#strp-cw').getBoundingClientRect();
     ok('full screen: the tools still the chart\'s height', Math.abs(lr2.bottom - cw2.bottom) < 3, [Math.round(lr2.bottom), Math.round(cw2.bottom)]);
     $('#strp-fs').click(); await W(500);
@@ -110,7 +120,7 @@
       window.__stPlatOff = true; await openIt();
       ok('off: the old look, every part back in its place', !card.classList.contains('strp-pl') && !!$('.strp-head #strp-sym') && !!$('.strp-head #strp-close') && !!$('#strp-ct #strp-play') && !!$('#strp-ct .strp-tjg') && !!$('#strp-tb #strp-tools') && !$('.strp-plleft') && vis($('.strp-head')));
       $('#strp-close').click(); await W(300); window.__stPlatOff = false; await openIt();
-      ok('on again: the platform\'s look', card.classList.contains('strp-pl') && inTop('#strp-play') && left.contains($('#strp-tools')));
+      ok('on again: the platform\'s look', card.classList.contains('strp-pl') && !vis($('#strp-play')) && !!$('#strp-ct [data-rrc="strp-play"]') && left.contains($('#strp-tools')));
     }
     if (LT && !card.classList.contains('strp-pllt')) { $('.strp-plth').click(); await W(500); }
     if ($('.strp-plg')) { $('#strp-close').click(); await W(300); await openIt(); ok('closed and opened again: the title line is back', /Trade Replay/.test($('.strp-plg').textContent) && /O1\.\d+/.test($('.strp-plg').textContent), $('.strp-plg').textContent); }
