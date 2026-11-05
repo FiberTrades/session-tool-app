@@ -442,7 +442,7 @@ function vapid() {
   webpush.setVapidDetails(Deno.env.get("VAPID_SUBJECT")!, Deno.env.get("VAPID_PUBLIC")!, Deno.env.get("VAPID_PRIVATE")!);
   vapidSet = true;
 }
-export async function sendPush(admin: Any, userId: string, kind: string, title: string, body: string, tag: string) {
+export async function sendPush(admin: Any, userId: string, kind: string, title: string, body: string, tag: string, url = "./", type = "") {
   const { data: ok, error } = await admin.rpc("st_push_targets", { p_kind: kind, p_user_ids: [userId], p_channel_id: null });
   if (error || !ok || !ok.length) return "filtered";
   const { data: subs } = await admin.from("push_subscriptions").select("endpoint, subscription").eq("user_id", userId);
@@ -451,7 +451,7 @@ export async function sendPush(admin: Any, userId: string, kind: string, title: 
   let sent = 0;
   for (const s of subs) {
     try {
-      await webpush.sendNotification(s.subscription, JSON.stringify({ title, body, url: "./", tag, type: kind }), { TTL: 600, urgency: "high" });
+      await webpush.sendNotification(s.subscription, JSON.stringify({ title, body, url, tag, type: type || kind }), { TTL: 600, urgency: "high" });
       sent++;
     } catch (e: Any) {
       if (e && (e.statusCode === 404 || e.statusCode === 410)) await admin.from("push_subscriptions").delete().eq("endpoint", s.endpoint);

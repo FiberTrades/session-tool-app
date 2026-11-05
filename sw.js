@@ -191,7 +191,7 @@ self.addEventListener('push', (event) => {
     body: data.body || '',
     tag: data.tag || (isCall ? 'ft-call' : 'ft-push'),
     renotify: true,
-    data: { url: data.url || './' },
+    data: { url: data.url || './', type: data.type || '' },
     vibrate: data.vibrate || (isCall ? [300, 150, 300, 150, 300] : [180]),
     requireInteraction: (data.requireInteraction != null) ? data.requireInteraction : isCall
   };
@@ -222,6 +222,8 @@ self.addEventListener('notificationclick', (event) => {
   try { target = new URL(raw, self.registration.scope).href; } catch (e) { target = self.registration.scope; }
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      // The admin's hawk alerts open their own page (hawk.html at that alert), even with the app already open.
+      if (event.notification.data && event.notification.data.type === 'hawk' && self.clients.openWindow) return self.clients.openWindow(target);
       for (const c of clients) { if ('focus' in c) { c.focus(); return; } }
       if (self.clients.openWindow) return self.clients.openWindow(target);
     })
