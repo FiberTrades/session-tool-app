@@ -5690,6 +5690,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .atl-row.atl-head { font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-dim); position: sticky; top: 0; z-index: 1; }
   .atl-row.atl-head .atl-cell { background: var(--bg-elev2); color: var(--text-mid); }
   .atl-row:not(.atl-head) { cursor: pointer; transition: background 120ms; }
+  #settings-modal-bg .sacc-rulesfrom { font-family: 'Inter', system-ui, sans-serif; font-size: 12.5px; line-height: 1.55; color: var(--text-dim); margin: -2px 0 12px !important; } .sacc-rulesfrom a { color: inherit; text-decoration: underline; } .sacc-found { color: var(--text); font-weight: 500; }
+  .biz-fr { width: 100%; border-collapse: collapse; font-size: 12px; } .biz-fr .prop td { white-space: normal; line-height: 1.7; } .biz-fr th, .biz-fr td { text-align: left; padding: 7px 6px; border-bottom: 1px solid var(--border-2); vertical-align: top; white-space: nowrap; } .biz-fr th { color: var(--text-dim); font-weight: 500; } .biz-fr .prop td { padding-top: 0; color: var(--text); white-space: normal; } .biz-frw { overflow-x: auto; } .biz-fr a { color: inherit; text-decoration: underline; } .biz-fr button { font: inherit; font-size: 11px; padding: 3px 8px; margin-right: 4px; border: 1px solid var(--border-2); border-radius: 6px; background: transparent; color: var(--text); cursor: pointer; } .biz-fr .tr-found { color: var(--text-dim); }
   .st-accs { position: sticky; left: 0; display: flex; flex-wrap: wrap; gap: 4px 20px; width: fit-content; max-width: min(100%, calc(100vw - 72px)); box-sizing: border-box; padding: 2px 12px 9px; font-size: 11px; line-height: 1.5; color: var(--text-mid); }
   .st-acc { white-space: nowrap; } .st-acc b { font-weight: 500; margin-left: 6px; font-variant-numeric: tabular-nums; } .st-acc b.good { color: var(--good); } .st-acc b.bad { color: var(--bad); }
   .st-cur-2 { display: inline-block; font-size: 11px; line-height: 1.25; text-align: center; white-space: nowrap; }
@@ -81007,14 +81009,27 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
   // ---- the firms' programs: their rules, from the firm's own pages (FTMO, 23 Oct 2026). A firm not here: the member types them.
   var FIRMS = { FTMO: { '2step': { label: '2-Step', dd: 10, ddType: 'static', daily: 5, cons: null, split: 80, target: { Challenge: 10, Verification: 5, Funded: null } },
                         '1step': { label: '1-Step', dd: 10, ddType: 'trailing', daily: 3, cons: 50, split: 80, target: { Challenge: 10, Funded: null } } } };
-  function programOf(acc) { var F = FIRMS[facts(acc).firm]; return (F && acc.program && F[acc.program]) ? F[acc.program] : null; }
+  // The firms' rules live in firm_rules (5 Nov 2026; Nestor: "when someone connects a new firm you need to make sure the app also tries to learn and remember these parameters").
+  // One row a firm + program + plan; FIRMS above until they load. trust 'firm': read on the firm's own pages or confirmed. 'found': found online, and the member is told so.
+  var FR = { rows: null, looks: {}, asked: {}, loading: false };
+  function frLoad() { var sb = window.__stSB; if (window.__stFirmTest) { FR.rows = window.__stFirmTest.rows || []; FR.looks = window.__stFirmTest.looks || {}; return Promise.resolve(); } if (!sb || !sb.from || FR.loading) return Promise.resolve(); FR.loading = true;
+    return Promise.all([sb.from('firm_rules').select('id,firm,program,plan,rules,trust,source_url,checked_at,proposed,proposed_url'), sb.from('firm_lookups').select('firm,is_prop,status')]).then(function (r) { FR.loading = false;
+      if (r[0] && !r[0].error && r[0].data) FR.rows = r[0].data; if (r[1] && !r[1].error && r[1].data) { var L = {}; r[1].data.forEach(function (x) { L[x.firm] = x; }); FR.looks = L; } }).catch(function () { FR.loading = false; }); }
+  function frRows(firm, prog) { return (FR.rows || []).filter(function (x) { return x.firm === firm && (!prog || x.program === prog); }); }
+  // the row an account follows: its plan, the firm's only one, or the firm's usual one; none when it has to ask
+  function frRow(acc, firm, prog) { var L = frRows(firm, prog); if (!L.length) return null; var w = acc.firmPlan; return L.filter(function (x) { return x.plan === w; })[0] || (L.length === 1 ? L[0] : null); }
+  function frSized(R, acc) { var by = R.bySize, r = Object.assign({}, R); if (by) { var sz = +acc.startingBalance || 0; Object.keys(by).forEach(function (k) { if (sz >= +k) Object.assign(r, by[k]); }); } return r; }
+  function programKey(acc) { if (acc.program && PROGS[acc.program]) return acc.program; var g = progGuess(acc); return g ? g.key : ''; }
+  function programOf(acc) { var firm = facts(acc).firm, k = programKey(acc); if (!k) return null;
+    if (FR.rows) { var x = frRow(acc, firm, k); if (x) return Object.assign(frSized(x.rules, acc), { trust: x.trust, url: x.source_url, checked: x.checked_at, plan: x.plan, label: PROGS[k] ? progLabel(k) : k }); if (frRows(firm).length) return null; }
+    var F = FIRMS[firm]; return (F && acc.program && F[acc.program]) ? F[acc.program] : null; }
   function applyProgram(acc) {
     var P = programOf(acc); if (!P) return false;
     var rr = acc.riskRules || (acc.riskRules = {}), tg = P.target[stageOf(acc) || 'Challenge'];
-    rr.maxDrawdownMode = 'pct'; rr.maxDrawdownPct = P.dd; delete rr.maxDrawdownAmount; rr.ddType = P.ddType;
-    rr.firmDailyMode = 'pct'; rr.firmDailyPct = P.daily; delete rr.firmDailyAmount;
-    rr.profitTargetMode = 'pct'; delete rr.profitTargetAmount; if (tg == null) delete rr.profitTargetPct; else rr.profitTargetPct = tg;
-    if (P.cons) rr.consistencyPct = P.cons; else delete rr.consistencyPct;
+    if (P.dd != null) { rr.maxDrawdownMode = 'pct'; rr.maxDrawdownPct = P.dd; delete rr.maxDrawdownAmount; } if (P.ddType) rr.ddType = P.ddType;   // null: not known, left as it is
+    if (P.daily === 0) { delete rr.firmDailyPct; delete rr.firmDailyAmount; } else if (P.daily != null) { rr.firmDailyMode = 'pct'; rr.firmDailyPct = P.daily; delete rr.firmDailyAmount; }   // 0: the firm has no daily limit
+    if (P.target && (stageOf(acc) || 'Challenge') in P.target) { rr.profitTargetMode = 'pct'; delete rr.profitTargetAmount; if (tg == null) delete rr.profitTargetPct; else rr.profitTargetPct = tg; }
+    var cn = (P.cons && typeof P.cons === 'object') ? P.cons[stageOf(acc) || 'Challenge'] : P.cons; if (cn) rr.consistencyPct = cn; else delete rr.consistencyPct;
     if (acc.payoutSplit == null && P.split) acc.payoutSplit = P.split;   // the firm's usual share to the trader
     return true;
   }
@@ -81040,6 +81055,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     var sg = stageOf(acc);
     if (sg === 'Verification') return { key: '2step', from: 'stage' };
     if (/^Phase/.test(sg || '')) return { key: '3step', from: 'stage' };
+    if (FR.rows) { var fK = frRows(f.firm).map(function (x) { return x.program; }).filter(function (k, i, a) { return a.indexOf(k) === i; }); if (fK.length === 1) return { key: fK[0], from: 'firm', firm: f.firm }; }
     if (FIRM_DEF[f.firm]) return { key: FIRM_DEF[f.firm], from: 'firm', firm: f.firm };
     return null;
   }
@@ -81050,6 +81066,14 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
   }
   function stagesOf(acc) { var p = progOf(acc); return p ? PROGS[p.key].stages.slice() : ['Challenge', 'Verification', 'Funded']; }
   window.__stAccProgram = function (acc) { var p = progOf(acc); if (!p) return null; return { key: p.key, label: progLabel(p.key), stages: PROGS[p.key].stages.slice(), guessed: p.guessed, stage: stageOf(acc), stageName: stageName }; };
+  // where its rules came from, in the member's words: confirmed, or found online and to be checked; what wasn't found is theirs to type
+  function frSource(acc, f) { var P = programOf(acc); if (!P || !P.trust) return ''; var d = ''; try { d = new Date(P.checked + 'T12:00:00Z').toLocaleDateString(document.documentElement.lang === 'es' ? 'es' : 'en-GB', { day: 'numeric', month: 'short' }); } catch (e) {}
+    var who = f.firm + (P.plan ? ' ' + P.plan : ''), miss = []; if (P.daily == null) miss.push(T('the daily limit', 'el límite diario')); if (P.dd == null) miss.push(T('the maximum loss', 'la pérdida máxima'));
+    var link = /^https:/.test(P.url || '') ? ' <a href="' + esc(P.url) + '" target="_blank" rel="noopener noreferrer">' + esc(T('Where from', 'De dónde')) + '</a>' : '';
+    var txt = (P.trust === 'firm' ? esc(T(who + '’s rules, from ' + f.firm + '’s own pages, checked ' + d + '.', 'Reglas de ' + who + ', de las páginas de ' + f.firm + ', revisadas el ' + d + '.'))
+      : '<span class="sacc-found">' + esc(T('Found online, not confirmed by ' + f.firm, 'Encontradas en la web, sin confirmar por ' + f.firm)) + '</span> ' + esc(T('Check them against your account email.', 'Compáralas con el correo de tu cuenta.')))
+      + (miss.length ? ' ' + esc(T('We couldn’t find ' + miss.join(' or ') + ': type it under Risk rules.', 'No encontramos ' + miss.join(' ni ') + ': escríbelo en Reglas de riesgo.')) : '') + link;
+    return '<p class="settings-hint sacc-rulesfrom">' + txt + '</p>'; }
   function programHtml(acc) {
     if (!isProp(acc)) return '';
     var p = progOf(acc), f = facts(acc), lb = p ? progLabel(p.key) : '';
@@ -81057,7 +81081,8 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
       : p.guessed ? (p.from === 'firm' ? T('Filled in from ' + p.firm + '’s own: its challenge is ' + lb + '. Press another if yours is different.', 'Rellenado con lo de ' + p.firm + ': su reto es ' + lb + '. Pulsa otro si el tuyo es distinto.')
         : T('Filled in from its name. Press another if it is different.', 'Rellenado por su nombre. Pulsa otro si es distinto.'))
       : (programOf(acc) ? T('Its stages follow it, and ' + f.firm + '’s rules for it are filled in.', 'Sus fases lo siguen, y se rellenan las reglas de ' + f.firm + ' para él.') : T('Its stages follow it.', 'Sus fases lo siguen.'));
-    return row(T('Program', 'Programa'), hint, seg('data-sacc-prog', PROG_KEYS.map(function (k) { return [k, progLabel(k, true)]; }), p ? p.key : ''), p ? '' : 'sacc-ask');
+    var plL = p ? frRows(f.firm, p.key) : [], plR = (p && plL.length > 1) ? row(T('Plan', 'Plan'), T(f.firm + ' has more than one plan for this, each with its own rules.', f.firm + ' tiene más de un plan para esto, cada uno con sus reglas.'), seg('data-sacc-plan', plL.map(function (x) { return [x.plan, x.plan]; }), acc.firmPlan || ''), acc.firmPlan ? '' : 'sacc-ask') : '';
+    return row(T('Program', 'Programa'), hint, seg('data-sacc-prog', PROG_KEYS.map(function (k) { return [k, progLabel(k, true)]; }), p ? p.key : ''), p ? '' : 'sacc-ask') + plR + frSource(acc, f);
   }
 
   // ---- the line's chips: what it is, its MT5 accounts, where they run, the copier
@@ -81304,7 +81329,21 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     var c = document.getElementById('sacc-conn-t'); if (c && !cloudOn()) c.textContent = T('MT5 connections · connect MT5 (the EA on your PC), which account each MT5 account’s trades go into', 'Conexiones MT5 · conectar MT5 (el EA en tu PC), a qué cuenta van las operaciones de cada cuenta MT5');
   }
   // keep: only what MT5 and the server report (a repaint while the member may be typing in a rules box)
+  // A firm's rules on a new account, and a firm never seen before looked up once for everyone. An account already there is never changed: its rules move when its member presses Program, Plan or Stage.
+  function frLearn(firm) { if (FR.asked[firm]) return; FR.asked[firm] = 1; var sb = window.__stSB, done = function () { return frLoad().then(function () { window.__stAccAuto(); try { setTimeout(redraw, 0); } catch (e) {} }); };
+    if (window.__stFirmTest) { window.__stFirmTest.learned = (window.__stFirmTest.learned || []).concat([firm]); return; } if (!sb || !sb.functions) return;
+    sb.functions.invoke('firm-rules', { body: { op: 'learn' } }).then(done, function () {}); }
+  function frAuto() { if (!FR.rows) return false; var changed = false;
+    (D().accounts || []).forEach(function (a) { if (!a) return; var f = facts(a); if (!f.firm || !f.company) { if (!(a._rulesAuto && f.firm)) return; }
+      var look = FR.looks[f.firm], rows = frRows(f.firm); if (!look && !rows.length && f.company) frLearn(f.firm);
+      if (!a._rulesAuto) return; if (!look && !rows.length) return;   // being looked up: this runs again when it's back
+      if (look && look.status === 'busy') return;
+      if (rows.length || (look && look.is_prop)) { if (a.kind !== 'challenge') { a.kind = 'challenge'; changed = true; } }
+      if (programOf(a)) { applyProgram(a); changed = true; }
+      delete a._rulesAuto; changed = true; });
+    return changed; }
   function autoFill() {
+    if (window.__MV || new URLSearchParams(location.search).get('mv')) return;   // a mentor's view never writes, whichever way it got here (drawing the Accounts list runs this too)
     var changed = false, sized = false;
     // MT5's first deposit is the account's size (Nestor, 4 Nov 2026: "why would it ever be wrong if the data is being pulled from the cloud?"), whatever was typed before it connected
     (D().accounts || []).forEach(function (a) { if (!a) return; var f = facts(a); if (f.sure && Math.abs((a.startingBalance || 0) - f.size) >= 0.005) { window.__stSetAccountStart(a, f.size); changed = sized = true; }
@@ -81318,6 +81357,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
       if (a._nameAuto && f.firm && f.start > 0) { var nm = f.firm + ' ' + (f.start >= 1000 ? Math.round(f.start / 1000) + 'K' : Math.round(f.start)), k = 2, base = nm;
         while (window.__stNameTaken && window.__stNameTaken(nm, a.id)) nm = base + ' (' + (k++) + ')';
         a.name = nm; delete a._nameAuto; changed = true; } });
+    if (frAuto()) changed = true;
     if (sized) { try { syncEffectiveStartingBalance(); } catch (e) {} }
     if (changed) { try { saveData(); } catch (e) {} setTimeout(redraw, 0); }
     if (sized) { try { refreshAllSurfaces(); } catch (e) {} }   // every account-% figure and % rule is measured from it
@@ -81325,7 +81365,8 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
   // Settings needn't be open: the size follows MT5's report as it arrives, once the member's own journal is here
   var autoT = 0;
   window.__stAccAuto = function () { clearTimeout(autoT); autoT = setTimeout(function () {
-    try { if (window.__MV || !window.currentUser || !window.__stJournalPulled || new URLSearchParams(location.search).get('mv') || (window.__stIsDetachedWindow && window.__stIsDetachedWindow())) return; autoFill(); } catch (e) {} }, 400); };
+    try { if (window.__MV || !window.currentUser || !window.__stJournalPulled || new URLSearchParams(location.search).get('mv') || (window.__stIsDetachedWindow && window.__stIsDetachedWindow())) return; if (!FR.rows && !FR.tried) { FR.tried = 1; frLoad().then(function () { try { window.__stAccAuto(); setTimeout(redraw, 0); } catch (e) {} }); } autoFill(); } catch (e) {} }, 400); };
+  window.__stFirmRules = { load: frLoad, rows: function () { return FR.rows; }, of: programOf, keyOf: programKey, auto: frAuto, src: function (a) { return frSource(a, facts(a)); } };
   // the size is MT5's when MT5 says so: no pencil. The pencil stays with no MT5, no deposit found, or an older EA's figure that disagrees with the account
   window.__stStartFromMt5 = function (acc) { if (!acc || !loginsOf(acc).length) return false; var f = facts(acc); return f.start > 0 && (f.sure || Math.abs((acc.startingBalance || 0) - f.start) < 0.005); };
   window.__stMt5Bal = function (acc) { if (!acc || !loginsOf(acc).length) return null; return facts(acc).bal; };
@@ -81413,11 +81454,13 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
       acc.name = nm; applyProgram(acc); try { saveData(); } catch (er) {} redraw(); try { if (typeof refreshAllSurfaces === 'function') refreshAllSurfaces(); } catch (er) {} return; }
     b = tg.closest('[data-sacc-prog]');
     if (b) { var it2 = b.closest('.sacc-item'), a2 = it2 && accById(it2.getAttribute('data-account-id')); if (!a2) return;
-      a2.program = b.getAttribute('data-sacc-prog');
+      a2.program = b.getAttribute('data-sacc-prog'); delete a2.firmPlan;
       // the stage follows the program: one it doesn't have becomes its first (Instant: Funded; 3-Step: Phase 1)
       var L2 = (PROGS[a2.program] || {}).stages || ['Challenge'], s2 = stageOf(a2);
       if (!s2 || L2.indexOf(s2) < 0) { var nm2 = window.__stStripStage(a2.name) + ' - ' + L2[0]; if (!(window.__stNameTaken && window.__stNameTaken(nm2, a2.id))) a2.name = nm2; }
       applyProgram(a2); window.__stAccFirmEdit = false; try { saveData(); } catch (er) {} redraw(); try { if (typeof refreshAllSurfaces === 'function') refreshAllSurfaces(); } catch (er) {} return; }
+    b = tg.closest('[data-sacc-plan]');
+    if (b) { var it3 = b.closest('.sacc-item'), a3 = it3 && accById(it3.getAttribute('data-account-id')); if (!a3) return; a3.firmPlan = b.getAttribute('data-sacc-plan'); applyProgram(a3); try { saveData(); } catch (er) {} redraw(); try { if (typeof refreshAllSurfaces === 'function') refreshAllSurfaces(); } catch (er) {} return; }
     if (tg.closest('[data-sacc-firmedit]')) { window.__stAccFirmEdit = !window.__stAccFirmEdit; redraw(); return; }
     if (tg.closest('[data-sacc-conn]')) { window.__stAccConn(true); return; }
     b = tg.closest('[data-sacc-extra]');
@@ -81465,7 +81508,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
           return; }
         var fresh = !reuse, acc = reuse || window.__stCreateAccount('MT5 ' + lg1, 0);   // its name and starting balance come from MT5 (autoFill)
         if (acc) { var none = true; try { none = !getAllLifetimeTrades().some(function (x) { return x.accountId === acc.id; }); } catch (e) {}
-          if (fresh || none) { acc._nameAuto = true; acc._sbAuto = true; } if (/ftmo/i.test(sv1)) acc.kind = 'challenge';
+          if (fresh || none) { acc._nameAuto = true; acc._sbAuto = true; acc._rulesAuto = true; } if (/ftmo/i.test(sv1)) acc.kind = 'challenge';
           if (!D().mt5LoginMap || typeof D().mt5LoginMap !== 'object') D().mt5LoginMap = {}; D().mt5LoginMap[lg1] = acc.id;
           try { D().mt5Asked = D().mt5Asked || {}; D().mt5Asked[lg1] = Date.now(); } catch (e) {}
           try { saveData(); } catch (e) {} window.__stAccOpenId = acc.id; }
@@ -87119,6 +87162,18 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if (range === 'today') return T('vs yesterday', 'vs ayer');
     return T('vs the ' + range + ' days before', 'vs los ' + range + ' días anteriores');
   }
+  // The firms' rules (5 Nov 2026): what the app has learned, where from, and what the weekly check found that differs. Nothing changes until it's accepted here.
+  function frDay(d){ var m = /^(\d{4})-(\d\d)-(\d\d)/.exec(d || ''); return m ? (+m[3]) + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+m[2] - 1] : ''; }
+  function firmRulesPaint(){ var box = el('biz-firmrules'), fr = window.__stFirmRules; if (!box || !fr) return; fr.load().then(function(){ var L = fr.rows() || []; if (!L.length) { box.innerHTML = ''; return; }
+      var pc = function(v){ return v == null ? '\u2014' : (v === 0 ? T('none', 'sin') : v + '%'); }, tg = function(t){ return Object.keys(t || {}).filter(function(k){ return t[k] != null; }).map(function(k){ return t[k] + '%'; }).join(' / ') || '\u2014'; }, cons = function(c){ return (c && typeof c === 'object') ? Object.keys(c).filter(function(k){ return c[k]; }).map(function(k){ return k + ' ' + c[k] + '%'; }).join(', ') || '\u2014' : pc(c); };
+      var waiting = L.filter(function(x){ return x.proposed; }).length, found = L.filter(function(x){ return x.trust !== 'firm'; }).length;
+      var h = '<div class="biz-card"><h3 class="biz-h">' + esc(T('Firm rules', 'Reglas de las firmas')) + '</h3><p class="biz-note">' + esc(T(waiting + (waiting === 1 ? ' change' : ' changes') + ' to check · ' + found + ' not confirmed by the firm', waiting + (waiting === 1 ? ' cambio' : ' cambios') + ' por revisar · ' + found + ' sin confirmar por la firma')) + '</p><div class="biz-frw"><table class="biz-fr"><thead><tr>'
+        + [T('Firm','Firma'),T('Program','Programa'),T('Plan','Plan'),T('Target','Objetivo'),T('Daily','Diario'),T('Max','Máx'),T('Type','Tipo'),T('Consistency','Consistencia'),T('Split','Reparto'),T('Source','Fuente'),''].map(function(t){ return '<th>' + esc(t) + '</th>'; }).join('') + '</tr></thead><tbody>';
+      L.slice().sort(function(a,b){ return (a.firm + a.program + a.plan).localeCompare(b.firm + b.program + b.plan); }).forEach(function(x){ var r = x.rules || {}, url = /^https:/.test(x.source_url || '') ? x.source_url : '';
+        h += '<tr><td>' + esc(x.firm) + '</td><td>' + esc(x.program) + '</td><td>' + esc(x.plan || '\u2014') + '</td><td>' + esc(tg(r.target)) + '</td><td>' + esc(pc(r.daily)) + '</td><td>' + esc(pc(r.dd)) + '</td><td>' + esc(r.ddType || '\u2014') + '</td><td>' + esc(cons(r.cons)) + '</td><td>' + esc(pc(r.split)) + '</td><td class="' + (x.trust === 'firm' ? '' : 'tr-found') + '">' + (url ? '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' : '') + esc(x.trust === 'firm' ? T('Firm', 'Firma') : T('Found online', 'En la web')) + (url ? '</a>' : '') + ' · ' + esc(frDay(x.checked_at)) + '</td><td>' + (x.trust === 'firm' ? '' : '<button type="button" data-frr="confirm" data-id="' + esc(x.id) + '">' + esc(T('Confirm', 'Confirmar')) + '</button>') + '</td></tr>';
+        if (x.proposed) { var q = x.proposed; h += '<tr class="prop"><td colspan="11">' + esc(T('The weekly check found: target ', 'La revisión semanal encontró: objetivo ') + tg(q.target) + ' · ' + T('daily ', 'diario ') + pc(q.daily) + ' · ' + T('max ', 'máx ') + pc(q.dd) + ' · ' + (q.ddType || '\u2014') + ' · ' + T('consistency ', 'consistencia ') + cons(q.cons) + ' · ' + T('split ', 'reparto ') + pc(q.split)) + ' <button type="button" data-frr="accept" data-id="' + esc(x.id) + '">' + esc(T('Use these', 'Usar estas')) + '</button><button type="button" data-frr="keep" data-id="' + esc(x.id) + '">' + esc(T('Keep ours', 'Mantener las nuestras')) + '</button></td></tr>'; } });
+      box.innerHTML = h + '</tbody></table></div></div>';
+      box.onclick = function(e){ var b = e.target.closest && e.target.closest('[data-frr]'), sb = window.__stSB; if (!b || !sb) return; b.disabled = true; sb.functions.invoke('firm-rules', { body: { op: 'review', id: +b.getAttribute('data-id'), action: b.getAttribute('data-frr') } }).then(function(){ firmRulesPaint(); }, function(){ b.disabled = false; }); }; }); }
   function paintSeg(){
     var seg = el('biz-range'); if (!seg) return;
     Array.prototype.forEach.call(seg.querySelectorAll('button[data-r]'), function(b){
@@ -87310,7 +87365,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
                                : T('subscription changes are recorded from now on', 'los cambios de suscripción se registran desde ahora'));
     h += '<p class="biz-note">' + esc(notes.join(' · ')) + '</p>';
 
-    body.innerHTML = h;
+    h += '<div id="biz-firmrules"></div>'; body.innerHTML = h; try { firmRulesPaint(); } catch (e) {}
   }
 
   var seq = 0, last = null;
