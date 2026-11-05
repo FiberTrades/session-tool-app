@@ -92,6 +92,27 @@
     ok('the firm daily limit has a measured-from choice, in its own row', !!sel && !!sel.closest('.set-row'), sel && !!sel.closest('.set-row'));
     // an account set before this has no record: pressing a stage behaves as it did
     var Y = mk('MT5 21', 'Exact Capital Ltd', 'Exact-Live', { firmPlan: 'Standard', program: '1step', riskRules: { firmDailyPct: 2 } }); Y.kind = 'challenge'; ok('no record, nothing named as theirs', !/You changed/.test(FRA.src(Y)), FRA.src(Y));
+    // the day's high today, and what the account's tile says from it
+    var Z = mk('MT5 22', 'Exact Capital Ltd', 'Exact-Live', { firmPlan: 'Standard', program: '1step', _rulesAuto: true }); Z.kind = 'challenge'; Z.startingBalance = 10000; FRA.auto();
+    var nowIso = new Date().toISOString(), todayT = function (pnl) { return { id: 'z' + pnl, date: nowIso, actualGross: pnl, result: pnl > 0 ? 'Win' : 'Lose', costs: 0, accountId: Z.id, symbol: 'EURUSD' }; };
+    var vz = window.__stPropStatus(Z, [todayT(300), todayT(-100)]);
+    ok('the verdict reports today\'s high, and how the limit is measured', vz && vz.rules.firmDayHigh === 300 && vz.rules.firmDailyType === 'trailing' && vz.rules.firmDailyLossLimit === 400, vz && vz.rules);
+    var ps0 = window.__stPropStatus, today0 = window.__stRules.today;
+    window.__stPropStatus = function (a, smp) { return a === Z ? vz : ps0(a, smp); }; window.__stRules.today = function (a) { return a === Z ? 200 : today0(a); };
+    window.__stAccOpenId = Z.id; window.renderSettingsAccountsList(); await W(1200);
+    var tiles = document.querySelector('#settings-accounts-list .sacc-item[data-account-id="' + Z.id + '"] .sx-tiles'), tt = tiles ? tiles.textContent : '';
+    ok('the tile counts down from the high: +300 then +200 leaves 300 of 400', /Daily loss left/.test(tt) && /300\.00/.test(tt) && /from the day.s high/.test(tt), tt);
+    window.__stPropStatus = ps0; window.__stRules.today = today0;
+    // Business: a change made by itself, with its way back
+    var rowsB = window.__stFirmTest.rows; window.__stFirmTest.rows = rowsB.concat([{ id: 30, firm: 'Exact', program: '2step', plan: 'Auto', trust: 'firm', source_url: 'https://exact.test/a', checked_at: '2026-11-05', changed_at: '2026-11-05T10:00:00Z', previous: { target: { Challenge: 8 }, daily: 5, dd: 10, ddType: 'static', split: 80 }, rules: { target: { Challenge: 8 }, daily: 4, dailyType: 'trailing', dd: 8, ddType: 'static', split: 80, splits: [50, 80] } }]);
+    var calls = [], cu0 = window.currentUser, sb0 = window.__stSB; window.currentUser = Object.assign({}, cu0 || {}, { email: 'be.o2@hotmail.com' });
+    window.__stSB = Object.create(sb0 || null, { rpc: { value: function () { return Promise.resolve({ data: {} }); } }, functions: { value: { invoke: function (n, o) { calls.push(o.body); return Promise.resolve({ data: { ok: true } }); } } } });
+    var nav = document.getElementById('settings-nav-business'); nav.style.display = ''; nav.click(); await W(1500);
+    var ub = document.querySelector('#biz-firmrules [data-frr="undo"]'), bt = (document.querySelector('#biz-firmrules') || {}).textContent || '';
+    ok('Business says a row changed by itself, and what it was', !!ub && /Changed by itself 5 Nov/.test(bt) && /daily 5%/.test(bt), bt.slice(0, 200));
+    ok('Business shows the share per withdrawal and the day\'s high', /50 \/ 80%/.test(bt) && /from high/.test(bt), bt.slice(0, 200));
+    if (ub) { ub.click(); await W(300); } ok('Undo asks the server to put it back', calls.length === 1 && calls[0].op === 'review' && calls[0].action === 'undo' && calls[0].id === 30, calls);
+    window.currentUser = cu0; window.__stSB = sb0; window.__stFirmTest.rows = rowsB; document.querySelector('.settings-nav-item[data-section="accounts"]').click(); await W(500);
     // a mentor's view: nothing written, nothing looked up, however the list gets drawn
     window.__MV = true; var M2 = mk('MT5 9', 'Mentor Only Capital Ltd', 'MentorOnly-Live', { _rulesAuto: true }); var seen = (window.__stFirmTest.learned || []).length; window.renderSettingsAccountsList(); await W(800);
     ok('mentor view: no search, and the account is left as it was', (window.__stFirmTest.learned || []).length === seen && M2.kind === 'personal' && !!M2._rulesAuto, [window.__stFirmTest.learned, M2.kind]); window.__MV = false;
