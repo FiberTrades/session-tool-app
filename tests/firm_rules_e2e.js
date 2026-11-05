@@ -113,6 +113,12 @@
     ok('Business shows the share per withdrawal and the day\'s high', /50 \/ 80%/.test(bt) && /from high/.test(bt), bt.slice(0, 200));
     if (ub) { ub.click(); await W(300); } ok('Undo asks the server to put it back', calls.length === 1 && calls[0].op === 'review' && calls[0].action === 'undo' && calls[0].id === 30, calls);
     window.currentUser = cu0; window.__stSB = sb0; window.__stFirmTest.rows = rowsB; document.querySelector('.settings-nav-item[data-section="accounts"]').click(); await W(500);
+    // what the EA is told (9.24): only an account measured from the day's high gets dlh; moved back to the day's start, it stays until tomorrow like any loosened rule
+    var Q = mk('MT5 23', 'Exact Capital Ltd', 'Exact-Live', { firmPlan: 'Standard', program: '1step', _rulesAuto: true }); Q.kind = 'challenge'; Q.startingBalance = 10000; FRA.auto();
+    var qs = window.__stRules.state(Q); ok('the EA is told the limit from the day\'s high', /(^|;)dl=400(;|$)/.test(qs.sent) && /(^|;)dlh=400(;|$)/.test(qs.sent), qs.sent);
+    var Q2 = mk('MT5 24', 'Exact Capital Ltd', 'Exact-Live', { firmPlan: 'Lite', program: '1step', _rulesAuto: true }); Q2.kind = 'challenge'; Q2.startingBalance = 10000; FRA.auto();
+    var q2s = window.__stRules.state(Q2); ok('an account measured from the day\'s start isn\'t', /(^|;)dl=300(;|$)/.test(q2s.sent) && !/dlh=/.test(q2s.sent), q2s.sent);
+    delete Q.riskRules.firmDailyType; var qs3 = window.__stRules.state(Q); ok('moved back to the day\'s start: today it stays, from tomorrow it goes', /dlh=400/.test(qs3.sent) && qs3.pending.dlh === 0, [qs3.sent, qs3.pending]);
     // a mentor's view: nothing written, nothing looked up, however the list gets drawn
     window.__MV = true; var M2 = mk('MT5 9', 'Mentor Only Capital Ltd', 'MentorOnly-Live', { _rulesAuto: true }); var seen = (window.__stFirmTest.learned || []).length; window.renderSettingsAccountsList(); await W(800);
     ok('mentor view: no search, and the account is left as it was', (window.__stFirmTest.learned || []).length === seen && M2.kind === 'personal' && !!M2._rulesAuto, [window.__stFirmTest.learned, M2.kind]); window.__MV = false;

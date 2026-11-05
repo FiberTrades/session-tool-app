@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "9.23"
+#property version   "9.24"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -1282,6 +1282,9 @@ bool DayLimitReached()
 //==================================================================
 string g_ruRaw="";            // the rules as the app sent them ("k=v;k=v"); "" = none
 uint   g_ruFileChk=0;
+// v9.24 (Nestor, 5 Nov 2026: "yes put it in the enxt update"): a daily limit some firms measure from the day's high, not its start (TTT's 1-Step).
+// "dlh" in the app's rules: how far the day's result, open trades included, may fall from its highest point. No firm's name here: no "dlh", nothing changes.
+double g_ruDayFromHi=0, g_ruDayHi=0; uint g_ruHiFlushMs=0;
 double g_ruDayLoss=0, g_ruSesLoss=0, g_ruSesLossR=0, g_ruOpenRisk=0, g_ruOpenRiskR=0;
 int    g_ruSesTrades=0, g_ruGapMin=0, g_ruLonOff=0;
 string g_ruSyms="";           // "/EURUSD/XAUUSD/" - "" = any symbol
@@ -1331,7 +1334,7 @@ int RuHHMM(string v,int def)
 string RuSesName(int j){ return (j==0) ? "Asia" : ((j==1) ? "London" : ((j==2) ? "New York" : "the next session")); }
 void RulesParse(string raw)
   {
-   g_ruRaw=raw; g_ruDayLoss=0; g_ruSesLoss=0; g_ruSesLossR=0; g_ruOpenRisk=0; g_ruOpenRiskR=0; g_ruSesTrades=0; g_ruGapMin=0;
+   g_ruRaw=raw; g_ruDayFromHi=0; g_ruDayLoss=0; g_ruSesLoss=0; g_ruSesLossR=0; g_ruOpenRisk=0; g_ruOpenRiskR=0; g_ruSesTrades=0; g_ruGapMin=0;
    g_ruSyms=""; g_ruCloseElse=true; g_ruBreakUntil=0; g_ruBreakSet=0; g_ruLonOff=0; g_ruHasSes=false; g_ruDz=0; g_ruHasDz=false; g_ruDzSrv=false; g_ruDzName="";
    g_ruOpen[0]=0; g_ruOpen[1]=480; g_ruOpen[2]=780;
    string kv[]; int n=StringSplit(raw,';',kv);
@@ -1340,6 +1343,7 @@ void RulesParse(string raw)
       int e=StringFind(kv[i],"="); if(e<=0) continue;
       string k=StringSubstr(kv[i],0,e), v=StringSubstr(kv[i],e+1); double d=StringToDouble(v);
       if(k=="dl") g_ruDayLoss=MathMax(0.0,d);
+      else if(k=="dlh") g_ruDayFromHi=MathMax(0.0,d);
       else if(k=="sl") g_ruSesLoss=MathMax(0.0,d);
       else if(k=="slr") g_ruSesLossR=MathMax(0.0,d);
       else if(k=="sn") g_ruSesTrades=(int)MathMax(0.0,d);
@@ -1454,11 +1458,27 @@ void RulesEval(bool force)
         }
      }
    g_ruDpl=dpl; g_ruSpl=spl; g_ruSn=sn; g_ruLastEntry=lastIn;
-   double ork=0; for(int i=PositionsTotal()-1;i>=0;i--){ ulong p=PositionGetTicket(i); if(p>0) ork+=RuPosRisk(p); }
+   double ork=0, flt=0; for(int i=PositionsTotal()-1;i>=0;i--){ ulong p=PositionGetTicket(i); if(p>0){ ork+=RuPosRisk(p); flt+=PositionGetDouble(POSITION_PROFIT)+PositionGetDouble(POSITION_SWAP); } }
    g_ruOrk=ork;
+   // v9.24: the day's high, as the day's result with open trades (so a deposit or a payout doesn't move it). Kept in a GlobalVariable: every chart shares it and a restart
+   // can't hand back room the firm doesn't allow. A new day starts it again; first seen after trades already closed today (the EA was off at the reset), it is at least the day's start
+   bool overHi=false; g_ruDayHi=0;
+   if(g_ruDayFromHi>0)
+     {
+      double m=dpl+flt; string kD=RuKey("dhd"), kH=RuKey("dhv");
+      bool sameDay=(GlobalVariableCheck(kD) && GlobalVariableCheck(kH) && (long)GlobalVariableGet(kD)==(long)dayStart);
+      double was=sameDay ? GlobalVariableGet(kH) : 0.0, hi=sameDay ? MathMax(was,m) : (dpl==0.0 ? m : MathMax(m,0.0));
+      if(!sameDay) GlobalVariableSet(kD,(double)((long)dayStart));
+      if(!sameDay || hi!=was)
+        {
+         GlobalVariableSet(kH,hi);
+         if(!sameDay || nowMs-g_ruHiFlushMs>=30000){ GlobalVariablesFlush(); g_ruHiFlushMs=nowMs; }   // a terminal ended from outside doesn't save them by itself
+        }
+      g_ruDayHi=hi; overHi=(hi-m>=g_ruDayFromHi);
+     }
    // the locks: each lasts its time once it starts (a later win does not lift it)
    long until[4]={0,0,0,0};
-   if(g_ruDayLoss>0 && dpl<=-g_ruDayLoss) until[1]=g_ruNextDay;
+   if((g_ruDayLoss>0 && dpl<=-g_ruDayLoss) || overHi) until[1]=g_ruNextDay;
    double slm=RuSesLossMoney();
    if(segNext>0 && ((slm>0 && spl<=-slm) || (g_ruSesTrades>0 && sn>=g_ruSesTrades))) until[2]=segNext;
    if(g_ruBreakUntil>nowUtc) until[3]=g_ruBreakUntil;
@@ -1592,8 +1612,8 @@ void RulesTick()
 // for the app ("set"): the rules in force here and what they say now
 string RulesStateJson()
   {
-   return StringFormat(",\"rr\":\"%s\",\"ru\":\"%d|%I64d|%I64d|%s|%s|%d|%I64d|%s|%I64d|%d|%d|%I64d\"",g_ruRaw,g_ruLk,g_ruLkUntil,g_ruLkStart,
-                       DoubleToString(g_ruDpl,2),DoubleToString(g_ruSpl,2),g_ruSn,g_ruLastEntry,DoubleToString(g_ruOrk,2),g_ruNextDay,g_ruSeg,g_ruSegN,g_ruSegNext);
+   return StringFormat(",\"rr\":\"%s\",\"ru\":\"%d|%I64d|%I64d|%s|%s|%d|%I64d|%s|%I64d|%d|%d|%I64d|%s\"",g_ruRaw,g_ruLk,g_ruLkUntil,g_ruLkStart,
+                       DoubleToString(g_ruDpl,2),DoubleToString(g_ruSpl,2),g_ruSn,g_ruLastEntry,DoubleToString(g_ruOrk,2),g_ruNextDay,g_ruSeg,g_ruSegN,g_ruSegNext,DoubleToString(g_ruDayHi,2));
   }
 
 void PlaceTrade()
@@ -4109,7 +4129,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.23\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\",\"cloud\":%s,\"company\":\"%s\",\"server\":\"%s\",\"start_bal\":%s,\"bal\":%s,\"dep_total\":%s}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.24\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\",\"cloud\":%s,\"company\":\"%s\",\"server\":\"%s\",\"start_bal\":%s,\"bal\":%s,\"dep_total\":%s}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY),g_inCloud?"true":"false",
                             JsonSafe(AccountInfoString(ACCOUNT_COMPANY)),JsonSafe(AccountInfoString(ACCOUNT_SERVER)),DoubleToString(CpFirstDeposit(),2),   // v9.12: the Accounts tab's "Read from MT5" line
                             DoubleToString(g_setBal,2),DoubleToString(CpDepositsTotal(),2)));   // v9.23: a connected account's balance is MT5's own (ACCOUNT_BALANCE, never the risk override), and its top-ups
@@ -4505,7 +4525,7 @@ void LwOpen()
 // v9.06: MT5's Algo Trading button (and this EA's own "Allow Algo Trading") - off, no order can be placed, from here or from the app
 bool AlgoOn(){ return TerminalInfoInteger(TERMINAL_TRADE_ALLOWED)!=0 && MQLInfoInteger(MQL_TRADE_ALLOWED)!=0; }
 int  g_lwAl=-1;                       // v9.06: Algo Trading as last told to the app
-string LwHi(){ return StringFormat("{\"v\":\"9.23\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d,\"cl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0,g_inCloud?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
+string LwHi(){ return StringFormat("{\"v\":\"9.24\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d,\"cl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0,g_inCloud?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
 // v9.06 (Nestor, 19 Oct 2026: "whatever messages appear in MT5 i need to also see them in the app"): every message this EA writes on its
 // chart (Flash) goes to Session Terminal too, which shows it on Live Charts. Only while the line is up; nothing is queued.
 void LwMsg(string m)
