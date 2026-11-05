@@ -59,7 +59,7 @@
       // the bottom row
       var foot = $('.plat-foot'), footH = foot.getBoundingClientRect().height, play2 = $('[data-rpc="stpr-play"]');
       ok('on the bottom row too: the day, back, play, forward, the speed', $('.pl-rpt .pl-rtd') && foot.contains(play2) && foot.contains($('[data-rpc="stpr-back"]')) && foot.contains($('[data-rpc="stpr-fwd"]')) && foot.contains($('[data-rpc="stpr-speed"]')) && $('.pl-rtdt').textContent === $('#stpr-dayt').textContent, $('.pl-rpt') && $('.pl-rpt').textContent);
-      ok('...and still on top, this wide', $('.plat-top #stpr-play').getBoundingClientRect().width > 0, $('.plat-top #stpr-play').getBoundingClientRect());
+      ok('...and only there: none in the top bar, however wide', $('.plat-top .pl-rpp').getBoundingClientRect().width === 0 && $('.plat-top #stpr-play').getBoundingClientRect().width === 0 && play2.getBoundingClientRect().width > 0, $('.plat-top .pl-rpp').getBoundingClientRect());
       var hs = ['#stpr-today', '#stpr-restart', '#stpr-goto'].map(function (s) { return $('.pl-rpf ' + s).getBoundingClientRect().height; });
       ok('the bottom row\'s buttons a little bigger: 30 px in a 40 px row (they were 22 in 30)', footH === 40 && hs.every(function (h) { return h === 30; }), [footH, hs]);
       var fr = foot.getBoundingClientRect(), overflow = Array.prototype.filter.call(foot.querySelectorAll('.pl-rpt > *, #stpr-today, #stpr-ses, #stpr-goto'), function (e) { var r = e.getBoundingClientRect(); return r.width && (r.left < fr.left - 0.5 || r.right > fr.right + 0.5); });

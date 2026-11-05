@@ -158,7 +158,7 @@
     ok('Trade Replay: its Session Indicator is on', document.getElementById('strp-mini').checked);
     var rZ = null; for (var rk = 0; rk < 30 && !rZ; rk++) { MPn = R._mp(); if (MPn && MPn._mz) rZ = MPn._mz; await W(100); }
     ok('...its zone is drawn', !!rZ, rZ);
-    if (rZ) { var bT = S.bars.filter(function (b) { var bx = sc.timeToCoordinate(b.time); return bx != null && bx > q.width * 0.4 && bx < q.width * 0.6; })[0].time, W0r = Object.assign({}, PR._msRaw(MPn), { auto: false, detach: true, zA: bT }); PR._msSet(MPn, W0r); await W(200); MPn._mini = null; await W(300); rZ = MPn._mz;
+    if (rZ) { var bT = S.bars.filter(function (b) { var bx = sc.timeToCoordinate(b.time); return bx != null && bx > q.width * 0.4 && bx < q.width * 0.6; })[0].time, W0r = Object.assign({}, PR._msRaw(MPn), { auto: false, detach: true, zA: bT }); PR._msSet(MPn, W0r); await W(200); MPn._mini = null; for (var rw2 = 0; rw2 < 50 && !(MPn._mz && Math.abs(MPn._mz.x0 - sc.timeToCoordinate(bT)) < 2); rw2++) await W(100); rZ = MPn._mz;   // (the redraw is not always in within a fixed wait: the old zone's edge was being dragged)
       var rx0 = rZ.x0, ry0 = (rZ.y0 + rZ.y1) / 2;
       ok('Trade Replay: the zone\'s edge is the two-headed arrow straight away', rcur(rx0, ry0) === 'ew-resize', [chart.style.cursor, rx0, ry0]);
       var rW = JSON.stringify(PR._msRaw(MPn)); rev('mousedown', rx0, ry0); rev('mouseup', rx0, ry0); await W(60);

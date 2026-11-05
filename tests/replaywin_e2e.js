@@ -61,7 +61,7 @@
       check('...every window at the same place and size', JSON.stringify(geo()) === geo0, [geo0, geo()]);
       check('...nothing in the app\'s window: no chart there', !document.querySelector('#stpr-win') || document.querySelectorAll('.stpr-pc').length === 0, document.querySelectorAll('.stpr-pc').length);
       check('...same symbols and timeframes', JSON.stringify(syms()) === syms0 && JSON.stringify(P._cfg().tfs) === tfs0, [syms(), P._cfg().tfs]);
-      check('Live Charts\' window: Replay on the platform, its playback in the top bar, the practice ticket, the Live button', win.classList.contains('lcp') && win.classList.contains('plat') && win.classList.contains('pl-replay') && P._plat().on && shown(d.querySelector('.plat-top #stpr-play')) && shown(d.querySelector('.plat-top #stpr-lvback')) && !shown(d.querySelector('[data-plrp]')), [win.className, !!d.querySelector('.plat-top #stpr-play')]);
+      check('Live Charts\' window: Replay on the platform, its one Play on the bottom row, the practice ticket, the Live button', win.classList.contains('lcp') && win.classList.contains('plat') && win.classList.contains('pl-replay') && P._plat().on && shown(d.querySelector('.plat-foot [data-rpc="stpr-play"]')) && !shown(d.querySelector('.plat-top #stpr-play')) && shown(d.querySelector('.plat-top #stpr-lvback')) && !shown(d.querySelector('[data-plrp]')), [win.className, !!d.querySelector('.plat-top #stpr-play')]);
     }),
 
     stageControls: part(async function (check) {
@@ -163,7 +163,7 @@
       var d = satW && satW.document, win = d && d.getElementById('stpr-win');
       check('Open in a new window during Replay: the chart opens in that window, within seconds', P._stage().on && P._panes()[0].el.ownerDocument === d && Date.now() - t0 < 19000, [P._stage(), Date.now() - t0, satW && satW.location.href]);
       check('...still Replay, on the same day', P._s() && !P._s().live && P._s().day === window.__rwDay, [P._s() && P._s().live, P._s() && P._s().day, window.__rwDay]);
-      check('...Replay\'s controls there', !!win && win.classList.contains('pl-replay') && shown(d.querySelector('.plat-top #stpr-play')) && shown(d.querySelector('.plat-top #stpr-lvback')), win && win.className);
+      check('...Replay\'s controls there', !!win && win.classList.contains('pl-replay') && shown(d.querySelector('.plat-foot [data-rpc="stpr-play"]')) && shown(d.querySelector('.plat-top #stpr-lvback')), win && win.className);
       check('...not a second copy of the app', !!satW && /livecharts\.html/.test(satW.location.href), satW && satW.location.href);
       check('...the chart windows where they were', inPlace(), inPlace());
       var n0 = P._s().now; if (d) d.getElementById('stpr-fwd').click(); await W(300);

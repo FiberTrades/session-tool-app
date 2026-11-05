@@ -25,7 +25,9 @@
     // a total per currency, pounds and dollars never added (3 Nov 2026)
     var mg = filterByScope(getAllLifetimeTrades()).filter(function (x) { return x._ideaN === 2; })[0];
     ok('the combined row: only the Lead\'s pounds in its own figures', !!mg && Math.abs(tradeNetPL(mg) + 50.05) < 0.001 && mg.risk === 500, mg && [tradeNetPL(mg), mg.risk]);
-    var nc = rw.querySelector('.atl-c-net'); ok('Trade Log: its net says each currency, on its own line', /−£50\.05/.test(txt(nc)) && /\+\$13\.32/.test(txt(nc)) && !/36\.73/.test(txt(nc)), txt(nc));
+    var nc = rw.querySelector('.atl-c-net'); ok('Trade Log: its net is the Lead\'s, one line, the other currency on hover', txt(nc) === '−£50.05' && !nc.querySelector('br') && /−£50\.05 · \+\$13\.32/.test(nc.querySelector('span').title), [txt(nc), nc.innerHTML]);
+    var rowsH = Array.prototype.filter.call(document.querySelectorAll('#alltrades-table .atl-row:not(.atl-head)'), function (r) { return r !== rw; })[0];
+    ok('...so the copied trade\'s row is as tall as a plain trade\'s: two rows with its account line', !rowsH || Math.abs(rw.getBoundingClientRect().height - rowsH.getBoundingClientRect().height) < 1.5, [rw.getBoundingClientRect().height, rowsH && rowsH.getBoundingClientRect().height]);
     var mb = moneyBy([mg], function (x) { return tradeNetPL(x); }); ok('money by currency: £ and $ apart', Math.abs(mb.GBP + 50.05) < 0.001 && Math.abs(mb.USD - 13.32) < 0.001, mb);
     var inU = _ideaInCur(filterByScope(getAllLifetimeTrades()), 'USD'); ok('the dollar view has the copy, at its own R', inU.length === 1 && inU[0].id === 'l1' && Math.abs(tradeRforMath(inU[0]) - 13.32 / 49.95) < 0.001, inU.map(function (x) { return x.id; }));
     var hd = document.querySelector('#alltrades-table .atl-head .atl-c-net'); ok('Trade Log: its Net heading names no currency over two', /^net$/i.test(txt(hd)), txt(hd));

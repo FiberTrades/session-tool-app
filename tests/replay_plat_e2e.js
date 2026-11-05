@@ -77,10 +77,11 @@
     var vis = function (el) { if (!el) return false; var r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden'; };
     ok('the old header, day row, trade row and playback bar are gone', ['.stpr-hd', '.stpr-tb:not(.stpr-tb2)', '#stpr-tr', '.stpr-cb'].every(function (s) { return !vis($(s)); }));
     var top = $('.plat-top'), tr = top.getBoundingClientRect(), inTop = function (s) { var el = $(s); return !!el && top.contains(el) && vis(el); };
-    ok('the top bar: the symbol, the timeframes, the Session Indicator, the day, back / Play / step / speed, Live',
-      ['#stpr-sym', '.pl-tfs', '.pl-si', '#stpr-daybtn', '#stpr-back', '#stpr-play', '#stpr-fwd', '#stpr-speed', '#stpr-lvback'].every(inTop),
-      ['#stpr-sym', '.pl-tfs', '.pl-si', '#stpr-daybtn', '#stpr-back', '#stpr-play', '#stpr-fwd', '#stpr-speed', '#stpr-lvback'].filter(function (s) { return !inTop(s); }));
-    var order = ['#stpr-sym', '.pl-tfs', '.pl-si', '#stpr-daybtn', '#stpr-play', '#stpr-lvback'].map(function (s) { return $(s).getBoundingClientRect().left; });
+    ok('the top bar: the symbol, the timeframes, the Session Indicator, the day, Live',
+      ['#stpr-sym', '.pl-tfs', '.pl-si', '#stpr-daybtn', '#stpr-lvback'].every(inTop),
+      ['#stpr-sym', '.pl-tfs', '.pl-si', '#stpr-daybtn', '#stpr-lvback'].filter(function (s) { return !inTop(s); }));
+    ok('one Play: back, Play, step and speed are not in the top bar', !['#stpr-back', '#stpr-play', '#stpr-fwd', '#stpr-speed'].some(inTop), ['#stpr-back', '#stpr-play', '#stpr-fwd', '#stpr-speed'].filter(inTop));
+    var order = ['#stpr-sym', '.pl-tfs', '.pl-si', '#stpr-daybtn', '#stpr-lvback'].map(function (s) { return $(s).getBoundingClientRect().left; });
     ok('in that order, left to right', order.every(function (x, j) { return !j || x > order[j - 1]; }), order.map(Math.round));
     var over = []; Array.prototype.forEach.call(top.querySelectorAll('*'), function (e) { var r = e.getBoundingClientRect(); if (r.width && r.height && e.closest('.stpr-menu, .stpr-tfl, [role="menu"]') == null && (r.right > tr.right + 1 || r.left < tr.left - 1)) over.push(e.id || e.className); });
     ok('nothing in the top bar runs past it', !over.length, over.slice(0, 6));
@@ -164,7 +165,7 @@
     ok('off: the day, Today, the sessions and Go to back in their row, Live in the header', !!$('.stpr-tb:not(.stpr-tb2) #stpr-daybtn') && !!$('.stpr-tb:not(.stpr-tb2) #stpr-today') && !!$('.stpr-tb:not(.stpr-tb2) #stpr-ses') && !!$('.stpr-tb:not(.stpr-tb2) #stpr-goto') && !!$('.stpr-hd #stpr-lvback'));
     ok('off: the panel back as it was, not the platform\'s ticket', !mm.classList.contains('pl-mm') && !mm.querySelector('.pl-mh'));
     window.__stPlatOff = false; P._platSync(); await W(400); P._render && P._render(); await W(300);
-    ok('on again: the platform, Replay\'s', win.classList.contains('pl-replay') && inTop('#stpr-play') && inFoot('#stpr-goto') && !!mm.querySelector('.pl-prac'));
+    ok('on again: the platform, Replay\'s', win.classList.contains('pl-replay') && inFoot('[data-rpc="stpr-play"]') && inFoot('#stpr-goto') && !!mm.querySelector('.pl-prac'));
     if (LT && !win.classList.contains('pl-lt')) { $('.plat-top [data-pltheme]').click(); await W(500); }
     try { var tro = document.querySelector('.tab[data-page="livecharts"]').closest('.tabs'); window.scrollTo(0, window.scrollY + win.getBoundingClientRect().top - tro.getBoundingClientRect().bottom - 8); } catch (e) {}   // the screenshot: as the tab opens it
     await W(400);

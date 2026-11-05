@@ -79,13 +79,50 @@ def main():
         stop = threading.Event(); threading.Thread(target=size_popups, args=(dbg, stop), daemon=True).start()
 
         def part(name):
+            if os.environ.get('RW_SEQ') and name not in os.environ['RW_SEQ'].split(','): return   # only these parts, in their usual order
             raw = cdp.eval('window.__RW.' + name + '()')
             r = json.loads(raw) if isinstance(raw, str) else (raw or [])
             results.extend(r)
             for x in r:
                 print('%s  %s%s' % ('PASS' if x.get('ok') else 'FAIL', x['name'], '' if x.get('ok') else '   got: ' + json.dumps(x.get('got'), ensure_ascii=False)[:500]), flush=True)
 
+        def close_app_with_stage():
+            # the app window closed during Replay: Live Charts' window becomes the app, Live, with the chart windows
+            st = next((t for t in targets(dbg) if 'livecharts.html' in t.get('url', '')), None)
+            L = bt.CDP(st['webSocketDebuggerUrl']); L.call('Page.enable'); L.call('Runtime.enable')
+            L.call('Page.addScriptToEvaluateOnNewDocument', source='window.__stLcForce = true; window.__stPlatOff = false;')
+            charts0 = sorted(t['id'] for t in targets(dbg) if 'chart.html' in t.get('url', ''))
+            app_id = next(t['id'] for t in targets(dbg) if '/app.html' in t.get('url', '') and 'livecharts=1' not in t.get('url', ''))
+            urllib.request.urlopen('http://127.0.0.1:%d/json/close/%s' % (dbg, app_id), timeout=5).read()
+            for _ in range(40):
+                if not any(t['id'] == app_id for t in targets(dbg)): break
+                try: cdp.call('Page.handleJavaScriptDialog', accept=True)
+                except Exception: pass
+                time.sleep(.25)
+            live = None
+            for _ in range(240):
+                try:
+                    live = L.eval("(function(){ var P = window.__stPractice, s = P && P._s && P._s(); return JSON.stringify({ url: location.search, live: !!(s && s.live), solo: !!(P && P._lv && P._lv().solo), n: P && P._panes ? P._panes().length : 0, here: P && P._panes ? P._panes().filter(function(p){ return p.el.ownerDocument === document; }).length : 0, drawn: P && P._panes ? P._panes().filter(function(p){ return p.n > 0; }).length : 0, pops: P && P._pops ? Object.keys(P._pops()).filter(function(k){ return P._pops()[k].ready; }).length : 0 }); })()")
+                    o = json.loads(live)
+                    if o['live'] and o['solo'] and o['here'] == 1 and o['pops'] == 2 and o['drawn'] == 3: break
+                except Exception: pass
+                time.sleep(.5)
+            o = json.loads(live or '{}')
+            ok = bool(o.get('live') and o.get('solo') and o.get('here') == 1 and o.get('pops') == 2 and o.get('drawn') == 3 and 'livecharts=1' in o.get('url', ''))
+            results.append({'name': "the app window closed during Replay: Live Charts' window becomes the app, Live, chart 1 there, the chart windows still theirs", 'ok': ok, 'got': o})
+            print('PASS ' if ok else 'FAIL ', results[-1]['name'], '' if ok else o, flush=True)
+            now = sorted(t['id'] for t in targets(dbg) if 'chart.html' in t.get('url', ''))
+            ok = now == charts0
+            results.append({'name': '...the same chart windows, none closed or reopened', 'ok': ok, 'got': [charts0, now]})
+            print('PASS ' if ok else 'FAIL ', results[-1]['name'], '' if ok else [charts0, now], flush=True)
+            return L
+
         cdp.eval(src)
+        if os.environ.get('RW_CLOSE_STAGE'):   # only this: Live Charts' own window and two chart windows, the app window closed (RW_CLOSE_STAGE=replay: during Replay; =live: in Live)
+            part('setup')
+            if os.environ['RW_CLOSE_STAGE'] == 'replay': part('toReplay')
+            close_app_with_stage()
+            return 0 if all(x.get('ok') for x in results) else 1
         part('setup')
         if os.environ.get('RW_PRESS'):   # his report, 4 Nov 2026: Replay in Live Charts' window can't be pressed, in a chart window it can. A REAL mouse press, the favourite bar off, floating, up in the top bar
             stop.set(); time.sleep(.5)
@@ -173,34 +210,7 @@ def main():
         part('noStageReplay')
         ids = reload_app(); part('afterReloadApp'); same_windows(ids, 'reloaded with Replay in the app: the same chart windows, none closed or reopened')
         part('stageReplayAgain')
-        # the app window closed during Replay: Live Charts' window becomes the app, Live, with the chart windows
-        st = next((t for t in targets(dbg) if 'livecharts.html' in t.get('url', '')), None)
-        L = bt.CDP(st['webSocketDebuggerUrl']); L.call('Page.enable'); L.call('Runtime.enable')
-        L.call('Page.addScriptToEvaluateOnNewDocument', source='window.__stLcForce = true; window.__stPlatOff = false;')
-        charts0 = sorted(t['id'] for t in targets(dbg) if 'chart.html' in t.get('url', ''))
-        app_id = next(t['id'] for t in targets(dbg) if '/app.html' in t.get('url', '') and 'livecharts=1' not in t.get('url', ''))
-        urllib.request.urlopen('http://127.0.0.1:%d/json/close/%s' % (dbg, app_id), timeout=5).read()
-        for _ in range(40):
-            if not any(t['id'] == app_id for t in targets(dbg)): break
-            try: cdp.call('Page.handleJavaScriptDialog', accept=True)
-            except Exception: pass
-            time.sleep(.25)
-        live = None
-        for _ in range(240):
-            try:
-                live = L.eval("(function(){ var P = window.__stPractice, s = P && P._s && P._s(); return JSON.stringify({ url: location.search, live: !!(s && s.live), solo: !!(P && P._lv && P._lv().solo), n: P && P._panes ? P._panes().length : 0, here: P && P._panes ? P._panes().filter(function(p){ return p.el.ownerDocument === document; }).length : 0, drawn: P && P._panes ? P._panes().filter(function(p){ return p.n > 0; }).length : 0, pops: P && P._pops ? Object.keys(P._pops()).filter(function(k){ return P._pops()[k].ready; }).length : 0 }); })()")
-                o = json.loads(live)
-                if o['live'] and o['solo'] and o['here'] == 1 and o['pops'] == 2 and o['drawn'] == 3: break
-            except Exception: pass
-            time.sleep(.5)
-        o = json.loads(live or '{}')
-        ok = bool(o.get('live') and o.get('solo') and o.get('here') == 1 and o.get('pops') == 2 and o.get('drawn') == 3 and 'livecharts=1' in o.get('url', ''))
-        results.append({'name': "the app window closed during Replay: Live Charts' window becomes the app, Live, chart 1 there, the chart windows still theirs", 'ok': ok, 'got': o})
-        print('PASS ' if ok else 'FAIL ', results[-1]['name'], '' if ok else o, flush=True)
-        now = sorted(t['id'] for t in targets(dbg) if 'chart.html' in t.get('url', ''))
-        ok = now == charts0
-        results.append({'name': '...the same chart windows, none closed or reopened', 'ok': ok, 'got': [charts0, now]})
-        print('PASS ' if ok else 'FAIL ', results[-1]['name'], '' if ok else [charts0, now], flush=True)
+        L = close_app_with_stage()
         # Replay pressed in that window, now the app itself (his report, 4 Nov 2026)
         press = L.eval("""(async function(){ var W=function(ms){return new Promise(function(r){setTimeout(r,ms)})}, P=window.__stPractice, b=document.querySelector('[data-plrp]');
           if(!b) return JSON.stringify({btn:false}); var q=b.getBoundingClientRect(), top=document.elementFromPoint(q.left+q.width/2,q.top+q.height/2), shown=q.width>0; b.click(); await W(400);
