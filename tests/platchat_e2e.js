@@ -123,7 +123,8 @@
       var hid = function (id) { var e = document.getElementById(id); return !e || getComputedStyle(e).display === 'none'; };
       check('...#session-chat only: no channel list, no burger, no DMs (Community keeps those)', hid('dcx-burger') && hid('dcx-dm-btn') && (!$('#dcx-root .dcx-side') || getComputedStyle($('#dcx-root .dcx-side')).display === 'none'), [hid('dcx-burger'), hid('dcx-dm-btn')]);
       var tabp = ($('.tab[data-page="community"] svg path') || {}).getAttribute, cpath = tabp ? $('.tab[data-page="community"] svg path').getAttribute('d') : '';
-      check('the Chat icon is the Community tab\'s own bubble', cpath && ($('.plat-rail [data-plr="ch"] svg path') || { getAttribute: function () { return ''; } }).getAttribute('d') === cpath, cpath);
+      var csv = $('.plat-rail [data-plr="ch"] svg');   // the rail has its own solid set since 6 Nov 2026 (to sit with the hawk's head), the Community tab keeps its line bubble
+      check('the Chat icon is the rail\'s solid speech bubble', !!cpath && !!csv && csv.getAttribute('fill') === 'currentColor' && !csv.getAttribute('stroke') && /^M21\.3 11\.4/.test((csv.querySelector('path') || { getAttribute: function () { return ''; } }).getAttribute('d')), [cpath, csv && csv.outerHTML.slice(0, 120)]);
       var rr = root() ? root().getBoundingClientRect() : null, slr = side.getBoundingClientRect();
       check('...filling the panel to its foot', rr && rr.height > 400 && Math.abs(rr.bottom - slr.bottom) < 3 && Math.abs(rr.top - slr.top) < 3, rr && [rr.top, rr.bottom, slr.top, slr.bottom]);
       var comp = $('#dcx-root .dcx-composer'), cq = comp && comp.getBoundingClientRect();
