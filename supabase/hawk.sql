@@ -67,3 +67,16 @@ drop policy if exists hawk_study_admin_read on public.hawk_study;
 create policy hawk_study_admin_read on public.hawk_study for select to authenticated using (public.st_is_admin());
 drop policy if exists hawk_study_admin_mark on public.hawk_study;
 create policy hawk_study_admin_mark on public.hawk_study for update to authenticated using (public.st_is_admin()) with check (public.st_is_admin());
+-- his own drawings on a study trade (Replay), saved from the Study tab (6 Nov 2026)
+alter table public.hawk_study add column if not exists drawings jsonb, add column if not exists drawings_at timestamptz;
+grant update (drawings, drawings_at) on public.hawk_study to authenticated;
+-- the "what if" tester (6 Nov 2026, admin only): every candidate setup per day + that day's 1m path from the first
+-- candidate to 20:00 London, as ints (price*1e5; bars [londonMin,o,h,l,c] relative to d.b; c = [i,side,entry,stop,tgt,be,
+-- stopbar,model,cont]). hawk.js re-runs his rules on it with another stop / target / BE / exit. Loaded by bt/whatif_sql.py.
+create table if not exists public.hawk_study_days (
+  run text not null default 'strict_20', day date not null, d jsonb not null, primary key (run, day));
+alter table public.hawk_study_days enable row level security;
+revoke all on public.hawk_study_days from anon, authenticated;
+grant select on public.hawk_study_days to authenticated;
+drop policy if exists hawk_study_days_admin_read on public.hawk_study_days;
+create policy hawk_study_days_admin_read on public.hawk_study_days for select to authenticated using (public.st_is_admin());

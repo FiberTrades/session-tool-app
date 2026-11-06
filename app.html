@@ -7377,7 +7377,7 @@ try {
           var u = r && r.data && r.data.session && r.data.session.user;
           if (on || !u || String(u.email || '').toLowerCase() !== ADMIN) return;
           on = true;
-          var s = document.createElement('script'); s.src = 'hawk.js?v=20261106b';   /* bump with each hawk.js change: a cached copy kept the Study tab from him */
+          var s = document.createElement('script'); s.src = 'hawk.js?v=20261106d';   /* bump with each hawk.js change: a cached copy kept the Study tab from him */
           s.onload = function () { window.__stHawk = { sb: c }; try { if (window.__stPractice && window.__stPractice._hawkOn) window.__stPractice._hawkOn(); } catch (e) {} };
           document.head.appendChild(s);
         }).catch(function () {});
@@ -95898,14 +95898,14 @@ window.__stAZ = (function () {
   function dwSaveRaw(raw){ if (raw === DW.raw) { persist(); return; } var k = dk(raw); try { localStorage.setItem('st_practice_draw2:' + k, JSON.stringify(DWO[raw] || [])); } catch (e) {}
     var m = dwMeta(k); m.at = Date.now(); dwMetaPut(k, m); setTimeout(function(){ dwPush(k); }, 1500); if (S && S.live) lvAlertSoon(); }
   // a press on a chart of another symbol: its drawings come into hand (the tools, undo, the object tree and the alerts list follow)
-  function dwFocus(p){ if (!S || !p) return false; var raw = PS(p).sym.raw; if (raw === DW.raw) return false; if (DW.ted) txtDone(); hideCtx();
+  function dwFocus(p){ if (!S || !p) return false; var raw = PS(p).sym.raw; if (raw === DW.raw) return false; if (STUDY) studyEnd(); if (DW.ted) txtDone(); hideCtx();
     DWO[DW.raw] = DW.list; var pa = DW.pulled || (DW.pulled = {}), quiet = !!(pa[raw] && Date.now() - pa[raw] < 60000); if (!quiet) pa[raw] = Date.now();
     dwLoad(raw, quiet); hlAll(); dirty(); return true; }
   function dwFeed(){ var r = DW.raw; return feeds().filter(function(F){ return F.sym.raw === r; })[0] || S; }
   function dwName(){ var F = dwFeed(); return F ? F.sym.name : ''; }
   function dwDigits(){ var F = dwFeed(); return F ? F.digits : 5; }
   // The first build kept {type, pts: [{t, p}]} under st_practice_draw: read once into the new shape and stored again.
-  function dwLoad(raw, quiet){
+  function dwLoad(raw, quiet){ if (STUDY && raw !== STUDY.raw) studyEnd();
     DW.raw = raw; DW.sel = null; DW.multi = null; DW.pending = null; DW.penning = null; DW.drag = null; DW.marq = null; DW.pin = null; DW.snap = null;
     var a = null; try { a = JSON.parse(localStorage.getItem(dwKey()) || 'null'); } catch (e) {}
     if (!Array.isArray(a)) { a = [];
@@ -95913,7 +95913,8 @@ window.__stAZ = (function () {
           if (o.type === 'hline') a.push({ type: 'hline', price: o.pts[0].p }); else if (o.type === 'pen') a.push({ type: 'pen', pts: o.pts.map(q) }); else if (o.pts[1]) a.push({ type: o.type, a: q(o.pts[0]), b: q(o.pts[1]) }); }); } catch (e) {}
       if (a.length) try { localStorage.setItem(dwKey(), JSON.stringify(a)); } catch (e) {} }
     DW.list = a; DW.hist = [JSON.stringify(a)]; DW.hpos = 0; delete DWO[raw]; updUR(); updDel(); if (!quiet) dwPull(dk(raw)); }
-  function persist(){ if (!DW.raw) return; otTell(); try { localStorage.setItem(dwKey(), JSON.stringify(DW.list.filter(function(d){ return !(d && d.study); }))); } catch (e) {}   // the hawk's study drawings are shown, never saved (6 Nov 2026)
+  function persist(){ if (!DW.raw) return; if (STUDY && DW.raw === STUDY.raw) return;   // the study's own layer: kept by the Study tab, never with his Replay drawings
+    otTell(); try { localStorage.setItem(dwKey(), JSON.stringify(DW.list.filter(function(d){ return !(d && d.study); }))); } catch (e) {}   // the hawk's study drawings are shown, never saved (6 Nov 2026)
     var k = dk(DW.raw), m = dwMeta(k); m.at = Date.now(); dwMetaPut(k, m); clearTimeout(dwPushT); dwPushT = setTimeout(function(){ dwPush(k); }, 1500);
     if (S && S.live) lvAlertSoon(); }   // Live Charts: its alerts are MT5's too
   // ---- drawings between devices (Nestor, 15 Oct 2026: "yes sync drawings between devices too"): one row per symbol in
@@ -95931,6 +95932,7 @@ window.__stAZ = (function () {
     var lv = key.indexOf('L|') === 0, raw0 = lv ? key.slice(2) : key; if (lv) { LV.tbAdopt = LV.tbAdopt || {}; LV.tbAdopt[raw0] = 1; }   // a list from the server: a trade's box missing from it was not deleted here (tbSync)
     if (lv !== (DWM === 'L|')) return;   // the other mode's drawings: kept, not on screen
     var raw = raw0;
+    if (STUDY && STUDY.raw === raw) { STUDY.stash = list; return; }
     if (DW.raw === raw && !DW.drag && !DW.pending && !DW.penning) { DW.list = list; DW.hist = [JSON.stringify(list)]; DW.hpos = 0; DW.sel = null; DW.multi = null; updUR(); updDel(); hlAll(); }
     else if (DW.raw !== raw && DWO[raw]) { DWO[raw] = list; hlAll(); dirty(); } }
   async function dwPull(raw){ var u = uidNow(), sb = sbc(); if (!u || !sb || !raw) return;
@@ -99721,16 +99723,34 @@ window.__stAZ = (function () {
   // the hawk's study (admin only; Nestor, 6 Nov 2026: "place it on my chart replay in eurusd with notes, P/D zones, position tools etc for me
   // to check the legitimacy of what you thought were good trades"): Replay on that day a few minutes before the entry, the trade drawn,
   // each drawing tagged study - persist() never saves them, and the next study trade (or Clear) takes them off
-  async function studyGo(o){ if (o && o.clear) { if (S) studyDraw([]); return true; } if (!o || !o.day || !$('stpr-win')) return false;
+  // The study has its own drawing layer (Nestor, 6 Nov 2026: "make sure the drawings from the study when i go on replay mode they are not
+  // in there, just keep them inside the study otherwise when i am doing my normal replay backtesting the charts are going to look very busy").
+  // Opening a study trade sets his own EUR/USD drawings aside (STUDY.stash) and shows only the hawk's marks plus what he drew on that
+  // trade before (o.keep). Nothing on that layer is saved to his Replay drawings (persist / the cloud pull leave it alone); what he draws
+  // is handed back to the Study tab (o.onMine) to keep with the trade - on the next trade, and when the study ends (studyEnd: another
+  // panel, another symbol or day, Live). Then his own drawings come back exactly as they were.
+  var STUDY = null;
+  function studyMineNow(){ return DW.list.filter(function(d){ return d && !d.study; }).map(function(d){ return JSON.parse(JSON.stringify(d)); }); }
+  function studyHand(ended){ if (!STUDY || !STUDY.cb || DW.raw !== STUDY.raw) return; try { STUDY.cb(STUDY.n, studyMineNow(), ended); } catch (e) {} }
+  function studyEnd(){ if (!STUDY) return; studyHand(true); var st = STUDY; STUDY = null;
+    if (DW.raw === st.raw) { DW.list = st.stash; DW.hist = [JSON.stringify(st.stash)]; DW.hpos = 0; DW.sel = null; DW.multi = null; try { updUR(); updDel(); hlAll(); } catch (e) {} dirty(); }
+    else { DWO[st.raw] = st.stash; dirty(); } }
+  async function studyGo(o){ if (o && o.get != null) return STUDY && STUDY.n === o.get && DW.raw === STUDY.raw ? studyMineNow() : null;
+    if (o && o.end) { studyEnd(); return true; } if (o && o.clear) { if (S) studyDraw([]); return true; } if (!o || !o.day || !$('stpr-win')) return false;
     if (S && S.live) { LV.mode = 'replay'; clearLiveT(); S = null; var win = $('stpr-win'); win.classList.remove('lc'); win.classList.add('lcp'); try { window.__stLiveLine.tickle(); } catch (e) {} mmInit(); }
     else if (!S) LV.mode = 'replay';
     try { var pst = plSt(); if (pst.rpn !== 'hk') { pst.rpn = 'hk'; plSave(); } } catch (e) {}   // the study list stays beside the chart in Replay
     await loadSymbols(); var sym = symBy(o.sym) || symBy(canon(o.sym)); if (!sym) return false;
-    var ok = await go(sym.raw, o.day, o.at || 0); lcModePaint(); if (!ok) return false;
-    studyDraw(o.draw); return true; }
+    if (STUDY && STUDY.n !== o.n) studyHand(false);   // the last trade's drawings go back to the Study tab first
+    if (STUDY) STUDY.busy = 1; var ok = false; try { ok = await go(sym.raw, o.day, o.at || 0); } finally { if (STUDY) STUDY.busy = 0; } if (!ok) { lcModePaint(); return false; }
+    if (STUDY && STUDY.raw !== DW.raw) studyEnd();
+    if (!STUDY) STUDY = { raw: DW.raw, stash: DW.list.filter(function(d){ return d && !d.study; }) };
+    STUDY.n = o.n; STUDY.cb = o.onMine || null; STUDY.day = S && S.day;
+    DW.list = (o.keep || []).map(function(d){ return JSON.parse(JSON.stringify(d)); }); DW.hist = [JSON.stringify(DW.list)]; DW.hpos = 0; try { updUR(); updDel(); } catch (e) {}
+    studyDraw(o.draw); lcModePaint(); return true; }
   function studyDraw(list){ var L = DW.list; for (var i = L.length - 1; i >= 0; i--) if (L[i] && L[i].study) L.splice(i, 1);
     (list || []).forEach(function(d){ L.push(Object.assign({}, d, { study: 1, lock: true })); }); DW.sel = null; DW.multi = null; try { hlAll(); } catch (e) {} dirty(); }
-  function lcModePaint(){ try { platSync(); } catch (e) {} var pg = $('page-livecharts'), wn = $('stpr-win'); var live = lcAwayOn() || !!(S && S.live) || !!(wn && wn.classList.contains('lc')), ok = lcLiveOK();   // Live Charts in its own window is Live too (Nestor, 22 Oct 2026: "why when i open the chart in a new window in LIVE this screen says replay??")   // the window's mode, even while its prices load
+  function lcModePaint(){ try { platSync(); } catch (e) {} try { if (STUDY && !STUDY.busy && (!S || S.live || DW.raw !== STUDY.raw || (STUDY.day && S.day !== STUDY.day) || plPn() !== 'hk')) studyEnd(); } catch (e) {} var pg = $('page-livecharts'), wn = $('stpr-win'); var live = lcAwayOn() || !!(S && S.live) || !!(wn && wn.classList.contains('lc')), ok = lcLiveOK();   // Live Charts in its own window is Live too (Nestor, 22 Oct 2026: "why when i open the chart in a new window in LIVE this screen says replay??")   // the window's mode, even while its prices load
     try { [document, SD].forEach(function(dd){ if (dd && dd.body && dd.body.classList.contains('st-lcm-ok') !== ok) dd.body.classList.toggle('st-lcm-ok', ok); }); } catch (e) {}   // the full screen's Live button reads it there (changed only when it changes) - in Live Charts' own window too: it copied the app's classes once, as it opened, so its Live button could stay hidden in Replay with no way back (Nestor, 6 Nov 2026: "on the bottom chart how do i go back to live charts? the buttons have dissapeared")
     try { if (SD !== document && S) { var ttl = (S.live ? 'Live Charts' : 'Replay') + ' · Session Terminal'; if (SD.title !== ttl) SD.title = ttl; } } catch (e) {}   // and its title says which it is ("the chart above says replay and below says live charts still")
     if (pg) { pg.classList.toggle('lcm-replay', !live); var dk = !(phone() || landPhone() || touchOnly()) && (window.innerWidth || 0) >= 1024; if (pg.classList.contains('lcm-desk') !== dk) pg.classList.toggle('lcm-desk', dk); if (pg.classList.contains('lcm-ok') !== ok) pg.classList.toggle('lcm-ok', ok); } }
