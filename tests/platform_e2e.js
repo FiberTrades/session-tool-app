@@ -366,19 +366,20 @@
     check('remembered on this device', saved.pn === '' && saved.fold === true, saved);
     $('[data-plfold]').click(); await W(200); $('[data-plr="tm"]').click(); await W(300);
     check('...all back', !win.classList.contains('pl-nor') && !win.classList.contains('pl-folded') && $('#lc-tb').getBoundingClientRect().height > 100);
-    // one width for every panel in the column (Nestor, 27 Oct 2026): dragging any one's left edge sets it for all; the chat never under 330
-    var stW0 = JSON.stringify(P._plat().st), colW = function(){ return Math.round($('.plat-right').getBoundingClientRect().width); }, rwSaved = function(){ var o = {}; try { o = JSON.parse(localStorage.getItem('st_plat') || '{}'); } catch (e) {} return o.rw; };
+    // each panel its own width (Nestor, 6 Nov 2026: "can the tabs remember each tabs width so they dont change width"): dragging one's left edge
+    // sets it for that panel alone; the chat never under 330
+    var stW0 = JSON.stringify(P._plat().st), colW = function(){ return Math.round($('.plat-right').getBoundingClientRect().width); }, rwp = function(){ var o = {}; try { o = JSON.parse(localStorage.getItem('st_plat') || '{}'); } catch (e) {} return o.rwp || {}; };
     var edgeDrag = function(dx){ var hd = $('.plat-right > .pl-swd'), hr = hd.getBoundingClientRect(), x0 = hr.left + 3, y0 = hr.top + hr.height / 2;
       hd.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: x0, clientY: y0, pointerId: 1 })); document.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: x0 + dx, clientY: y0, pointerId: 1 }));
       document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: x0 + dx, clientY: y0, pointerId: 1 })); };
-    var rail = function(k){ $('[data-plr="' + k + '"]').click(); return W(250); }, wTm0 = colW(); edgeDrag(-80); await W(300); var wTm = colW();
-    check('the column: the Trade Manager\'s left edge widens it, kept on this device', wTm >= wTm0 + 70 && Math.abs(rwSaved() - wTm) <= 1, [wTm0, wTm, rwSaved()]);
-    var wAll = {}; for (var rk of ['wl', 'td', 'ot', 'ch']) { await rail(rk); wAll[rk] = colW(); }
-    check('...the Watchlist, Today, the Object tree and Chat open at that same width', Object.keys(wAll).every(function(k){ return Math.abs(wAll[k] - wTm) <= 1; }), [wTm, wAll]);
-    edgeDrag(200); await W(300); var wCh = colW(); await rail('wl'); var wWl = colW();
-    check('...Chat narrowed to its least (330, its text box and Send whole), the Watchlist follows it', Math.abs(wCh - 330) <= 1 && Math.abs(wWl - 330) <= 1 && rwSaved() === 330, [wCh, wWl, rwSaved()]);
-    edgeDrag(60); await W(300); var wWl2 = colW(); await rail('ch'); var wCh2 = colW(); await rail('td'); var wTd2 = colW();
-    check('...the Watchlist left at 270: Chat still opens at 330, and the others follow it back', wWl2 < 300 && Math.abs(wCh2 - 330) <= 1 && Math.abs(wTd2 - 330) <= 1 && rwSaved() === 330, [wWl2, wCh2, wTd2, rwSaved()]);
+    var rail = function(k){ $('[data-plr="' + k + '"]').click(); return W(250); }, before = {};
+    for (var rk of ['wl', 'td', 'ot']) { await rail(rk); before[rk] = colW(); } await rail('tm');
+    var wTm0 = colW(); edgeDrag(-80); await W(300); var wTm = colW();
+    check('the Trade Manager\'s left edge widens it, kept on this device for it alone', wTm >= wTm0 + 70 && Math.abs((rwp().tm || 0) - wTm) <= 1, [wTm0, wTm, rwp()]);
+    var wAll = {}; for (rk of ['wl', 'td', 'ot']) { await rail(rk); wAll[rk] = colW(); }
+    check('...the Watchlist, Today and the Object tree keep their own widths', Object.keys(wAll).every(function(k){ return Math.abs(wAll[k] - before[k]) <= 1; }), [before, wAll]);
+    await rail('ch'); edgeDrag(300); await W(300); var wCh = colW(); await rail('wl'); var wWl = colW(); await rail('tm'); var wTm2 = colW();
+    check('...Chat narrowed to its least (330, its text box and Send whole): the Watchlist and the Trade Manager unchanged', Math.abs(wCh - 330) <= 1 && rwp().ch === 330 && Math.abs(wWl - before.wl) <= 1 && Math.abs(wTm2 - wTm) <= 1, [wCh, wWl, wTm2, rwp()]);
     var mig = function(o){ localStorage.setItem('st_plat', JSON.stringify(o)); var st1 = P._plStRead(); return [st1.rw, 'pw' in st1]; };
     var m1 = mig({ pn: 'wl', pw: { wl: 340, ch: 420 } }), m2 = mig({ pn: 'tm', pw: { ch: 410, wl: 280 } }), m3 = mig({ pn: 'tm', sw: 390 }), m4 = mig({ pn: 'tm', pw: { td: 290, wl: 350 } });
     check('a device with the old per-panel widths: the open panel\'s width, else the chat\'s, else the widest', m1[0] === 340 && m2[0] === 410 && m3[0] === 390 && m4[0] === 350 && !m1[1] && !m2[1], [m1, m2, m3, m4]);

@@ -25,7 +25,7 @@
     document.querySelector('.tab[data-page="livecharts"]').click();
     for (var k = 0; k < 120 && !(P._s() && P._s().live && LC.state().fresh && P._panes()[0] && P._panes()[0].bars && P._panes()[0].bars.length); k++) await W(250);
     await W(1500);
-    var saved = function () { try { return JSON.parse(localStorage.getItem('st_plat') || '{}').rw; } catch (e) { return null; } };
+    var saved = function () { try { var o = JSON.parse(localStorage.getItem('st_plat') || '{}'); return (o.rwp || {})[o.pn || 'tm']; } catch (e) { return null; } };   // the open panel's own width (6 Nov 2026)
     // measures and drags in whichever window the platform is in
     var M = function (d) { var win = d.getElementById('stpr-win'), r = d.querySelector('.plat-right'), cw = d.getElementById('stpr-cw'); return { W: win.clientWidth, panel: Math.round(r.getBoundingClientRect().width), chart: Math.round(cw.getBoundingClientRect().width) }; };
     var drag = async function (d, dx) { var wv = d.defaultView, hd = d.querySelector('.plat-right > .pl-swd'), hr = hd.getBoundingClientRect(), x0 = hr.left + 3, y0 = hr.top + hr.height / 2, PE = wv.PointerEvent;

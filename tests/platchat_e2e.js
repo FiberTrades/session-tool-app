@@ -112,12 +112,12 @@
       var hw = $('.plat-right > .pl-swd'), hwr = hw.getBoundingClientRect(), wx = hwr.left + 3, wy = hwr.top + hwr.height / 2, ww0 = col().width;
       hw.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: wx, clientY: wy, pointerId: 1 })); document.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: wx - 60, clientY: wy, pointerId: 1 })); document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: wx - 60, clientY: wy, pointerId: 1 })); await W(400);
       var ww1 = col().width, sv0 = {}; try { sv0 = JSON.parse(localStorage.getItem('st_plat') || '{}'); } catch (e) {}
-      check('the Watchlist widens by its left edge too: the width every panel takes', ww1 > ww0 + 50 && Math.abs((+sv0.rw || 0) - ww1) < 6, [ww0, ww1, sv0.rw]);
+      check('the Watchlist widens by its left edge too: its own width, kept', ww1 > ww0 + 50 && Math.abs((+(sv0.rwp || {}).wl || 0) - ww1) < 6, [ww0, ww1, sv0.rwp]);
       // Chat
       rb('ch').click(); await W(400);
       for (k = 0; k < 40 && !(root() && root().classList.contains('dcx-plat')); k++) await W(250);
       var cw1 = $('#stpr-cw').getBoundingClientRect(), c1 = col();
-      check('Chat: its own panel, the whole column, at the Watchlist\'s width (one width for the column, 27 Oct 2026)', rb('ch').classList.contains('on') && !rb('wl').classList.contains('on') && only('.pl-ch') && fills('.plat-right > .pl-ch') && Math.abs(c1.width - Math.max(330, ww1)) < 3 && c1.left >= cw1.right - 1, [c1.width, ww1, only('.pl-ch')]);
+      check('Chat: its own panel, the whole column, at its own width (each panel its own, 6 Nov 2026)', rb('ch').classList.contains('on') && !rb('wl').classList.contains('on') && only('.pl-ch') && fills('.plat-right > .pl-ch') && c1.width >= 329 && Math.abs(c1.width - ww1) > 3 && c1.left >= cw1.right - 1, [c1.width, ww1, only('.pl-ch')]);
       var side = $('.plat-right > .pl-ch');
       check('the Community chat itself is in it (one chat, moved in), with its members', !!root() && side.contains(root()) && root().classList.contains('dcx-embed') && root().classList.contains('dcx-plat') && !!document.getElementById('dcx-mtoggle'), [!!root(), root() && root().className]);
       var hid = function (id) { var e = document.getElementById(id); return !e || getComputedStyle(e).display === 'none'; };
@@ -141,7 +141,7 @@
         document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: x0 + dx, clientY: y0, pointerId: 1 })); };
       var sw0 = col().width; drag(-100); await W(500);
       var sw1 = col().width, saved = {}; try { saved = JSON.parse(localStorage.getItem('st_plat') || '{}'); } catch (e) {}
-      check('dragging its left edge widens it (kept on this device)', sw1 > sw0 + 80 && Math.abs((+saved.rw || 0) - sw1) < 6 && saved.pn === 'ch', [sw0, sw1, saved.rw, saved.pn]);
+      check('dragging its left edge widens it (kept on this device)', sw1 > sw0 + 80 && Math.abs((+(saved.rwp || {}).ch || 0) - sw1) < 6 && saved.pn === 'ch', [sw0, sw1, saved.rwp, saved.pn]);
       drag(400); await W(500);
       var sw2 = col().width, snd = document.getElementById('dcx-send'), sdr2 = snd && snd.getBoundingClientRect(), cq3 = comp.getBoundingClientRect(), pr = side.getBoundingClientRect();
       check('it never squashes: no narrower than 330 px, Send whole inside the box, the box inside the panel', sw2 >= 329 && sw2 < 340 && sdr2 && sdr2.width >= 30 && sdr2.right <= cq3.right - 2 && cq3.right <= pr.right + 1 && msgs.scrollWidth <= msgs.clientWidth + 1,
@@ -153,7 +153,8 @@
       for (var ih = 0; ih < 30 && !window.__stHawk; ih++) await W(100);   // hawk.js loads on its own once the admin is seen
       var hawk0 = window.__stHawk; window.__stHawk = undefined; try { P._hawkOn(); } catch (e) {} await W(300);
       rb('td').click(); await W(600);
-      check('Today: its own panel, at the chat\'s width (one width for the column)', only('.pl-td') && fills('.plat-right > .pl-td') && Math.abs(col().width - chw) < 3, [col().width, chw]);
+      var svT = {}; try { svT = JSON.parse(localStorage.getItem('st_plat') || '{}'); } catch (e) {} var expT = Math.max(260, +((svT.rwp || {}).td) || +svT.rw || 300);
+      check('Today: its own panel, at its own width (the chat\'s width stays the chat\'s)', only('.pl-td') && fills('.plat-right > .pl-td') && Math.abs(col().width - expT) < 3 && Math.abs(col().width - chw) > 3, [col().width, expT, chw]);
       var tdt = $('.plat-right .pl-tdb').textContent;
       check('Today: red news (or none this week) and the risk budget the Session Live board had', /Red news/i.test(tdt) && (/None this week|·/.test(tdt)), tdt.slice(0, 200));
       check('Today: no bias (that is in Check my plan now)', !/morning's bias/i.test(tdt));
