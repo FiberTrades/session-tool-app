@@ -23,6 +23,7 @@
     '.hk-app .hk-title{display:none}',
     '.hk-sub{color:var(--hk-mut);font-size:13px;margin:4px 0 0}',
     '.hk-tabs{display:flex;gap:6px;align-items:center}',
+    '.hk select option{background:var(--hk-card);color:var(--hk-ink)}.hk select option:checked{background:#e0a84a;color:#1b1406}',
     '.hk-tabs select{-webkit-appearance:none;appearance:none;height:28px;box-sizing:border-box;font:500 12px var(--hk-font,inherit);color:var(--hk-ink);background:transparent url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 12 12%27%3E%3Cpath d=%27M3 4.5l3 3 3-3%27 fill=%27none%27 stroke=%27%238b93a7%27 stroke-width=%271.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E") no-repeat right 9px center/11px 11px;border:1px solid var(--hk-line);border-radius:999px;padding:0 26px 0 12px;cursor:pointer;color-scheme:light dark}',
     '.hk-tabs select:hover{border-color:color-mix(in srgb,var(--hk-mut) 60%,transparent)}.hk-tabs select.off{color:var(--hk-mut)}.hk-tabs select:focus-visible{outline:2px solid #e0a84a;outline-offset:1px}.hk-nar .hk-tabs select{height:24px;font-size:11px;padding:0 22px 0 9px}',
     '.hk-tabs button{font:500 12px var(--hk-font,inherit);color:var(--hk-mut);background:transparent;border:1px solid var(--hk-line);border-radius:999px;padding:5px 12px;cursor:pointer}',
