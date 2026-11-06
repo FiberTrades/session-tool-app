@@ -128,15 +128,19 @@
     '.hk-stp label{display:flex;align-items:center;justify-content:center;gap:6px;height:30px;border-radius:7px;background:var(--hk-soft);padding:0 8px;font-size:11px;color:var(--hk-mut);white-space:nowrap;overflow:hidden;cursor:text}',
     '.hk-stp input{width:4.4em;background:transparent;border:0;outline:0;text-align:right;font:500 13.5px var(--hk-mono);font-variant-numeric:tabular-nums;color:var(--hk-ink);padding:0;margin:0;min-height:0;-moz-appearance:textfield;appearance:textfield}',
     '.hk-stp input[type="time"]{width:4.6em;color-scheme:light dark}.hk-stp input::-webkit-calendar-picker-indicator{display:none}',
-    '.hk-time{display:flex;align-items:center;gap:8px;margin-top:7px}.hk-time span{font-size:11px;color:var(--hk-mut)}',
-    '.hk-time select{flex:1 1 auto;height:30px;border-radius:7px;border:1px solid var(--hk-line);background:var(--hk-soft);color:var(--hk-ink);font:500 13.5px var(--hk-mono);font-variant-numeric:tabular-nums;padding:0 10px;color-scheme:light dark;cursor:pointer}',
-    '.hk-time select:hover{border-color:var(--hk-mut)}.hk-time select:focus-visible{outline:0;box-shadow:inset 0 0 0 1px var(--hk-acc)}',
+    '.hk-time{position:relative;display:flex;align-items:center;justify-content:center;gap:6px;height:30px;margin-top:7px;border-radius:7px;background:var(--hk-soft);cursor:pointer}',
+    '.hk-time .v{font:500 13.5px var(--hk-mono);font-variant-numeric:tabular-nums;color:var(--hk-ink)}.hk-time .u{font-size:11px;color:var(--hk-mut)}',
+    '.hk-time svg{position:absolute;right:11px;top:50%;width:10px;height:10px;margin-top:-5px;fill:none;stroke:var(--hk-mut);stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}',
+    '.hk-time select{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer;color-scheme:light dark;font-size:13px}',
+    '.hk-time:hover{box-shadow:inset 0 0 0 1px var(--hk-line)}.hk-time:hover svg{stroke:var(--hk-ink)}.hk-time:focus-within{box-shadow:inset 0 0 0 1px var(--hk-acc)}',
     '.hk-stp input::-webkit-inner-spin-button,.hk-stp input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}.hk-stp label:focus-within{box-shadow:inset 0 0 0 1px var(--hk-acc)}',
     '.hk-cmp{margin-top:8px;font-size:12px;color:var(--hk-mut)}.hk-cmp b{font-weight:500;font-variant-numeric:tabular-nums}.hk-cmp b.up{color:var(--hk-buy)}.hk-cmp b.dn{color:var(--hk-sell)}',
     '.hk-kpi.sm{margin-top:8px}.hk-kpi.sm b{font-size:13px}',
     '.hk-eq{display:block;width:100%;height:96px;margin-top:12px}.hk-eq path{fill:none;stroke-width:1.6;vector-effect:non-scaling-stroke;stroke-linejoin:round}.hk-eq .a{stroke:var(--hk-acc)}.hk-eq .b{stroke:var(--hk-mut);stroke-dasharray:3 3;opacity:.75}.hk-eq line{stroke:var(--hk-line);vector-effect:non-scaling-stroke}',
     '.hk-leg{display:flex;gap:14px;font-size:10.5px;color:var(--hk-mut);margin-top:4px}.hk-leg i{display:inline-block;width:14px;height:0;border-top:2px solid var(--hk-acc);vertical-align:3px;margin-right:5px}.hk-leg i.b{border-top:2px dashed var(--hk-mut)}',
-    '.hk-hm{overflow-x:auto}.hk-hm .ax{display:flex;justify-content:space-between;gap:8px;font-size:10px;color:var(--hk-mut);margin:0 0 4px}',
+    '.hk-hm{overflow-x:auto}.hk-hm th.cap{font:500 10px var(--hk-font,inherit);letter-spacing:.02em;color:var(--hk-mut);padding:0 0 2px}',
+    '.hk-hm th.vc{width:15px;padding:0;vertical-align:middle}.hk-hm th.vc span{display:flex;flex-direction:column;justify-content:space-between;align-items:center;height:222px;font:500 10px var(--hk-font,inherit);letter-spacing:.02em;color:var(--hk-mut)}',
+    '.hk-hm th.vc i,.hk-hm th.vc b{writing-mode:vertical-rl;font:inherit;white-space:nowrap}.hk-hm th.vc i{opacity:.7;font-size:9px}',
     '.hk-hm table{width:100%;min-width:270px;border-collapse:separate;border-spacing:2px;table-layout:fixed;font:500 10.5px var(--hk-mono);font-variant-numeric:tabular-nums}',
     '.hk-hm th{font-weight:500;color:var(--hk-mut);padding:3px 0;text-align:center;white-space:nowrap}.hk-hm th.y{width:44px;text-align:right;padding-right:5px}.hk-hm td{padding:0}',
     '.hk-hm td button{position:relative;display:block;width:100%;height:26px;border:0;border-radius:4px;color:var(--hk-ink);font:inherit;cursor:pointer;padding:0}',
@@ -693,7 +697,7 @@
     // TPs, smaller TPs"): his rules again with another stop / target / break-even / exit. Same entries; the two-serve day re-runs, since a
     // different result changes which later setups it lets through. Prices are ints (price * 1e5; 10 = 1 pip). With his settings it gives
     // exactly the study (159 trades, +53.98R - checked against bt/whatif_sim.py).
-    var WI0 = { smode: 'hawk', soff: 0, sfix: 3, tmode: 'pips', tp: 20, tr: 5, be: 'hawk', ber: 1, exit: 800, cost: 0.6 };
+    var WI0 = { smode: 'hawk', soff: 0, sfix: 3, tmode: 'pips', tp: 20, tr: 5, be: 'hawk', ber: 1, exit: 800, close: 'on', cost: 0.6 };   // close 'off': no time exit (6 Nov 2026)
     var WB = { soff: [-2, 10, 0.5], sfix: [1, 20, 0.5], tp: [3, 100, 1], tr: [1, 20, 0.5], ber: [0.25, 10, 0.25], cost: [0, 3, 0.1], exit: [600, 1200, 10] };   // exit: London minutes, 10:00 to 20:00 (the candles stop at 20:00)
     function wiKey() { return 'st_hawk_whatif' + (sMkt === 'EURUSD' ? '' : ':' + sMkt); }
     var wiFresh = false;
@@ -720,7 +724,7 @@
       wiBusy = false; if (q.error) wiErr = q.error.message; else { if (run1 !== sRun()) return; wiD = q.data || []; if (wiFresh) { wiP.cost = wi0().cost; wiFresh = false; } }
       if (period === 's' && sview === 'whatif') sRefresh(); }
     function wiMB() { var o = {}; (study || []).forEach(function (r) { var b = r.be_mine; if (b) o[r.day + '|' + r.data.side + '|' + Math.round(r.data.entry / wiU())] = b.none ? null : Math.round(b.price / wiU()); }); return o; }
-    function wiSim(p) { var out = [], ex = Math.min(+p.exit, 1200), MB = p.be === 'mine' ? wiMB() : {};
+    function wiSim(p) { var out = [], ex = p.close === 'off' ? 9000 : Math.min(+p.exit, 1200), MB = p.be === 'mine' ? wiMB() : {};
       wiD.forEach(function (D) { if (!sIn(D.day)) return; var d = D.d, Q = d.q || 10, m = d.m, base = d.b, n = m.length / 5, taken = [], seen = {}, busy = -1;
         for (var k = 0; k < d.c.length; k++) { var c = d.c[k], i = c[0], side = c[1], e = c[2], s0 = c[3], key = c[7] + ':' + side + ':' + e, lt = taken[taken.length - 1];
           if (seen[key] || i <= busy) continue; seen[key] = 1;
@@ -729,7 +733,7 @@
           var r0 = Math.abs(e - s0), risk = Math.max(Q, Math.round(p.smode === 'hawk' ? r0 + p.soff * Q : p.sfix * Q));
           var tg = e + side * (p.tmode === 'pips' ? Math.round(p.tp * Q) : Math.round(p.tr * risk));
           var mk = D.day + '|' + side + '|' + e, bel = p.be === 'hawk' ? c[5] : p.be === 'mine' ? (mk in MB ? MB[mk] : c[5]) : p.be === 'off' ? null : e + side * Math.round(p.ber * risk);
-          var R = null, o = 'time', j = i;
+          var R = null, o = 'time', j = i, end = 0;
           if (c[6] && risk <= r0) { R = -1; o = 'loss'; }                // stopped on the fill bar
           else { var cur = e - side * risk, at = false;
             for (j = i; j < n; j++) { var x = j * 5;
@@ -738,11 +742,11 @@
               if (side > 0) { if (L <= cur) { R = (cur - e) / risk; o = at ? 'be' : 'loss'; break; } if (H >= tg) { R = (tg - e) / risk; o = 'win'; break; } if (!at && bel != null && H > bel) { cur = e; at = true; } }
               else { if (H >= cur) { R = (e - cur) / risk; o = at ? 'be' : 'loss'; break; } if (L <= tg) { R = (e - tg) / risk; o = 'win'; break; } if (!at && bel != null && L < bel) { cur = e; at = true; } }
             }
-            if (R == null) { R = 0; o = 'time'; j = n - 1; } }
-          var t = { o: o, net: R - p.cost / (risk / Q), cr: p.cost / (risk / Q) }; taken.push(t); out.push(t); busy = j; } });
+            if (R == null) { j = n - 1; R = (m[j * 5 + 4] + base - e) * side / risk; o = 'time'; end = 1; } }   // still open where the candles end: closed at the last price
+          var t = { o: o, net: R - p.cost / (risk / Q), cr: p.cost / (risk / Q), end: end }; taken.push(t); out.push(t); busy = j; } });
       return out; }
-    function wiStats(t) { var s = { n: t.length, net: 0, dd: 0, run: 0, win: 0, be: 0, gp: 0, gl: 0, eq: [0], cr: 0 }, peak = 0, cur = 0;
-      t.forEach(function (x) { s.net += x.net; s.cr += x.cr || 0; s.eq.push(s.net); peak = Math.max(peak, s.net); s.dd = Math.max(s.dd, peak - s.net);
+    function wiStats(t) { var s = { n: t.length, net: 0, dd: 0, run: 0, win: 0, be: 0, gp: 0, gl: 0, eq: [0], cr: 0, end: 0 }, peak = 0, cur = 0;
+      t.forEach(function (x) { if (x.end) s.end++; s.net += x.net; s.cr += x.cr || 0; s.eq.push(s.net); peak = Math.max(peak, s.net); s.dd = Math.max(s.dd, peak - s.net);
         if (x.o === 'loss') { cur++; s.run = Math.max(s.run, cur); } else if (x.o === 'win') cur = 0;
         if (x.o === 'win') s.win++; if (x.o === 'be') s.be++; if (x.net > 0) s.gp += x.net; else s.gl -= x.net; });
       s.pf = s.gl ? s.gp / s.gl : null; s.avg = s.n ? s.net / s.n : 0; return s; }
@@ -760,10 +764,11 @@
       var v = rows.map(function (rv) { return cols.map(function (cv) { var q = Object.assign({}, p); q[sk] = rv; q[tk] = cv; return wiStats(wiSim(q)).net; }); });
       var mx = Math.max.apply(null, v.map(function (r) { return Math.max.apply(null, r.map(Math.abs)); })) || 1;
       var isBase = function (rv, cv) { return sk === 'soff' && tk === 'tp' && rv === 0 && cv === 20 && p.be === 'hawk' && +p.exit === 800 && +p.cost === +wi0().cost; };
-      var U = wiUL();
-      return '<div class="hk-hm"><div class="ax"><span>' + (sk === 'soff' ? L('Your stop, tighter − / wider + (' + U + ')', 'Tu stop, más ajustado − / más ancho + (' + U + ')') : L('Stop (' + U + ')', 'Stop (' + U + ')')) + ' ↓</span><span>' + L('Target (', 'Objetivo (') + (tk === 'tp' ? U : 'R') + ') →</span></div><table><thead><tr><th class="y"></th>' +
+      var U = wiUL(), vc = sk === 'soff' ? '<i>' + L('tighter', 'más ajustado') + '</i><b>' + L('Your stop (' + U + ')', 'Tu stop (' + U + ')') + '</b><i>' + L('wider', 'más ancho') + '</i>'
+        : '<i>' + L('smaller', 'menor') + '</i><b>' + L('Stop (' + U + ')', 'Stop (' + U + ')') + '</b><i>' + L('bigger', 'mayor') + '</i>';
+      return '<div class="hk-hm"><table><thead><tr><th class="vc"></th><th class="y"></th><th class="cap" colspan="' + cols.length + '">' + L('Target (', 'Objetivo (') + (tk === 'tp' ? U : 'R') + ')</th></tr><tr><th class="vc"></th><th class="y"></th>' +
         cols.map(function (c) { return '<th>' + (tk === 'tp' ? wiV(c, 1) : c) + '</th>'; }).join('') + '</tr></thead><tbody>' +
-        rows.map(function (rv, i) { return '<tr><th class="y">' + (sk === 'soff' ? (rv === 0 ? L('Yours', 'El tuyo') : (rv > 0 ? '+' : '−') + wiV(Math.abs(rv), 1)) : wiV(rv, 1)) + '</th>' + cols.map(function (cv, j) { var x = v[i][j], a = Math.round(Math.min(1, Math.abs(x) / mx) * 62);
+        rows.map(function (rv, i) { return '<tr>' + (i ? '' : '<th class="vc" rowspan="' + rows.length + '"><span>' + vc + '</span></th>') + '<th class="y">' + (sk === 'soff' ? (rv === 0 ? L('Yours', 'El tuyo') : (rv > 0 ? '+' : '−') + wiV(Math.abs(rv), 1)) : wiV(rv, 1)) + '</th>' + cols.map(function (cv, j) { var x = v[i][j], a = Math.round(Math.min(1, Math.abs(x) / mx) * 62);
           return '<td><button data-wg="' + sk + '|' + rv + '|' + tk + '|' + cv + '" class="' + (isBase(rv, cv) ? 'base' : '') + '" aria-current="' + (+p[sk] === rv && +p[tk] === cv) + '" title="Stop ' + (sk === 'soff' ? (rv === 0 ? L('as your rule places it', 'como lo pone tu regla') : wiVU(rv, 1) + L((rv > 0 ? ' wider' : ' tighter') + ' than yours', (rv > 0 ? ' más ancho' : ' más ajustado') + ' que el tuyo')) : wiVU(rv, 1)) + L(', target ', ', objetivo ') + (tk === 'tp' ? wiVU(cv, 1) : cv + 'R') + ': ' + sR1(x) + '" style="background:color-mix(in srgb,var(' + (x >= 0 ? '--hk-buy' : '--hk-sell') + ') ' + a + '%,transparent)">' + (x < -0.5 ? '−' : '') + Math.abs(Math.round(x)) + '</button></td>'; }).join('') + '</tr>'; }).join('') +
         '</tbody></table></div>'; }
     function wiHtml() {
@@ -777,8 +782,9 @@
         wiRow(L('Target', 'Objetivo'), wiSeg('tmode', [['pips', sMkt === 'EURUSD' ? 'Pips' : wiDol() ? '$' : L('Points', 'Puntos')], ['r', 'R']]), p.tmode === 'pips' ? wiStep('tp', wiUW(), 1) : wiStep('tr', 'R'), p.tmode === 'pips' ? L('A fixed distance from the entry.', 'Una distancia fija desde la entrada.') : L('A multiple of each trade\'s stop.', 'Un múltiplo del stop de cada operación.')) +
         wiRow('Break-even', wiSeg('be', [['hawk', L('Rule', 'Regla')], ['mine', L('Yours', 'El tuyo')], ['r', L('At R', 'En R')], ['off', L('Off', 'Ninguno')]]), p.be === 'r' ? wiStep('ber', 'R') : '',
           p.be === 'hawk' ? L('Stop to entry once price passes the last 1m swing before the entry.', 'Stop a la entrada cuando el precio pasa el último swing de 1m antes de la entrada.') : p.be === 'mine' ? (function () { var k = (study || []).filter(function (r) { return r.be_mine && sIn(r.day); }).length; return k ? L('Your own break-even on the ' + sPl(k, 'trade') + ' you set it on, the rule\'s on the rest.', 'Tu propio break-even en ' + (k === 1 ? 'la operación' : 'las ' + k + ' operaciones') + ' donde lo pusiste, el de la regla en el resto.') : L('You haven\'t set your own break-even on any trade yet, so this is the rule\'s.', 'Aún no has puesto tu propio break-even en ninguna operación, así que este es el de la regla.'); })() : p.be === 'off' ? L('The stop never moves.', 'El stop nunca se mueve.') : L('Stop to entry once the trade is ' + (+p.ber).toFixed(2) + 'R in profit.', 'Stop a la entrada cuando la operación va ' + (+p.ber).toFixed(2) + 'R en beneficio.')) +
-        wiRow(L('Close by', 'Cerrar a las'), '',   // one time picker (Nestor, 6 Nov 2026: "why didnt you just give me a time picker?")
-          '<label class="hk-time"><select data-wn="exit" aria-label="' + L('Close by, London time', 'Cerrar a las, hora de Londres') + '">' + (function () { var o = ''; for (var m = 600; m <= 1200; m += 10) o += '<option value="' + wiHM(m) + '"' + (+p.exit === m ? ' selected' : '') + '>' + wiHM(m) + (m === 800 ? L(' · your rule', ' · tu regla') : '') + '</option>'; return o; })() + '</select><span>' + L('London', 'Londres') + '</span></label>',
+        wiRow(L('Close by', 'Cerrar a las'), wiSeg('close', [['on', L('On', 'Sí')], ['off', L('Off', 'No')]]),   // a time picker that looks like the steppers, and a way to turn it off (6 Nov 2026)
+          p.close === 'off' ? '' : '<label class="hk-time"><span class="v">' + wiHM(+p.exit) + '</span><span class="u">' + L('London', 'Londres') + '</span><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5l3 3 3-3"/></svg><select data-wn="exit" aria-label="' + L('Close by, London time', 'Cerrar a las, hora de Londres') + '">' + (function () { var o = ''; for (var m = 600; m <= 1200; m += 10) o += '<option value="' + wiHM(m) + '"' + (+p.exit === m ? ' selected' : '') + '>' + wiHM(m) + '</option>'; return o; })() + '</select></label>',
+          p.close === 'off' ? L('No time exit: each trade runs to its stop or target.' + (s.end ? ' ' + sPl(s.end, 'trade') + (s.end === 1 ? ' was' : ' were') + ' still open at 20:00 London, where the study\'s candles end, and closed there.' : ''), 'Sin salida por hora: cada operación sigue hasta su stop u objetivo.' + (s.end ? ' ' + sPl(s.end, '', 'operación seguía abierta', 'operaciones seguían abiertas') + ' a las 20:00 de Londres, donde acaban las velas del estudio, y se cerr' + (s.end === 1 ? 'ó' : 'aron') + ' ahí.' : '')) :
           +p.exit === 800 ? L('Out before the 13:30 news if the target hasn\'t hit (your rule).', 'Fuera antes de las noticias de las 13:30 si no ha llegado al objetivo (tu regla).') : L('Closed at ' + wiHM(+p.exit) + ' London if the target hasn\'t hit' + (+p.exit > 810 ? ', held through the 13:30 news.' : '.'), 'Cerrada a las ' + wiHM(+p.exit) + ' hora de Londres si no ha llegado al objetivo' + (+p.exit > 810 ? ', aguantando las noticias de las 13:30.' : '.'))) +
         wiRow(L('Costs', 'Costes'), '', wiStep('cost', L(wiUW() + ' a trade', wiUW() + ' por operación'), 1), +p.cost ? L('About ' + (s.n ? s.cr / s.n : 0).toFixed(2) + 'R a trade with these stops, ' + s.cr.toFixed(1) + 'R over the period. Spread and commission are a fixed distance, so the tighter the stop, the more R they cost.', 'Unos ' + (s.n ? s.cr / s.n : 0).toFixed(2) + 'R por operación con estos stops, ' + s.cr.toFixed(1) + 'R en el periodo. El spread y la comisión son una distancia fija, así que cuanto más ajustado el stop, más R cuestan.') : L('No spread or commission.', 'Sin spread ni comisión.')) + '</div>';
       h += '<div class="hk-lbl">' + L('Result', 'Resultado') + '</div><div class="hk-kpi">' + [[sR1(s.net), L('Net', 'Neto'), s.net >= 0 ? 'up' : 'dn'], [s.n, L('Trades', 'Operaciones')], [(s.n ? Math.round(s.win / s.n * 100) : 0) + '%', L('Targets', 'Objetivos')], [s.dd.toFixed(1) + 'R', L('Worst dip', 'Peor caída')]]
