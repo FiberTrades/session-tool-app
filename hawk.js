@@ -294,7 +294,7 @@
     var root = host.firstChild, list = root.querySelector('.hk-list'), statsEl = root.querySelector('.hk-stats'), todayEl = root.querySelector('.hk-today');
     // in the app, the Today view opens with the session's plan, news and risk budget (the app's Today panel, moved in here for the admin)
     function todayPaint() { var t = null; if (opt.today && period === 1) { try { t = opt.today(); } catch (x) {} }
-      if (!t || !t.html) { if (!todayEl.hidden) { todayEl.hidden = true; todayEl.innerHTML = ''; } return; }
+      if (!t || !(t.html || t.sess)) { if (!todayEl.hidden) { todayEl.hidden = true; todayEl.innerHTML = ''; } return; }
       var h = '<div class="hk-tdh"><span>Session</span><span>' + esc(t.sess || '') + '</span></div>' + t.html;
       if (todayEl.innerHTML !== h) todayEl.innerHTML = h; todayEl.hidden = false; }
     if (opt.today) setInterval(function () { if (!doc.hidden && host.offsetParent) todayPaint(); }, 15000);
