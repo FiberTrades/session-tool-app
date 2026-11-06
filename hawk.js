@@ -146,6 +146,36 @@
     '.hk-nar .hk-day{margin:14px 0 2px}.hk-nar .hk-card{padding:10px 11px;border-radius:8px;margin-top:8px}.hk-nar .hk-card h3{font-size:13.5px;margin:6px 0 2px}.hk-nar .hk-card p{font-size:12.5px}',
     '.hk-nar .hk-chart,.hk-nar .hk-card.hk-brief .hk-chart{height:220px;margin-top:10px}.hk-nar .hk-legend{font-size:11px;gap:2px 10px}.hk-nar .hk-btn{font-size:12px;padding:5px 8px}.hk-nar textarea{font-size:12.5px}'
   ].join('\n');
+  // the hawk's alerts in Spanish (Nestor, 6 Nov 2026: "did you also translate the hawks alerts to spanish?"): the service on the server
+  // writes them in English (title + body, cloud/hawk/hawk.py), so they're translated here as they're shown, the saved ones too.
+  // Anything not matched stays in English. Keep these in step with the texts in hawk.py.
+  var A_SIDE = { buy: 'compra', sell: 'venta' }, A_DO = { buy: 'compra', sell: 'vende', Buy: 'Compra', Sell: 'Vende' }, A_WHERE = { 'in the discount': 'en el descuento', 'in the premium': 'en el premium', 'at the 50%': 'en el 50%', 'between the 50% and the edges': 'entre el 50% y los extremos', 'at the zone': 'en la zona' };
+  var A_RULES = [
+    [/^London brief · (.+)$/, function (m) { return 'Brief de Londres · ' + m[1]; }],
+    [/^Initiation · (up|down)$/, function (m) { return 'Iniciación · ' + (m[1] === 'up' ? 'al alza' : 'a la baja'); }],
+    [/^Watch · (buy|sell) idea$/, function (m) { return 'Atento · idea de ' + A_SIDE[m[1]]; }],
+    [/^Watch · 50% pullback (buy|sell)$/, function (m) { return 'Atento · ' + A_SIDE[m[1]] + ' en el retroceso al 50%'; }],
+    [/^Setup · reaction (buy|sell)$/, function (m) { return 'Setup · ' + A_SIDE[m[1]] + ' de reacción'; }],
+    [/^Setup · (pocket|50% pullback) (buy|sell) reached$/, function (m) { return 'Setup · ' + A_SIDE[m[2]] + (m[1] === 'pocket' ? ' en el pocket' : ' en el retroceso al 50%') + ' alcanzada'; }],
+    [/^Session over · (\d+) alerts?$/, function (m) { return 'Sesión terminada · ' + m[1] + (m[1] === '1' ? ' alerta' : ' alertas'); }],
+    [/Range day\. Range (\S+)–(\S+): premium above (\S+), discount below (\S+), 50% at (\S+)\./g, function (m) { return 'Día de rango. Rango ' + m[1] + '–' + m[2] + ': premium por encima de ' + m[3] + ', descuento por debajo de ' + m[4] + ', 50% en ' + m[5] + '.'; }],
+    [/Price (\S+), (in the premium|in the discount|at the 50%|between the 50% and the edges)\./g, function (m) { return 'Precio ' + m[1] + ', ' + A_WHERE[m[2]] + '.'; }],
+    [/Sell idea: a high taken in the premium, then the move slows\. Buy idea: a low taken in the discount, then it slows\./g, function () { return 'Idea de venta: un máximo barrido en el premium y luego el movimiento se frena. Idea de compra: un mínimo barrido en el descuento y luego se frena.'; }],
+    [/Nothing to do at the 50%\./g, function () { return 'Nada que hacer en el 50%.'; }],
+    [/Trend (up|down) on the hour chart \((higher|lower) highs and lows ×2\)\./g, function (m) { return 'Tendencia ' + (m[1] === 'up' ? 'alcista' : 'bajista') + ' en el gráfico de 1 hora (máximos y mínimos ' + (m[2] === 'higher' ? 'más altos' : 'más bajos') + ' ×2).'; }],
+    [/Last leg (\S+) → (\S+): its 50% at (\S+) is the (buy|sell) zone\./g, function (m) { return 'Último tramo ' + m[1] + ' → ' + m[2] + ': su 50% en ' + m[3] + ' es la zona de ' + A_SIDE[m[4]] + '.'; }],
+    [/Price (\S+)\. Range (\S+)–(\S+)\./g, function (m) { return 'Precio ' + m[1] + '. Rango ' + m[2] + '–' + m[3] + '.'; }],
+    [/Strong 5-minute close (above|below) the range \((\S+)\)\. Don't (sell|buy) against it\./g, function (m) { return 'Cierre fuerte de 5 minutos ' + (m[1] === 'above' ? 'por encima' : 'por debajo') + ' del rango (' + m[2] + '). No ' + (m[3] === 'sell' ? 'vendas' : 'compres') + ' en su contra.'; }],
+    [/(Buy-high|Sell-low) pocket: (buy|sell) (\S+), stop (\S+), target (\S+) \(([\d.]+R)\)\./g, function (m) { return 'Pocket ' + (m[1] === 'Buy-high' ? 'para comprar arriba' : 'para vender abajo') + ': ' + A_DO[m[2]] + ' ' + m[3] + ', stop ' + m[4] + ', objetivo ' + m[5] + ' (' + m[6] + ').'; }],
+    [/(Low|High) taken (in the discount|in the premium|[\w %]+?) at (\S+) \((\d\d:\d\d)\)\. If it slows here: (buy|sell), stop (\S+)\. If it moves away fast: wait for the pullback to the 50% of that move\./g, function (m) { return (m[1] === 'Low' ? 'Mínimo' : 'Máximo') + ' barrido ' + (A_WHERE[m[2]] || 'en ' + m[2]) + ' en ' + m[3] + ' (' + m[4] + '). Si se frena aquí: ' + A_DO[m[5]] + ', stop ' + m[6] + '. Si se aleja rápido: espera el retroceso al 50% de ese movimiento.'; }],
+    [/Fast (rise|drop) (\S+) → (\S+)\. If price comes back to (\S+)–(\S+) \(the small range at its 50%\): (buy|sell) (\S+), stop (\S+), target (\S+) \(([\d.]+R)\)\./g, function (m) { return (m[1] === 'rise' ? 'Subida rápida ' : 'Caída rápida ') + m[2] + ' → ' + m[3] + '. Si el precio vuelve a ' + m[4] + '–' + m[5] + ' (el pequeño rango en su 50%): ' + A_DO[m[6]] + ' ' + m[7] + ', stop ' + m[8] + ', objetivo ' + m[9] + ' (' + m[10] + ').'; }],
+    [/(Buy|Sell) now ~(\S+) · stop (\S+) \(([\d.]+) pips\) · target (\S+) \(([\d.]+) pips, ([\d.]+R)\)\. (Low|High) taken (in the discount|in the premium|at the zone), the move has slowed\./g, function (m) { return A_DO[m[1]] + ' ahora ~' + m[2] + ' · stop ' + m[3] + ' (' + m[4] + ' pips) · objetivo ' + m[5] + ' (' + m[6] + ' pips, ' + m[7] + '). ' + (m[8] === 'Low' ? 'Mínimo' : 'Máximo') + ' barrido ' + A_WHERE[m[9]] + ', el movimiento se ha frenado.'; }],
+    [/(Buy|Sell) limit (\S+) reached · stop (\S+) \(([\d.]+) pips\) · target (\S+) \(([\d.]+R)\)\./g, function (m) { return 'Límite de ' + A_SIDE[m[1].toLowerCase()] + ' ' + m[2] + ' alcanzado · stop ' + m[3] + ' (' + m[4] + ' pips) · objetivo ' + m[5] + ' (' + m[6] + ').'; }],
+    [/It touched the stop in the same minute\./g, function () { return 'Tocó el stop en el mismo minuto.'; }],
+    [/Tap to rate them: good call, not my trade, too early or too late\./g, function () { return 'Tócalas para valorarlas: bien visto, no es mi operación, demasiado pronto o demasiado tarde.'; }]
+  ];
+  function aES(s) { s = String(s == null ? '' : s); if (!ES()) return s;
+    A_RULES.forEach(function (r) { s = s.replace(r[0], function () { return r[1](arguments); }); }); return s; }
   var RATE = [['good', 'Good call', 'Bien visto'], ['bad', 'Not my trade', 'No es mi operación'], ['early', 'Too early', 'Demasiado pronto'], ['late', 'Too late', 'Demasiado tarde']];
   var KIND = { brief: ['Brief', 'Resumen'], sweep: ['Watch', 'Vigilar'], pocket: ['Watch', 'Vigilar'], initiation: ['Initiation', 'Iniciación'], setup: ['Setup', 'Setup'], done: ['Done', 'Fin'] };
   var PHASES = [['range', 'Range', 'Rango'], ['trend up', 'Trend up', 'Tendencia alcista'], ['trend down', 'Trend down', 'Tendencia bajista']];
@@ -341,7 +371,7 @@
       h += '<article class="hk-card' + (r.kind === 'brief' ? ' hk-brief' : '') + (r.id === focusId ? ' hk-focus' : '') + '" id="hk-a-' + r.id + '">' +
         '<div class="hk-top"><span class="hk-chip' + (r.kind === 'setup' ? ' setup' : '') + '">' + esc(KIND[r.kind] ? L(KIND[r.kind][0], KIND[r.kind][1]) : r.kind) + '</span>' + side +
         '<span class="hk-time">' + esc(ldn(r.created_at, { hour: '2-digit', minute: '2-digit' })) + '</span></div>' +
-        '<h3>' + esc(r.title) + '</h3><p>' + esc(r.body) + '</p>';
+        '<h3>' + esc(aES(r.title)) + '</h3><p>' + esc(aES(r.body)) + '</p>';
       if (ch) {
         h += '<div class="hk-chart" data-id="' + r.id + '"><canvas role="img" aria-label="' + L('The hawk\'s chart for this alert', 'El gráfico del hawk para esta alerta') + '"></canvas></div>' + legend(r);
         if (keys.length) h += '<div class="hk-train"><button class="hk-btn you" data-act="edit" data-id="' + r.id + '">' + (r.kind === 'brief' ? L('Correct the read', 'Corregir la lectura') : L('Mark my trade', 'Marcar mi operación')) + '</button>' +
