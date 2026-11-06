@@ -10,17 +10,19 @@
     for (var i = 0; i < 200 && !(window.__stPractice && window.__stSB); i++) await W(100);
     await W(1000);
     var P = window.__stPractice, C = P._cfg();
-    var DB = { practice_trades: [], practice_settings: [], practice_drawings: [] }, calls = [];
+    var DB = { practice_trades: [], practice_settings: [], practice_drawings: [], practice_drawings_hist: [] }, calls = [];
     var keyOf = function (table, r) { return table === 'practice_trades' ? (r.user_id + '|' + r.client_id) : (table === 'practice_drawings' ? (r.user_id + '|' + r.sym) : r.user_id); };
     function q(table) {
       var st = { table: table, op: 'select', rows: null, opts: null, eq: {} };
       var b = {
         select: function () { return b; }, order: function () { return b; }, limit: function () { return b; }, eq: function (k, v) { st.eq[k] = v; return b; },
         maybeSingle: function () { st.single = true; return b; },
+        insert: function (rows) { st.op = 'insert'; st.rows = Array.isArray(rows) ? rows : [rows]; return b; },
         upsert: function (rows, opts) { st.op = 'upsert'; st.rows = Array.isArray(rows) ? rows : [rows]; st.opts = opts || {}; return b; },
         then: function (res, rej) {
           calls.push(st.op + ':' + table);
           var T = DB[table];
+          if (st.op === 'insert') { st.rows.forEach(function (r) { T.push(Object.assign({}, r)); }); return Promise.resolve({ data: null, error: null }).then(res, rej); }
           if (st.op === 'upsert') {
             st.rows.forEach(function (r) {
               var key = keyOf(table, r);
@@ -90,6 +92,13 @@
     await P._dwPull('XAUUSD'); await W(200);
     var gold = JSON.parse(localStorage.getItem('st_practice_draw2:XAUUSD') || '[]'), srvG = DB.practice_drawings.filter(function (x) { return x.sym === 'XAUUSD'; })[0];
     ok("the first sync of drawings made before syncing keeps both sets, here and on the server", gold.length === 2 && srvG.items.length === 2, [gold.length, srvG.items.length]);
+    // another device saves EUR/USD empty (Nestor, 6 Nov 2026: his three Live lines went that way): this browser keeps its two lines first
+    srvE.items = []; srvE.updated_at = new Date(Date.now() + 5000).toISOString(); await P._dwPull('EURUSD'); await W(300);
+    var bak = null; try { bak = JSON.parse(localStorage.getItem('st_practice_drawbak:EURUSD') || 'null'); } catch (e) {}
+    var hist = DB.practice_drawings_hist.filter(function (x) { return x.sym === 'EURUSD'; });
+    ok("a shorter list from the server keeps this browser's copy first (here and on the server)", bak && bak.list.length === 2 && hist.length === 1 && hist[0].items.length === 2 && hist[0].src === 'device' && JSON.parse(localStorage.getItem('st_practice_draw2:EURUSD') || '[]').length === 0, { bak: bak && bak.list.length, hist: hist.map(function (x) { return x.items.length + ':' + x.src; }) });
+    await P._dwPull('EURUSD'); await W(200);
+    ok('an empty list already here keeps nothing twice', DB.practice_drawings_hist.filter(function (x) { return x.sym === 'EURUSD'; }).length === 1);
     // a change in the Minimalist Manager panel (17 Oct 2026: it took over the Stop box) goes up a moment later
     P._s().done = null; window.__stPractice._render();
     var sb2 = document.querySelector('#stpr-mm [data-mmi="max"]'); sb2.value = '9.5'; sb2.dispatchEvent(new Event('input', { bubbles: true })); sb2.dispatchEvent(new Event('change', { bubbles: true }));

@@ -81,7 +81,7 @@
       var only = function (s) { return ['.pl-wl', '.pl-tmc', '.pl-ch', '.pl-td', '.pl-ot'].filter(function (x) { return shown('.plat-right > ' + x); }).join(',') === s; };
       var order = Array.prototype.filter.call(document.querySelectorAll('.plat-rail [data-plr]'), function (b) { return !b.hidden && b.getAttribute('data-plr') !== 'hk'; })   // the hawk's button is the admin's alone (this test signs in as the admin, so it may show)
         .map(function (b) { return b.getAttribute('data-plr'); }).join(',');
-      check('the rail: Watchlist, Trade Manager, Chat, Today, News, Object tree, in that order', order === 'wl,tm,ch,td,nw,ot' && rb('ch').title === 'Chat' && rb('nw').title === 'News' && rb('ot').title === 'Object tree', [order, rb('ot') && rb('ot').title]);
+      check('the rail: Watchlist, Trade Manager, Chat, Today, Object tree, News, in that order', order === 'wl,tm,ch,td,ot,nw' && rb('ch').title === 'Chat' && rb('nw').title === 'News' && rb('ot').title === 'Object tree', [order, rb('ot') && rb('ot').title]);
       var tbn = document.getElementById('stpr-treebtn');
       check('the Object tree has left the left toolbar', !tbn || !tbn.getClientRects().length, tbn && tbn.parentNode && tbn.parentNode.className);
       check('it starts on the Trade Manager, alone in the whole column', rb('tm').classList.contains('on') && only('.pl-tmc') && fills('.plat-right > .pl-tmc'),
