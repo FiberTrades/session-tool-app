@@ -148,13 +148,20 @@
         [sw2, sdr2 && [sdr2.left, sdr2.right, sdr2.width], cq3.right, pr.right, msgs.scrollWidth, msgs.clientWidth]);
       drag(-50); await W(400); var chw = col().width;
       msgs.scrollTop = 0;   // left reading old messages
-      // Today
+      // Today - a member's. This test signs in as the admin, and since 6 Nov 2026 the admin's Today is inside the hawk's panel (plPn maps
+      // 'td' to 'hk', its rail icon hidden), so the hawk steps aside for these checks and comes back after them.
+      for (var ih = 0; ih < 30 && !window.__stHawk; ih++) await W(100);   // hawk.js loads on its own once the admin is seen
+      var hawk0 = window.__stHawk; window.__stHawk = undefined; try { P._hawkOn(); } catch (e) {} await W(300);
       rb('td').click(); await W(600);
       check('Today: its own panel, at the chat\'s width (one width for the column)', only('.pl-td') && fills('.plat-right > .pl-td') && Math.abs(col().width - chw) < 3, [col().width, chw]);
       var tdt = $('.plat-right .pl-tdb').textContent;
       check('Today: red news (or none this week) and the risk budget the Session Live board had', /Red news/i.test(tdt) && (/None this week|·/.test(tdt)), tdt.slice(0, 200));
       check('Today: no bias (that is in Check my plan now)', !/morning's bias/i.test(tdt));
       check('Today names the session and how long it has (or until the next)', /\d+ ?(min|h)/.test($('.plat-right .pl-tds').textContent), $('.plat-right .pl-tds').textContent);
+      if (hawk0) {   // the admin again: Today's icon gone, its click target the hawk's panel
+        window.__stHawk = hawk0; try { P._hawkOn(); } catch (e) {} await W(300);
+        check('the admin: no Today icon, Today is in the hawk panel', !(rb('td') && rb('td').offsetParent) && !!rb('hk') && !rb('hk').hidden && P._plat().st.pn === 'td', [!!(rb('td') && rb('td').offsetParent), rb('hk') && rb('hk').hidden, P._plat().st.pn]);
+      }
       // closed: a new message counts on its icon
       var nm = { id: 'tst-' + Date.now(), channel_id: 'ch-chat', sender_id: TROY, sender_name: 'Troy', body: 'hi', created_at: new Date().toISOString() };
       DB.channel_messages.unshift(nm); subs.forEach(function (x) { if (x.table === 'channel_messages' && x.ev === 'INSERT' && (!x.filter || x.filter === 'channel_id=eq.ch-chat')) { try { x.cb({ new: nm }); } catch (e) {} } });

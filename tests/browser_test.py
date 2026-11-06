@@ -220,6 +220,16 @@ def main():
         print(__doc__)
         return 2
     test_js = open(sys.argv[1], encoding='utf-8').read()
+    # A relay test (platchat_e2e.js, platform_e2e.js and 22 more) leaves '__RELAY__' / '__TOK__' for its *_run.py to fill: that runner
+    # starts the local relay and the stand-in EA the prices come from. Run bare, the page has no feed at all - every price "—", no
+    # bid/ask, orders never fill (6 Nov 2026: read as a broken tick stand-in). Say which runner to use instead.
+    left = [k for k in ('__RELAY__', '__TOK__') if k in test_js]
+    if left:
+        base = os.path.basename(sys.argv[1]); here = os.path.dirname(os.path.abspath(__file__))
+        runs = sorted(f for f in os.listdir(here) if f.endswith('_run.py') and base in open(os.path.join(here, f), encoding='utf-8', errors='replace').read())
+        print('%s needs its runner (it starts the local relay and stand-in EA the prices come from; %s left unfilled):' % (base, ' '.join(left)))
+        print('\n'.join('    python tests/' + r for r in runs) or '    (no tests/*_run.py names it)')
+        return 2
     edge = next((p for p in EDGE_PATHS if os.path.exists(p)), None)
     if not edge:
         print('Microsoft Edge not found')
