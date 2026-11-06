@@ -61,7 +61,12 @@
     '.hk textarea{width:100%;margin-top:8px;font:14px var(--hk-font,inherit);color:var(--hk-ink);background:var(--hk-plot);border:1px solid var(--hk-line);border-radius:8px;padding:8px 10px;resize:vertical;min-height:38px}',
     '.hk-saved{font-size:12px;color:var(--hk-mut);margin-top:4px;min-height:18px}',
     '.hk button:focus-visible,.hk textarea:focus-visible{outline:2px solid var(--hk-acc);outline-offset:2px}',
-    '.hk-empty{color:var(--hk-mut);margin-top:22px}'
+    '.hk-empty{color:var(--hk-mut);margin-top:22px}',
+    /* narrow: the Live Charts rail panel */
+    '.hk-nar{font-size:13px}.hk-nar .hk-sub{display:none}.hk-nar .hk-head{align-items:center}.hk-nar .hk-tabs button{padding:3px 9px;font-size:11px}',
+    '.hk-nar .hk-stats{grid-template-columns:repeat(4,1fr);gap:4px;margin:10px 0 0}.hk-nar .hk-stat{padding:6px 8px;border-radius:6px}.hk-nar .hk-stat b{font-size:14px}.hk-nar .hk-stat span{font-size:10px}',
+    '.hk-nar .hk-day{margin:14px 0 2px}.hk-nar .hk-card{padding:10px 11px;border-radius:8px;margin-top:8px}.hk-nar .hk-card h3{font-size:13.5px;margin:6px 0 2px}.hk-nar .hk-card p{font-size:12.5px}',
+    '.hk-nar .hk-chart,.hk-nar .hk-card.hk-brief .hk-chart{height:220px;margin-top:10px}.hk-nar .hk-legend{font-size:11px;gap:2px 10px}.hk-nar .hk-btn{font-size:12px;padding:5px 8px}.hk-nar textarea{font-size:12.5px}'
   ].join('\n');
   var RATE = [['good', 'Good call'], ['bad', 'Not my trade'], ['early', 'Too early'], ['late', 'Too late']];
   var KIND = { brief: 'Brief', sweep: 'Watch', pocket: 'Watch', initiation: 'Initiation', setup: 'Setup', done: 'Done' };
@@ -71,7 +76,7 @@
   function ldn(iso, o) { return new Date(iso).toLocaleString('en-GB', Object.assign({ timeZone: 'Europe/London' }, o)); }
   function p5(v) { return (+v).toFixed(5); }
   function r5(v) { return Math.round(v * 1e5) / 1e5; }
-  function css() { if (document.getElementById('hk-css')) return; var s = document.createElement('style'); s.id = 'hk-css'; s.textContent = CSS; document.head.appendChild(s); }
+  function css(doc) { if (doc.getElementById('hk-css')) return; var s = doc.createElement('style'); s.id = 'hk-css'; s.textContent = CSS; doc.head.appendChild(s); }   // in the document it shows in (Live Charts' own window too)
 
   // ---------- the chart: what the hawk saw, and what it made of it
   function agg(src, sec) {
@@ -208,9 +213,9 @@
 
   // ---------- the feed
   function mount(host, sb, opt) {
-    opt = opt || {}; css();
+    opt = opt || {}; var doc = host.ownerDocument || document; css(doc);
     var focusId = opt.focusId || null, period = focusId ? 7 : 1, rows = [], charts = {}, pollT = null;
-    host.innerHTML = '<div class="hk' + (opt.app ? ' hk-app' : '') + '"><div class="hk-head"><div>' +
+    host.innerHTML = '<div class="hk' + (opt.app ? ' hk-app' : '') + (opt.narrow ? ' hk-nar' : '') + '"><div class="hk-head"><div>' +
       '<div class="hk-eye">Hawk <i>Admin only</i></div><div class="hk-title">Hawk</div>' +
       '<p class="hk-sub">Its read of EUR/USD before and during London 08:00–10:00. Rate each alert, or draw your own read on the chart.</p></div>' +
       '<div class="hk-tabs" role="group" aria-label="Period"><button data-p="1">Today</button><button data-p="7">7 days</button><button data-p="90">All</button></div></div>' +
@@ -218,11 +223,11 @@
     var root = host.firstChild, list = root.querySelector('.hk-list'), statsEl = root.querySelector('.hk-stats');
     function tabs() { root.querySelectorAll('.hk-tabs button').forEach(function (b) { b.setAttribute('aria-pressed', +b.dataset.p === period); }); }
     tabs();
-    var io = 'IntersectionObserver' in window ? new IntersectionObserver(function (es) { es.forEach(function (e) {
-      var st = charts[e.target.dataset.id]; if (!st) return; st.vis = e.isIntersecting; if (st.vis) draw(st); }); }, { rootMargin: '200px' }) : null;
-    var ro = 'ResizeObserver' in window ? new ResizeObserver(function () { Object.keys(charts).forEach(function (id) { if (charts[id].vis) draw(charts[id]); }); }) : null;
+    function redraw() { Object.keys(charts).forEach(function (id) { draw(charts[id]); }); }   // a hidden chart has no size and draws nothing
+    var ro = 'ResizeObserver' in window ? new ResizeObserver(function () { redraw(); }) : null;
     if (ro) ro.observe(list);
-    try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () { Object.keys(charts).forEach(function (id) { if (charts[id].vis) draw(charts[id]); }); }); } catch (e) {}
+    try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', redraw); } catch (e) {}
+    function byEl(sel) { return root.querySelector(sel); }
 
     function stats() {
       var al = rows.filter(function (r) { return r.kind !== 'done' && r.kind !== 'brief'; }), rated = al.filter(function (r) { return r.feedback; });
@@ -267,7 +272,7 @@
       return h + '</article>';
     }
     function render() {
-      if (io) io.disconnect(); charts = {};
+      charts = {};
       if (!rows.length) { list.innerHTML = '<p class="hk-empty">No alerts in this period. The hawk watches weekdays: the brief comes at 07:45 London time, then alerts until 10:05.</p>'; statsEl.hidden = true; return; }
       stats();
       var h = '', last = '';
@@ -275,10 +280,9 @@
         if (dl !== last) { h += '<div class="hk-day">' + esc(dl) + '</div>'; last = dl; } h += card(r); });
       list.innerHTML = h;
       list.querySelectorAll('.hk-chart').forEach(function (box) { var r = byId(box.dataset.id);
-        var st = charts[r.id] = { box: box, cv: box.firstChild, row: r, vis: !io };
-        if (io) io.observe(box); else draw(st);
-        hookChart(st); });
-      if (focusId) { var f = document.getElementById('hk-a-' + focusId); if (f) f.scrollIntoView({ block: 'start' }); focusId = null; }
+        var st = charts[r.id] = { box: box, cv: box.firstChild, row: r };
+        draw(st); hookChart(st); });
+      if (focusId) { var f = byEl('#hk-a-' + focusId); if (f) f.scrollIntoView({ block: 'start' }); focusId = null; }
     }
     function byId(id) { return rows.find(function (x) { return x.id === id; }); }
     function hookChart(st) {
@@ -307,25 +311,26 @@
         .gt('created_at', since.toISOString()).order('created_at', { ascending: false }).limit(period > 7 ? 200 : 300);
       if (q.error) { if (!more) list.innerHTML = '<p class="hk-empty">Couldn\'t load the alerts: ' + esc(q.error.message) + '</p>'; return; }
       var got = q.data || [];
-      if (more) { if (!got.length) return; if (Object.keys(charts).some(function (id) { return charts[id].edit; }) || (document.activeElement && root.contains(document.activeElement) && document.activeElement.tagName === 'TEXTAREA')) { pending = got.concat(pending); return; }
-        rows = got.concat(pending, rows); pending = []; } else rows = got;
+      if (more) { if (!got.length) return; if (Object.keys(charts).some(function (id) { return charts[id].edit; }) || (doc.activeElement && root.contains(doc.activeElement) && doc.activeElement.tagName === 'TEXTAREA')) { pending = got.concat(pending); return; }
+        var have = {}; rows.forEach(function (r) { have[r.id] = 1; });
+        rows = got.concat(pending).filter(function (r) { return !have[r.id] && (have[r.id] = 1); }).concat(rows); pending = []; } else rows = got;   // never the same alert twice
       render();
     }
     var pending = [];
     // new alerts appear by themselves while the London window is on and this feed is on screen
     function poll() { clearTimeout(pollT); pollT = setTimeout(poll, 30000);
-      if (document.hidden || !host.offsetParent || period !== 1) return;
+      if (doc.hidden || !host.offsetParent || period !== 1) return;
       var hm = LDN.format(new Date()), m = +hm.slice(0, 2) * 60 + +hm.slice(3), wd = new Date().toLocaleDateString('en-GB', { timeZone: 'Europe/London', weekday: 'short' });
       if (wd === 'Sat' || wd === 'Sun' || m < 7 * 60 + 20 || m > 10 * 60 + 30) return;
       load(true); }
     async function save(id, patch, label) {
       if ('feedback' in patch || 'note' in patch) patch.feedback_at = new Date().toISOString();
-      var q = await sb.from('hawk_signals').update(patch).eq('id', id), el = document.getElementById('hk-s-' + id);
+      var q = await sb.from('hawk_signals').update(patch).eq('id', id), el = byEl('#hk-s-' + id);
       if (el) el.textContent = q.error ? 'Not saved: ' + q.error.message : label;
       return !q.error;
     }
     function editOpen(r, on) {
-      var st = charts[r.id], ed = document.getElementById('hk-e-' + r.id); if (!st || !ed) return;
+      var st = charts[r.id], ed = byEl('#hk-e-' + r.id); if (!st || !ed) return;
       if (on) { var a = r.data, d = a.chart, m = r.mine || {};
         st.edit = r.kind === 'brief' ? { bh: m.bh != null ? m.bh : d.bh, bl: m.bl != null ? m.bl : d.bl } : { entry: m.entry != null ? m.entry : a.entry, stop: m.stop != null ? m.stop : a.stop, tgt: m.tgt != null ? m.tgt : a.tgt };
         st.phase = m.phase || d.phase; st.hover = null;
@@ -348,7 +353,7 @@
       if (act === 'save' || act === 'clear') {
         var mine = act === 'clear' ? null : Object.assign({}, st.edit, r.kind === 'brief' ? { phase: st.phase } : {}, { at: new Date().toISOString() });
         if (await save(r.id, { mine: mine }, act === 'clear' ? 'Your read removed' : 'Your read saved — the hawk will learn from it')) {
-          r.mine = mine; document.getElementById('hk-m-' + r.id).textContent = mineText(r); editOpen(r, false); stats(); }
+          r.mine = mine; byEl('#hk-m-' + r.id).textContent = mineText(r); editOpen(r, false); stats(); }
       }
     });
     root.addEventListener('change', function (e) {
@@ -356,7 +361,7 @@
       r.note = e.target.value.trim(); save(r.id, { note: r.note || null }, 'Note saved');
     });
     load(); poll();
-    return { reload: function () { load(); } };
+    return { reload: function () { load(); }, redraw: redraw };
   }
   window.STHawk = { mount: mount, draw: draw };
 })();

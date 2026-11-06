@@ -79,7 +79,8 @@
       var shown = function (s) { var e = $(s); return !!e && getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().height > 50; };
       var fills = function (s) { var r = $(s).getBoundingClientRect(), c = col(); return Math.abs(r.top - c.top) < 2 && Math.abs(r.bottom - c.bottom) < 2 && Math.abs(r.left - c.left) < 2 && Math.abs(r.right - c.right) < 2; };
       var only = function (s) { return ['.pl-wl', '.pl-tmc', '.pl-ch', '.pl-td', '.pl-ot'].filter(function (x) { return shown('.plat-right > ' + x); }).join(',') === s; };
-      var order = Array.prototype.map.call(document.querySelectorAll('.plat-rail [data-plr]'), function (b) { return b.getAttribute('data-plr'); }).join(',');
+      var order = Array.prototype.filter.call(document.querySelectorAll('.plat-rail [data-plr]'), function (b) { return !b.hidden; })   // the hawk's button is the admin's alone (hidden for everyone else)
+        .map(function (b) { return b.getAttribute('data-plr'); }).join(',');
       check('the rail: Watchlist, Trade Manager, Chat, Today, Object tree, in that order', order === 'wl,tm,ch,td,ot' && rb('ch').title === 'Chat' && rb('ot').title === 'Object tree', [order, rb('ot') && rb('ot').title]);
       var tbn = document.getElementById('stpr-treebtn');
       check('the Object tree has left the left toolbar', !tbn || !tbn.getClientRects().length, tbn && tbn.parentNode && tbn.parentNode.className);
