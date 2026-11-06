@@ -93597,7 +93597,8 @@ window.__stAZ = (function () {
   .stpr-win.plat .pl-nw .strp-nrow > .strp-nnum:nth-child(4) { grid-column: 3; } .stpr-win.plat .pl-nw .strp-nrow > .strp-nnum:nth-child(5) { grid-column: 4; } .stpr-win.plat .pl-nw .strp-nrow > .strp-nnum:nth-child(6) { grid-column: 5; }
   .stpr-win.plat .pl-nw .strp-nrow.pl-nn > .strp-nnum { display: none; }   /* a speech or a report: no figures, one line */
   /* the header: TIME CCY EVENT, then ACTUAL FORECAST PREVIOUS under EVENT, as the rows; its words one size at every width */
-  .stpr-win.plat .pl-nw .strp-nhdr { padding-top: 8px; padding-bottom: 8px; }
+  .stpr-win.plat .pl-nw .strp-nhdr { padding-top: 8px; padding-bottom: 8px; position: sticky; top: 0; z-index: 2; background: var(--pl-bg); box-shadow: 0 1px 0 var(--pl-line); }   /* stays on show while the week scrolls (6 Nov 2026) */
+  .stpr-win.plat .pl-nw .strp-nday { top: var(--pl-nwh, 0px); }   /* the day's heading sticks under it */
   .stpr-win.plat .pl-nw .strp-nrow.strp-nhdr > div { font-size: 9.5px; letter-spacing: .04em; line-height: 1.3; }
   .stpr-win.plat .pl-nw .strp-nrow.hol { grid-template-columns: 38px 32px minmax(0, 1fr); }
   .stpr-win.plat .pl-nw .strp-nday { padding: 12px 14px 6px; }
@@ -100241,7 +100242,6 @@ window.__stAZ = (function () {
       if (e.target.id === 'stpr-marks' || e.target.id === 'stpr-pos' || e.target.id === 'stpr-hist') { showSet(LAYP, { 'stpr-marks': 'marks', 'stpr-pos': 'pos', 'stpr-hist': 'hist' }[e.target.id], e.target.checked); save(); layersDot(); if (S) render(); dirty(); }   // that chart only (showOn)
       if (e.target.id === 'stpr-mini') { showSet(LAYP, 'mini', e.target.checked); save(); layersMenu($('stpr-layersbtn'), true); dirty(); }
       if (e.target.id === 'stpr-newsshow') { showSet(NWP, 'news', e.target.checked); save(); newsBtnPaint(); drawAll(); }   // that chart only (showOn)
-      if (e.target.hasAttribute && e.target.hasAttribute('data-plnwshow')) { showSet(showTgt(), 'news', e.target.checked); save(); newsBtnPaint(); drawAll(); }   // the rail's News panel (6 Nov 2026)
       var mp = e.target.getAttribute && e.target.getAttribute('data-mini'); if (mp) { var mo = Object.assign({}, CFG.miniOff || {}); if (e.target.checked) delete mo[mp]; else mo[mp] = true; CFG.miniOff = mo; save(); dirty(); } });
     $('stpr-menu').addEventListener('click', lookClick);
     $('stpr-menu').addEventListener('input', lookInput);
@@ -100575,17 +100575,22 @@ window.__stAZ = (function () {
       var best = null; ss.forEach(function(x){ var a = mm(x.start), d = a > nm ? a - nm : a + 1440 - nm; if (!best || d < best.d) best = { x: x, d: d }; });
       return best ? (best.x.name || T('Session', 'Sesión')) + ' ' + T('in ' + inT(best.d), 'en ' + inT(best.d)) : ''; } catch (e) { return ''; } }
   var PLNW = { at: 0, tok: 0, key: '' };
+  function plNwHh(body){ var hd = body && body.querySelector('.strp-nhdr'); if (!hd) return; var v = hd.offsetHeight + 'px'; if (body.style.getPropertyValue('--pl-nwh') !== v) body.style.setProperty('--pl-nwh', v); }
   function plNwPaint(force){ var E = PL.el; if (!PL.on || PL.ph || !E.right || plPn() !== 'nw' || !S) return; var c = E.right.querySelector('.pl-nw'); if (!c) return;
     plTxt(c.querySelector('.pl-nwt'), T('News this week', 'Noticias de la semana')); plTxt(c.querySelector('.pl-nwswt'), T('Show news on chart', 'Mostrar noticias en el gráfico'));
-    var tp = showTgt(), cb = c.querySelector('[data-plnwshow]'), on = showOn(tp, 'news'); if (cb && cb.checked !== on) cb.checked = on;
+    var tp = showTgt(), cb = c.querySelector('[data-plnwshow]'), on = showOn(tp, 'news');
+    if (cb && !cb._plb) { cb._plb = 1; cb.addEventListener('change', function(){ showSet(showTgt(), 'news', cb.checked); save(); try { newsBtnPaint(); } catch (er) {} drawAll(); });   // (Nestor, 6 Nov 2026: "i turn it off and it turns itself back on" - the menu's handler never saw this switch)
+      on = showOn(tp, 'news'); }
+    if (cb && cb.checked !== on) cb.checked = on;
     var W = window.__stReplay && window.__stReplay._newsWeek, k = (S.live ? 'live' : 'rp') + '|' + Math.floor((S.now || 0) / 86400000); if (!W) return;
     if (!force && k === PLNW.key && Date.now() - PLNW.at < 60000) return; PLNW.key = k; PLNW.at = Date.now();
     var body = c.querySelector('.pl-nwb'), tok = ++PLNW.tok, keep = body.scrollTop; if (!body.firstChild) W.msg(body, T('Loading…', 'Cargando…'));
     W.load(S.now).then(function(pack){ if (tok !== PLNW.tok || !S) return; plTxt(c.querySelector('.pl-nws'), pack ? pack.from.slice(5) + ' → ' + pack.to.slice(5) + ' · ' + W.tz() : '');
       W.render(body, pack, { hideAfter: S.live ? null : S.now });
+      plNwHh(body); if (!body._plhh) { body._plhh = 1; body.addEventListener('scroll', function(){ plNwHh(body); }, { passive: true }); }   // the header's height: one line wide, two narrow
       body.querySelectorAll('.strp-nrow:not(.strp-nhdr):not(.hol)').forEach(function(r){ var n = r.querySelectorAll('.strp-nnum'); if (n.length && [].every.call(n, function(x){ return !/[0-9]/.test(x.textContent); })) r.classList.add('pl-nn'); });
       body.scrollTop = keep; }, function(){ PLNW.at = 0; }); }
-  try { setInterval(function(){ if (PL.on && !PL.ph && plPn() === 'nw') { try { plNwPaint(); } catch (e) {} } }, 1500); } catch (e) {}
+  try { setInterval(function(){ if (PL.on && !PL.ph && plPn() === 'nw') { try { plNwPaint(); plNwHh(PL.el.right && PL.el.right.querySelector('.pl-nwb')); } catch (e) {} } }, 1500); } catch (e) {}
   function plTdPaint(){ var E = PL.el; if (!PL.on || PL.ph || !E.right || plPn() !== 'td') return; plTxt(E.right.querySelector('.pl-tdt'), T('Today', 'Hoy')); plTxt(E.right.querySelector('.pl-tds'), plTdSess());
     plSet(E.right.querySelector('.pl-tdb'), plTdHtml()); }
   function plTdHtml(){ var h = '', nh = '', bh = '', pn0 = ''; try { nh = window.__stLiveBox && window.__stLiveBox.newsHtml ? window.__stLiveBox.newsHtml() : ''; } catch (e) {} try { bh = window.__stLiveBox && window.__stLiveBox.budgetHtml ? window.__stLiveBox.budgetHtml() : ''; } catch (e) {}
