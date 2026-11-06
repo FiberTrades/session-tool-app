@@ -133,6 +133,33 @@ def main():
         cdp.eval("(function(){ var d = window.__pcSat && window.__pcSat.document; var b = d && d.querySelector('.plat-top [data-pltheme]'); if (b) b.click(); return 1; })()")
         time.sleep(2)
         shot(dbg_port, 'popchat_window_light.png')
+        # Replay in Live Charts' own window keeps a way back (6 Nov 2026, Nestor: "on the bottom chart how do i go back to live charts? the buttons
+        # have dissapeared and also the chart above says replay and below says live charts still"): that window copied the app's classes once, as it
+        # opened, so its Live button could stay hidden; its title said Live Charts in Replay
+        cdp.eval("(function(){ var d = window.__pcSat && window.__pcSat.document; var b = d && d.querySelector('[data-plrp]'); if (b) b.click(); return 1; })()")
+        time.sleep(1.5)
+        cdp.eval("(function(){ var d = window.__pcSat && window.__pcSat.document; var b = (d && d.querySelector('[data-lca=\"1\"]')) || document.querySelector('[data-lca=\"1\"]'); if (b) b.click(); return 1; })()")
+        rp = {}
+        for _ in range(40):
+            time.sleep(0.5)
+            raw = cdp.eval("(function(){ var w = window.__pcSat, d = w && w.document, b = d && d.getElementById('stpr-lvback'), S = window.__stPractice._s(); return JSON.stringify({ replay: !!(S && !S.live), btn: b ? w.getComputedStyle(b).display : 'none', inWin: !!(b && b.ownerDocument === d), ok: !!(d && d.body.classList.contains('st-lcm-ok')), title: d && d.title }); })()")
+            rp = json.loads(raw) if isinstance(raw, str) else {}
+            if rp.get('replay') and rp.get('btn') != 'none' and str(rp.get('title', '')).startswith('Replay'): break
+        good = rp.get('replay') and rp.get('btn') != 'none' and rp.get('inWin') and str(rp.get('title', '')).startswith('Replay')
+        print('%s  Replay in Live Charts\' window: its Live button shows and its title says Replay   %s' % ('PASS' if good else 'FAIL', json.dumps(rp)))
+        if not good: rc = 1
+        shot(dbg_port, 'popchat_window_replay.png')
+        cdp.eval("(function(){ var d = window.__pcSat && window.__pcSat.document; var b = d && d.getElementById('stpr-lvback'); if (b) b.click(); return 1; })()")
+        time.sleep(1.5); cdp.eval("(function(){ var d = window.__pcSat && window.__pcSat.document; var b = (d && d.querySelector('[data-lca=\"1\"]')) || document.querySelector('[data-lca=\"1\"]'); if (b) b.click(); return 1; })()")   # it asks first, as from the tab
+        back = {}
+        for _ in range(40):
+            time.sleep(0.5)
+            raw = cdp.eval("(function(){ var w = window.__pcSat, d = w && w.document, S = window.__stPractice._s(); return JSON.stringify({ live: !!(S && S.live), title: d && d.title }); })()")
+            back = json.loads(raw) if isinstance(raw, str) else {}
+            if back.get('live') and str(back.get('title', '')).startswith('Live'): break
+        good = back.get('live') and str(back.get('title', '')).startswith('Live Charts')
+        print('%s  ...and its Live button takes it back to live, the title with it   %s' % ('PASS' if good else 'FAIL', json.dumps(back)))
+        if not good: rc = 1
         stop.set()
         return rc
     finally:
