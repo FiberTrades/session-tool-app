@@ -338,12 +338,12 @@
   // ---------- the feed
   function mount(host, sb, opt) {
     opt = opt || {}; var doc = host.ownerDocument || document; css(doc);
-    var focusId = opt.focusId || null, period = focusId ? 7 : 1, lastP = period, rows = [], charts = {}, pollT = null;
+    var focusId = opt.focusId || null, period = focusId ? 7 : 1, lastP = 7, rows = [], charts = {}, pollT = null;   // lastP: the dropdown's period (Today is its own button)
     function headHtml() { return '<div>' +
       '<div class="hk-eye">' + L('Hawk', 'Halcón') + ' <i>' + L('Admin only', 'Solo admin') + '</i></div><div class="hk-title">' + L('Hawk', 'Halcón') + '</div>' +
       '<p class="hk-sub">' + L('Its read of EUR/USD before and during London 08:00–10:00. Rate each alert, or draw your own read on the chart.', 'Su lectura del EUR/USD antes y durante Londres 08:00–10:00. Valora cada alerta o dibuja tu propia lectura en el gráfico.') + '</p></div>' +
-      '<div class="hk-tabs"><select data-hkp aria-label="' + L('Period', 'Periodo') + '"><option value="" hidden></option>' +
-        [[1, L('Today', 'Hoy')], [7, L('7 days', '7 días')], [30, L('30 days', '30 días')], [90, L('90 days', '90 días')]].map(function (x) { return '<option value="' + x[0] + '">' + x[1] + '</option>'; }).join('') +
+      '<div class="hk-tabs"><button data-p="1">' + L('Today', 'Hoy') + '</button><select data-hkp aria-label="' + L('Period', 'Periodo') + '"><option value="" hidden></option>' +
+        [[7, L('7 days', '7 días')], [30, L('30 days', '30 días')], [90, L('90 days', '90 días')], [3650, L('All time', 'Todo')]].map(function (x) { return '<option value="' + x[0] + '">' + x[1] + '</option>'; }).join('') +
         '</select><button data-p="s">' + L('Study', 'Estudio') + '</button></div>'; }
     host.innerHTML = '<div class="hk' + (opt.app ? ' hk-app' : '') + (opt.narrow ? ' hk-nar' : '') + '"><div class="hk-head">' + headHtml() + '</div>' +
       '<div class="hk-today" hidden></div><div class="hk-stats" hidden></div><div class="hk-list"><p class="hk-empty">' + L('Loading…', 'Cargando…') + '</p></div></div>';
@@ -356,7 +356,7 @@
     if (opt.today) setInterval(function () { if (!doc.hidden && host.offsetParent) todayPaint(); }, 15000);
     function tabs() { root.querySelectorAll('.hk-tabs button').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.p === String(period)); });
       var ps = root.querySelector('[data-hkp]'); if (ps) { var o0 = ps.options[0], ol = ps.querySelector('option[value="' + lastP + '"]'); if (o0 && ol) o0.textContent = ol.textContent;
-        ps.value = period === 's' ? '' : String(period); ps.classList.toggle('off', period === 's'); } todayPaint(); }
+        var on = period !== 's' && period !== 1; ps.value = on ? String(period) : ''; ps.classList.toggle('off', !on); } todayPaint(); }
     tabs();
     function redraw() { Object.keys(charts).forEach(function (id) { draw(charts[id]); }); }   // a hidden chart has no size and draws nothing
     var ro = 'ResizeObserver' in window ? new ResizeObserver(function () { redraw(); }) : null;
@@ -444,7 +444,7 @@
       var since = new Date(Date.now() - period * 86400000); if (period === 1) since = new Date(new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' }) + 'T00:00:00Z');
       if (more && rows.length) since = new Date(new Date(rows[0].created_at).getTime() + 1);
       var q = await sb.from('hawk_signals').select('id, created_at, kind, side, title, body, data, feedback, note, mine')
-        .gt('created_at', since.toISOString()).order('created_at', { ascending: false }).limit(period > 7 ? 200 : 300);
+        .gt('created_at', since.toISOString()).order('created_at', { ascending: false }).limit(period > 90 ? 500 : period > 7 ? 200 : 300);
       if (q.error) { if (!more) list.innerHTML = '<p class="hk-empty">' + L('Couldn\'t load the alerts: ', 'No se pudieron cargar las alertas: ') + esc(q.error.message) + '</p>'; return; }
       var got = q.data || [];
       if (more) { if (!got.length) return; if (Object.keys(charts).some(function (id) { return charts[id].edit; }) || (doc.activeElement && root.contains(doc.activeElement) && doc.activeElement.tagName === 'TEXTAREA')) { pending = got.concat(pending); return; }
@@ -647,8 +647,8 @@
       else if (d.a != null && d.ta) { o.push({ type: 'trend', a: { t: d.ta - 3600, price: d.a }, b: { t: d.ta + 1800, price: d.a }, color: '#e0a84a', width: 2 });
         lqNote(d.ta, d.a, d.model === 'initiation pocket' ? (buy ? L('Range high broken', 'Máximo del rango roto') : L('Range low broken', 'Mínimo del rango roto')) : (buy ? L('Low taken ', 'Mínimo barrido ') : L('High taken ', 'Máximo barrido ')) + hm(d.ta), d.model === 'initiation pocket' ? !buy : buy); }
       o.push({ type: buy ? 'long' : 'short', a: { t: d.ts, price: d.entry }, b: { t: x1, price: d.entry }, sl: d.stop, tp: d.tgt });
-      o.push({ type: 'text', a: { t: d.ts, price: d.tgt + d.side * 0.00025 }, color: '#5b8def', width: 2,
-        text: '#' + r.n + ' ' + sBuy(buy) + ' · ' + sModel(d.model) + ' · ' + sLocW(d.loc) + '\n' + sOut(d.out) + ' ' + hm(d.xts) + ' · ' + sR(d.net) });
+      o.push({ type: 'note', a: { t: d.ts, price: d.entry }, off: { x: 0, y: buy ? 110 : -110 }, color: '#5b8def', tcol: '#5b8def', width: 1, tsz: 11,
+        text: '#' + r.n + ' ' + sBuy(buy) + ' · ' + sModel(d.model) + ' · ' + sLocW(d.loc) + '\n' + sOut(d.out) + ' ' + hm(d.xts) + ' · ' + sR(d.net) });   // in a box past the stop, pointing at the entry (Nestor, 6 Nov 2026)
       return o;
     }
     async function sOpen(r) { if (!opt.study) return; sHid = false; sStatus(L('Opening ' + sDay(r, { day: 'numeric', month: 'short', year: 'numeric' }) + ' in Study…', 'Abriendo el ' + sDay(r, { day: 'numeric', month: 'short', year: 'numeric' }) + ' en el Estudio…'));
@@ -891,7 +891,7 @@
       }
     });
     root.addEventListener('change', function (e) {
-      if (e.target.hasAttribute && e.target.hasAttribute('data-hkp')) { if (period === 's') sEnd(); period = lastP = +e.target.value || 1; tabs(); load(); return; }
+      if (e.target.hasAttribute && e.target.hasAttribute('data-hkp')) { if (period === 's') sEnd(); period = lastP = +e.target.value || 7; tabs(); load(); return; }
       if (study && period === 's' && e.target.hasAttribute('data-smksel')) { sMktSet(e.target.value); return; }
       if (study && period === 's' && e.target.hasAttribute('data-persel')) { sPer.k = e.target.value; sPerSave(); sRefresh(); return; }
       if (e.target.dataset.pd) { sPer[e.target.dataset.pd] = e.target.value || ''; sPerSave(); sRefresh(); return; }
