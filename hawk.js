@@ -544,6 +544,7 @@
     async function sOpen(r) { if (!opt.study) return; sStatus('Opening ' + sDay(r, { day: 'numeric', month: 'short', year: 'numeric' }) + ' on Replay…');
       var d = r.data, at = Math.min(d.sw || d.ts, d.ta || d.ts, d.ts) - 600, ok = false;
       try { ok = await opt.study({ sym: 'EURUSD', day: nyDay(d.ts), at: at, draw: sDraw(r), pd: d.r0 ? { a: d.r0, b: d.r1 } : null, n: r.n, keep: r.drawings || [], onMine: sOnMine }); } catch (x) {}
+      if (ok === 'no') { if (ssel === r.n) sStatus('Not opened. Pick the trade again when you want it on the chart.'); return; }   // he chose to stay where he was
       if (ok) sOnChart = r.n;
       if (ssel === r.n) { sStatus(ok ? 'On Replay from ' + hm(at) + ' London. Press Play to watch it unfold.' : 'Replay couldn\'t open that day.'); setTimeout(function () { sShow(r.n); }, 120); }   // going into Replay lays the column out again
     }
