@@ -155,7 +155,7 @@ def scan_day(idx, opts):
     # 24 h box before the session for premium/discount/50%
     j = i0
     while j > 0 and T[i0] - T[j] < 86400: j -= 1
-    bh, bl = max(H[j:i0 + 60]), min(L[j:i0 + 60])
+    bh, bl = max(H[j:i0]), min(L[j:i0])   # the 24 h before 08:00 London, fixed then (6 Nov: it took the session's first hour too - look-ahead)
     q = (bh - bl) / 4
     init_dir = 0; init_at = None
     for i in idx:

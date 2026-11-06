@@ -89,7 +89,8 @@ class Hawk:
         ph, a2b = st
         j = i0
         while j > 0 and E.T[i0] - E.T[j] < 86400: j -= 1
-        bh, bl = max(E.H[j:i0 + 60]), min(E.L[j:i0 + 60]); q = (bh - bl) / 4; mid = (bh + bl) / 2
+        bh, bl = max(E.H[j:i0]), min(E.L[j:i0]);   # fixed at 08:00 London, as the study (6 Nov)
+        q = (bh - bl) / 4; mid = (bh + bl) / 2
         now = E.C[last]
         self.ctx = dict(j=j, i0=i0, last=last, ph=ph, a2b=a2b, bh=bh, bl=bl)
 

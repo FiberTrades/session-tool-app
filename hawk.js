@@ -83,7 +83,7 @@
     '.hk-trm .m i{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:8px;vertical-align:1px;background:var(--hk-buy)}.hk-trm .m i.sell{background:var(--hk-sell)}',
     '.hk-trm .r{font:500 12.5px var(--hk-mono);font-variant-numeric:tabular-nums;color:var(--hk-mut);text-align:right}.hk-trm .r.win{color:var(--hk-buy)}.hk-trm .r.loss{color:var(--hk-sell)}',
     '.hk-trm .s{grid-column:1/-1;font:11px var(--hk-mono);color:var(--hk-mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-left:15px}.hk-trm .s u{text-decoration:none;color:var(--hk-you)}',
-    '.hk-vt{display:flex;gap:4px;flex:none;padding-right:2px}',
+    '.hk-vt{display:flex;gap:4px;flex:none;padding-right:2px}.hk-tr[aria-current="true"] .hk-vt{display:none}',
     '.hk-vt button,.hk-vb button{display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--hk-line);background:transparent;color:var(--hk-mut);cursor:pointer}',
     '.hk-vt button{width:26px;height:26px;padding:0;border-radius:6px}.hk-vt svg{width:14px;height:14px}',
     '.hk-vt button:hover,.hk-vb button:hover{color:var(--hk-ink);border-color:var(--hk-mut)}',
@@ -475,7 +475,7 @@
       var tt = [['Entry', p5(d.entry), buy ? 'Buy' : 'Sell', ''], ['Stop', p5(d.stop), sPip(d.stop, d.entry) + ' pips', 'sl'], ['Target', p5(d.tgt), tp.toFixed(0) + ' pips · ' + (tp / d.risk).toFixed(1) + 'R', 'tp']];
       if (d.be != null) tt.push(['Break-even', p5(d.be), 'the hawk: last 1m swing', '']);
       if (r.be_mine) tt.push(['Your BE', r.be_mine.none ? '–' : p5(r.be_mine.price), r.be_mine.none ? 'you wouldn\'t move it' : sBeVs(d, r.be_mine.price), 'mb']);
-      return '<div class="hk-lbl">The day</div><div class="hk-kpi c3">' + [[PHASE[d.phase] || d.phase, 'HTF read'], [sPip(d.bh, d.bl) + ' pips', '24h range'], [p5((d.bh + d.bl) / 2), '50%']]
+      return '<div class="hk-lbl">The day</div><div class="hk-kpi c3">' + [[PHASE[d.phase] || d.phase, 'HTF read'], [sPip(d.bh, d.bl) + ' pips', '24h to 08:00'], [p5((d.bh + d.bl) / 2), '50%']]
           .map(function (x) { return '<div><b>' + esc(x[0]) + '</b><span>' + x[1] + '</span></div>'; }).join('') + '</div>' +
         '<div class="hk-lbl">What happened</div><ul class="hk-why">' + what.map(sWhy).join('') + '</ul>' +
         '<div class="hk-lbl">The trade</div><dl class="hk-tt">' + tt.map(function (x) { return '<dt>' + x[0] + '</dt><dd class="p ' + x[3] + '">' + x[1] + '</dd><dd class="x">' + esc(x[2]) + '</dd>'; }).join('') + '</dl>'; }
@@ -523,11 +523,16 @@
     function sStatus(t) { sStat = t; var el = byEl('#hk-sst'); if (el) el.textContent = t; }
     function sMarkRow(r) { var el = byEl('.hk-tr[data-sn="' + r.n + '"] .s'); if (!el) return; var u = el.querySelector('u'); if (u) u.remove(); el.insertAdjacentHTML('beforeend', sMarks(r)); }
     function sDraw(r) { var d = r.data, buy = d.side > 0, q = (d.bh - d.bl) / 4, mid = (d.bh + d.bl) / 2, w0 = ldnAt(d.ts, 480), t0 = w0 - 25 * 3600, t1 = w0 + 2 * 3600, x1 = Math.max(d.xts, d.ts + 1800);
-      var o = [
+      // the P/D zone is the Session Indicator's own (pd below); these three only for a study row without its range window
+      var o = d.r0 ? [] : [
         { type: 'rect', a: { t: t0, price: d.bh }, b: { t: t1, price: d.bh - q }, color: '#F6465D', width: 1, fill: 'rgba(246,70,93,0.07)', text: 'Premium', tcol: '#F6465D', ta: 'l', tv: 'top' },
         { type: 'rect', a: { t: t0, price: d.bl + q }, b: { t: t1, price: d.bl }, color: '#2EBD85', width: 1, fill: 'rgba(46,189,133,0.07)', text: 'Discount', tcol: '#2EBD85', ta: 'l', tv: 'bottom' },
         { type: 'trend', a: { t: t0, price: mid }, b: { t: t1, price: mid }, color: '#8b90a0', width: 1, dash: 'dashed', text: '50%' }];
-      if (d.a != null && d.ta) o.push({ type: 'trend', a: { t: d.ta - 3600, price: d.a }, b: { t: d.ta + 1800, price: d.a }, color: '#e0a84a', width: 2,
+      // the high (low) the sweep took, drawn from the candle that made it to the break (Nestor: "can the high line extend from the high so
+      // i can see quickly where its coming from?")
+      if (d.lq != null && d.lqt) o.push({ type: 'trend', a: { t: d.lqt, price: d.lq }, b: { t: Math.max(d.sw || d.ts, d.lqt + 60) + 900, price: d.lq }, color: '#e0a84a', width: 2,
+        text: (buy ? 'Low of the last hour ' : 'High of the last hour ') + hm(d.lqt) + ' · taken ' + hm(d.sw || d.ts) });
+      else if (d.a != null && d.ta) o.push({ type: 'trend', a: { t: d.ta - 3600, price: d.a }, b: { t: d.ta + 1800, price: d.a }, color: '#e0a84a', width: 2,
         text: d.model === 'initiation pocket' ? (buy ? 'Range high broken' : 'Range low broken') : (buy ? 'Low taken ' : 'High taken ') + hm(d.ta) });
       o.push({ type: buy ? 'long' : 'short', a: { t: d.ts, price: d.entry }, b: { t: x1, price: d.entry }, sl: d.stop, tp: d.tgt });
       if (d.be != null) o.push({ type: 'trend', a: { t: d.ts, price: d.be }, b: { t: x1, price: d.be }, color: '#5b8def', width: 1, dash: 'dotted', text: 'BE trigger' });
@@ -537,7 +542,7 @@
     }
     async function sOpen(r) { if (!opt.study) return; sStatus('Opening ' + sDay(r, { day: 'numeric', month: 'short', year: 'numeric' }) + ' on Replay…');
       var d = r.data, at = Math.min(d.sw || d.ts, d.ta || d.ts, d.ts) - 600, ok = false;
-      try { ok = await opt.study({ sym: 'EURUSD', day: nyDay(d.ts), at: at, draw: sDraw(r), n: r.n, keep: r.drawings || [], onMine: sOnMine }); } catch (x) {}
+      try { ok = await opt.study({ sym: 'EURUSD', day: nyDay(d.ts), at: at, draw: sDraw(r), pd: d.r0 ? { a: d.r0, b: d.r1 } : null, n: r.n, keep: r.drawings || [], onMine: sOnMine }); } catch (x) {}
       if (ok) sOnChart = r.n;
       if (ssel === r.n) { sStatus(ok ? 'On Replay from ' + hm(at) + ' London. Press Play to watch it unfold.' : 'Replay couldn\'t open that day.'); setTimeout(function () { sShow(r.n); }, 120); }   // going into Replay lays the column out again
     }
