@@ -134,6 +134,7 @@
     '.hk-hm td button.base::after{content:"";position:absolute;top:3px;right:3px;width:4px;height:4px;border-radius:50%;background:var(--hk-ink);opacity:.7}',
     /* narrow: the Live Charts rail panel */
     '.hk-nar{font-size:13px}.hk-nar .hk-sub{display:none}.hk-nar .hk-head{align-items:center}.hk-nar .hk-tabs button{padding:3px 9px;font-size:11px}',
+    '.hk-today{margin:12px 0 2px;padding:10px 12px 4px;border:1px solid var(--hk-line);border-radius:8px}.hk-tdh{display:flex;justify-content:space-between;gap:8px;margin-bottom:8px;font-size:11.5px;color:var(--hk-mut)}.hk-tdh span:first-child{font-weight:600;color:var(--hk-ink)}',
     '.hk-nar .hk-stats{grid-template-columns:repeat(4,1fr);gap:4px;margin:10px 0 0}.hk-nar .hk-stat{padding:6px 8px;border-radius:6px}.hk-nar .hk-stat b{font-size:14px}.hk-nar .hk-stat span{font-size:10px}',
     '.hk-nar .hk-day{margin:14px 0 2px}.hk-nar .hk-card{padding:10px 11px;border-radius:8px;margin-top:8px}.hk-nar .hk-card h3{font-size:13.5px;margin:6px 0 2px}.hk-nar .hk-card p{font-size:12.5px}',
     '.hk-nar .hk-chart,.hk-nar .hk-card.hk-brief .hk-chart{height:220px;margin-top:10px}.hk-nar .hk-legend{font-size:11px;gap:2px 10px}.hk-nar .hk-btn{font-size:12px;padding:5px 8px}.hk-nar textarea{font-size:12.5px}'
@@ -289,9 +290,15 @@
       '<div class="hk-eye">Hawk <i>Admin only</i></div><div class="hk-title">Hawk</div>' +
       '<p class="hk-sub">Its read of EUR/USD before and during London 08:00–10:00. Rate each alert, or draw your own read on the chart.</p></div>' +
       '<div class="hk-tabs" role="group" aria-label="Period"><button data-p="1">Today</button><button data-p="7">7 days</button><button data-p="90">All</button><button data-p="s">Study</button></div></div>' +
-      '<div class="hk-stats" hidden></div><div class="hk-list"><p class="hk-empty">Loading…</p></div></div>';
-    var root = host.firstChild, list = root.querySelector('.hk-list'), statsEl = root.querySelector('.hk-stats');
-    function tabs() { root.querySelectorAll('.hk-tabs button').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.p === String(period)); }); }
+      '<div class="hk-today" hidden></div><div class="hk-stats" hidden></div><div class="hk-list"><p class="hk-empty">Loading…</p></div></div>';
+    var root = host.firstChild, list = root.querySelector('.hk-list'), statsEl = root.querySelector('.hk-stats'), todayEl = root.querySelector('.hk-today');
+    // in the app, the Today view opens with the session's plan, news and risk budget (the app's Today panel, moved in here for the admin)
+    function todayPaint() { var t = null; if (opt.today && period === 1) { try { t = opt.today(); } catch (x) {} }
+      if (!t || !t.html) { if (!todayEl.hidden) { todayEl.hidden = true; todayEl.innerHTML = ''; } return; }
+      var h = '<div class="hk-tdh"><span>Session</span><span>' + esc(t.sess || '') + '</span></div>' + t.html;
+      if (todayEl.innerHTML !== h) todayEl.innerHTML = h; todayEl.hidden = false; }
+    if (opt.today) setInterval(function () { if (!doc.hidden && host.offsetParent) todayPaint(); }, 15000);
+    function tabs() { root.querySelectorAll('.hk-tabs button').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.p === String(period)); }); todayPaint(); }
     tabs();
     function redraw() { Object.keys(charts).forEach(function (id) { draw(charts[id]); }); }   // a hidden chart has no size and draws nothing
     var ro = 'ResizeObserver' in window ? new ResizeObserver(function () { redraw(); }) : null;
@@ -730,7 +737,7 @@
       r.note = e.target.value.trim(); save(r.id, { note: r.note || null }, 'Note saved');
     });
     load(); poll();
-    return { reload: function () { load(); }, redraw: redraw };
+    return { reload: function () { load(); }, redraw: function () { todayPaint(); redraw(); }, today: todayPaint };
   }
   window.STHawk = { mount: mount, draw: draw };
 })();

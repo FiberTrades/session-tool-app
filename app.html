@@ -7377,7 +7377,7 @@ try {
           var u = r && r.data && r.data.session && r.data.session.user;
           if (on || !u || String(u.email || '').toLowerCase() !== ADMIN) return;
           on = true;
-          var s = document.createElement('script'); s.src = 'hawk.js?v=20261106i';   /* bump with each hawk.js change: a cached copy kept the Study tab from him */
+          var s = document.createElement('script'); s.src = 'hawk.js?v=20261106j';   /* bump with each hawk.js change: a cached copy kept the Study tab from him */
           s.onload = function () { window.__stHawk = { sb: c }; try { if (window.__stPractice && window.__stPractice._hawkOn) window.__stPractice._hawkOn(); } catch (e) {} };
           document.head.appendChild(s);
         }).catch(function () {});
@@ -51803,10 +51803,14 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
     var sn = _grEsc(ss[li].name || (S ? 'Tu sesión' : 'Your session')), bias = '', left = '';
     try { var sl = (Array.isArray(data.biasSlots) ? data.biasSlots : []).filter(function (b, k) { return b && b.sessionIdx === li && norm(b.symbol) === norm(sym) && (b.direction === 'Bullish' || b.direction === 'Bearish') && (typeof _slotIsTodaysWork !== 'function' || _slotIsTodaysWork(b, k)); })[0];
       if (sl) bias = S ? (' Sesgo de hoy: ' + (sl.direction === 'Bullish' ? 'largo' : 'corto') + ' en ' + esym + '.') : (' Today\u2019s bias: ' + (sl.direction === 'Bullish' ? 'long' : 'short') + ' ' + esym + '.'); } catch (e) {}
-    try { var bu = (N && N.budget) ? N.budget() : null, parts = [];
-      if (bu && bu.lim > 0) { var tl = Math.max(0, bu.lim - bu.n); parts.push(S ? (tl + (tl === 1 ? ' operación' : ' operaciones')) : (tl + (tl === 1 ? ' trade' : ' trades'))); }
-      if (bu && bu.dLim > 0) parts.push(_grEsc(typeof fmtMoney === 'function' ? fmtMoney(Math.max(0, bu.left)) : String(Math.round(Math.max(0, bu.left)))) + (S ? ' de riesgo' : ' of risk'));
-      if (parts.length) left = ' ' + parts.join(S ? ' y ' : ' and ') + (S ? ' disponibles.' : ' left.'); } catch (e) {}
+    // what's left today: "2 trades and £271.24 of risk left", or, all trades taken, "Today's trade is used; £271.24 of risk left."
+    // (Nestor, 6 Nov 2026: "0 trades and +£271.24 of risk left" read as no trades taken, and money left has no sign)
+    try { var bu = (N && N.budget) ? N.budget() : null, parts = [], used = false, mon = '';
+      if (bu && bu.dLim > 0) mon = _grEsc(String(typeof fmtMoney === 'function' ? fmtMoney(Math.max(0, bu.left)) : Math.round(Math.max(0, bu.left))).replace(/^\+\s*/, ''));
+      if (bu && bu.lim > 0) { var tl = Math.max(0, bu.lim - bu.n); if (tl > 0) parts.push(S ? (tl + (tl === 1 ? ' operación' : ' operaciones')) : (tl + (tl === 1 ? ' trade' : ' trades'))); else used = true; }
+      if (used) left = ' ' + (bu.lim === 1 ? (S ? 'La operación de hoy ya está hecha' : 'Today\u2019s trade is used') : (S ? 'Las ' + bu.lim + ' operaciones de hoy ya están hechas' : 'All ' + bu.lim + ' of today\u2019s trades are used'))
+        + (mon ? (S ? '; quedan ' + mon + ' de riesgo.' : '; ' + mon + ' of risk left.') : '.');
+      else { if (mon) parts.push(mon + (S ? ' de riesgo' : ' of risk')); if (parts.length) left = ' ' + parts.join(S ? ' y ' : ' and ') + (S ? ' disponibles.' : ' left.'); } } catch (e) {}
     var coach = _lcCoachTail(li);
     if (coach) return S ? (sn + ' está en vivo. ' + coach + left) : (sn + ' is live. ' + coach + left);
     return S ? (sn + ' está en vivo.' + bias + left) : (sn + ' is live.' + bias + left);
@@ -93714,6 +93718,7 @@ window.__stAZ = (function () {
   .stpr-win.plat:not(.pl-replay) :is(.pl-rpd, .pl-rpp, .pl-rpf) { display: none !important; }
   .stpr-win.plat.pl-replay :is(.pl-rp, .pl-plan, .pl-rg, #stpr-pill) { display: none !important; }   /* the trade's pill on the chart: Positions has it (a phone: the bar under the chart) */
   .stpr-win.plat.pl-replay .plat-rail :is([data-plr="wl"], [data-plr="td"], [data-plr="ch"], .pl-rsep:first-of-type) { display: none !important; }
+  .stpr-win.plat.pl-hkon .plat-rail [data-plr="td"] { display: none !important; }   /* the admin: Today is in the hawk's panel */
   #page-livecharts.lcm-replay .stpr-win.plat.pl-replay > .lc-tb:not([hidden]) { display: flex !important; }
   .stpr-win.plat .pl-rpd, .stpr-win.plat .pl-rpp { order: 11; display: inline-flex; align-items: center; gap: 2px; }
   .stpr-win.plat .pl-rpd::before, .stpr-win.plat .pl-rpp::before { content: ''; flex: none; width: 1px; height: 22px; margin: 0 4px; background: var(--pl-line2); }
@@ -100319,7 +100324,8 @@ window.__stAZ = (function () {
         var mg = [pw0[PL.st.pn], pw0.ch].concat(Object.keys(pw0).map(function(k){ return +pw0[k]; }).sort(function(a, b){ return b - a; })).filter(function(v){ return +v > 0; })[0]; if (mg) PL.st.rw = Math.round(+mg); }
       ['wl', 'tm', 'td', 'ch', 'sw', 'pw'].forEach(function(k){ delete PL.st[k]; }); } return PL.st; }
   function plPn(){ if (PL.rp) { var r = plSt().rpn; return r === '' ? '' : (r === 'ot' || (r === 'hk' && window.__stHawk) ? r : 'tm'); }   // Replay: the Trade Manager (the practice ticket), the Object tree or the admin's Hawk (its study is checked on Replay), the ticket unless closed
-    var p = plSt().pn; return PL_PN.indexOf(p) >= 0 && (p !== 'hk' || window.__stHawk) ? p : ''; }   // the open panel ('' : none, the chart takes the room)
+    var p = plSt().pn; if (p === 'td' && window.__stHawk) p = 'hk';   // the admin's Today is inside the hawk's
+    return PL_PN.indexOf(p) >= 0 && (p !== 'hk' || window.__stHawk) ? p : ''; }   // the open panel ('' : none, the chart takes the room)
   // one width for every panel in the column, set by dragging any one's left edge (Nestor, 27 Oct 2026: "make the watchlist, trade manager,
   // today and object trees width move automatically with the chats width if i change it"), each no narrower than it is whole at
   function plPw(k){ var w = +plSt().rw; if (!(w > 0)) w = (plView().innerWidth || 0) <= 1140 ? 264 : 300; return plPwMax(w, k); }
@@ -100350,7 +100356,7 @@ window.__stAZ = (function () {
     if (PL.ph) { var l0 = plLight(), r0 = !!PL.rp, th = !st.phTr; if (win.classList.contains('pl-lt') !== l0) win.classList.toggle('pl-lt', l0); if (win.classList.contains('pl-replay') !== r0) win.classList.toggle('pl-replay', r0);
       if (win.classList.contains('ph-trhide') !== th) win.classList.toggle('ph-trhide', th); return; }   // the trade row, put away by its button (28 Oct 2026)   // a phone: its theme only (and Replay's or Live's)
     var tb = $('lc-tb'), notb = !tb || tb.hidden || tb.parentNode !== win;
-    var pn = plPn(), lt = plLight(), want = { 'pl-replay': !!PL.rp, 'pl-nowl': pn !== 'wl', 'pl-notm': pn !== 'tm', 'pl-nor': !pn, 'pl-folded': !!st.fold && !notb, 'pl-notb': notb, 'pl-lt': lt, 'pl-one': (CFG.layout || 1) <= 1, 'pl-pch': pn === 'ch', 'pl-ptd': pn === 'td', 'pl-pot': pn === 'ot', 'pl-phk': pn === 'hk' };
+    var pn = plPn(), lt = plLight(), want = { 'pl-replay': !!PL.rp, 'pl-nowl': pn !== 'wl', 'pl-notm': pn !== 'tm', 'pl-nor': !pn, 'pl-folded': !!st.fold && !notb, 'pl-notb': notb, 'pl-lt': lt, 'pl-one': (CFG.layout || 1) <= 1, 'pl-pch': pn === 'ch', 'pl-ptd': pn === 'td', 'pl-pot': pn === 'ot', 'pl-phk': pn === 'hk', 'pl-hkon': !!window.__stHawk };
     for (var k in want) if (win.classList.contains(k) !== want[k]) win.classList.toggle(k, want[k]);
     var bh = Math.round(Math.max(80, +st.bh || 150)) + 'px'; if (win.style.getPropertyValue('--pl-bh') !== bh) win.style.setProperty('--pl-bh', bh);
     var rw0 = +st.rw > 0 ? +st.rw : ((plView().innerWidth || 0) <= 1140 ? 264 : 300); if (pn && rw0 < (PL_PWMIN[pn] || 260)) { st.rw = PL_PWMIN[pn] || 260; plSave(); }   // a panel that needs more (the chat: 330) widens the column, and the others keep that width after it
@@ -100366,7 +100372,8 @@ window.__stAZ = (function () {
     if (PLHK && pn !== 'hk') PLHK._shown = false;
     if (!ok || pn !== 'hk' || !E.right || !window.STHawk) return;
     var box = E.right.querySelector('.pl-hkb'); if (!box) return;
-    var lt = plLight(), first = !PLHK; if (first) PLHK = window.STHawk.mount(box, window.__stHawk.sb, { app: true, narrow: true, study: studyGo });
+    var lt = plLight(), first = !PLHK; if (first) PLHK = window.STHawk.mount(box, window.__stHawk.sb, { app: true, narrow: true, study: studyGo,
+      today: function(){ if (!PL.on || PL.ph || PL.rp) return null; try { return { sess: plTdSess(), html: plTdHtml() }; } catch (e) { return null; } } });
     if (first || PLHK._lt !== lt || !PLHK._shown) { PLHK._lt = lt; PLHK._shown = true; setTimeout(function(){ try { PLHK.redraw(); } catch (e) {} }, 30); } }   // drawn again when it opens and when the theme flips
   function platBuild(win){ var D = win.ownerDocument, E = PL.el, mk = function(cls, html){ var d = D.createElement('div'); d.className = cls; d.innerHTML = html || ''; win.appendChild(d); return d; };
     E.top = mk('plat-top', '<span class="pl-mark">' + PL_MARK + '</span><span class="pl-sep pl-s1"></span><span class="pl-tfs" role="group"></span><span class="pl-sep pl-s2"></span>'
