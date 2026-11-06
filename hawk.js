@@ -139,8 +139,8 @@
     '.hk-eq{display:block;width:100%;height:96px;margin-top:12px}.hk-eq path{fill:none;stroke-width:1.6;vector-effect:non-scaling-stroke;stroke-linejoin:round}.hk-eq .a{stroke:var(--hk-acc)}.hk-eq .b{stroke:var(--hk-mut);stroke-dasharray:3 3;opacity:.75}.hk-eq line{stroke:var(--hk-line);vector-effect:non-scaling-stroke}',
     '.hk-leg{display:flex;gap:14px;font-size:10.5px;color:var(--hk-mut);margin-top:4px}.hk-leg i{display:inline-block;width:14px;height:0;border-top:2px solid var(--hk-acc);vertical-align:3px;margin-right:5px}.hk-leg i.b{border-top:2px dashed var(--hk-mut)}',
     '.hk-hm{overflow-x:auto}.hk-hm th.cap{font:500 10px var(--hk-font,inherit);letter-spacing:.02em;color:var(--hk-mut);padding:0 0 2px}',
-    '.hk-hm th.vc{width:15px;padding:0;vertical-align:middle}.hk-hm th.vc span{display:flex;flex-direction:column;justify-content:space-between;align-items:center;height:222px;font:500 10px var(--hk-font,inherit);letter-spacing:.02em;color:var(--hk-mut)}',
-    '.hk-hm th.vc i,.hk-hm th.vc b{writing-mode:vertical-rl;font:inherit;white-space:nowrap}.hk-hm th.vc i{opacity:.7;font-size:9px}',
+    '.hk-hm th.vc{width:15px;padding:0;vertical-align:middle}.hk-hm th.vc span{display:flex;flex-direction:column;justify-content:center;align-items:center;height:222px;font:500 10px var(--hk-font,inherit);letter-spacing:.02em;color:var(--hk-mut)}',
+    '.hk-hm th.vc b{writing-mode:vertical-rl;font:inherit;white-space:nowrap}',
     '.hk-hm table{width:100%;min-width:270px;border-collapse:separate;border-spacing:2px;table-layout:fixed;font:500 10.5px var(--hk-mono);font-variant-numeric:tabular-nums}',
     '.hk-hm th{font-weight:500;color:var(--hk-mut);padding:3px 0;text-align:center;white-space:nowrap}.hk-hm th.y{width:44px;text-align:right;padding-right:5px}.hk-hm td{padding:0}',
     '.hk-hm td button{position:relative;display:block;width:100%;height:26px;border:0;border-radius:4px;color:var(--hk-ink);font:inherit;cursor:pointer;padding:0}',
@@ -764,8 +764,7 @@
       var v = rows.map(function (rv) { return cols.map(function (cv) { var q = Object.assign({}, p); q[sk] = rv; q[tk] = cv; return wiStats(wiSim(q)).net; }); });
       var mx = Math.max.apply(null, v.map(function (r) { return Math.max.apply(null, r.map(Math.abs)); })) || 1;
       var isBase = function (rv, cv) { return sk === 'soff' && tk === 'tp' && rv === 0 && cv === 20 && p.be === 'hawk' && +p.exit === 800 && +p.cost === +wi0().cost; };
-      var U = wiUL(), vc = sk === 'soff' ? '<i>' + L('tighter', 'más ajustado') + '</i><b>' + L('Your stop (' + U + ')', 'Tu stop (' + U + ')') + '</b><i>' + L('wider', 'más ancho') + '</i>'
-        : '<i>' + L('smaller', 'menor') + '</i><b>' + L('Stop (' + U + ')', 'Stop (' + U + ')') + '</b><i>' + L('bigger', 'mayor') + '</i>';
+      var U = wiUL(), vc = '<b>' + (sk === 'soff' ? L('Your stop (' + U + ')', 'Tu stop (' + U + ')') : L('Stop (' + U + ')', 'Stop (' + U + ')')) + '</b>';
       return '<div class="hk-hm"><table><thead><tr><th class="vc"></th><th class="y"></th><th class="cap" colspan="' + cols.length + '">' + L('Target (', 'Objetivo (') + (tk === 'tp' ? U : 'R') + ')</th></tr><tr><th class="vc"></th><th class="y"></th>' +
         cols.map(function (c) { return '<th>' + (tk === 'tp' ? wiV(c, 1) : c) + '</th>'; }).join('') + '</tr></thead><tbody>' +
         rows.map(function (rv, i) { return '<tr>' + (i ? '' : '<th class="vc" rowspan="' + rows.length + '"><span>' + vc + '</span></th>') + '<th class="y">' + (sk === 'soff' ? (rv === 0 ? L('Yours', 'El tuyo') : (rv > 0 ? '+' : '−') + wiV(Math.abs(rv), 1)) : wiV(rv, 1)) + '</th>' + cols.map(function (cv, j) { var x = v[i][j], a = Math.round(Math.min(1, Math.abs(x) / mx) * 62);
