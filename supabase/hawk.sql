@@ -35,6 +35,10 @@ revoke all on public.hawk_signals from anon;
 revoke all on public.hawk_signals from authenticated;
 grant select, update (feedback, note, feedback_at) on public.hawk_signals to authenticated;
 
+-- 6 Nov: his own read, drawn on the alert's chart in hawk.html (migration hawk_signals_mine).
+alter table public.hawk_signals add column if not exists mine jsonb;   -- {phase, bh, bl} for a brief, {entry, stop, tgt} for a setup
+grant update (mine) on public.hawk_signals to authenticated;
+
 -- The admin's user id, for the edge function's push (service role only).
 create or replace function public.st_admin_uid()
 returns uuid language sql stable security definer set search_path to 'public', 'auth'

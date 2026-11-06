@@ -44,7 +44,33 @@ class Hawk:
         self.seen.add(key)
         if not self.primed: return          # first look after a (re)start: what already happened stays quiet
         self.count += kind != 'done'
-        self.send(dict(day=self.day, key=key, kind=kind, side=side, title=title, body=body, data=data or {}))
+        data = dict(data or {})
+        for k in ('a', 'b', 'i'):                     # candle indexes -> times, for the chart
+            if isinstance(data.get(k), int) and 0 <= data[k] < E.N: data['t' + k] = E.T[data[k]]
+        if kind != 'done':
+            try: data['chart'] = self.chart()
+            except Exception as e: log('chart failed:', repr(e))
+        self.send(dict(day=self.day, key=key, kind=kind, side=side, title=title, body=body, data=data))
+
+    def chart(self):
+        """What the hawk is looking at, for hawk.html: ~a day of 5-minute candles and its reading of them."""
+        x = self.ctx; j, last = x['j'], x['last']
+        c5 = []
+        for i in range(j, last + 1):
+            k = E.T[i] // 300 * 300
+            if c5 and c5[-1][0] == k:
+                b = c5[-1]; b[2] = max(b[2], E.H[i]); b[3] = min(b[3], E.L[i]); b[4] = E.C[i]
+            else: c5.append([k, E.O[i], E.H[i], E.L[i], E.C[i]])
+        now = E.T[last] + 60
+        off = E.LT[last] - E.T[last]
+        w0 = E.LDAY[last] * 86400 + E.WIN[0] * 60 - off
+        sw = sorted([(E.HB[s[2]][0], s[1], 'H') for s in E.SWH if s[0] <= now][-4:] +
+                    [(E.HB[s[2]][0], s[1], 'L') for s in E.SWL if s[0] <= now][-4:])
+        r5 = lambda v: round(v, 5)
+        return dict(tf=5, c=[[b[0]] + [r5(v) for v in b[1:]] for b in c5],
+                    phase=x['ph'], bh=r5(x['bh']), bl=r5(x['bl']), r0=E.T[j], r1=E.T[min(x['i0'] + 60, last)],
+                    a2b=x['a2b'] and [r5(v) for v in x['a2b']], sw=[[t, r5(p), k] for t, p, k in sw],
+                    w0=w0, w1=w0 + (E.WIN[1] - E.WIN[0]) * 60, now=now, px=r5(E.C[last]))
 
     def look(self, t, o, h, l, c, h1=None):
         """Called once a minute with every candle so far (oldest first)."""
@@ -65,6 +91,7 @@ class Hawk:
         while j > 0 and E.T[i0] - E.T[j] < 86400: j -= 1
         bh, bl = max(E.H[j:i0 + 60]), min(E.L[j:i0 + 60]); q = (bh - bl) / 4; mid = (bh + bl) / 2
         now = E.C[last]
+        self.ctx = dict(j=j, i0=i0, last=last, ph=ph, a2b=a2b, bh=bh, bl=bl)
 
         if mins >= 7 * 60 + 45 and not self.brief:
             self.brief = True

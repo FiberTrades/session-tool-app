@@ -16,11 +16,11 @@ def ts(d, hour): return int(dt.datetime(d.year, d.month, d.day, hour, tzinfo=dt.
 UK = {y: (ts(last_sunday(y, 3), 1), ts(last_sunday(y, 10), 1)) for y in (2025, 2026, 2027)}
 def ldn(t):
     y = dt.datetime.fromtimestamp(t, dt.timezone.utc).year; a, b = UK[y]; return t + (3600 if a <= t < b else 0)
-LT, LDAY, LMIN, SWH, SWL = [], [], [], [], []
+LT, LDAY, LMIN, SWH, SWL, HB = [], [], [], [], [], []
 
 def load(t, o, h, l, c, h1=None):
     """Set the 1-minute candles (UTC seconds). h1 = [(hour_start_utc, o, h, l, c)], else hour candles are built from the minutes."""
-    global T, O, H, L, C, N, LT, LDAY, LMIN, SWH, SWL
+    global T, O, H, L, C, N, LT, LDAY, LMIN, SWH, SWL, HB
     T, O, H, L, C = list(t), list(o), list(h), list(l), list(c); N = len(T)
     LT = [ldn(x) for x in T]; LDAY = [x // 86400 for x in LT]; LMIN = [(x % 86400) // 60 for x in LT]
     hb = []   # (hour_start_utc, o, h, l, c)
@@ -36,6 +36,7 @@ def load(t, o, h, l, c, h1=None):
         if cur: hb.append(tuple(cur))
     else:
         hb = sorted(h1)
+    HB = hb   # the hour candles, for the hawk's chart (hour_start_utc, o, h, l, c)
     # swing points (2 hour candles each side), known once the second candle after them has closed
     SWH, SWL = [], []   # (confirmed_at_utc, price, hour_index)
     for k in range(2, len(hb) - 2):
