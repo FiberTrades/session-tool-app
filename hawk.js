@@ -120,6 +120,7 @@
     '.hk-stp button{height:30px;border-radius:7px;border:1px solid var(--hk-line);background:transparent;color:var(--hk-ink);font:500 15px var(--hk-mono);cursor:pointer;padding:0}.hk-stp button:hover{border-color:var(--hk-mut)}',
     '.hk-stp label{display:flex;align-items:center;justify-content:center;gap:6px;height:30px;border-radius:7px;background:var(--hk-soft);padding:0 8px;font-size:11px;color:var(--hk-mut);white-space:nowrap;overflow:hidden;cursor:text}',
     '.hk-stp input{width:4.4em;background:transparent;border:0;outline:0;text-align:right;font:500 13.5px var(--hk-mono);font-variant-numeric:tabular-nums;color:var(--hk-ink);padding:0;margin:0;min-height:0;-moz-appearance:textfield;appearance:textfield}',
+    '.hk-stp input[type="time"]{width:4.6em;color-scheme:light dark}.hk-stp input::-webkit-calendar-picker-indicator{display:none}',
     '.hk-stp input::-webkit-inner-spin-button,.hk-stp input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}.hk-stp label:focus-within{box-shadow:inset 0 0 0 1px var(--hk-acc)}',
     '.hk-cmp{margin-top:8px;font-size:12px;color:var(--hk-mut)}.hk-cmp b{font-weight:500;font-variant-numeric:tabular-nums}.hk-cmp b.up{color:var(--hk-buy)}.hk-cmp b.dn{color:var(--hk-sell)}',
     '.hk-kpi.sm{margin-top:8px}.hk-kpi.sm b{font-size:13px}',
@@ -127,7 +128,7 @@
     '.hk-leg{display:flex;gap:14px;font-size:10.5px;color:var(--hk-mut);margin-top:4px}.hk-leg i{display:inline-block;width:14px;height:0;border-top:2px solid var(--hk-acc);vertical-align:3px;margin-right:5px}.hk-leg i.b{border-top:2px dashed var(--hk-mut)}',
     '.hk-hm{overflow-x:auto}.hk-hm .ax{display:flex;justify-content:space-between;gap:8px;font-size:10px;color:var(--hk-mut);margin:0 0 4px}',
     '.hk-hm table{width:100%;min-width:270px;border-collapse:separate;border-spacing:2px;table-layout:fixed;font:500 10.5px var(--hk-mono);font-variant-numeric:tabular-nums}',
-    '.hk-hm th{font-weight:500;color:var(--hk-mut);padding:3px 0;text-align:center;white-space:nowrap}.hk-hm th.y{width:34px;text-align:right;padding-right:5px}.hk-hm td{padding:0}',
+    '.hk-hm th{font-weight:500;color:var(--hk-mut);padding:3px 0;text-align:center;white-space:nowrap}.hk-hm th.y{width:44px;text-align:right;padding-right:5px}.hk-hm td{padding:0}',
     '.hk-hm td button{position:relative;display:block;width:100%;height:26px;border:0;border-radius:4px;color:var(--hk-ink);font:inherit;cursor:pointer;padding:0}',
     '.hk-hm td button:hover{box-shadow:inset 0 0 0 1px var(--hk-mut)}.hk-hm td button[aria-current="true"]{box-shadow:inset 0 0 0 1.5px var(--hk-ink)}',
     '.hk-hm td button.base::after{content:"";position:absolute;top:3px;right:3px;width:4px;height:4px;border-radius:50%;background:var(--hk-ink);opacity:.7}',
@@ -597,7 +598,7 @@
     // different result changes which later setups it lets through. Prices are ints (price * 1e5; 10 = 1 pip). With his settings it gives
     // exactly the study (159 trades, +53.98R - checked against bt/whatif_sim.py).
     var WI0 = { smode: 'hawk', soff: 0, sfix: 3, tmode: 'pips', tp: 20, tr: 5, be: 'hawk', ber: 1, exit: 800, cost: 0.6 };
-    var WB = { soff: [-2, 10, 0.5], sfix: [1, 20, 0.5], tp: [3, 100, 1], tr: [1, 20, 0.5], ber: [0.25, 10, 0.25], cost: [0, 3, 0.1] };
+    var WB = { soff: [-2, 10, 0.5], sfix: [1, 20, 0.5], tp: [3, 100, 1], tr: [1, 20, 0.5], ber: [0.25, 10, 0.25], cost: [0, 3, 0.1], exit: [600, 1200, 10] };   // exit: London minutes, 10:00 to 20:00 (the candles stop at 20:00)
     var wiP = (function () { try { return Object.assign({}, WI0, JSON.parse(localStorage.getItem('st_hawk_whatif') || '{}')); } catch (x) { return Object.assign({}, WI0); } })();
     var wiD = null, wiErr = '', wiBusy = false, wiBase = null;
     async function wiLoad() { if (wiD || wiBusy) return; wiBusy = true; wiErr = '';
@@ -624,10 +625,10 @@
               else { if (H >= cur) { R = (e - cur) / risk; o = at ? 'be' : 'loss'; break; } if (L <= tg) { R = (e - tg) / risk; o = 'win'; break; } if (!at && bel != null && L < bel) { cur = e; at = true; } }
             }
             if (R == null) { R = 0; o = 'time'; j = n - 1; } }
-          var t = { o: o, net: R - p.cost / (risk / 10) }; taken.push(t); out.push(t); busy = j; } });
+          var t = { o: o, net: R - p.cost / (risk / 10), cr: p.cost / (risk / 10) }; taken.push(t); out.push(t); busy = j; } });
       return out; }
-    function wiStats(t) { var s = { n: t.length, net: 0, dd: 0, run: 0, win: 0, be: 0, gp: 0, gl: 0, eq: [0] }, peak = 0, cur = 0;
-      t.forEach(function (x) { s.net += x.net; s.eq.push(s.net); peak = Math.max(peak, s.net); s.dd = Math.max(s.dd, peak - s.net);
+    function wiStats(t) { var s = { n: t.length, net: 0, dd: 0, run: 0, win: 0, be: 0, gp: 0, gl: 0, eq: [0], cr: 0 }, peak = 0, cur = 0;
+      t.forEach(function (x) { s.net += x.net; s.cr += x.cr || 0; s.eq.push(s.net); peak = Math.max(peak, s.net); s.dd = Math.max(s.dd, peak - s.net);
         if (x.o === 'loss') { cur++; s.run = Math.max(s.run, cur); } else if (x.o === 'win') cur = 0;
         if (x.o === 'win') s.win++; if (x.o === 'be') s.be++; if (x.net > 0) s.gp += x.net; else s.gl -= x.net; });
       s.pf = s.gl ? s.gp / s.gl : null; s.avg = s.n ? s.net / s.n : 0; return s; }
@@ -645,10 +646,10 @@
       var v = rows.map(function (rv) { return cols.map(function (cv) { var q = Object.assign({}, p); q[sk] = rv; q[tk] = cv; return wiStats(wiSim(q)).net; }); });
       var mx = Math.max.apply(null, v.map(function (r) { return Math.max.apply(null, r.map(Math.abs)); })) || 1;
       var isBase = function (rv, cv) { return sk === 'soff' && tk === 'tp' && rv === 0 && cv === 20 && p.be === 'hawk' && +p.exit === 800 && +p.cost === 0.6; };
-      return '<div class="hk-hm"><div class="ax"><span>Stop ' + (sk === 'soff' ? '(hawk\'s ± pips)' : '(pips)') + ' ↓</span><span>Target ' + (tk === 'tp' ? '(pips)' : '(R)') + ' →</span></div><table><thead><tr><th class="y"></th>' +
+      return '<div class="hk-hm"><div class="ax"><span>' + (sk === 'soff' ? 'Stop vs the hawk\'s, pips' : 'Stop, pips') + ' ↓</span><span>Target ' + (tk === 'tp' ? '(pips)' : '(R)') + ' →</span></div><table><thead><tr><th class="y"></th>' +
         cols.map(function (c) { return '<th>' + c + '</th>'; }).join('') + '</tr></thead><tbody>' +
-        rows.map(function (rv, i) { return '<tr><th class="y">' + (sk === 'soff' ? (rv === 0 ? 'hawk' : (rv > 0 ? '+' : '−') + Math.abs(rv)) : rv) + '</th>' + cols.map(function (cv, j) { var x = v[i][j], a = Math.round(Math.min(1, Math.abs(x) / mx) * 62);
-          return '<td><button data-wg="' + sk + '|' + rv + '|' + tk + '|' + cv + '" class="' + (isBase(rv, cv) ? 'base' : '') + '" aria-current="' + (+p[sk] === rv && +p[tk] === cv) + '" title="Stop ' + (sk === 'soff' ? (rv === 0 ? 'as placed' : (rv > 0 ? '+' : '−') + Math.abs(rv) + ' pips') : rv + ' pips') + ', target ' + cv + (tk === 'tp' ? ' pips' : 'R') + ': ' + sR1(x) + '" style="background:color-mix(in srgb,var(' + (x >= 0 ? '--hk-buy' : '--hk-sell') + ') ' + a + '%,transparent)">' + (x < -0.5 ? '−' : '') + Math.abs(Math.round(x)) + '</button></td>'; }).join('') + '</tr>'; }).join('') +
+        rows.map(function (rv, i) { return '<tr><th class="y">' + (sk === 'soff' ? (rv === 0 ? 'hawk\'s' : (rv > 0 ? '+' : '−') + Math.abs(rv)) : rv) + '</th>' + cols.map(function (cv, j) { var x = v[i][j], a = Math.round(Math.min(1, Math.abs(x) / mx) * 62);
+          return '<td><button data-wg="' + sk + '|' + rv + '|' + tk + '|' + cv + '" class="' + (isBase(rv, cv) ? 'base' : '') + '" aria-current="' + (+p[sk] === rv && +p[tk] === cv) + '" title="Stop ' + (sk === 'soff' ? (rv === 0 ? 'as the hawk placed it' : Math.abs(rv) + ' pip' + (Math.abs(rv) === 1 ? '' : 's') + (rv > 0 ? ' wider' : ' tighter') + ' than the hawk\'s') : rv + ' pips') + ', target ' + cv + (tk === 'tp' ? ' pips' : 'R') + ': ' + sR1(x) + '" style="background:color-mix(in srgb,var(' + (x >= 0 ? '--hk-buy' : '--hk-sell') + ') ' + a + '%,transparent)">' + (x < -0.5 ? '−' : '') + Math.abs(Math.round(x)) + '</button></td>'; }).join('') + '</tr>'; }).join('') +
         '</tbody></table></div>'; }
     function wiHtml() {
       if (!wiD) { if (!wiErr) wiLoad(); return wiErr ? '<p class="hk-empty">Couldn\'t load the candles behind the study: ' + esc(wiErr) + '</p>' : '<p class="hk-empty">Loading a year of 1-minute candles…</p>'; }
@@ -656,13 +657,15 @@
       wiBase = wiStats(wiSim(WI0));
       var s = wiStats(wiSim(p)), b = wiBase, dn = s.net - b.net, ddd = s.dd - b.dd;
       var h = '<div class="hk-wtop"><span>Your rules again with these changes: the same entries, the same two-serve day.</span>' + (changed ? '<button data-wreset="1">Back to your rules</button>' : '') + '</div><div class="hk-wc">' +
-        wiRow('Stop', wiSeg('smode', [['hawk', 'Hawk\'s ±'], ['fixed', 'Fixed']]), p.smode === 'hawk' ? wiStep('soff', 'pips') : wiStep('sfix', 'pips'),
-          p.smode === 'hawk' ? (+p.soff ? 'The hawk\'s 2–4 pip stop, ' + (p.soff > 0 ? 'widened' : 'tightened') + ' by ' + Math.abs(p.soff).toFixed(1) + ' pips (never under 1).' : 'As the hawk placed it: 0.5 pip past the extreme, 2–4 pips.') : 'The same stop on every trade.') +
+        wiRow('Stop', wiSeg('smode', [['hawk', 'Adjust hawk\'s'], ['fixed', 'Same every trade']]), p.smode === 'hawk' ? wiStep('soff', 'pips') : wiStep('sfix', 'pips'),
+          p.smode === 'hawk' ? (+p.soff ? 'The hawk\'s 2–4 pip stop, ' + (p.soff > 0 ? 'widened' : 'tightened') + ' by ' + Math.abs(p.soff).toFixed(1) + ' pips (never under 1).' : 'As the hawk placed it: 0.5 pip past the high or low it took, 2–4 pips from the entry.') : 'Every trade gets a ' + (+p.sfix) + '-pip stop from the entry, wherever the high or low was.') +
         wiRow('Target', wiSeg('tmode', [['pips', 'Pips'], ['r', 'R']]), p.tmode === 'pips' ? wiStep('tp', 'pips') : wiStep('tr', 'R'), p.tmode === 'pips' ? 'A fixed distance from the entry.' : 'A multiple of each trade\'s stop.') +
         wiRow('Break-even', wiSeg('be', [['hawk', 'Rule'], ['mine', 'Yours'], ['r', 'At R'], ['off', 'Off']]), p.be === 'r' ? wiStep('ber', 'R') : '',
           p.be === 'hawk' ? 'Stop to entry once price passes the last 1m swing before the entry.' : p.be === 'mine' ? (function () { var k = (study || []).filter(function (r) { return r.be_mine && sIn(r.day); }).length; return k ? 'Your own break-even on the ' + sPl(k, 'trade') + ' you set it on, the hawk\'s on the rest.' : 'You haven\'t set your own break-even on any trade yet, so this is the hawk\'s.'; })() : p.be === 'off' ? 'The stop never moves.' : 'Stop to entry once the trade is ' + (+p.ber).toFixed(2) + 'R in profit.') +
-        wiRow('Close by', wiSeg('exit', [[800, '13:20'], [960, '16:00'], [1200, '20:00']]), '', +p.exit === 800 ? 'Out before the 13:30 news if the target hasn\'t hit (your rule).' : 'Held through the 13:30 news, closed at ' + (+p.exit === 960 ? '16:00' : '20:00') + ' London.') +
-        wiRow('Costs', '', wiStep('cost', 'pips a trade'), '') + '</div>';
+        wiRow('Close by', wiSeg('exit', [[800, '13:20'], [960, '16:00'], [1200, '20:00']]),
+          '<div class="hk-stp"><button data-ws="exit" data-d="-10" aria-label="10 minutes earlier">−</button><label><input type="time" data-wn="exit" min="10:00" max="20:00" step="600" value="' + wiHM(+p.exit) + '">London</label><button data-ws="exit" data-d="10" aria-label="10 minutes later">+</button></div>',
+          +p.exit === 800 ? 'Out before the 13:30 news if the target hasn\'t hit (your rule).' : 'Closed at ' + wiHM(+p.exit) + ' London if the target hasn\'t hit' + (+p.exit > 810 ? ', held through the 13:30 news.' : '.')) +
+        wiRow('Costs', '', wiStep('cost', 'pips a trade'), +p.cost ? 'About ' + (s.n ? s.cr / s.n : 0).toFixed(2) + 'R a trade with these stops, ' + s.cr.toFixed(1) + 'R over the period. Spread and commission are paid in pips, so the tighter the stop, the more R they cost.' : 'No spread or commission.') + '</div>';
       h += '<div class="hk-lbl">Result</div><div class="hk-kpi">' + [[sR1(s.net), 'Net', s.net >= 0 ? 'up' : 'dn'], [s.n, 'Trades'], [(s.n ? Math.round(s.win / s.n * 100) : 0) + '%', 'Targets'], [s.dd.toFixed(1) + 'R', 'Worst dip']]
         .map(function (x) { return '<div><b class="' + (x[2] || '') + '">' + x[0] + '</b><span>' + x[1] + '</span></div>'; }).join('') + '</div>';
       h += '<div class="hk-cmp">' + (changed ? 'Against your rules: <b class="' + (dn >= 0 ? 'up' : 'dn') + '">' + sR1(dn) + '</b> · worst dip ' + (Math.abs(ddd) < 0.05 ? 'the same' : Math.abs(ddd).toFixed(1) + 'R ' + (ddd > 0 ? 'deeper' : 'shallower')) : 'These are your rules as tested: ' + sR1(b.net) + ' over this period.') + '</div>';
@@ -672,6 +675,7 @@
       h += '<div class="hk-lbl">Net R by stop and target</div>' + wiGrid() +
         '<p class="hk-hint">Tap a square to try it. ' + b.n + ' trades is a small sample and a handful of big winners carry the year, so trust a broad patch of green over one bright square. A smaller stop means a bigger position for the same risk, so costs bite harder.</p>';
       return h; }
+    function wiHM(m) { return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); }
     function wiClamp(k, v) { var b = WB[k]; v = Math.round(v / b[2]) * b[2]; return Math.min(b[1], Math.max(b[0], +v.toFixed(2))); }
     function wiSet() { try { localStorage.setItem('st_hawk_whatif', JSON.stringify(wiP)); } catch (x) {} sRefresh(); }
     function wiClick(e) {
@@ -718,7 +722,7 @@
     });
     root.addEventListener('change', function (e) {
       if (e.target.dataset.pd) { sPer[e.target.dataset.pd] = e.target.value || ''; sPerSave(); sRefresh(); return; }
-      if (e.target.dataset.wn) { var k = e.target.dataset.wn; wiP[k] = wiClamp(k, +e.target.value || 0); wiSet(); return; }
+      if (e.target.dataset.wn) { var k = e.target.dataset.wn, v = e.target.value; if (k === 'exit') { if (!/^\d\d:\d\d/.test(v)) return; v = +v.slice(0, 2) * 60 + +v.slice(3, 5); } wiP[k] = wiClamp(k, +v || 0); wiSet(); return; }
       if (e.target.tagName !== 'TEXTAREA') return;
       if (e.target.dataset.snote && study) { var sr = sFind(e.target.dataset.snote); if (sr) { sr.note = e.target.value.trim() || null; sMarkRow(sr); sSave(sr, { note: sr.note }, 'verdict_at', sr.note ? 'Note saved' : 'Note removed'); } return; }
       var r = byId(e.target.dataset.id); if (!r) return;
