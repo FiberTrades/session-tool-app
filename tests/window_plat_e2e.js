@@ -36,6 +36,10 @@
     check('...in the platform\'s look: its top bar along the top, the drawing tools down the left, the chart filling the rest', cwin && cwin.classList.contains('plat') && cwin.classList.contains('plsat') && vis(cd.querySelector('#stpr-tb2.plat-top')) && vis(cd.getElementById('pl-satleft')) && vis(cd.getElementById('stpr-cw'))
       && cd.getElementById('pl-satleft').getBoundingClientRect().right <= cd.getElementById('stpr-cw').getBoundingClientRect().left + 1 && cd.getElementById('stpr-tb2').getBoundingClientRect().bottom <= cd.getElementById('stpr-cw').getBoundingClientRect().top + 1,
       cwin && [cwin.className, cd.getElementById('stpr-tb2').className]);
+    var lvb = cd && cd.getElementById('stpr-lvback'), lvTmp = false;   // (6 Nov 2026: "why the live buttons look different?") - it is there in Replay: a stand-in in its top bar here
+    if (!lvb && cd && cd.getElementById('stpr-tb2')) { lvb = cd.createElement('button'); lvb.id = 'stpr-lvback'; lvb.className = 'stpr-b'; cd.getElementById('stpr-tb2').appendChild(lvb); lvTmp = true; }
+    var lvs = lvb && cw.getComputedStyle(lvb); lvs = lvs && { borderTopLeftRadius: lvs.borderTopLeftRadius, borderTopWidth: lvs.borderTopWidth, color: lvs.color }; if (lvTmp) lvb.remove();
+    check('...its Live button the same green pill as Live Charts\' own', lvs && lvs.borderTopLeftRadius === '15px' && lvs.borderTopWidth === '1px' && lvs.color === 'rgb(78, 205, 139)', lvs && [lvs.borderTopLeftRadius, lvs.borderTopWidth, lvs.color]);
     var lf = cd && cd.getElementById('pl-satleft');
     check('...the drawing tools down the left: the cursor, the tools, hide / lock / magnet / object tree / delete', lf && lf.querySelector('[data-plcur]') && lf.querySelector('[data-gtool="lines"]') && lf.querySelector('[data-tool="fib"]') && lf.querySelector('#stpr-magnet') && lf.querySelector('#stpr-del') && vis(lf.querySelector('#stpr-magnet')),
       lf && lf.children.length);
