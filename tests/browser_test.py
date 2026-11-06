@@ -289,6 +289,10 @@ def main():
         if tz:
             try: cdp.call('Emulation.setTimezoneOverride', timezoneId=tz)
             except Exception: pass
+        lang = os.environ.get('E2E_LANG', '')   # e.g. es: the app opens in that language, as it does for a member who chose it (6 Nov 2026)
+        if lang:
+            try: cdp.call('Page.addScriptToEvaluateOnNewDocument', source="try{localStorage.setItem('st_ui_lang','%s')}catch(e){}" % lang)
+            except Exception: pass
         app = os.environ.get('E2E_APP', 'app.html')   # another file name runs the same test against an older copy
         cdp.call('Page.navigate', url='http://127.0.0.1:%d/%s?e2e=%d' % (web_port, app, random.randint(1, 10 ** 9)))
         time.sleep(2)
