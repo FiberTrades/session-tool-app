@@ -45,3 +45,25 @@ returns uuid language sql stable security definer set search_path to 'public', '
 as $$ select id from auth.users where lower(email) = 'be.o2@hotmail.com' limit 1 $$;
 revoke all on function public.st_admin_uid() from public, anon, authenticated;
 grant execute on function public.st_admin_uid() to service_role;
+
+-- The study (6 Nov 2026, admin only): the 1-year rule test's trades (stop 2-4 pips, target 20; run 'strict_20'), one row each with
+-- what Replay draws (data: entry/stop/tgt/be, range bh/bl, the level taken a/ta, entry ts, exit xts, note). Loaded from the
+-- scratchpad study (bt/export_study.py). Nestor marks each Valid / Not valid / Unsure with a note from the hawk panel's Study tab.
+create table if not exists public.hawk_study (
+  run text not null default 'strict_20',
+  n int not null,
+  day date not null,
+  data jsonb not null,
+  verdict text check (verdict in ('agree','disagree','unsure')),
+  note text,
+  verdict_at timestamptz,
+  primary key (run, n)
+);
+alter table public.hawk_study enable row level security;
+revoke all on public.hawk_study from anon, authenticated;
+grant select on public.hawk_study to authenticated;
+grant update (verdict, note, verdict_at) on public.hawk_study to authenticated;
+drop policy if exists hawk_study_admin_read on public.hawk_study;
+create policy hawk_study_admin_read on public.hawk_study for select to authenticated using (public.st_is_admin());
+drop policy if exists hawk_study_admin_mark on public.hawk_study;
+create policy hawk_study_admin_mark on public.hawk_study for update to authenticated using (public.st_is_admin()) with check (public.st_is_admin());

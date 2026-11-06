@@ -20,6 +20,7 @@
     '.hk-tabs button{font:500 12px var(--hk-font,inherit);color:var(--hk-mut);background:transparent;border:1px solid var(--hk-line);border-radius:999px;padding:5px 12px;cursor:pointer}',
     '.hk-tabs button[aria-pressed="true"]{color:var(--hk-ink);border-color:var(--hk-ink)}',
     '.hk-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:16px 0 4px}',
+    '.hk-stats[hidden]{display:none}',
     '.hk-stat{background:var(--hk-card);border:1px solid var(--hk-line);border-radius:10px;padding:10px 12px}',
     '.hk-stat b{display:block;font:500 19px var(--hk-mono);font-variant-numeric:tabular-nums}',
     '.hk-stat span{font-size:12px;color:var(--hk-mut)}',
@@ -62,6 +63,25 @@
     '.hk-saved{font-size:12px;color:var(--hk-mut);margin-top:4px;min-height:18px}',
     '.hk button:focus-visible,.hk textarea:focus-visible{outline:2px solid var(--hk-acc);outline-offset:2px}',
     '.hk-empty{color:var(--hk-mut);margin-top:22px}',
+    /* the study: the 1-year rule test, trade by trade, each one opened on Replay */
+    '.hk-intro{font-size:12.5px;line-height:1.5;color:var(--hk-mut);margin:12px 0 0}',
+    '.hk-fil{display:flex;gap:4px;flex-wrap:wrap;margin:12px 0 0}',
+    '.hk-fil button{font:500 11px var(--hk-font,inherit);color:var(--hk-mut);background:transparent;border:1px solid var(--hk-line);border-radius:6px;padding:3px 8px;cursor:pointer}',
+    '.hk-fil button[aria-pressed="true"]{color:var(--hk-ink);background:var(--hk-soft);border-color:var(--hk-soft)}',
+    '.hk-mo{display:flex;justify-content:space-between;align-items:baseline;font:500 10.5px var(--hk-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--hk-mut);margin:16px 0 4px}',
+    '.hk-mo b{font-weight:500;letter-spacing:0;font-variant-numeric:tabular-nums}',
+    '.hk-tr{display:grid;grid-template-columns:78px 1fr auto 10px;gap:8px;align-items:center;width:100%;text-align:left;font:12.5px var(--hk-font,inherit);color:var(--hk-ink);background:transparent;border:0;border-top:1px solid var(--hk-line);padding:7px 4px;cursor:pointer}',
+    '.hk-tr:hover,.hk-tr[aria-current="true"]{background:var(--hk-soft)}',
+    '.hk-tr .d{font:11.5px var(--hk-mono);color:var(--hk-mut);font-variant-numeric:tabular-nums;white-space:nowrap}',
+    '.hk-tr .m{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hk-tr .m em{font-style:normal;color:var(--hk-mut)}',
+    '.hk-tr .m i{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:7px;vertical-align:1px;background:var(--hk-buy)}.hk-tr .m i.sell{background:var(--hk-sell)}',
+    '.hk-tr .r{font:500 12px var(--hk-mono);font-variant-numeric:tabular-nums;color:var(--hk-mut)}.hk-tr .r.win{color:var(--hk-buy)}.hk-tr .r.loss{color:var(--hk-sell)}',
+    '.hk-tr .v{width:8px;height:8px;border-radius:2px;border:1px solid var(--hk-line)}.hk-tr .v.agree{background:var(--hk-buy);border-color:var(--hk-buy)}.hk-tr .v.disagree{background:var(--hk-sell);border-color:var(--hk-sell)}.hk-tr .v.unsure{background:var(--hk-warn);border-color:var(--hk-warn)}',
+    '.hk-det{padding:10px 4px 14px;background:var(--hk-soft);border-radius:0 0 8px 8px}',
+    '.hk-nav{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.hk-nav .hk-btn{background:var(--hk-card)}.hk-nav .hk-btn.go{background:var(--hk-acc);color:#fff}',
+    '.hk-sst{font-size:11.5px;color:var(--hk-mut);margin-top:6px;min-height:16px}',
+    '.hk-note{white-space:pre-line;font-size:12.5px;line-height:1.55;margin:6px 0 0;color:var(--hk-ink)}',
+    '.hk-det .hk-rate .hk-btn{background:var(--hk-card)}',
     /* narrow: the Live Charts rail panel */
     '.hk-nar{font-size:13px}.hk-nar .hk-sub{display:none}.hk-nar .hk-head{align-items:center}.hk-nar .hk-tabs button{padding:3px 9px;font-size:11px}',
     '.hk-nar .hk-stats{grid-template-columns:repeat(4,1fr);gap:4px;margin:10px 0 0}.hk-nar .hk-stat{padding:6px 8px;border-radius:6px}.hk-nar .hk-stat b{font-size:14px}.hk-nar .hk-stat span{font-size:10px}',
@@ -218,10 +238,10 @@
     host.innerHTML = '<div class="hk' + (opt.app ? ' hk-app' : '') + (opt.narrow ? ' hk-nar' : '') + '"><div class="hk-head"><div>' +
       '<div class="hk-eye">Hawk <i>Admin only</i></div><div class="hk-title">Hawk</div>' +
       '<p class="hk-sub">Its read of EUR/USD before and during London 08:00–10:00. Rate each alert, or draw your own read on the chart.</p></div>' +
-      '<div class="hk-tabs" role="group" aria-label="Period"><button data-p="1">Today</button><button data-p="7">7 days</button><button data-p="90">All</button></div></div>' +
+      '<div class="hk-tabs" role="group" aria-label="Period"><button data-p="1">Today</button><button data-p="7">7 days</button><button data-p="90">All</button><button data-p="s">Study</button></div></div>' +
       '<div class="hk-stats" hidden></div><div class="hk-list"><p class="hk-empty">Loading…</p></div></div>';
     var root = host.firstChild, list = root.querySelector('.hk-list'), statsEl = root.querySelector('.hk-stats');
-    function tabs() { root.querySelectorAll('.hk-tabs button').forEach(function (b) { b.setAttribute('aria-pressed', +b.dataset.p === period); }); }
+    function tabs() { root.querySelectorAll('.hk-tabs button').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.p === String(period)); }); }
     tabs();
     function redraw() { Object.keys(charts).forEach(function (id) { draw(charts[id]); }); }   // a hidden chart has no size and draws nothing
     var ro = 'ResizeObserver' in window ? new ResizeObserver(function () { redraw(); }) : null;
@@ -301,6 +321,7 @@
       box.addEventListener('pointerup', up); box.addEventListener('pointercancel', up);
     }
     async function load(more) {
+      if (period === 's') { if (!more) studyLoad(); return; }
       var s = await sb.auth.getSession();
       if (!s.data || !s.data.session) { list.innerHTML = '<p class="hk-empty">Sign in to Session Terminal in this browser first, then open this page again.</p>'; return; }
       if (mount.admin === undefined) { var ad = await sb.rpc('st_is_admin'); mount.admin = !ad.error && ad.data === true; }
@@ -338,9 +359,103 @@
       } else { st.edit = null; st.drag = null; }
       ed.hidden = !on; st.box.classList.toggle('hk-editing', on); draw(st);
     }
+    // ---------- the study (Nestor, 6 Nov 2026: "place it on my chart replay in eurusd with notes, P/D zones, position tools etc for me to
+    // check the legitimacy of what you thought were good trades"): the 159 trades of the 1-year rule test (stop 2-4 pips, target 20) from
+    // hawk_study (admin RLS). A trade opens on Replay (opt.study, the app) with its drawings; his verdict and note are saved beside it.
+    var study = null, sfil = 'all', ssel = null;
+    var SOUT = { win: 'Target hit', loss: 'Stopped out', be: 'Break-even', time: 'Closed 13:20' };
+    var SVER = [['agree', 'Valid', 'good'], ['disagree', 'Not valid', 'bad'], ['unsure', 'Unsure', 'early']];
+    var MODEL = { reaction: 'Reaction', continuation: 'Continuation', 'initiation pocket': 'Initiation' };
+    function sR(v) { return (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(2) + 'R'; }
+    function hm(t) { return LDN.format(new Date(t * 1000)); }
+    function nyDay(t) { return new Date((t + 7 * 3600) * 1000).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }); }   // Replay's trading day (17:00 New York to 17:00)
+    function ldnAt(t, min) { var x = hm(t); return t - t % 60 - ((+x.slice(0, 2) * 60 + +x.slice(3)) - min) * 60; }   // that London day's clock time, as a timestamp
+    async function studyLoad() {
+      statsEl.hidden = true; list.innerHTML = '<p class="hk-empty">Loading the study…</p>';
+      var s = await sb.auth.getSession();
+      if (!s.data || !s.data.session) { list.innerHTML = '<p class="hk-empty">Sign in to Session Terminal first.</p>'; return; }
+      if (study) { studyRender(); return; }
+      var q = await sb.from('hawk_study').select('n, day, data, verdict, note').eq('run', 'strict_20').order('n', { ascending: true });
+      if (q.error) { list.innerHTML = '<p class="hk-empty">Couldn\'t load the study: ' + esc(q.error.message) + '</p>'; return; }
+      study = q.data || [];
+      if (!study.length) { list.innerHTML = '<p class="hk-empty">Admin only.</p>'; study = null; return; }
+      studyRender();
+    }
+    function sShown() { return study.filter(function (r) { return sfil === 'all' || (sfil === 'open' ? !r.verdict : r.data.out === sfil); }); }
+    function sRow(r) { var d = r.data, buy = d.side > 0, dt = new Date(r.day + 'T12:00:00Z').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' });
+      return '<button class="hk-tr" data-sn="' + r.n + '" aria-current="' + (ssel === r.n) + '"><span class="d">' + esc(dt + ' ' + d.at) + '</span>' +
+        '<span class="m"><i class="' + (buy ? 'buy' : 'sell') + '"></i>' + (buy ? 'Buy' : 'Sell') + ' · ' + esc(MODEL[d.model] || d.model) + ' <em>' + esc(d.rule === 'initiation pocket' ? '' : d.rule) + '</em></span>' +
+        '<span class="r ' + d.out + '">' + sR(d.net) + '</span><span class="v ' + (r.verdict || '') + '" title="' + esc(r.verdict ? 'You: ' + SVER.filter(function (v) { return v[0] === r.verdict; })[0][1] : 'Not checked yet') + '"></span></button>';
+    }
+    function sDet(r) { var d = r.data;
+      return '<div class="hk-det" id="hk-sd"><div class="hk-nav"><button class="hk-btn" data-sa="prev">‹ Prev</button>' +
+        (opt.study ? '<button class="hk-btn go" data-sa="open">Show on Replay</button>' : '') + '<button class="hk-btn" data-sa="next">Next ›</button>' +
+        (opt.study ? '<button class="hk-btn" data-sa="clear">Clear chart</button>' : '') + '</div><div class="hk-sst" id="hk-sst"></div>' +
+        '<p class="hk-note">' + esc('#' + r.n + ' · ' + SOUT[d.out] + ' · ' + sR(d.r) + ' before costs\n' + d.note) + '</p>' +
+        '<div class="hk-rate">' + SVER.map(function (v) { return '<button class="hk-btn ' + v[2] + '" data-sv="' + v[0] + '" aria-pressed="' + (r.verdict === v[0]) + '">' + v[1] + '</button>'; }).join('') + '</div>' +
+        '<textarea data-snote="' + r.n + '" rows="1" placeholder="Why? (optional)">' + esc(r.note || '') + '</textarea><div class="hk-saved" id="hk-ss"></div></div>';
+    }
+    function studyRender() {
+      var all = study, net = all.reduce(function (s, r) { return s + r.data.net; }, 0), won = all.filter(function (r) { return r.data.out === 'win'; }).length;
+      var chk = all.filter(function (r) { return r.verdict; }).length, ag = all.filter(function (r) { return r.verdict === 'agree'; }).length;
+      var h = '<p class="hk-intro">My one-year test of your rules on EUR/USD, London 08:00–10:00: stop 2–4 pips, target 20 pips, 0.6 pip costs.' + (opt.study ? ' Tap a trade to see it on Replay with its zones and position.' : '') + '</p>' +
+        '<div class="hk-stats">' + [[all.length, 'trades'], [sR(net), 'after costs'], [won, 'targets hit'], [chk ? ag + '/' + chk : '–', 'you call valid']]
+          .map(function (s) { return '<div class="hk-stat"><b>' + s[0] + '</b><span>' + s[1] + '</span></div>'; }).join('') + '</div>' +
+        '<div class="hk-fil" role="group" aria-label="Show">' + [['all', 'All'], ['win', 'Wins'], ['loss', 'Losses'], ['be', 'Break-even'], ['open', 'Not checked']]
+          .map(function (f) { return '<button data-sf="' + f[0] + '" aria-pressed="' + (sfil === f[0]) + '">' + f[1] + '</button>'; }).join('') + '</div>';
+      var rs = sShown(), last = '', mo = {};
+      rs.forEach(function (r) { var k = r.day.slice(0, 7); mo[k] = (mo[k] || 0) + r.data.net; });
+      rs.forEach(function (r) { var k = r.day.slice(0, 7);
+        if (k !== last) { last = k; h += '<div class="hk-mo"><span>' + esc(new Date(k + '-15T12:00:00Z').toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })) + '</span><b>' + sR(mo[k]) + '</b></div>'; }
+        h += sRow(r) + (r.n === ssel ? sDet(r) : ''); });
+      if (!rs.length) h += '<p class="hk-empty">No trades here.</p>';
+      list.innerHTML = h;
+    }
+    function sDraw(r) { var d = r.data, buy = d.side > 0, q = (d.bh - d.bl) / 4, mid = (d.bh + d.bl) / 2, w0 = ldnAt(d.ts, 480), t0 = w0 - 25 * 3600, t1 = w0 + 2 * 3600, x1 = Math.max(d.xts, d.ts + 1800);
+      var o = [
+        { type: 'rect', a: { t: t0, price: d.bh }, b: { t: t1, price: d.bh - q }, color: '#F6465D', width: 1, fill: 'rgba(246,70,93,0.07)', text: 'Premium', tcol: '#F6465D', ta: 'l', tv: 'top' },
+        { type: 'rect', a: { t: t0, price: d.bl + q }, b: { t: t1, price: d.bl }, color: '#2EBD85', width: 1, fill: 'rgba(46,189,133,0.07)', text: 'Discount', tcol: '#2EBD85', ta: 'l', tv: 'bottom' },
+        { type: 'trend', a: { t: t0, price: mid }, b: { t: t1, price: mid }, color: '#8b90a0', width: 1, dash: 'dashed', text: '50%' }];
+      if (d.a != null && d.ta) o.push({ type: 'trend', a: { t: d.ta - 3600, price: d.a }, b: { t: d.ta + 1800, price: d.a }, color: '#e0a84a', width: 2,
+        text: d.model === 'initiation pocket' ? (buy ? 'Range high broken' : 'Range low broken') : (buy ? 'Low taken ' : 'High taken ') + hm(d.ta) });
+      o.push({ type: buy ? 'long' : 'short', a: { t: d.ts, price: d.entry }, b: { t: x1, price: d.entry }, sl: d.stop, tp: d.tgt });
+      if (d.be != null) o.push({ type: 'trend', a: { t: d.ts, price: d.be }, b: { t: x1, price: d.be }, color: '#5b8def', width: 1, dash: 'dotted', text: 'BE trigger' });
+      o.push({ type: 'text', a: { t: d.ts, price: d.tgt + d.side * 0.00025 }, color: '#5b8def', width: 2,
+        text: '#' + r.n + ' ' + (buy ? 'Buy' : 'Sell') + ' · ' + (MODEL[d.model] || d.model) + ' · ' + d.loc + '\n' + SOUT[d.out] + ' ' + hm(d.xts) + ' · ' + sR(d.net) });
+      return o;
+    }
+    async function sOpen(r) { var el = byEl('#hk-sst'); if (!opt.study) return; if (el) el.textContent = 'Opening ' + r.day + ' on Replay…';
+      var d = r.data, at = Math.min(d.sw || d.ts, d.ta || d.ts, d.ts) - 600, ok = false;
+      try { ok = await opt.study({ sym: 'EURUSD', day: nyDay(d.ts), at: at, draw: sDraw(r) }); } catch (x) {}
+      el = byEl('#hk-sst'); if (el && ssel === r.n) el.textContent = ok ? 'On Replay from ' + hm(at) + ' London. Press Play to watch it unfold.' : 'Replay couldn\'t open that day.';
+      if (ssel === r.n) setTimeout(function () { sShow(r.n); }, 120);   // going into Replay lays the column out again (its scroll back at the top)
+    }
+    function sScroller() { for (var e = host; e && e !== doc.body; e = e.parentElement) { var o = getComputedStyle(e).overflowY; if ((o === 'auto' || o === 'scroll') && e.scrollHeight > e.clientHeight) return e; } return null; }
+    function sShow(n) { var sc = sScroller(), row = byEl('.hk-tr[data-sn="' + n + '"]');   // the open trade in view: the panel scrolls, never the page (the platform's bars stay put)
+      if (row && sc) { var rt = row.getBoundingClientRect().top - sc.getBoundingClientRect().top; if (rt < 40 || rt > sc.clientHeight * 0.45) sc.scrollTop += rt - 40; }
+      else if (row && !sc && !opt.app) row.scrollIntoView({ block: 'nearest' }); }
+    function sPick(n, open) { var sc = sScroller(), keep = sc ? sc.scrollTop : 0; ssel = n; studyRender(); if (sc) sc.scrollTop = keep; sShow(n);
+      var r = study.find(function (x) { return x.n === n; }); if (r && open) sOpen(r); }
+    async function sSave(r, patch, label) { patch.verdict_at = new Date().toISOString();
+      var q = await sb.from('hawk_study').update(patch).eq('run', 'strict_20').eq('n', r.n), el = byEl('#hk-ss');
+      if (el) el.textContent = q.error ? 'Not saved: ' + q.error.message : label; return !q.error; }
     root.addEventListener('click', async function (e) {
       var t = e.target.closest('.hk-tabs button');
-      if (t) { period = +t.dataset.p; tabs(); load(); return; }
+      if (t) { period = t.dataset.p === 's' ? 's' : +t.dataset.p; tabs(); load(); return; }
+      if (study && period === 's') {
+        var f = e.target.closest('[data-sf]'); if (f) { sfil = f.dataset.sf; studyRender(); return; }
+        var tr = e.target.closest('.hk-tr'); if (tr) { var n = +tr.dataset.sn; if (n === ssel) { var sc0 = sScroller(), k0 = sc0 ? sc0.scrollTop : 0; ssel = null; studyRender(); if (sc0) sc0.scrollTop = k0; } else sPick(n, true); return; }
+        var sr = study.find(function (x) { return x.n === ssel; });
+        var sa = e.target.closest('[data-sa]'); if (sa && sr) { var rs = sShown(), i = rs.indexOf(sr);
+          if (sa.dataset.sa === 'open') sOpen(sr);
+          else if (sa.dataset.sa === 'clear') { try { opt.study({ clear: true }); } catch (x) {} var el = byEl('#hk-sst'); if (el) el.textContent = 'Study drawings cleared.'; }
+          else { var nx = rs[i + (sa.dataset.sa === 'next' ? 1 : -1)]; if (nx) sPick(nx.n, true); }
+          return; }
+        var sv = e.target.closest('[data-sv]'); if (sv && sr) { var v = sr.verdict === sv.dataset.sv ? null : sv.dataset.sv;
+          if (await sSave(sr, { verdict: v }, v ? 'Saved' : 'Cleared')) { sr.verdict = v; sv.parentNode.querySelectorAll('[data-sv]').forEach(function (x) { x.setAttribute('aria-pressed', x.dataset.sv === v); });
+            var row = byEl('.hk-tr[data-sn="' + sr.n + '"] .v'); if (row) row.className = 'v ' + (v || ''); }
+          return; }
+      }
       var b = e.target.closest('[data-act]'); if (!b) return;
       var r = byId(b.dataset.id); if (!r) return;
       var act = b.dataset.act, st = charts[r.id];
@@ -357,7 +472,9 @@
       }
     });
     root.addEventListener('change', function (e) {
-      if (e.target.tagName !== 'TEXTAREA') return; var r = byId(e.target.dataset.id); if (!r) return;
+      if (e.target.tagName !== 'TEXTAREA') return;
+      if (e.target.dataset.snote && study) { var sr = study.find(function (x) { return x.n === +e.target.dataset.snote; }); if (sr) { sr.note = e.target.value.trim() || null; sSave(sr, { note: sr.note }, 'Note saved'); } return; }
+      var r = byId(e.target.dataset.id); if (!r) return;
       r.note = e.target.value.trim(); save(r.id, { note: r.note || null }, 'Note saved');
     });
     load(); poll();
