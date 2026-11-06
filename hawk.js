@@ -22,9 +22,12 @@
     '.hk-title{font-size:28px;font-weight:600;letter-spacing:-.01em;margin:6px 0 2px}',
     '.hk-app .hk-title{display:none}',
     '.hk-sub{color:var(--hk-mut);font-size:13px;margin:4px 0 0}',
-    '.hk-tabs{display:flex;gap:6px}',
+    '.hk-tabs{display:flex;gap:6px;align-items:center}',
+    '.hk-tabs select{-webkit-appearance:none;appearance:none;height:28px;box-sizing:border-box;font:500 12px var(--hk-font,inherit);color:var(--hk-ink);background:transparent url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 12 12%27%3E%3Cpath d=%27M3 4.5l3 3 3-3%27 fill=%27none%27 stroke=%27%238b93a7%27 stroke-width=%271.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E") no-repeat right 9px center/11px 11px;border:1px solid var(--hk-line);border-radius:999px;padding:0 26px 0 12px;cursor:pointer;color-scheme:light dark}',
+    '.hk-tabs select:hover{border-color:color-mix(in srgb,var(--hk-mut) 60%,transparent)}.hk-tabs select.off{color:var(--hk-mut)}.hk-tabs select:focus-visible{outline:2px solid #e0a84a;outline-offset:1px}.hk-nar .hk-tabs select{height:24px;font-size:11px;padding:0 22px 0 9px}',
     '.hk-tabs button{font:500 12px var(--hk-font,inherit);color:var(--hk-mut);background:transparent;border:1px solid var(--hk-line);border-radius:999px;padding:5px 12px;cursor:pointer}',
     '.hk-tabs button[aria-pressed="true"]{color:var(--hk-ink);border-color:var(--hk-ink)}',
+    '.hk-tabs button[data-p="s"]{color:#e0a84a;border-color:color-mix(in srgb,#e0a84a 55%,transparent)}.hk-tabs button[data-p="s"]:hover{border-color:#e0a84a}.hk-tabs button[data-p="s"][aria-pressed="true"]{background:#e0a84a;border-color:#e0a84a;color:#1b1406;font-weight:600}',
     '.hk-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:16px 0 4px}',
     '.hk-stats[hidden]{display:none}',
     '.hk-stat{background:var(--hk-card);border:1px solid var(--hk-line);border-radius:10px;padding:10px 12px}',
@@ -334,11 +337,13 @@
   // ---------- the feed
   function mount(host, sb, opt) {
     opt = opt || {}; var doc = host.ownerDocument || document; css(doc);
-    var focusId = opt.focusId || null, period = focusId ? 7 : 1, rows = [], charts = {}, pollT = null;
+    var focusId = opt.focusId || null, period = focusId ? 7 : 1, lastP = period, rows = [], charts = {}, pollT = null;
     function headHtml() { return '<div>' +
       '<div class="hk-eye">' + L('Hawk', 'Halcón') + ' <i>' + L('Admin only', 'Solo admin') + '</i></div><div class="hk-title">' + L('Hawk', 'Halcón') + '</div>' +
       '<p class="hk-sub">' + L('Its read of EUR/USD before and during London 08:00–10:00. Rate each alert, or draw your own read on the chart.', 'Su lectura del EUR/USD antes y durante Londres 08:00–10:00. Valora cada alerta o dibuja tu propia lectura en el gráfico.') + '</p></div>' +
-      '<div class="hk-tabs" role="group" aria-label="' + L('Period', 'Periodo') + '"><button data-p="1">' + L('Today', 'Hoy') + '</button><button data-p="7">' + L('7 days', '7 días') + '</button><button data-p="90">' + L('All', 'Todo') + '</button><button data-p="s">' + L('Study', 'Estudio') + '</button></div>'; }
+      '<div class="hk-tabs"><select data-hkp aria-label="' + L('Period', 'Periodo') + '"><option value="" hidden></option>' +
+        [[1, L('Today', 'Hoy')], [7, L('7 days', '7 días')], [30, L('30 days', '30 días')], [90, L('90 days', '90 días')]].map(function (x) { return '<option value="' + x[0] + '">' + x[1] + '</option>'; }).join('') +
+        '</select><button data-p="s">' + L('Study', 'Estudio') + '</button></div>'; }
     host.innerHTML = '<div class="hk' + (opt.app ? ' hk-app' : '') + (opt.narrow ? ' hk-nar' : '') + '"><div class="hk-head">' + headHtml() + '</div>' +
       '<div class="hk-today" hidden></div><div class="hk-stats" hidden></div><div class="hk-list"><p class="hk-empty">' + L('Loading…', 'Cargando…') + '</p></div></div>';
     var root = host.firstChild, list = root.querySelector('.hk-list'), statsEl = root.querySelector('.hk-stats'), todayEl = root.querySelector('.hk-today');
@@ -348,7 +353,9 @@
       var h = '<div class="hk-tdh"><span>' + L('Session', 'Sesión') + '</span><span>' + esc(t.sess || '') + '</span></div>' + t.html;
       if (todayEl.innerHTML !== h) todayEl.innerHTML = h; todayEl.hidden = false; }
     if (opt.today) setInterval(function () { if (!doc.hidden && host.offsetParent) todayPaint(); }, 15000);
-    function tabs() { root.querySelectorAll('.hk-tabs button').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.p === String(period)); }); todayPaint(); }
+    function tabs() { root.querySelectorAll('.hk-tabs button').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.p === String(period)); });
+      var ps = root.querySelector('[data-hkp]'); if (ps) { var o0 = ps.options[0], ol = ps.querySelector('option[value="' + lastP + '"]'); if (o0 && ol) o0.textContent = ol.textContent;
+        ps.value = period === 's' ? '' : String(period); ps.classList.toggle('off', period === 's'); } todayPaint(); }
     tabs();
     function redraw() { Object.keys(charts).forEach(function (id) { draw(charts[id]); }); }   // a hidden chart has no size and draws nothing
     var ro = 'ResizeObserver' in window ? new ResizeObserver(function () { redraw(); }) : null;
@@ -471,7 +478,7 @@
     // hawk_study (admin RLS). A trade opens on Replay (opt.study, the app) with its drawings. He ticks each one valid / not a setup, writes
     // why, and draws on it; his own drawings on that stretch of chart are saved to the trade (drawings) - what the rules get tuned against.
     // "What if" (hawk_study_days: every candidate setup + its 1m path) re-runs his rules with another stop / target / BE / exit.
-    var study = null, sfil = 'all', ssel = null, sview = 'trades', sOnChart = null, sStat = '', sHid = false;   // sHid: the hawk's marks hidden on the open trade
+    var study = null, sfil = 'all', ssel = null, sview = 'trades', sOnChart = null, sStat = '', sHid = false, sStudying = false;   // sHid: the hawk's marks hidden on the open trade
     var sPer = (function () { try { return Object.assign({ k: 'all', from: '', to: '' }, JSON.parse(localStorage.getItem('st_hawk_period') || '{}')); } catch (x) { return { k: 'all', from: '', to: '' }; } })();
     var PERS = [['w', '1 week', 7, '1 semana'], ['m', '1 month', 30, '1 mes'], ['q', '3 months', 91, '3 meses'], ['h', '6 months', 182, '6 meses'], ['all', '1 year', 0, '1 año'], ['custom', 'Pick dates', 0, 'Elegir fechas']];
     function sPerSave() { try { localStorage.setItem('st_hawk_period', JSON.stringify(sPer)); } catch (x) {} }
@@ -546,7 +553,7 @@
       if (period === 's') studyRender();
     }
     function sShown() { return study.filter(function (r) { var o = r.data.out; if (!sIn(r.day)) return false;
-      return sfil === 'all' || (sfil === 'open' ? !r.verdict : sfil === 'be' ? (o === 'be' || o === 'time') : o === sfil); }); }
+      return sfil === 'all' || (sfil === 'open' ? !r.verdict : o === sfil); }); }
     function sTick(r, big) { return ['agree', 'disagree'].map(function (v) { var ok = v === 'agree', w = ok ? L('Valid setup', 'Setup válido') : L('Not a setup', 'No es un setup');
       return '<button data-tick="' + v + '" data-sn="' + r.n + '" aria-pressed="' + (r.verdict === v) + '" title="' + w + '" aria-label="' + w + ' #' + r.n + '">' + (ok ? ICK : IX) + (big ? '<span>' + w + '</span>' : '') + '</button>'; }).join(''); }
     function sDwN(r) { return (r.drawings || []).filter(function (x) { return x && !x.mbe; }).length; }
@@ -585,17 +592,12 @@
       return '<div class="hk-det" id="hk-sd">' +
         '<div class="hk-dh"><span class="hk-out ' + d.out + '">' + sOut(d.out) + '</span><span class="rr">' + sR(d.net) + '<small>' + sR(d.r) + L(' before costs', ' antes de costes') + '</small></span><span class="n">#' + r.n + L(' · out ', ' · salida ') + hm(d.xts) + '</span></div>' +
         (ap ? '<div class="hk-nav"><button class="hk-btn go" data-sa="open">' + L('Show in Study', 'Ver en el Estudio') + '</button></div>' : '') +
-        (ap ? '<div class="hk-sst"><span id="hk-sst">' + esc(sStat) + '</span><button data-sa="clear">' + (sHid ? L('Show the setup marks', 'Mostrar las marcas del setup') : L('Hide the setup marks', 'Ocultar las marcas del setup')) + '</button></div>' : '') +
+        (ap ? '<div class="hk-sst"><span id="hk-sst">' + esc(sStat) + '</span></div>' : '') +
         sExplain(d, r) +
         '<div class="hk-lbl">' + L('Your call', 'Tu decisión') + '</div><div class="hk-vb">' + sTick(r, true) + '</div>' +
         '<textarea data-snote="' + r.n + '" rows="3" placeholder="' + L('Your notes: what makes it valid, or not?', 'Tus notas: ¿qué lo hace válido, o no?') + '">' + esc(r.note || '') + '</textarea>' +
-        (ap ? '<div class="hk-lbl">' + L('Your break-even', 'Tu break-even') + '</div><div class="hk-dw"><span id="hk-sbe">' + sBeTxt(r) + '</span><span class="hk-bb">' +
-          (d.be == null ? '<button class="hk-btn" data-sa="beline">' + L('Place a line', 'Poner una línea') + '</button>' : '') +
-          '<button class="hk-btn" data-sa="benone" aria-pressed="' + !!(r.be_mine && r.be_mine.none) + '">' + L('No BE', 'Sin BE') + '</button></span></div>' +
-          '<p class="hk-hint">' + (d.be != null ? L('Drag the BE trigger line on the chart to where you would move to break-even. It saves by itself.', 'Arrastra la línea del disparo del BE en el gráfico a donde moverías a break-even. Se guarda sola.')
-            : L('Your rules gave no break-even level here. Place a line if you would use one; it saves by itself.', 'Tus reglas no dieron nivel de break-even aquí. Pon una línea si usarías uno; se guarda sola.')) + '</p>' : '') +
         (ap ? '<div class="hk-lbl">' + L('Your drawings', 'Tus dibujos') + '</div><div class="hk-dw"><span id="hk-sdw">' + sDwTxt(r) + '</span></div>' +
-          '<p class="hk-hint">' + L('What you draw on this trade in Study saves by itself and stays with this trade only. Your normal Replay charts never show it.', 'Lo que dibujas en esta operación en el Estudio se guarda solo y se queda solo con esta operación. Tus gráficos normales de Replay nunca lo muestran.') + '</p>' : '') +
+          '<p class="hk-hint">' + L('What you draw on this trade in Study saves by itself and stays with this trade only. Drag the BE trigger line to where you would move to break-even, or delete it if you wouldn\'t.', 'Lo que dibujas en esta operación en el Estudio se guarda solo y se queda solo con esta operación. Arrastra la línea del disparo del BE a donde moverías a break-even, o bórrala si no lo harías.') + '</p>' : '') +
         '<div class="hk-saved" id="hk-ss"></div></div>'; }
     function studyRender() {
       css(host.ownerDocument);
@@ -612,7 +614,7 @@
           .map(function (s) { return '<div><b class="' + (s[2] || '') + '">' + s[0] + '</b><span>' + s[1] + '</span></div>'; }).join('') + '</div>' +
         '<div class="hk-prog"><div class="t"><span>' + L('Checked <b>' + chk + '</b> of ' + all.length, 'Revisadas <b>' + chk + '</b> de ' + all.length) + '</span><span>' + L(ag + ' valid · ' + no + ' not', ag + ' válidas · ' + no + ' no') + '</span></div>' +
         '<div class="hk-bar"><i class="ok" style="width:' + (ag / Math.max(1, all.length) * 100).toFixed(2) + '%"></i><i class="no" style="width:' + (no / Math.max(1, all.length) * 100).toFixed(2) + '%"></i></div></div>' +
-        '<div class="hk-seg" role="group" aria-label="' + L('Show', 'Mostrar') + '">' + [['all', L('All', 'Todas')], ['win', L('Wins', 'Ganadoras')], ['loss', L('Losses', 'Perdedoras')], ['be', 'BE'], ['open', L('To check', 'Por revisar')]]
+        '<div class="hk-seg" role="group" aria-label="' + L('Show', 'Mostrar') + '">' + [['all', L('All', 'Todas')], ['win', L('Wins', 'Ganadoras')], ['loss', L('Losses', 'Perdedoras')], ['be', 'BE'], ['time', L('Closed 13:20', 'Cerradas 13:20')], ['open', L('To check', 'Por revisar')]]
           .map(function (f) { return '<button data-sf="' + f[0] + '" aria-pressed="' + (sfil === f[0]) + '">' + f[1] + '</button>'; }).join('') + '</div>';
       var rs = sShown(), last = '', mo = {};
       rs.forEach(function (r) { var k = r.day.slice(0, 7); mo[k] = mo[k] || [0, 0]; mo[k][0]++; mo[k][1] += r.data.net; });
@@ -637,10 +639,12 @@
         { type: 'trend', a: { t: t0, price: mid }, b: { t: t1, price: mid }, color: '#8b90a0', width: 1, dash: 'dashed', text: '50%' }];
       // the high (low) the sweep took, drawn from the candle that made it to the break (Nestor: "can the high line extend from the high so
       // i can see quickly where its coming from?")
-      if (d.lq != null && d.lqt) o.push({ type: 'trend', a: { t: d.lqt, price: d.lq }, b: { t: Math.max(d.sw || d.ts, d.lqt + 60) + 900, price: d.lq }, color: '#e0a84a', width: 2,
-        text: (buy ? L('Low of the last hour ', 'Mínimo de la última hora ') : L('High of the last hour ', 'Máximo de la última hora ')) + hm(d.lqt) + L(' · taken ', ' · barrido ') + hm(d.sw || d.ts) });
-      else if (d.a != null && d.ta) o.push({ type: 'trend', a: { t: d.ta - 3600, price: d.a }, b: { t: d.ta + 1800, price: d.a }, color: '#e0a84a', width: 2,
-        text: d.model === 'initiation pocket' ? (buy ? L('Range high broken', 'Máximo del rango roto') : L('Range low broken', 'Mínimo del rango roto')) : (buy ? L('Low taken ', 'Mínimo barrido ') : L('High taken ', 'Máximo barrido ')) + hm(d.ta) });
+      // the line's words sit in a note box off the candles: below a low, above a high (Nestor, 6 Nov 2026)
+      var lqNote = function (t, px, txt, low) { o.push({ type: 'note', a: { t: t, price: px }, off: { x: 46, y: low ? 58 : -58 }, color: '#e0a84a', width: 1, tsz: 11, text: txt }); };
+      if (d.lq != null && d.lqt) { o.push({ type: 'trend', a: { t: d.lqt, price: d.lq }, b: { t: Math.max(d.sw || d.ts, d.lqt + 60) + 900, price: d.lq }, color: '#e0a84a', width: 2 });
+        lqNote(d.lqt, d.lq, (buy ? L('Low of the last hour ', 'Mínimo de la última hora ') : L('High of the last hour ', 'Máximo de la última hora ')) + hm(d.lqt) + '\n' + L('taken ', 'barrido ') + hm(d.sw || d.ts), buy); }
+      else if (d.a != null && d.ta) { o.push({ type: 'trend', a: { t: d.ta - 3600, price: d.a }, b: { t: d.ta + 1800, price: d.a }, color: '#e0a84a', width: 2 });
+        lqNote(d.ta, d.a, d.model === 'initiation pocket' ? (buy ? L('Range high broken', 'Máximo del rango roto') : L('Range low broken', 'Mínimo del rango roto')) : (buy ? L('Low taken ', 'Mínimo barrido ') : L('High taken ', 'Máximo barrido ')) + hm(d.ta), d.model === 'initiation pocket' ? !buy : buy); }
       o.push({ type: buy ? 'long' : 'short', a: { t: d.ts, price: d.entry }, b: { t: x1, price: d.entry }, sl: d.stop, tp: d.tgt });
       o.push({ type: 'text', a: { t: d.ts, price: d.tgt + d.side * 0.00025 }, color: '#5b8def', width: 2,
         text: '#' + r.n + ' ' + sBuy(buy) + ' · ' + sModel(d.model) + ' · ' + sLocW(d.loc) + '\n' + sOut(d.out) + ' ' + hm(d.xts) + ' · ' + sR(d.net) });
@@ -648,9 +652,9 @@
     }
     async function sOpen(r) { if (!opt.study) return; sHid = false; sStatus(L('Opening ' + sDay(r, { day: 'numeric', month: 'short', year: 'numeric' }) + ' in Study…', 'Abriendo el ' + sDay(r, { day: 'numeric', month: 'short', year: 'numeric' }) + ' en el Estudio…'));
       var d = r.data, at = Math.min(d.sw || d.ts, d.ta || d.ts, d.ts) - 600, ok = false;
-      try { ok = await opt.study({ sym: sMkt, day: nyDay(d.ts), at: at, draw: sDraw(r), pd: d.r0 ? { a: d.r0, b: d.r1 } : null, n: r.n, keep: r.drawings || [], onMine: sOnMine }); } catch (x) {}
+      try { ok = await opt.study({ sym: sMkt, day: nyDay(d.ts), at: at, draw: sDraw(r), pd: d.r0 ? { a: d.r0, b: d.r1 } : null, n: r.n, keep: r.drawings || [], onMine: sOnMine, noAsk: sStudying }); } catch (x) {}
       if (ok === 'no') { if (ssel === r.n) sStatus(L('Not opened. Press Show in Study when you want it on the chart.', 'No se abrió. Pulsa Ver en el Estudio cuando la quieras en el gráfico.')); return; }   // he chose to stay where he was
-      if (ok) { sOnChart = r.n; sBeAuto(r); }
+      if (ok) { sOnChart = r.n; sStudying = true; delete sBeOn[r.n]; sBeAuto(r); }
       if (ssel === r.n) { sStatus(ok ? L('In Study from ' + hm(at) + ' London. Press Play to watch it unfold.', 'En el Estudio desde las ' + hm(at) + ' hora de Londres. Pulsa Reproducir para ver cómo se desarrolla.') : L('Study couldn\'t open that day.', 'El Estudio no pudo abrir ese día.')); setTimeout(function () { sShow(r.n); }, 120); }   // going into Replay lays the column out again
     }
     // what he drew on a trade (Replay's study layer, never his normal Replay drawings), kept with the trade: handed back by the app when
@@ -658,8 +662,10 @@
     function sBeVs(d, px) { var dd = (px - d.be) * d.side; return d.be == null ? sDist(px, d.entry) + L(' from entry', ' desde la entrada') : Math.abs(dd) < 0.05 * sMeta().nunit ? L('same as your rules', 'igual que tus reglas') : L(sDv(dd) + ' ' + (dd > 0 ? 'further' : 'sooner') + ' than your rules', sDv(dd) + ' ' + (dd > 0 ? 'más lejos' : 'antes') + ' que tus reglas'); }
     function sBeTxt(r) { var b = r.be_mine; return !b ? (r.data.be != null ? L('Your rules\' level: ', 'El nivel de tus reglas: ') + '<b>' + sPx(r.data.be) + '</b>' : L('None: your rules gave no level', 'Ninguno: tus reglas no dieron nivel')) : b.none ? L('You wouldn\'t move to break-even', 'No moverías a break-even') : L('Yours: ', 'El tuyo: ') + '<b>' + sPx(b.price) + '</b> · ' + sBeVs(r.data, b.price); }
     // the BE trigger line he drags: at his own level if he set one, else his rules' (none when he said No BE, or the rules gave none)
-    async function sBeAuto(r) { var d = r.data, b = r.be_mine; if (sOnChart !== r.n || (b && b.none) || (r.drawings || []).some(function (x) { return x && x.mbe; })) return;
-      var px = b && b.price != null ? b.price : d.be; if (px == null) return; try { await opt.study({ addBe: { n: r.n, t: d.ts, price: px } }); } catch (x) {} }
+    var sBeOn = {};   // trade n -> its BE trigger line went on the chart this time
+    async function sBeAuto(r) { var d = r.data, b = r.be_mine; if (sOnChart !== r.n || (b && b.none)) return;
+      if ((r.drawings || []).some(function (x) { return x && x.mbe; })) { sBeOn[r.n] = 1; return; }
+      var px = b && b.price != null ? b.price : d.be; if (px == null) return; var ok = false; try { ok = await opt.study({ addBe: { n: r.n, t: d.ts, price: px } }); } catch (x) {} if (ok) sBeOn[r.n] = 1; }
     async function sBeLine(r) { if (sOnChart !== r.n) { sMsg(L('Open this trade in Study first, then place your line.', 'Abre primero esta operación en el Estudio y luego pon tu línea.')); return; }
       var d = r.data, b = r.be_mine, px = b && b.price != null ? b.price : d.be != null ? d.be : r5(d.entry + d.side * d.risk * 1e-4), ok = false;
       try { ok = await opt.study({ addBe: { n: r.n, t: d.ts, price: px } }); } catch (x) {}
@@ -672,9 +678,9 @@
       r.be_mine = be; sRefresh(); if (!none) sBeAuto(r); sMsg(none ? L('Saved: no break-even on this one', 'Guardado: sin break-even en esta') : L('Cleared', 'Borrado')); }
     function sOnMine(n, list, ended) { var r = sFind(n); if (ended && sOnChart === +n) sOnChart = null; if (r) sKeep(r, list, false); }
     async function sKeep(r, list, ask) { var ln = (list || []).filter(function (x) { return x && x.mbe && x.a; })[0];
-      if (ln && r.data.be != null && Math.abs(ln.a.price - r.data.be) < 0.05 * sMeta().nunit) { list = list.filter(function (x) { return x !== ln; }); ln = null; }
+      var atRules = !!(ln && r.data.be != null && Math.abs(ln.a.price - r.data.be) < 0.05 * sMeta().nunit); if (atRules) list = list.filter(function (x) { return x !== ln; });
       var now = list && list.length ? list : null;
-      var be = ln ? { price: r5(ln.a.price) } : (r.be_mine && r.be_mine.none ? r.be_mine : null);
+      var be = ln ? (atRules ? null : { price: r5(ln.a.price) }) : (sBeOn[r.n] || (r.be_mine && r.be_mine.none)) ? { none: true } : null;
       var same = JSON.stringify(now) === JSON.stringify(r.drawings || null), sameBe = JSON.stringify(be) === JSON.stringify(r.be_mine || null);
       if (same && sameBe) { if (ask) sMsg(now ? L('Already saved.', 'Ya está guardado.') : L('No drawings of yours on this trade yet.', 'Todavía no tienes dibujos en esta operación.')); return true; }
       var at = new Date().toISOString(), patch = {}; if (!same) { patch.drawings = now; patch.drawings_at = at; } if (!sameBe) patch.be_mine = be;
@@ -683,7 +689,7 @@
       if (!same) { r.drawings = now; r.drawings_at = at; } r.be_mine = be; sMarkRow(r);
       if (ssel === r.n) { var el = byEl('#hk-sdw'); if (el) el.textContent = sDwTxt(r); var eb = byEl('#hk-sbe'); if (eb) eb.innerHTML = sBeTxt(r);
         var nb = byEl('[data-sa="benone"]'); if (nb) nb.setAttribute('aria-pressed', String(!!(be && be.none)));
-        var k = sDwN(r); sMsg(!sameBe && be && be.price != null ? L('Your break-even saved: ', 'Tu break-even guardado: ') + sPx(be.price) + (same ? '' : ' · ' + sPl(k, 'drawing', 'dibujo', 'dibujos')) : now ? L(sPl(k, 'drawing') + ' saved to #' + r.n, sDwSaved(k) + ' en #' + r.n) : L('Drawings removed from #', 'Dibujos quitados de #') + r.n); }
+        var k = sDwN(r); sMsg(!sameBe && be && be.none ? L('Saved: no break-even on this one', 'Guardado: sin break-even en esta') : !sameBe && be && be.price != null ? L('Your break-even saved: ', 'Tu break-even guardado: ') + sPx(be.price) + (same ? '' : ' · ' + sPl(k, 'drawing', 'dibujo', 'dibujos')) : !sameBe && !be ? L('Break-even back to your rules\' level', 'Break-even de vuelta al nivel de tus reglas') : now ? L(sPl(k, 'drawing') + ' saved to #' + r.n, sDwSaved(k) + ' en #' + r.n) : L('Drawings removed from #', 'Dibujos quitados de #') + r.n); }
       return true; }
     async function sCapture(r, ask) { if (!r || !opt.study) return false;
       if (sOnChart !== r.n) { if (ask) sMsg(L('Open this trade in Study first, then draw on it.', 'Abre primero esta operación en el Estudio y luego dibuja en ella.')); return false; }
@@ -694,7 +700,7 @@
     var sAutoBusy = false;
     setInterval(async function () { if (sAutoBusy || sOnChart == null || !opt.study || doc.hidden) return; var r = sFind(sOnChart); if (!r) return;
       sAutoBusy = true; try { await sCapture(r, false); } catch (x) {} sAutoBusy = false; }, 3000);
-    function sEnd() { if (sOnChart == null || !opt.study) return; sOnChart = null; try { opt.study({ end: true }); } catch (x) {} }
+    function sEnd() { sStudying = false; if (sOnChart == null || !opt.study) return; sOnChart = null; try { opt.study({ end: true }); } catch (x) {} }
     function sScroller() { for (var e = host; e && e !== doc.body; e = e.parentElement) { var o = getComputedStyle(e).overflowY; if ((o === 'auto' || o === 'scroll') && e.scrollHeight > e.clientHeight) return e; } return null; }
     function sShow(n) { var sc = sScroller(), row = byEl('.hk-tr[data-sn="' + n + '"]');   // the open trade in view: the panel scrolls, never the page (the platform's bars stay put)
       if (row && sc) { var rt = row.getBoundingClientRect().top - sc.getBoundingClientRect().top; if (rt < 40 || rt > sc.clientHeight * 0.45) sc.scrollTop += rt - 40; }
@@ -796,7 +802,7 @@
       var U = wiUL(), vc = '<b>' + (sk === 'soff' ? L('Your stop (' + U + ')', 'Tu stop (' + U + ')') : L('Stop (' + U + ')', 'Stop (' + U + ')')) + '</b>';
       return '<div class="hk-hm"><table><thead><tr><th class="vc"></th><th class="y"></th><th class="cap" colspan="' + cols.length + '"><b>' + L('Target (', 'Objetivo (') + (tk === 'tp' ? U : 'R') + ')</b></th></tr><tr><th class="vc"></th><th class="y"></th>' +
         cols.map(function (c) { return '<th>' + (tk === 'tp' ? wiV(c, 1) : c) + '</th>'; }).join('') + '</tr></thead><tbody>' +
-        rows.map(function (rv, i) { return '<tr>' + (i ? '' : '<th class="vc" rowspan="' + rows.length + '"><span>' + vc + '</span></th>') + '<th class="y">' + (sk === 'soff' ? (rv === 0 ? L('Yours', 'El tuyo') : (rv > 0 ? '+' : '−') + wiV(Math.abs(rv), 1)) : wiV(rv, 1)) + '</th>' + cols.map(function (cv, j) { var x = v[i][j], a = Math.round(Math.min(1, Math.abs(x) / mx) * 62);
+        rows.map(function (rv, i) { return '<tr>' + (i ? '' : '<th class="vc" rowspan="' + rows.length + '"><span>' + vc + '</span></th>') + '<th class="y">' + (sk === 'soff' ? (rv === 0 ? L('Your stops', 'Tus stops') : (rv > 0 ? '+' : '−') + wiVU(rv, 1)) : wiV(rv, 1)) + '</th>' + cols.map(function (cv, j) { var x = v[i][j], a = Math.round(Math.min(1, Math.abs(x) / mx) * 62);
           return '<td><button data-wg="' + sk + '|' + rv + '|' + tk + '|' + cv + '" class="' + (isBase(rv, cv) ? 'base' : '') + '" aria-current="' + (+p[sk] === rv && +p[tk] === cv) + '" title="Stop ' + (sk === 'soff' ? (rv === 0 ? L('as your rule places it', 'como lo pone tu regla') : wiVU(rv, 1) + L((rv > 0 ? ' wider' : ' tighter') + ' than yours', (rv > 0 ? ' más ancho' : ' más ajustado') + ' que el tuyo')) : wiVU(rv, 1)) + L(', target ', ', objetivo ') + (tk === 'tp' ? wiVU(cv, 1) : cv + 'R') + ': ' + sR1(x) + '" style="background:color-mix(in srgb,var(' + (x >= 0 ? '--hk-buy' : '--hk-sell') + ') ' + a + '%,transparent)">' + (x < -0.5 ? '−' : '') + Math.abs(Math.round(x)) + '</button></td>'; }).join('') + '</tr>'; }).join('') +
         '</tbody></table></div>'; }
     function wiHtml() {
@@ -856,7 +862,7 @@
         if (sview === 'whatif') { wiClick(e); return; }
         var f = e.target.closest('[data-sf]'); if (f) { sfil = f.dataset.sf; sRefresh(); return; }
         var tk = e.target.closest('[data-tick]'); if (tk) { var tr0 = sFind(tk.dataset.sn); if (tr0) sVerdict(tr0, tk.dataset.tick); return; }
-        var so = e.target.closest('[data-so]'); if (so) { var n = +so.dataset.so; if (n === ssel) { sEnd(); ssel = null; sRefresh(); } else sPick(n, sOnChart != null); return; }   // a row opens its details; only Show in Study asks to switch (Nestor, 6 Nov 2026), already in Study the chart follows
+        var so = e.target.closest('[data-so]'); if (so) { var n = +so.dataset.so; if (n === ssel) { ssel = null; sRefresh(); } else sPick(n, sOnChart != null || sStudying); return; }   // a row opens its details; only Show in Study asks to switch (Nestor, 6 Nov 2026), already in Study the chart follows
         var sr = sFind(ssel);
         var sa = e.target.closest('[data-sa]'); if (sa && sr) { var rs = sShown(), i = rs.indexOf(sr);
           if (sa.dataset.sa === 'open') sOpen(sr);
@@ -884,6 +890,7 @@
       }
     });
     root.addEventListener('change', function (e) {
+      if (e.target.hasAttribute && e.target.hasAttribute('data-hkp')) { if (period === 's') sEnd(); period = lastP = +e.target.value || 1; tabs(); load(); return; }
       if (study && period === 's' && e.target.hasAttribute('data-smksel')) { sMktSet(e.target.value); return; }
       if (study && period === 's' && e.target.hasAttribute('data-persel')) { sPer.k = e.target.value; sPerSave(); sRefresh(); return; }
       if (e.target.dataset.pd) { sPer[e.target.dataset.pd] = e.target.value || ''; sPerSave(); sRefresh(); return; }
