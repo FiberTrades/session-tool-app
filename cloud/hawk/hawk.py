@@ -4,7 +4,8 @@
 # Nestor: "build like a hawk to watch the market live and send me nudges when the perfect conditions to enter a trade present
 # themselves ... even before the trade opportunity presents itself you could tell me, watch for price if it retraces to 50% you
 # could look for a sell". Runs on uk1 (systemd st-hawk) in the London window, weekdays 07:20-10:10:
-#   * reads the DEMO MT5's EURUSD (1515070952, FTMO-Demo) over the local relay: "watch" gets "px" every second with the last closed
+#   * reads the account + market picked in the hawk tab (hawk_config; 6 Nov: any of his cloud MT5 accounts, EUR/USD, GBP/USD, gold
+#     or US100 - the markets the study ran) over the local relay (the demo 1515070952's EURUSD until he picks): "watch" gets "px" every second with the last closed
 #     1-minute candle; "hist" gets 25 h of 1-minute and 200 hour candles. It sends nothing else: never a command, never an order.
 #   * every closed minute runs engine.py - the exact rules of the rule study (chart-exports/strategy-review) - and sends:
 #       brief       07:45: phase, the range, premium / discount / 50%, what to wait for
@@ -19,14 +20,31 @@ import base64, datetime as dt, glob, hashlib, json, os, socket, sys, time, urlli
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import engine as E
 
-LOGIN, SYM = '1515070952', 'EURUSD'
+LOGIN, SYM = '1515070952', 'EURUSD'   # what it reads now: set from hawk_config (CANON = the market, SYM = the broker's own name for it)
+CANON = 'EURUSD'
+# the markets the study ran: the scaled pip (his EUR/USD rules sized by how far each moves 08:00-10:00 London), price decimals, name,
+# and the unit distances are said in (bt/multi.py, 6 Nov 2026)
+MK = {'EURUSD': (0.0001, 5, 'EUR/USD', 'pips', 0.0001), 'GBPUSD': (0.00013360655737705096, 5, 'GBP/USD', 'pips', 0.0001),
+      'XAUUSD': (1.127322404371542, 2, 'Gold', '$', 1.0), 'US100': (6.01092896174864, 2, 'US100', 'points', 1.0)}
+DP = 5
+def canon(sym):
+    u = str(sym or '').upper()
+    for k in MK:
+        if u.startswith(k): return k
+    return u
+def set_market(c):
+    global CANON, DP
+    CANON = c if c in MK else 'EURUSD'; E.PIP = MK[CANON][0]; DP = MK[CANON][1]
 def ldt(t): return dt.datetime.fromtimestamp(E.ldn(int(t)), dt.timezone.utc).replace(tzinfo=None)   # London wall time
 OPTS = ('reaction', 'continuation', 'initiation')
 URL = os.environ.get('HAWK_URL', 'https://figozyxoyobixadhqewr.supabase.co/functions/v1/st-hawk')
 KEY = os.environ.get('HAWK_KEY', '')
 
 def log(*a): print(time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime()) + 'Z', *a, flush=True)
-def px(v): return '%.5f' % v
+def px(v): return '%.*f' % (DP, v)
+def dist(a, b):   # a distance in the market's own unit: pips, $ on gold, points on US100
+    m = MK[CANON]; v = abs(a - b) / m[4]
+    return '$%.2f' % v if m[3] == '$' else '%.1f %s' % (v, m[3])
 def pips(a, b): return abs(a - b) / E.PIP
 def hm(t): return ldt(t).strftime('%H:%M')
 def word(side, buy, sell): return buy if side > 0 else sell
@@ -50,7 +68,8 @@ class Hawk:
         if kind != 'done':
             try: data['chart'] = self.chart()
             except Exception as e: log('chart failed:', repr(e))
-        self.send(dict(day=self.day, key=key, kind=kind, side=side, title=title, body=body, data=data))
+        data.update(sym=CANON, login=LOGIN, dp=DP)
+        self.send(dict(day=self.day, key=(key if CANON == 'EURUSD' else CANON + ':' + key), kind=kind, side=side, title=title, body=body, data=data, symbol=CANON))
 
     def chart(self):
         """What the hawk is looking at, for hawk.html: ~a day of 5-minute candles and its reading of them."""
@@ -110,7 +129,7 @@ class Hawk:
                     m2 = sum(a2b) / 2
                     lines.append('Last leg %s → %s: its 50%% at %s is the %s zone.' % (px(a2b[0]), px(a2b[1]), px(m2), 'buy' if up else 'sell'))
                 lines.append('Price %s. Range %s–%s.' % (px(now), px(bl), px(bh)))
-            self.out('brief', 'brief', 'London brief · EUR/USD', ' '.join(lines),
+            self.out('brief', 'brief', 'London brief · ' + MK[CANON][2], ' '.join(lines),
                      data=dict(phase=ph, bh=bh, bl=bl, price=now, a2b=a2b))
 
         ev = []
@@ -148,13 +167,13 @@ class Hawk:
             model = su['model'].replace('·', '·')
             if 'reaction' in model:
                 title = 'Setup · reaction %s' % word(s, 'buy', 'sell')
-                body = '%s now ~%s · stop %s (%.1f pips) · target %s (%.0f pips, %.1fR). %s taken %s, the move has slowed.' % (
-                    word(s, 'Buy', 'Sell'), px(su['entry']), px(su['stop']), pips(su['entry'], su['stop']), px(su['tgt']),
-                    pips(su['tgt'], su['entry']), r, word(s, 'Low', 'High'), {'discount': 'in the discount', 'premium': 'in the premium'}.get(su['loc'], 'at the zone'))
+                body = '%s now ~%s · stop %s (%s) · target %s (%s, %.1fR). %s taken %s, the move has slowed.' % (
+                    word(s, 'Buy', 'Sell'), px(su['entry']), px(su['stop']), dist(su['entry'], su['stop']), px(su['tgt']),
+                    dist(su['tgt'], su['entry']), r, word(s, 'Low', 'High'), {'discount': 'in the discount', 'premium': 'in the premium'}.get(su['loc'], 'at the zone'))
             else:
                 title = 'Setup · %s %s reached' % ('pocket' if 'initiation' in model else '50% pullback', word(s, 'buy', 'sell'))
-                body = '%s limit %s reached · stop %s (%.1f pips) · target %s (%.1fR).%s' % (
-                    word(s, 'Buy', 'Sell'), px(su['entry']), px(su['stop']), pips(su['entry'], su['stop']), px(su['tgt']), r,
+                body = '%s limit %s reached · stop %s (%s) · target %s (%.1fR).%s' % (
+                    word(s, 'Buy', 'Sell'), px(su['entry']), px(su['stop']), dist(su['entry'], su['stop']), px(su['tgt']), r,
                     ' It touched the stop in the same minute.' if su.get('stopbar') else '')
             self.out('setup:%s:%d:%s' % (model, s, px(su['entry'])), 'setup', title, body, s,
                      dict(model=model, entry=su['entry'], stop=su['stop'], tgt=su['tgt'], loc=su['loc'], phase=su['phase']))
@@ -176,9 +195,20 @@ def post(msg):
         with urllib.request.urlopen(req, timeout=20) as r: log('sent', msg['key'], r.read()[:120])
     except Exception as e: log('send failed', msg['key'], e)
 
+def get_cfg():
+    """The account + market picked in the hawk tab (hawk_config, read through st-hawk). None if it can't be read."""
+    if not KEY: return None
+    req = urllib.request.Request(URL, data=b'{"config":true}', method='POST', headers={'content-type': 'application/json', 'x-hawk-key': KEY})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r: d = json.loads(r.read())
+        lg, sy = str(d.get('login') or ''), canon(d.get('sym'))
+        return (lg, sy) if lg.isdigit() and sy in MK else None
+    except Exception as e: log('config failed:', e); return None
+
 # ---------- the relay line (read-only: watch + hist)
 class Line:
     def __init__(self):
+        self.mode = None; self.key = ''; self.raw_sym = ''; self.app_hs = []; self.t_app = 0
         tpl = glob.glob('/home/st/members/*.%s/drive_c/ST/%s/MQL5/Profiles/Templates/STCloudEA.tpl' % (LOGIN, LOGIN))[0]
         raw = open(tpl, 'rb').read()
         txt = raw.decode('utf-16-le', 'ignore') if b'\x00' in raw[:40] else raw.decode('utf-8', 'ignore')
@@ -198,6 +228,37 @@ class Line:
         self.s, self.buf = s, b.split(b'\r\n\r\n', 1)[1]
         self.raw({'topic': self.topic, 'event': 'phx_join', 'payload': {'config': {'broadcast': {'ack': False, 'self': False}}}, 'ref': '1', 'join_ref': '1'})
         self.s.settimeout(1.0); self.hb = time.time()
+    def resolve(self):
+        """Which EA of the account answers, and the broker's own name for the market: its chart's symbol, or one it can stream (hub)."""
+        self.bc('who', {}); his = []; t0 = time.time()
+        while time.time() - t0 < 8:
+            m = self.recv()
+            if m and m.get('event') == 'broadcast' and m['payload'].get('event') == 'hi':
+                p = m['payload'].get('payload') or {}
+                if str(p.get('lg')) == LOGIN: his.append(p)
+            if his and time.time() - t0 > 3: break
+        if not his: raise EOFError('no EA of %s answered' % LOGIN)
+        his.sort(key=lambda p: (canon(p.get('sym')) != CANON, -int(p.get('cl') or 0)))   # an EA on that market's chart first, then the cloud EA
+        cs = str(his[0].get('sym') or ''); self.key = cs + '|' + LOGIN
+        if canon(cs) == CANON: self.mode, self.raw_sym = 'chart', cs; return
+        self.bc('syms', {'by': self.key, 'q': CANON}); t0 = time.time()
+        while time.time() - t0 < 8:
+            m = self.recv()
+            if m and m.get('event') == 'broadcast' and m['payload'].get('event') == 'symlist':
+                p = m['payload'].get('payload') or {}
+                if p.get('by') == self.key:
+                    hit = [x for x in str(p.get('r') or '').split(',') if x and canon(x) == CANON]
+                    if not hit: raise EOFError('%s has no %s' % (LOGIN, CANON))
+                    hit.sort(key=len); self.mode, self.raw_sym = 'hub', hit[0]; return
+        raise EOFError('no symbol list from %s' % self.key)
+    def watch(self):
+        if self.mode == 'chart': self.bc('watch', {'ms': 1000, 'sym': self.raw_sym, 'lg': int(LOGIN)}); return
+        hs = [x for x in self.app_hs if x != self.raw_sym] if time.time() - self.t_app < 45 else []   # his Live Charts' own hub symbols keep streaming
+        self.bc('watch', {'ms': 1000, 'sym': '', 'lg': int(LOGIN), 'hub': self.key, 'hs': ','.join(hs + [self.raw_sym])})
+    def hist(self, n, tf):
+        p = {'sym': self.raw_sym, 'lg': int(LOGIN), 'n': n, 'tf': tf}
+        if self.mode == 'hub': p['by'] = self.key
+        self.bc('hist', p)
     def close(self):
         try:
             if self.s: self.s.close()
@@ -235,23 +296,35 @@ def parse(row):
     return int(a[0]), (float(a[1]), float(a[2]), float(a[3]), float(a[4]))
 
 def live():
-    hawk = Hawk(post); line = Line(); bars, h1 = {}, {}
-    up = False; t_watch = t_hist = 0; last_eval = 0
+    global LOGIN, SYM
+    set_market('EURUSD'); hawk = Hawk(post); line = None; bars, h1 = {}, {}
+    up = False; t_watch = t_hist = 0; last_eval = 0; t_cfg = 0
     while True:
         ln = ldt(time.time()); m = ln.hour * 60 + ln.minute
+        if time.time() - t_cfg >= 60:   # his pick in the hawk tab, looked at once a minute
+            t_cfg = time.time(); c = get_cfg()
+            if c and (c[0] != LOGIN or c[1] != CANON or line is None):
+                if line: line.close()
+                LOGIN = c[0]; set_market(c[1]); SYM = CANON; up = False; line = None; hawk = Hawk(post); bars.clear(); h1.clear(); last_eval = 0
+                log('reading', LOGIN, CANON)
+            if line is None:
+                try: line = Line()
+                except (IndexError, OSError) as e: log('no template for', LOGIN, e); time.sleep(30); continue
         if ln.weekday() >= 5 or not (7 * 60 + 20 <= m < 10 * 60 + 10):
-            if up: line.close(); up = False; log('window closed')
+            if up and line: line.close(); up = False; log('window closed')
             bars.clear(); h1.clear(); time.sleep(30); continue
         try:
-            if not up: line.open(); up = True; t_watch = t_hist = 0; log('joined the relay')
+            if not up: line.open(); line.resolve(); up = True; t_watch = t_hist = 0; SYM = line.raw_sym; log('joined the relay:', LOGIN, SYM, line.mode)
             now = time.time()
-            if now - t_watch >= 15: line.bc('watch', {'ms': 1000, 'sym': SYM, 'lg': int(LOGIN)}); t_watch = now
+            if now - t_watch >= 15: line.watch(); t_watch = now
             if now - t_hist >= 1200:
-                line.bc('hist', {'sym': SYM, 'lg': int(LOGIN), 'n': 1500, 'tf': 1})
-                line.bc('hist', {'sym': SYM, 'lg': int(LOGIN), 'n': 200, 'tf': 60}); t_hist = now
+                line.hist(1500, 1); line.hist(200, 60); t_hist = now
             msg = line.recv()
             if msg and msg.get('event') == 'broadcast':
                 ev, p = msg['payload'].get('event'), msg['payload'].get('payload') or {}
+                if ev == 'watch' and line.mode == 'hub' and p.get('hub') == line.key:   # his Live Charts set the hub's list: ours joins it again
+                    hs = [x for x in str(p.get('hs') or '').split(',') if x]
+                    if line.raw_sym not in hs: line.app_hs = hs; line.t_app = now; line.watch(); t_watch = now
                 if str(p.get('lg')) == LOGIN and p.get('s') == SYM:
                     if ev == 'px' and p.get('pb'):
                         t, v = parse(p['pb']); bars[t] = v
@@ -261,6 +334,7 @@ def live():
                             if row: t, v = parse(row); dst[t] = v
         except (OSError, EOFError, ValueError, IndexError) as e:
             log('line lost:', e); line.close(); up = False; time.sleep(5); continue
+        if line is None: continue
         if bars and h1 and max(bars) > last_eval and len(bars) > 600:
             last_eval = max(bars)
             ts = sorted(bars)

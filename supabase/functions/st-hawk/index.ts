@@ -2,7 +2,8 @@
 // hawk_signals (once per day and key) and pushed to the admin's phone. Tapping it opens hawk.html at that alert for feedback.
 // Admin only: the alerts go to one account (the st_is_admin() email), never to members.
 // Guarded by the x-hawk-key header (HAWK_KEY in the function secrets and in /etc/st-hawk.env on uk1). Deploy with --no-verify-jwt.
-// Body: { day, key, kind, side?, title, body, data? }   or   { ping: true } to check the key.
+// Body: { day, key, kind, side?, title, body, data?, symbol? }   or   { ping: true } to check the key
+//   or { config: true }: the account + market picked in the hawk tab (hawk_config, 6 Nov 2026).
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { sendPush } from "../_shared/nudges.ts";
 
@@ -23,12 +24,15 @@ Deno.serve(async (req) => {
   let b: Record<string, unknown> = {};
   try { b = await req.json(); } catch (_) { return json({ error: "bad json" }, 400); }
   if (b.ping) return json({ ok: true, admin: !!(await adminUser()) });
+  if (b.config) { const { data: c } = await admin.from("hawk_config").select("login,sym").eq("id", 1).maybeSingle();
+    return json({ ok: true, login: c?.login || "1515070952", sym: c?.sym || "EURUSD" }); }
+  const symbol = /^[A-Z0-9.]{3,12}$/.test(String(b.symbol || "")) ? String(b.symbol) : "EURUSD";
   const day = String(b.day || ""), k = String(b.key || ""), kind = String(b.kind || "");
   const title = String(b.title || "").slice(0, 120), body = String(b.body || "").slice(0, 1200);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !k || !kind || !title) return json({ error: "missing fields" }, 400);
   const side = b.side === 1 || b.side === -1 ? b.side : null;
   const { data: row, error } = await admin.from("hawk_signals")
-    .insert({ day, key: k, kind, side, title, body, data: b.data || {} }).select("id").single();
+    .insert({ day, key: k, kind, symbol, side, title, body, data: b.data || {} }).select("id").single();
   if (error) return json({ ok: true, dup: true });   // already sent today
   const uid = await adminUser();
   let push = "no-admin";

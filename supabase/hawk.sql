@@ -83,3 +83,21 @@ create policy hawk_study_days_admin_read on public.hawk_study_days for select to
 -- where HE would move to break-even on each study trade ({price} or {none:true}), set from the Study tab (6 Nov 2026)
 alter table public.hawk_study add column if not exists be_mine jsonb;
 grant update (be_mine) on public.hawk_study to authenticated;
+
+-- The hawk's account + market (6 Nov 2026: "inside the hawk tab i need to be able to select what account and market/symbol i want the
+-- hawk be reading price from"). One row; hawk.py reads it through st-hawk {config:true} once a minute. Migration hawk_config.
+create table if not exists public.hawk_config (
+  id smallint primary key default 1 check (id = 1),
+  login text not null default '1515070952' check (login ~ '^[0-9]{3,15}$'),
+  sym text not null default 'EURUSD' check (sym in ('EURUSD','GBPUSD','XAUUSD','US100')),
+  updated_at timestamptz not null default now()
+);
+insert into public.hawk_config (id) values (1) on conflict (id) do nothing;
+alter table public.hawk_config enable row level security;
+drop policy if exists hawk_cfg_read on public.hawk_config;
+create policy hawk_cfg_read on public.hawk_config for select to authenticated using (public.st_is_admin());
+drop policy if exists hawk_cfg_write on public.hawk_config;
+create policy hawk_cfg_write on public.hawk_config for update to authenticated using (public.st_is_admin()) with check (public.st_is_admin());
+revoke all on public.hawk_config from anon;
+revoke all on public.hawk_config from authenticated;
+grant select, update (login, sym, updated_at) on public.hawk_config to authenticated;

@@ -114,7 +114,7 @@
     '.hk-hint{font-size:11.5px;color:var(--hk-mut);margin:6px 0 0;line-height:1.45}',
     '.hk-picks{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}.hk-pick{display:flex;flex-direction:column;gap:5px;min-width:0}.hk-pick>span{font:500 10px var(--hk-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--hk-mut)}',
     '.hk-pick select{-webkit-appearance:none;appearance:none;min-width:0;height:32px;box-sizing:border-box;padding:0 28px 0 10px;border-radius:8px;border:1px solid var(--hk-line);background:var(--hk-soft) url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 12 12%27%3E%3Cpath d=%27M3 4.5l3 3 3-3%27 fill=%27none%27 stroke=%27%238b93a7%27 stroke-width=%271.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E") no-repeat right 9px center/12px 12px;color:var(--hk-ink);font:500 12.5px var(--hk-font,inherit);cursor:pointer;color-scheme:light dark}',
-    '.hk-pick select:hover{border-color:color-mix(in srgb,var(--hk-mut) 55%,transparent)}.hk-pick select:focus-visible{outline:2px solid #e0a84a;outline-offset:1px}.hk-picks+.hk-hint{margin:8px 0 0}',
+    '.hk-pick select:hover{border-color:color-mix(in srgb,var(--hk-mut) 55%,transparent)}.hk-pick select:focus-visible{outline:2px solid #e0a84a;outline-offset:1px}.hk-picks+.hk-hint{margin:8px 0 0}.hk-watch{margin:2px 0 10px}.hk-watch .hk-picks{margin-top:10px}',
     '.hk-per{margin-top:0}.hk-per .hk-seg{margin:0}.hk-pr{margin-top:6px;font:11px var(--hk-mono);color:var(--hk-mut);font-variant-numeric:tabular-nums}',
     '.hk-dates{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:6px;margin-top:8px}.hk-dates span{font-size:11px;color:var(--hk-mut)}',
     '.hk-dates input{min-width:0;height:30px;box-sizing:border-box;padding:0 8px;border-radius:7px;border:1px solid var(--hk-line);background:var(--hk-soft);color:var(--hk-ink);font:500 12px var(--hk-mono);color-scheme:light dark}',
@@ -198,7 +198,7 @@
   var LDN = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function ldn(iso, o) { return new Date(iso).toLocaleString(LOC(), Object.assign({ timeZone: 'Europe/London' }, o)); }
-  function p5(v) { return (+v).toFixed(5); }
+  function p5(v) { v = +v; return v.toFixed(Math.abs(v) >= 1000 ? 2 : Math.abs(v) >= 50 ? 3 : 5); }   // EUR/USD 5, JPY 3, gold / US100 2
   function r5(v) { return Math.round(v * 1e5) / 1e5; }
   function css(doc) { var s = doc.getElementById('hk-css'); if (s) { if (s.textContent !== CSS) s.textContent = CSS; return; } s = doc.createElement('style'); s.id = 'hk-css'; s.textContent = CSS; doc.head.appendChild(s); }   // in the document it shows in (Live Charts' own window too); a copy left by an older hawk.js in a window that outlived an app reload is replaced
 
@@ -341,12 +341,12 @@
     var focusId = opt.focusId || null, period = focusId ? 7 : 1, lastP = 7, rows = [], charts = {}, pollT = null;   // lastP: the dropdown's period (Today is its own button)
     function headHtml() { return '<div>' +
       '<div class="hk-eye">' + L('Hawk', 'Halcón') + ' <i>' + L('Admin only', 'Solo admin') + '</i></div><div class="hk-title">' + L('Hawk', 'Halcón') + '</div>' +
-      '<p class="hk-sub">' + L('Its read of EUR/USD before and during London 08:00–10:00. Rate each alert, or draw your own read on the chart.', 'Su lectura del EUR/USD antes y durante Londres 08:00–10:00. Valora cada alerta o dibuja tu propia lectura en el gráfico.') + '</p></div>' +
+      '<p class="hk-sub">' + L('Its read of the market you pick, before and during London 08:00–10:00. Rate each alert, or draw your own read on the chart.', 'Su lectura del mercado que elijas, antes y durante Londres 08:00–10:00. Valora cada alerta o dibuja tu propia lectura en el gráfico.') + '</p></div>' +
       '<div class="hk-tabs"><button data-p="1">' + L('Today', 'Hoy') + '</button><select data-hkp aria-label="' + L('Period', 'Periodo') + '"><option value="" hidden></option>' +
         [[7, L('7 days', '7 días')], [30, L('30 days', '30 días')], [90, L('90 days', '90 días')], [3650, L('All time', 'Todo')]].map(function (x) { return '<option value="' + x[0] + '">' + x[1] + '</option>'; }).join('') +
         '</select><button data-p="s">' + L('Study', 'Estudio') + '</button></div>'; }
     host.innerHTML = '<div class="hk' + (opt.app ? ' hk-app' : '') + (opt.narrow ? ' hk-nar' : '') + '"><div class="hk-head">' + headHtml() + '</div>' +
-      '<div class="hk-today" hidden></div><div class="hk-stats" hidden></div><div class="hk-list"><p class="hk-empty">' + L('Loading…', 'Cargando…') + '</p></div></div>';
+      '<div class="hk-watch" hidden></div><div class="hk-today" hidden></div><div class="hk-stats" hidden></div><div class="hk-list"><p class="hk-empty">' + L('Loading…', 'Cargando…') + '</p></div></div>';
     var root = host.firstChild, list = root.querySelector('.hk-list'), statsEl = root.querySelector('.hk-stats'), todayEl = root.querySelector('.hk-today');
     // in the app, the Today view opens with the session's plan, news and risk budget (the app's Today panel, moved in here for the admin)
     function todayPaint() { var t = null; if (opt.today && period === 1) { try { t = opt.today(); } catch (x) {} }
@@ -356,8 +356,22 @@
     if (opt.today) setInterval(function () { if (!doc.hidden && host.offsetParent) todayPaint(); }, 15000);
     function tabs() { root.querySelectorAll('.hk-tabs button').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.p === String(period)); });
       var ps = root.querySelector('[data-hkp]'); if (ps) { var o0 = ps.options[0], ol = ps.querySelector('option[value="' + lastP + '"]'); if (o0 && ol) o0.textContent = ol.textContent;
-        var on = period !== 's' && period !== 1; ps.value = on ? String(period) : ''; ps.classList.toggle('off', !on); } todayPaint(); }
-    tabs();
+        var on = period !== 's' && period !== 1; ps.value = on ? String(period) : ''; ps.classList.toggle('off', !on); } todayPaint(); watchPaint(); }
+    // what the hawk reads (hawk_config, admin RLS): any of his MT5 accounts and the markets the study ran; hawk.py on uk1 picks it up within a minute
+    var cfg = null, cfgMsg = '', HKM = [['EURUSD', 'EUR/USD'], ['GBPUSD', 'GBP/USD'], ['XAUUSD', L('Gold', 'Oro')], ['US100', L('US100 · lost in the study', 'US100 · perdió en el estudio')]];
+    function cfgLoad() { try { sb.from('hawk_config').select('login,sym').eq('id', 1).maybeSingle().then(function (q) { if (q && q.data) { cfg = q.data; watchPaint(); } }, function () {}); } catch (x) {} }
+    function accList() { var a = []; try { a = (opt.accounts ? opt.accounts() : []) || []; } catch (x) {}
+      if (cfg && !a.some(function (x) { return x.login === cfg.login; })) a.unshift({ login: cfg.login, name: cfg.login === '1515070952' ? L('Demo · 1515070952', 'Demo · 1515070952') : cfg.login }); return a; }
+    function watchPaint() { var w = root.querySelector('.hk-watch'); if (!w) return; if (!cfg || period === 's') { if (!w.hidden) w.hidden = true; return; }
+      var h = '<div class="hk-picks"><label class="hk-pick"><span>' + L('Account', 'Cuenta') + '</span><select data-hkacc>' + accList().map(function (a) { return '<option value="' + esc(a.login) + '"' + (a.login === cfg.login ? ' selected' : '') + '>' + esc(a.name) + '</option>'; }).join('') + '</select></label>'
+        + '<label class="hk-pick"><span>' + L('Market', 'Mercado') + '</span><select data-hkmk>' + HKM.map(function (m) { return '<option value="' + m[0] + '"' + (m[0] === cfg.sym ? ' selected' : '') + '>' + esc(m[1]) + '</option>'; }).join('') + '</select></label></div>'
+        + '<p class="hk-hint">' + esc(cfgMsg || L('The hawk reads this account\'s prices. It never trades on it.', 'El halcón lee los precios de esta cuenta. Nunca opera en ella.')) + '</p>';
+      if (w.innerHTML !== h) w.innerHTML = h; w.hidden = false; }
+    function cfgSave(k, v) { if (!cfg) return; var nx = Object.assign({}, cfg); nx[k] = v; cfgMsg = L('Saving…', 'Guardando…'); watchPaint();
+      sb.from('hawk_config').update({ login: nx.login, sym: nx.sym, updated_at: new Date().toISOString() }).eq('id', 1).then(function (q) {
+        if (q && q.error) { cfgMsg = L('Not saved: ', 'No guardado: ') + q.error.message; } else { cfg = nx; cfgMsg = L('Saved. The hawk switches within a minute.', 'Guardado. El halcón cambia en menos de un minuto.'); }
+        watchPaint(); setTimeout(function () { cfgMsg = ''; watchPaint(); }, 6000); }, function (e) { cfgMsg = L('Not saved', 'No guardado'); watchPaint(); }); }
+    tabs(); cfgLoad();
     function redraw() { Object.keys(charts).forEach(function (id) { draw(charts[id]); }); }   // a hidden chart has no size and draws nothing
     var ro = 'ResizeObserver' in window ? new ResizeObserver(function () { redraw(); }) : null;
     if (ro) ro.observe(list);
@@ -891,6 +905,8 @@
       }
     });
     root.addEventListener('change', function (e) {
+      if (e.target.hasAttribute && e.target.hasAttribute('data-hkacc')) { cfgSave('login', e.target.value); return; }
+      if (e.target.hasAttribute && e.target.hasAttribute('data-hkmk')) { cfgSave('sym', e.target.value); return; }
       if (e.target.hasAttribute && e.target.hasAttribute('data-hkp')) { if (period === 's') sEnd(); period = lastP = +e.target.value || 7; tabs(); load(); return; }
       if (study && period === 's' && e.target.hasAttribute('data-smksel')) { sMktSet(e.target.value); return; }
       if (study && period === 's' && e.target.hasAttribute('data-persel')) { sPer.k = e.target.value; sPerSave(); sRefresh(); return; }
