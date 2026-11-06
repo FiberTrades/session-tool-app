@@ -80,3 +80,6 @@ revoke all on public.hawk_study_days from anon, authenticated;
 grant select on public.hawk_study_days to authenticated;
 drop policy if exists hawk_study_days_admin_read on public.hawk_study_days;
 create policy hawk_study_days_admin_read on public.hawk_study_days for select to authenticated using (public.st_is_admin());
+-- where HE would move to break-even on each study trade ({price} or {none:true}), set from the Study tab (6 Nov 2026)
+alter table public.hawk_study add column if not exists be_mine jsonb;
+grant update (be_mine) on public.hawk_study to authenticated;

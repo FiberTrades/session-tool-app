@@ -108,6 +108,7 @@
     '.hk-sh{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.hk-vw{margin:0;flex:none}.hk-vw button{padding:4px 9px}.hk-lead{margin:10px 0 0}',
     '.hk-vb button span{white-space:nowrap}.hk-saved:empty{display:none}.hk-det .hk-saved{margin-top:8px;font-size:11.5px;color:var(--hk-mut)}',
     '.hk-kpi.c3{grid-template-columns:repeat(3,1fr);margin:0}.hk-kpi.c3 b{font-size:12.5px}',
+    '.hk-tt dd.p.mb{color:var(--hk-you)}.hk-bb{display:flex;gap:6px;flex:none}.hk-dw span b{font:500 12px var(--hk-mono);color:var(--hk-you)}',
     '.hk-tt{display:grid;grid-template-columns:auto 1fr auto;column-gap:0;margin:0;padding:2px 10px;border:1px solid var(--hk-line);border-radius:8px}',
     '.hk-tt>*{margin:0;padding:7px 0;border-top:1px solid var(--hk-line);font-size:12px;line-height:1.3}.hk-tt>:nth-child(-n+3){border-top:0}',
     '.hk-tt dt{color:var(--hk-mut)}.hk-tt dd.p{font:500 12.5px var(--hk-mono);font-variant-numeric:tabular-nums;color:var(--hk-ink)}.hk-tt dd.p.sl{color:var(--hk-sell)}.hk-tt dd.p.tp{color:var(--hk-buy)}.hk-tt dd{padding-left:12px}.hk-tt dd.x{text-align:right;font-size:11.5px;color:var(--hk-mut)}',
@@ -447,7 +448,7 @@
       list.innerHTML = '<p class="hk-empty">Loading the study…</p>';
       var s = await sb.auth.getSession();
       if (!s.data || !s.data.session) { list.innerHTML = '<p class="hk-empty">Sign in to Session Terminal first.</p>'; return; }
-      var q = await sb.from('hawk_study').select('n, day, data, verdict, note, drawings, drawings_at').eq('run', 'strict_20').order('n', { ascending: true });
+      var q = await sb.from('hawk_study').select('n, day, data, verdict, note, drawings, drawings_at, be_mine').eq('run', 'strict_20').order('n', { ascending: true });
       if (q.error) { list.innerHTML = '<p class="hk-empty">Couldn\'t load the study: ' + esc(q.error.message) + '</p>'; return; }
       study = q.data || [];
       if (!study.length) { list.innerHTML = '<p class="hk-empty">Admin only.</p>'; study = null; return; }
@@ -457,21 +458,23 @@
       return sfil === 'all' || (sfil === 'open' ? !r.verdict : sfil === 'be' ? (o === 'be' || o === 'time') : o === sfil); }); }
     function sTick(r, big) { return ['agree', 'disagree'].map(function (v) { var ok = v === 'agree', w = ok ? 'Valid setup' : 'Not a setup';
       return '<button data-tick="' + v + '" data-sn="' + r.n + '" aria-pressed="' + (r.verdict === v) + '" title="' + w + '" aria-label="' + w + ' #' + r.n + '">' + (ok ? ICK : IX) + (big ? '<span>' + w + '</span>' : '') + '</button>'; }).join(''); }
-    function sMarks(r) { var m = [], k = (r.drawings || []).length; if (r.note) m.push('note'); if (k) m.push(sPl(k, 'drawing')); return m.length ? '<u> · ' + m.join(' · ') + '</u>' : ''; }
+    function sDwN(r) { return (r.drawings || []).filter(function (x) { return x && !x.mbe; }).length; }
+    function sMarks(r) { var m = [], k = sDwN(r); if (r.note) m.push('note'); if (r.be_mine) m.push(r.be_mine.none ? 'no BE' : 'your BE'); if (k) m.push(sPl(k, 'drawing')); return m.length ? '<u> · ' + m.join(' · ') + '</u>' : ''; }
     function sRow(r) { var d = r.data, buy = d.side > 0, rule = d.rule === 'initiation pocket' ? 'initiation' : d.rule;
       return '<div class="hk-tr" data-sn="' + r.n + '" aria-current="' + (ssel === r.n) + '"><button class="hk-trm" data-so="' + r.n + '" aria-expanded="' + (ssel === r.n) + '">' +
         '<span class="m"><i class="' + (buy ? 'buy' : 'sell') + '"></i>' + (buy ? 'Buy' : 'Sell') + ' · ' + esc(MODEL[d.model] || d.model) + '</span>' +
         '<span class="r ' + d.out + '">' + sR(d.net) + '</span>' +
         '<span class="s">' + esc(sDay(r, { weekday: 'short', day: '2-digit', month: 'short' }) + ' · ' + d.at + ' · ' + rule + ' · ' + d.loc) + sMarks(r) + '</span></button>' +
         '<div class="hk-vt">' + sTick(r) + '</div></div>'; }
-    function sDwTxt(r) { var k = (r.drawings || []).length;
+    function sDwTxt(r) { var k = sDwN(r);
       return k ? sPl(k, 'drawing') + ' saved' + (r.drawings_at ? ' · ' + ldn(r.drawings_at, { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '') : 'None saved yet'; }
     function sWhy(line) { var i = line.indexOf(': '); return '<li>' + (i > 0 && i < 34 ? '<b>' + esc(line.slice(0, i + 1)) + '</b>' + esc(line.slice(i + 1)) : esc(line)) + '</li>'; }
     // the explanation in three short blocks (Nestor: "it looks like a big blob of words"): the day, what happened, the trade's numbers
-    function sExplain(d) { var buy = d.side > 0, tp = +sPip(d.tgt, d.entry);
+    function sExplain(d, r) { var buy = d.side > 0, tp = +sPip(d.tgt, d.entry);
       var what = String(d.note || '').split('\n').filter(function (l) { return l && !/^(HTF read|Buy |Sell |Break-even once|Target hit at|Stopped out at|Closed at)/.test(l); });
       var tt = [['Entry', p5(d.entry), buy ? 'Buy' : 'Sell', ''], ['Stop', p5(d.stop), sPip(d.stop, d.entry) + ' pips', 'sl'], ['Target', p5(d.tgt), tp.toFixed(0) + ' pips · ' + (tp / d.risk).toFixed(1) + 'R', 'tp']];
-      if (d.be != null) tt.push(['Break-even', p5(d.be), 'after the last 1m swing', '']);
+      if (d.be != null) tt.push(['Break-even', p5(d.be), 'the hawk: last 1m swing', '']);
+      if (r.be_mine) tt.push(['Your BE', r.be_mine.none ? '–' : p5(r.be_mine.price), r.be_mine.none ? 'you wouldn\'t move it' : sBeVs(d, r.be_mine.price), 'mb']);
       return '<div class="hk-lbl">The day</div><div class="hk-kpi c3">' + [[PHASE[d.phase] || d.phase, 'HTF read'], [sPip(d.bh, d.bl) + ' pips', '24h range'], [p5((d.bh + d.bl) / 2), '50%']]
           .map(function (x) { return '<div><b>' + esc(x[0]) + '</b><span>' + x[1] + '</span></div>'; }).join('') + '</div>' +
         '<div class="hk-lbl">What happened</div><ul class="hk-why">' + what.map(sWhy).join('') + '</ul>' +
@@ -482,9 +485,12 @@
         '<div class="hk-nav"><button class="hk-btn" data-sa="prev" aria-label="Previous trade">‹</button>' + (ap ? '<button class="hk-btn go" data-sa="open">Show on Replay</button>' : '<span></span>') +
         '<button class="hk-btn" data-sa="next" aria-label="Next trade">›</button></div>' +
         (ap ? '<div class="hk-sst"><span id="hk-sst">' + esc(sStat) + '</span><button data-sa="clear">Hide the hawk\'s marks</button></div>' : '') +
-        sExplain(d) +
+        sExplain(d, r) +
         '<div class="hk-lbl">Your call</div><div class="hk-vb">' + sTick(r, true) + '</div>' +
         '<textarea data-snote="' + r.n + '" rows="3" placeholder="Your notes: what makes it valid, or not?">' + esc(r.note || '') + '</textarea>' +
+        (ap ? '<div class="hk-lbl">Your break-even</div><div class="hk-dw"><span id="hk-sbe">' + sBeTxt(r) + '</span><span class="hk-bb"><button class="hk-btn" data-sa="beline">' + (r.be_mine && !r.be_mine.none ? 'Show my line' : 'Place my line') + '</button>' +
+          '<button class="hk-btn" data-sa="benone" aria-pressed="' + !!(r.be_mine && r.be_mine.none) + '">No BE</button></span></div>' +
+          '<p class="hk-hint">' + (d.be != null ? 'The hawk moves the stop to entry once price passes ' + p5(d.be) + '. ' : 'The hawk had no break-even level here. ') + 'Place your line, drag it to where you would do it, and it\'s kept with this trade.</p>' : '') +
         (ap ? '<div class="hk-lbl">Your drawings</div><div class="hk-dw"><span id="hk-sdw">' + sDwTxt(r) + '</span><button class="hk-btn" data-sa="mine">Save my drawings</button></div>' +
           '<p class="hk-hint">Draw on the Replay chart the way you would mark it up. Your drawings stay with this trade only: they\'re saved when you press Save or move on, and your normal Replay charts never show them.</p>' : '') +
         '<div class="hk-saved" id="hk-ss"></div></div>'; }
@@ -537,14 +543,31 @@
     }
     // what he drew on a trade (Replay's study layer, never his normal Replay drawings), kept with the trade: handed back by the app when
     // he moves to another trade or leaves the study, or fetched by Save
+    function sBeVs(d, px) { var dd = (px - d.be) * d.side * 1e4; return d.be == null ? sPip(px, d.entry) + ' pips from entry' : Math.abs(dd) < 0.05 ? 'same as the hawk' : Math.abs(dd).toFixed(1) + ' pips ' + (dd > 0 ? 'further' : 'sooner') + ' than the hawk'; }
+    function sBeTxt(r) { var b = r.be_mine; return !b ? 'Not set: the hawk\'s level is used' : b.none ? 'You wouldn\'t move to break-even' : 'Yours: <b>' + p5(b.price) + '</b> · ' + sBeVs(r.data, b.price); }
+    async function sBeLine(r) { if (sOnChart !== r.n) { sMsg('Open this trade on Replay first, then place your line.'); return; }
+      var d = r.data, b = r.be_mine, px = b && b.price != null ? b.price : d.be != null ? d.be : r5(d.entry + d.side * d.risk * 1e-4), ok = false;
+      try { ok = await opt.study({ addBe: { n: r.n, t: d.ts, price: px } }); } catch (x) {}
+      sMsg(ok ? 'Drag the pink "My BE" line to your level. It\'s kept when you press Save or move to another trade.' : 'Replay isn\'t showing this trade any more. Open it again first.'); }
+    async function sBeNone(r) { var none = !(r.be_mine && r.be_mine.none), be = none ? { none: true } : null;
+      if (none && sOnChart === r.n) try { await opt.study({ addBe: { n: r.n, price: null } }); r.drawings = (r.drawings || []).filter(function (x) { return x && !x.mbe; }); if (!r.drawings.length) r.drawings = null; } catch (x) {}
+      var patch = { be_mine: be }; if (none) patch.drawings = r.drawings || null;
+      var q = await sb.from('hawk_study').update(patch).eq('run', 'strict_20').eq('n', r.n);
+      if (q.error) { sMsg('Not saved: ' + q.error.message); return; }
+      r.be_mine = be; sRefresh(); sMsg(none ? 'Saved: no break-even on this one' : 'Cleared'); }
     function sOnMine(n, list, ended) { var r = sFind(n); if (ended && sOnChart === +n) sOnChart = null; if (r) sKeep(r, list, false); }
-    async function sKeep(r, list, ask) { var now = list && list.length ? list : null;
-      if (JSON.stringify(now) === JSON.stringify(r.drawings || null)) { if (ask) sMsg(now ? 'Already saved.' : 'No drawings of yours on this trade yet.'); return true; }
-      var at = new Date().toISOString(), q = await sb.from('hawk_study').update({ drawings: now, drawings_at: at }).eq('run', 'strict_20').eq('n', r.n);
-      if (q.error) { sMsg('Drawings not saved: ' + q.error.message); return false; }
-      r.drawings = now; r.drawings_at = at; sMarkRow(r);
-      var el = byEl('#hk-sdw'); if (el && ssel === r.n) el.textContent = sDwTxt(r);
-      if (ssel === r.n) sMsg(now ? sPl(now.length, 'drawing') + ' saved to #' + r.n : 'Drawings removed from #' + r.n); return true; }
+    async function sKeep(r, list, ask) { var now = list && list.length ? list : null, ln = (list || []).filter(function (x) { return x && x.mbe && x.a; })[0];
+      var be = ln ? { price: r5(ln.a.price) } : (r.be_mine && r.be_mine.none ? r.be_mine : null);
+      var same = JSON.stringify(now) === JSON.stringify(r.drawings || null), sameBe = JSON.stringify(be) === JSON.stringify(r.be_mine || null);
+      if (same && sameBe) { if (ask) sMsg(now ? 'Already saved.' : 'No drawings of yours on this trade yet.'); return true; }
+      var at = new Date().toISOString(), patch = {}; if (!same) { patch.drawings = now; patch.drawings_at = at; } if (!sameBe) patch.be_mine = be;
+      var q = await sb.from('hawk_study').update(patch).eq('run', 'strict_20').eq('n', r.n);
+      if (q.error) { sMsg('Not saved: ' + q.error.message); return false; }
+      if (!same) { r.drawings = now; r.drawings_at = at; } r.be_mine = be; sMarkRow(r);
+      if (ssel === r.n && !sameBe) sRefresh();
+      if (ssel === r.n) { var el = byEl('#hk-sdw'); if (el) el.textContent = sDwTxt(r); var eb = byEl('#hk-sbe'); if (eb) eb.innerHTML = sBeTxt(r);
+        var k = sDwN(r); sMsg(!sameBe && be && be.price != null ? 'Your break-even saved: ' + p5(be.price) + (same ? '' : ' · ' + sPl(k, 'drawing')) : now ? sPl(k, 'drawing') + ' saved to #' + r.n : 'Drawings removed from #' + r.n); }
+      return true; }
     async function sCapture(r, ask) { if (!r || !opt.study) return false;
       if (sOnChart !== r.n) { if (ask) sMsg('Open this trade on Replay first, then draw on it.'); return false; }
       var got = null; try { got = await opt.study({ get: r.n }); } catch (x) {}
@@ -576,7 +599,8 @@
       var q = await sb.from('hawk_study_days').select('day, d').eq('run', 'strict_20').order('day', { ascending: true });
       wiBusy = false; if (q.error) wiErr = q.error.message; else wiD = q.data || [];
       if (period === 's' && sview === 'whatif') sRefresh(); }
-    function wiSim(p) { var out = [], ex = Math.min(+p.exit, 1200);
+    function wiMB() { var o = {}; (study || []).forEach(function (r) { var b = r.be_mine; if (b) o[r.day + '|' + r.data.side + '|' + Math.round(r.data.entry * 1e5)] = b.none ? null : Math.round(b.price * 1e5); }); return o; }
+    function wiSim(p) { var out = [], ex = Math.min(+p.exit, 1200), MB = p.be === 'mine' ? wiMB() : {};
       wiD.forEach(function (D) { if (!sIn(D.day)) return; var d = D.d, m = d.m, base = d.b, n = m.length / 5, taken = [], seen = {}, busy = -1;
         for (var k = 0; k < d.c.length; k++) { var c = d.c[k], i = c[0], side = c[1], e = c[2], s0 = c[3], key = c[7] + ':' + side + ':' + e, lt = taken[taken.length - 1];
           if (seen[key] || i <= busy) continue; seen[key] = 1;
@@ -584,7 +608,7 @@
           if (lt && lt.o === 'loss' && !c[8]) continue;             // after a loss only a continuation / initiation
           var r0 = Math.abs(e - s0), risk = Math.max(10, Math.round(p.smode === 'hawk' ? r0 + p.soff * 10 : p.sfix * 10));
           var tg = e + side * (p.tmode === 'pips' ? Math.round(p.tp * 10) : Math.round(p.tr * risk));
-          var bel = p.be === 'hawk' ? c[5] : p.be === 'off' ? null : e + side * Math.round(p.ber * risk);
+          var mk = D.day + '|' + side + '|' + e, bel = p.be === 'hawk' ? c[5] : p.be === 'mine' ? (mk in MB ? MB[mk] : c[5]) : p.be === 'off' ? null : e + side * Math.round(p.ber * risk);
           var R = null, o = 'time', j = i;
           if (c[6] && risk <= r0) { R = -1; o = 'loss'; }                // stopped on the fill bar
           else { var cur = e - side * risk, at = false;
@@ -630,8 +654,8 @@
         wiRow('Stop', wiSeg('smode', [['hawk', 'Hawk\'s ±'], ['fixed', 'Fixed']]), p.smode === 'hawk' ? wiStep('soff', 'pips') : wiStep('sfix', 'pips'),
           p.smode === 'hawk' ? (+p.soff ? 'The hawk\'s 2–4 pip stop, ' + (p.soff > 0 ? 'widened' : 'tightened') + ' by ' + Math.abs(p.soff).toFixed(1) + ' pips (never under 1).' : 'As the hawk placed it: 0.5 pip past the extreme, 2–4 pips.') : 'The same stop on every trade.') +
         wiRow('Target', wiSeg('tmode', [['pips', 'Pips'], ['r', 'R']]), p.tmode === 'pips' ? wiStep('tp', 'pips') : wiStep('tr', 'R'), p.tmode === 'pips' ? 'A fixed distance from the entry.' : 'A multiple of each trade\'s stop.') +
-        wiRow('Break-even', wiSeg('be', [['hawk', 'Your rule'], ['r', 'At R'], ['off', 'Off']]), p.be === 'r' ? wiStep('ber', 'R') : '',
-          p.be === 'hawk' ? 'Stop to entry once price passes the last 1m swing before the entry.' : p.be === 'off' ? 'The stop never moves.' : 'Stop to entry once the trade is ' + (+p.ber).toFixed(2) + 'R in profit.') +
+        wiRow('Break-even', wiSeg('be', [['hawk', 'Rule'], ['mine', 'Yours'], ['r', 'At R'], ['off', 'Off']]), p.be === 'r' ? wiStep('ber', 'R') : '',
+          p.be === 'hawk' ? 'Stop to entry once price passes the last 1m swing before the entry.' : p.be === 'mine' ? (function () { var k = (study || []).filter(function (r) { return r.be_mine && sIn(r.day); }).length; return k ? 'Your own break-even on the ' + sPl(k, 'trade') + ' you set it on, the hawk\'s on the rest.' : 'You haven\'t set your own break-even on any trade yet, so this is the hawk\'s.'; })() : p.be === 'off' ? 'The stop never moves.' : 'Stop to entry once the trade is ' + (+p.ber).toFixed(2) + 'R in profit.') +
         wiRow('Close by', wiSeg('exit', [[800, '13:20'], [960, '16:00'], [1200, '20:00']]), '', +p.exit === 800 ? 'Out before the 13:30 news if the target hasn\'t hit (your rule).' : 'Held through the 13:30 news, closed at ' + (+p.exit === 960 ? '16:00' : '20:00') + ' London.') +
         wiRow('Costs', '', wiStep('cost', 'pips a trade'), '') + '</div>';
       h += '<div class="hk-lbl">Result</div><div class="hk-kpi">' + [[sR1(s.net), 'Net', s.net >= 0 ? 'up' : 'dn'], [s.n, 'Trades'], [(s.n ? Math.round(s.win / s.n * 100) : 0) + '%', 'Targets'], [s.dd.toFixed(1) + 'R', 'Worst dip']]
@@ -665,6 +689,8 @@
         var sa = e.target.closest('[data-sa]'); if (sa && sr) { var rs = sShown(), i = rs.indexOf(sr);
           if (sa.dataset.sa === 'open') sOpen(sr);
           else if (sa.dataset.sa === 'mine') sCapture(sr, true);
+          else if (sa.dataset.sa === 'beline') sBeLine(sr);
+          else if (sa.dataset.sa === 'benone') sBeNone(sr);
           else if (sa.dataset.sa === 'clear') { try { opt.study({ clear: true }); } catch (x) {} sStatus('The hawk\'s marks are off the chart. Yours stay.'); }
           else { var nx = rs[i + (sa.dataset.sa === 'next' ? 1 : -1)]; if (nx) sPick(nx.n, true); }
           return; }
