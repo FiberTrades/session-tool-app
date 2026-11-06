@@ -99,7 +99,7 @@
     '.hk-dh{display:flex;align-items:center;gap:8px;flex-wrap:wrap}',
     '.hk-out{font:500 10px var(--hk-mono);letter-spacing:.1em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:var(--hk-soft);color:var(--hk-mut)}.hk-out.win{color:var(--hk-buy);background:color-mix(in srgb,var(--hk-buy) 14%,transparent)}.hk-out.loss{color:var(--hk-sell);background:color-mix(in srgb,var(--hk-sell) 14%,transparent)}',
     '.hk-dh .rr{font:500 13px var(--hk-mono);font-variant-numeric:tabular-nums;color:var(--hk-ink)}.hk-dh .rr small{font-size:11px;color:var(--hk-mut);margin-left:4px}.hk-dh .n{margin-left:auto;font:11px var(--hk-mono);color:var(--hk-mut)}',
-    '.hk-nav{display:grid;grid-template-columns:auto 1fr auto;gap:6px;margin-top:12px}.hk-nav .hk-btn{background:var(--hk-soft);white-space:nowrap}.hk-nav [data-sa="prev"],.hk-nav [data-sa="next"]{min-width:36px;padding:0 10px;font-size:18px;line-height:1}.hk-nav .hk-btn.go{background:var(--hk-acc);color:#fff;font-weight:600}',
+    '.hk-nav{display:grid;grid-template-columns:auto 1fr auto;gap:6px;margin-top:12px}.hk-nav .hk-btn{background:var(--hk-soft);white-space:nowrap}.hk-nav [data-sa="prev"],.hk-nav [data-sa="next"]{min-width:36px;padding:0 10px;font-size:18px;line-height:1}.hk-nav .hk-btn.go{background:#e0a84a;color:#1b1406;font-weight:600}.hk-nav .hk-btn.go:hover{background:#ebb85e;border-color:transparent}',
     '.hk-sst{display:flex;justify-content:space-between;gap:8px;font-size:11.5px;color:var(--hk-mut);margin-top:7px;min-height:16px}.hk-sst button{background:none;border:0;padding:0;font:inherit;color:var(--hk-mut);text-decoration:underline;text-underline-offset:2px;cursor:pointer;white-space:nowrap}',
     '.hk-lbl{margin:16px 0 7px;font:500 10px var(--hk-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--hk-mut)}',
     '.hk-why{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}',
@@ -333,7 +333,7 @@
     opt = opt || {}; var doc = host.ownerDocument || document; css(doc);
     var focusId = opt.focusId || null, period = focusId ? 7 : 1, rows = [], charts = {}, pollT = null;
     function headHtml() { return '<div>' +
-      '<div class="hk-eye">Hawk <i>' + L('Admin only', 'Solo admin') + '</i></div><div class="hk-title">Hawk</div>' +
+      '<div class="hk-eye">' + L('Hawk', 'Halcón') + ' <i>' + L('Admin only', 'Solo admin') + '</i></div><div class="hk-title">' + L('Hawk', 'Halcón') + '</div>' +
       '<p class="hk-sub">' + L('Its read of EUR/USD before and during London 08:00–10:00. Rate each alert, or draw your own read on the chart.', 'Su lectura del EUR/USD antes y durante Londres 08:00–10:00. Valora cada alerta o dibuja tu propia lectura en el gráfico.') + '</p></div>' +
       '<div class="hk-tabs" role="group" aria-label="' + L('Period', 'Periodo') + '"><button data-p="1">' + L('Today', 'Hoy') + '</button><button data-p="7">' + L('7 days', '7 días') + '</button><button data-p="90">' + L('All', 'Todo') + '</button><button data-p="s">' + L('Study', 'Estudio') + '</button></div>'; }
     host.innerHTML = '<div class="hk' + (opt.app ? ' hk-app' : '') + (opt.narrow ? ' hk-nar' : '') + '"><div class="hk-head">' + headHtml() + '</div>' +
@@ -382,7 +382,7 @@
         '<span class="hk-time">' + esc(ldn(r.created_at, { hour: '2-digit', minute: '2-digit' })) + '</span></div>' +
         '<h3>' + esc(aES(r.title)) + '</h3><p>' + esc(aES(r.body)) + '</p>';
       if (ch) {
-        h += '<div class="hk-chart" data-id="' + r.id + '"><canvas role="img" aria-label="' + L('The hawk\'s chart for this alert', 'El gráfico del hawk para esta alerta') + '"></canvas></div>' + legend(r);
+        h += '<div class="hk-chart" data-id="' + r.id + '"><canvas role="img" aria-label="' + L('The hawk\'s chart for this alert', 'El gráfico del halcón para esta alerta') + '"></canvas></div>' + legend(r);
         if (keys.length) h += '<div class="hk-train"><button class="hk-btn you" data-act="edit" data-id="' + r.id + '">' + (r.kind === 'brief' ? L('Correct the read', 'Corregir la lectura') : L('Mark my trade', 'Marcar mi operación')) + '</button>' +
           '<span class="hk-mine" id="hk-m-' + r.id + '">' + esc(mineText(r)) + '</span></div>' +
           '<div class="hk-edit" id="hk-e-' + r.id + '" hidden><p>' + (r.kind === 'brief' ? L('Drag the two pink lines to the range you would draw, then pick the phase.', 'Arrastra las dos líneas rosas al rango que dibujarías y elige la fase.') : L('Drag the pink lines to your entry, stop and target.', 'Arrastra las líneas rosas a tu entrada, stop y objetivo.')) + '</p>' +
@@ -397,7 +397,7 @@
     }
     function render() {
       charts = {};
-      if (!rows.length) { list.innerHTML = '<p class="hk-empty">' + L('No alerts in this period. The hawk watches weekdays: the brief comes at 07:45 London time, then alerts until 10:05.', 'No hay alertas en este periodo. El hawk vigila de lunes a viernes: el resumen llega a las 07:45 hora de Londres y luego alertas hasta las 10:05.') + '</p>'; statsEl.hidden = true; return; }
+      if (!rows.length) { list.innerHTML = '<p class="hk-empty">' + L('No alerts in this period. The hawk watches weekdays: the brief comes at 07:45 London time, then alerts until 10:05.', 'No hay alertas en este periodo. El halcón vigila de lunes a viernes: el resumen llega a las 07:45 hora de Londres y luego alertas hasta las 10:05.') + '</p>'; statsEl.hidden = true; return; }
       stats();
       var h = '', last = '';
       rows.forEach(function (r) { var dl = ldn(r.created_at, { weekday: 'long', day: 'numeric', month: 'long' });
@@ -468,7 +468,7 @@
     // hawk_study (admin RLS). A trade opens on Replay (opt.study, the app) with its drawings. He ticks each one valid / not a setup, writes
     // why, and draws on it; his own drawings on that stretch of chart are saved to the trade (drawings) - what the rules get tuned against.
     // "What if" (hawk_study_days: every candidate setup + its 1m path) re-runs his rules with another stop / target / BE / exit.
-    var study = null, sfil = 'all', ssel = null, sview = 'trades', sOnChart = null, sStat = '';
+    var study = null, sfil = 'all', ssel = null, sview = 'trades', sOnChart = null, sStat = '', sHid = false;   // sHid: the hawk's marks hidden on the open trade
     var sPer = (function () { try { return Object.assign({ k: 'all', from: '', to: '' }, JSON.parse(localStorage.getItem('st_hawk_period') || '{}')); } catch (x) { return { k: 'all', from: '', to: '' }; } })();
     var PERS = [['w', '1W', 7, '1S'], ['m', '1M', 30, '1M'], ['q', '3M', 91, '3M'], ['h', '6M', 182, '6M'], ['all', '1Y', 0, '1A'], ['custom', 'Dates', 0, 'Fechas']];
     function sPerSave() { try { localStorage.setItem('st_hawk_period', JSON.stringify(sPer)); } catch (x) {} }
@@ -571,7 +571,7 @@
     function sExplain(d, r) { var buy = d.side > 0, tp = +sPip(d.tgt, d.entry);
       var what = String(d.note || '').split('\n').filter(function (l) { return l && !/^(HTF read|Buy |Sell |Break-even once|Target hit at|Stopped out at|Closed at)/.test(l); });
       var tt = [[L('Entry', 'Entrada'), sPx(d.entry), sBuy(buy), ''], ['Stop', sPx(d.stop), sDist(d.stop, d.entry), 'sl'], [L('Target', 'Objetivo'), sPx(d.tgt), sDist(d.tgt, d.entry) + ' · ' + (Math.abs(d.tgt - d.entry) / Math.max(1e-9, Math.abs(d.entry - d.stop))).toFixed(1) + 'R', 'tp']];
-      if (d.be != null) tt.push(['Break-even', sPx(d.be), L('the hawk: last 1m swing', 'el hawk: último swing de 1m'), '']);
+      if (d.be != null) tt.push(['Break-even', sPx(d.be), L('the hawk: last 1m swing', 'el halcón: último swing de 1m'), '']);
       if (r.be_mine) tt.push([L('Your BE', 'Tu BE'), r.be_mine.none ? '–' : sPx(r.be_mine.price), r.be_mine.none ? L('you wouldn\'t move it', 'no lo moverías') : sBeVs(d, r.be_mine.price), 'mb']);
       return '<div class="hk-lbl">' + L('The day', 'El día') + '</div><div class="hk-kpi c3">' + [[sPhase(d.phase), L('HTF read', 'Lectura HTF')], [sDist(d.bh, d.bl), L('24h to 08:00', '24h hasta las 08:00')], [sPx((d.bh + d.bl) / 2), '50%']]
           .map(function (x) { return '<div><b>' + esc(x[0]) + '</b><span>' + x[1] + '</span></div>'; }).join('') + '</div>' +
@@ -580,15 +580,15 @@
     function sDet(r) { var d = r.data, ap = !!opt.study;
       return '<div class="hk-det" id="hk-sd">' +
         '<div class="hk-dh"><span class="hk-out ' + d.out + '">' + sOut(d.out) + '</span><span class="rr">' + sR(d.net) + '<small>' + sR(d.r) + L(' before costs', ' antes de costes') + '</small></span><span class="n">#' + r.n + L(' · out ', ' · salida ') + hm(d.xts) + '</span></div>' +
-        '<div class="hk-nav"><button class="hk-btn" data-sa="prev" aria-label="' + L('Previous trade', 'Operación anterior') + '">‹</button>' + (ap ? '<button class="hk-btn go" data-sa="open">' + L('Show on Replay', 'Ver en Replay') + '</button>' : '<span></span>') +
+        '<div class="hk-nav"><button class="hk-btn" data-sa="prev" aria-label="' + L('Previous trade', 'Operación anterior') + '">‹</button>' + (ap ? '<button class="hk-btn go" data-sa="open">' + L('Show in Study', 'Ver en el Estudio') + '</button>' : '<span></span>') +
         '<button class="hk-btn" data-sa="next" aria-label="' + L('Next trade', 'Operación siguiente') + '">›</button></div>' +
-        (ap ? '<div class="hk-sst"><span id="hk-sst">' + esc(sStat) + '</span><button data-sa="clear">' + L('Hide the hawk\'s marks', 'Ocultar las marcas del hawk') + '</button></div>' : '') +
+        (ap ? '<div class="hk-sst"><span id="hk-sst">' + esc(sStat) + '</span><button data-sa="clear">' + (sHid ? L('Show the hawk\'s marks', 'Mostrar las marcas del halcón') : L('Hide the hawk\'s marks', 'Ocultar las marcas del halcón')) + '</button></div>' : '') +
         sExplain(d, r) +
         '<div class="hk-lbl">' + L('Your call', 'Tu decisión') + '</div><div class="hk-vb">' + sTick(r, true) + '</div>' +
         '<textarea data-snote="' + r.n + '" rows="3" placeholder="' + L('Your notes: what makes it valid, or not?', 'Tus notas: ¿qué lo hace válido, o no?') + '">' + esc(r.note || '') + '</textarea>' +
         (ap ? '<div class="hk-lbl">' + L('Your break-even', 'Tu break-even') + '</div><div class="hk-dw"><span id="hk-sbe">' + sBeTxt(r) + '</span><span class="hk-bb"><button class="hk-btn" data-sa="beline">' + (r.be_mine && !r.be_mine.none ? L('Show my line', 'Ver mi línea') : L('Place my line', 'Poner mi línea')) + '</button>' +
           '<button class="hk-btn" data-sa="benone" aria-pressed="' + !!(r.be_mine && r.be_mine.none) + '">' + L('No BE', 'Sin BE') + '</button></span></div>' +
-          '<p class="hk-hint">' + (d.be != null ? L('The hawk moves the stop to entry once price passes ' + sPx(d.be) + '. ', 'El hawk mueve el stop a la entrada cuando el precio pasa ' + sPx(d.be) + '. ') : L('The hawk had no break-even level here. ', 'El hawk no tenía nivel de break-even aquí. ')) + L('Place your line, drag it to where you would do it, and it\'s kept with this trade.', 'Pon tu línea, arrástrala a donde lo harías y se guarda con esta operación.') + '</p>' : '') +
+          '<p class="hk-hint">' + (d.be != null ? L('The hawk moves the stop to entry once price passes ' + sPx(d.be) + '. ', 'El halcón mueve el stop a la entrada cuando el precio pasa ' + sPx(d.be) + '. ') : L('The hawk had no break-even level here. ', 'El halcón no tenía nivel de break-even aquí. ')) + L('Place your line, drag it to where you would do it, and it\'s kept with this trade.', 'Pon tu línea, arrástrala a donde lo harías y se guarda con esta operación.') + '</p>' : '') +
         (ap ? '<div class="hk-lbl">' + L('Your drawings', 'Tus dibujos') + '</div><div class="hk-dw"><span id="hk-sdw">' + sDwTxt(r) + '</span><button class="hk-btn" data-sa="mine">' + L('Save my drawings', 'Guardar mis dibujos') + '</button></div>' +
           '<p class="hk-hint">' + L('Draw on the Replay chart the way you would mark it up. Your drawings stay with this trade only: they\'re saved when you press Save or move on, and your normal Replay charts never show them.', 'Dibuja en el gráfico de Replay como lo marcarías tú. Tus dibujos se quedan solo con esta operación: se guardan al pulsar Guardar o al pasar a otra, y tus gráficos normales de Replay nunca los muestran.') + '</p>' : '') +
         '<div class="hk-saved" id="hk-ss"></div></div>'; }
@@ -602,7 +602,7 @@
       if (sview === 'whatif') { list.innerHTML = h + wiHtml(); return; }
       var net = all.reduce(function (s, r) { return s + r.data.net; }, 0), won = all.filter(function (r) { return r.data.out === 'win'; }).length;
       var ag = all.filter(function (r) { return r.verdict === 'agree'; }).length, no = all.filter(function (r) { return r.verdict === 'disagree'; }).length, chk = ag + no;
-      h += '<p class="hk-hint hk-lead">' + (sMkt === 'EURUSD' ? L('Your rules: stop 2–4 pips, target 20 pips, 0.6 pip costs.', 'Tus reglas: stop de 2–4 pips, objetivo de 20 pips, 0.6 pips de costes.') : sLeadMkt()) + (opt.study ? L(' Tap a trade to see it on Replay with its zones and position.', ' Toca una operación para verla en Replay con sus zonas y su posición.') : '') + L(' Tick the ones you\'d take, cross the ones you wouldn\'t.', ' Marca con ✓ las que tomarías y con ✗ las que no.') + '</p>' +
+      h += '<p class="hk-hint hk-lead">' + (sMkt === 'EURUSD' ? L('Your rules: stop 2–4 pips, target 20 pips, 0.6 pip costs.', 'Tus reglas: stop de 2–4 pips, objetivo de 20 pips, 0.6 pips de costes.') : sLeadMkt()) + (opt.study ? L(' Tap a trade to see it in Study with its zones and position.', ' Toca una operación para verla en el Estudio con sus zonas y su posición.') : '') + L(' Tick the ones you\'d take, cross the ones you wouldn\'t.', ' Marca con ✓ las que tomarías y con ✗ las que no.') + '</p>' +
         '<div class="hk-kpi">' + [[all.length, L('Trades', 'Operaciones')], [sR1(net), L('Net', 'Neto'), net >= 0 ? 'up' : 'dn'], [won, L('Targets', 'Objetivos')], [ag, L('You ✓', 'Tú ✓'), ag ? 'up' : '']]
           .map(function (s) { return '<div><b class="' + (s[2] || '') + '">' + s[0] + '</b><span>' + s[1] + '</span></div>'; }).join('') + '</div>' +
         '<div class="hk-prog"><div class="t"><span>' + L('Checked <b>' + chk + '</b> of ' + all.length, 'Revisadas <b>' + chk + '</b> de ' + all.length) + '</span><span>' + L(ag + ' valid · ' + no + ' not', ag + ' válidas · ' + no + ' no') + '</span></div>' +
@@ -642,18 +642,18 @@
         text: '#' + r.n + ' ' + sBuy(buy) + ' · ' + sModel(d.model) + ' · ' + sLocW(d.loc) + '\n' + sOut(d.out) + ' ' + hm(d.xts) + ' · ' + sR(d.net) });
       return o;
     }
-    async function sOpen(r) { if (!opt.study) return; sStatus(L('Opening ' + sDay(r, { day: 'numeric', month: 'short', year: 'numeric' }) + ' on Replay…', 'Abriendo el ' + sDay(r, { day: 'numeric', month: 'short', year: 'numeric' }) + ' en Replay…'));
+    async function sOpen(r) { if (!opt.study) return; sHid = false; sStatus(L('Opening ' + sDay(r, { day: 'numeric', month: 'short', year: 'numeric' }) + ' in Study…', 'Abriendo el ' + sDay(r, { day: 'numeric', month: 'short', year: 'numeric' }) + ' en el Estudio…'));
       var d = r.data, at = Math.min(d.sw || d.ts, d.ta || d.ts, d.ts) - 600, ok = false;
       try { ok = await opt.study({ sym: sMkt, day: nyDay(d.ts), at: at, draw: sDraw(r), pd: d.r0 ? { a: d.r0, b: d.r1 } : null, n: r.n, keep: r.drawings || [], onMine: sOnMine }); } catch (x) {}
-      if (ok === 'no') { if (ssel === r.n) sStatus(L('Not opened. Pick the trade again when you want it on the chart.', 'No se abrió. Elige la operación otra vez cuando la quieras en el gráfico.')); return; }   // he chose to stay where he was
+      if (ok === 'no') { if (ssel === r.n) sStatus(L('Not opened. Press Show in Study when you want it on the chart.', 'No se abrió. Pulsa Ver en el Estudio cuando la quieras en el gráfico.')); return; }   // he chose to stay where he was
       if (ok) sOnChart = r.n;
-      if (ssel === r.n) { sStatus(ok ? L('On Replay from ' + hm(at) + ' London. Press Play to watch it unfold.', 'En Replay desde las ' + hm(at) + ' hora de Londres. Pulsa Reproducir para ver cómo se desarrolla.') : L('Replay couldn\'t open that day.', 'Replay no pudo abrir ese día.')); setTimeout(function () { sShow(r.n); }, 120); }   // going into Replay lays the column out again
+      if (ssel === r.n) { sStatus(ok ? L('In Study from ' + hm(at) + ' London. Press Play to watch it unfold.', 'En el Estudio desde las ' + hm(at) + ' hora de Londres. Pulsa Reproducir para ver cómo se desarrolla.') : L('Study couldn\'t open that day.', 'El Estudio no pudo abrir ese día.')); setTimeout(function () { sShow(r.n); }, 120); }   // going into Replay lays the column out again
     }
     // what he drew on a trade (Replay's study layer, never his normal Replay drawings), kept with the trade: handed back by the app when
     // he moves to another trade or leaves the study, or fetched by Save
-    function sBeVs(d, px) { var dd = (px - d.be) * d.side; return d.be == null ? sDist(px, d.entry) + L(' from entry', ' desde la entrada') : Math.abs(dd) < 0.05 * sMeta().nunit ? L('same as the hawk', 'igual que el hawk') : L(sDv(dd) + ' ' + (dd > 0 ? 'further' : 'sooner') + ' than the hawk', sDv(dd) + ' ' + (dd > 0 ? 'más lejos' : 'antes') + ' que el hawk'); }
-    function sBeTxt(r) { var b = r.be_mine; return !b ? L('Not set: the hawk\'s level is used', 'Sin fijar: se usa el nivel del hawk') : b.none ? L('You wouldn\'t move to break-even', 'No moverías a break-even') : L('Yours: ', 'El tuyo: ') + '<b>' + sPx(b.price) + '</b> · ' + sBeVs(r.data, b.price); }
-    async function sBeLine(r) { if (sOnChart !== r.n) { sMsg(L('Open this trade on Replay first, then place your line.', 'Abre primero esta operación en Replay y luego pon tu línea.')); return; }
+    function sBeVs(d, px) { var dd = (px - d.be) * d.side; return d.be == null ? sDist(px, d.entry) + L(' from entry', ' desde la entrada') : Math.abs(dd) < 0.05 * sMeta().nunit ? L('same as the hawk', 'igual que el halcón') : L(sDv(dd) + ' ' + (dd > 0 ? 'further' : 'sooner') + ' than the hawk', sDv(dd) + ' ' + (dd > 0 ? 'más lejos' : 'antes') + ' que el halcón'); }
+    function sBeTxt(r) { var b = r.be_mine; return !b ? L('Not set: the hawk\'s level is used', 'Sin fijar: se usa el nivel del halcón') : b.none ? L('You wouldn\'t move to break-even', 'No moverías a break-even') : L('Yours: ', 'El tuyo: ') + '<b>' + sPx(b.price) + '</b> · ' + sBeVs(r.data, b.price); }
+    async function sBeLine(r) { if (sOnChart !== r.n) { sMsg(L('Open this trade in Study first, then place your line.', 'Abre primero esta operación en el Estudio y luego pon tu línea.')); return; }
       var d = r.data, b = r.be_mine, px = b && b.price != null ? b.price : d.be != null ? d.be : r5(d.entry + d.side * d.risk * 1e-4), ok = false;
       try { ok = await opt.study({ addBe: { n: r.n, t: d.ts, price: px } }); } catch (x) {}
       sMsg(ok ? L('Drag the pink "My BE" line to your level. It\'s kept when you press Save or move to another trade.', 'Arrastra la línea rosa "Mi BE" a tu nivel. Se guarda al pulsar Guardar o al pasar a otra operación.') : L('Replay isn\'t showing this trade any more. Open it again first.', 'Replay ya no muestra esta operación. Ábrela otra vez primero.')); }
@@ -677,7 +677,7 @@
         var k = sDwN(r); sMsg(!sameBe && be && be.price != null ? L('Your break-even saved: ', 'Tu break-even guardado: ') + sPx(be.price) + (same ? '' : ' · ' + sPl(k, 'drawing', 'dibujo', 'dibujos')) : now ? L(sPl(k, 'drawing') + ' saved to #' + r.n, sDwSaved(k) + ' en #' + r.n) : L('Drawings removed from #', 'Dibujos quitados de #') + r.n); }
       return true; }
     async function sCapture(r, ask) { if (!r || !opt.study) return false;
-      if (sOnChart !== r.n) { if (ask) sMsg(L('Open this trade on Replay first, then draw on it.', 'Abre primero esta operación en Replay y luego dibuja en ella.')); return false; }
+      if (sOnChart !== r.n) { if (ask) sMsg(L('Open this trade in Study first, then draw on it.', 'Abre primero esta operación en el Estudio y luego dibuja en ella.')); return false; }
       var got = null; try { got = await opt.study({ get: r.n }); } catch (x) {}
       if (!Array.isArray(got)) { if (ask) sMsg(L('Replay isn\'t showing this trade any more. Open it again, then draw.', 'Replay ya no muestra esta operación. Ábrela otra vez y luego dibuja.')); return false; }
       return sKeep(r, got, ask); }
@@ -844,15 +844,16 @@
         if (sview === 'whatif') { wiClick(e); return; }
         var f = e.target.closest('[data-sf]'); if (f) { sfil = f.dataset.sf; sRefresh(); return; }
         var tk = e.target.closest('[data-tick]'); if (tk) { var tr0 = sFind(tk.dataset.sn); if (tr0) sVerdict(tr0, tk.dataset.tick); return; }
-        var so = e.target.closest('[data-so]'); if (so) { var n = +so.dataset.so; if (n === ssel) { sEnd(); ssel = null; sRefresh(); } else sPick(n, true); return; }
+        var so = e.target.closest('[data-so]'); if (so) { var n = +so.dataset.so; if (n === ssel) { sEnd(); ssel = null; sRefresh(); } else sPick(n, sOnChart != null); return; }   // a row opens its details; only Show in Study asks to switch (Nestor, 6 Nov 2026), already in Study the chart follows
         var sr = sFind(ssel);
         var sa = e.target.closest('[data-sa]'); if (sa && sr) { var rs = sShown(), i = rs.indexOf(sr);
           if (sa.dataset.sa === 'open') sOpen(sr);
           else if (sa.dataset.sa === 'mine') sCapture(sr, true);
           else if (sa.dataset.sa === 'beline') sBeLine(sr);
           else if (sa.dataset.sa === 'benone') sBeNone(sr);
-          else if (sa.dataset.sa === 'clear') { try { opt.study({ clear: true }); } catch (x) {} sStatus(L('The hawk\'s marks are off the chart. Yours stay.', 'Las marcas del hawk ya no están en el gráfico. Las tuyas se quedan.')); }
-          else { var nx = rs[i + (sa.dataset.sa === 'next' ? 1 : -1)]; if (nx) sPick(nx.n, true); }
+          else if (sa.dataset.sa === 'clear') { var hr = sFind(sOnChart); sHid = !sHid; try { opt.study(sHid ? { clear: true } : { clear: true, list: hr ? sDraw(hr) : [] }); } catch (x) {} sRefresh();
+            sStatus(sHid ? L('The hawk\'s marks are off the chart. Yours stay.', 'Las marcas del halcón ya no están en el gráfico. Las tuyas se quedan.') : L('The hawk\'s marks are back on the chart.', 'Las marcas del halcón vuelven a estar en el gráfico.')); }
+          else { var nx = rs[i + (sa.dataset.sa === 'next' ? 1 : -1)]; if (nx) sPick(nx.n, sOnChart != null); }
           return; }
         return;
       }
@@ -867,7 +868,7 @@
       if (act === 'ph') { st.phase = b.dataset.ph; b.parentNode.querySelectorAll('.hk-ph').forEach(function (x) { x.setAttribute('aria-pressed', x === b); }); return; }
       if (act === 'save' || act === 'clear') {
         var mine = act === 'clear' ? null : Object.assign({}, st.edit, r.kind === 'brief' ? { phase: st.phase } : {}, { at: new Date().toISOString() });
-        if (await save(r.id, { mine: mine }, act === 'clear' ? L('Your read removed', 'Tu lectura se ha quitado') : L('Your read saved — the hawk will learn from it', 'Tu lectura guardada — el hawk aprenderá de ella'))) {
+        if (await save(r.id, { mine: mine }, act === 'clear' ? L('Your read removed', 'Tu lectura se ha quitado') : L('Your read saved — the hawk will learn from it', 'Tu lectura guardada — el halcón aprenderá de ella'))) {
           r.mine = mine; byEl('#hk-m-' + r.id).textContent = mineText(r); editOpen(r, false); stats(); }
       }
     });
