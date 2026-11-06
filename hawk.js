@@ -128,6 +128,8 @@
     '.hk-stp label{display:flex;align-items:center;justify-content:center;gap:6px;height:30px;border-radius:7px;background:var(--hk-soft);padding:0 8px;font-size:11px;color:var(--hk-mut);white-space:nowrap;overflow:hidden;cursor:text}',
     '.hk-stp input{width:4.4em;background:transparent;border:0;outline:0;text-align:right;font:500 13.5px var(--hk-mono);font-variant-numeric:tabular-nums;color:var(--hk-ink);padding:0;margin:0;min-height:0;-moz-appearance:textfield;appearance:textfield}',
     '.hk-stp input[type="time"]{width:4.6em;color-scheme:light dark}.hk-stp input::-webkit-calendar-picker-indicator{display:none}',
+    '.hk-money{margin-top:8px;font-size:12px;color:var(--hk-mut);font-variant-numeric:tabular-nums}.hk-money b{font:500 12.5px var(--hk-mono);color:var(--hk-ink)}.hk-money b.up{color:var(--hk-buy)}.hk-money b.dn{color:var(--hk-sell)}',
+    '.hk-stp label .pre{font:500 13.5px var(--hk-mono);color:var(--hk-mut);margin-right:-4px}',
     '.hk-time{position:relative;display:flex;align-items:center;justify-content:center;gap:6px;height:30px;margin-top:7px;border-radius:7px;background:var(--hk-soft);cursor:pointer}',
     '.hk-time .v{font:500 13.5px var(--hk-mono);font-variant-numeric:tabular-nums;color:var(--hk-ink)}.hk-time .u{font-size:11px;color:var(--hk-mut)}',
     '.hk-time svg{position:absolute;right:11px;top:50%;width:10px;height:10px;margin-top:-5px;fill:none;stroke:var(--hk-mut);stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}',
@@ -697,12 +699,25 @@
     // TPs, smaller TPs"): his rules again with another stop / target / break-even / exit. Same entries; the two-serve day re-runs, since a
     // different result changes which later setups it lets through. Prices are ints (price * 1e5; 10 = 1 pip). With his settings it gives
     // exactly the study (159 trades, +53.98R - checked against bt/whatif_sim.py).
-    var WI0 = { smode: 'hawk', soff: 0, sfix: 3, tmode: 'pips', tp: 20, tr: 5, be: 'hawk', ber: 1, exit: 800, close: 'on', cost: 0.6 };   // close 'off': no time exit (6 Nov 2026)
-    var WB = { soff: [-2, 10, 0.5], sfix: [1, 20, 0.5], tp: [3, 100, 1], tr: [1, 20, 0.5], ber: [0.25, 10, 0.25], cost: [0, 3, 0.1], exit: [600, 1200, 10] };   // exit: London minutes, 10:00 to 20:00 (the candles stop at 20:00)
+    var WI0 = { smode: 'hawk', soff: 0, sfix: 3, tmode: 'pips', tp: 20, tr: 5, be: 'hawk', ber: 1, exit: 800, close: 'on', cost: 0.6, comm: null, spr: null, risk: null };   // comm / spr: commission ($ a lot, in and out) and spread; cost = both (6 Nov 2026)   // close 'off': no time exit (6 Nov 2026)
+    var WB = { soff: [-2, 10, 0.5], sfix: [1, 20, 0.5], tp: [3, 100, 1], tr: [1, 20, 0.5], ber: [0.25, 10, 0.25], cost: [0, 5, 0.1], spr: [0, 5, 0.1], comm: [0, 50, 0.5], risk: [0, 1000000, 50], exit: [600, 1200, 10] };   // exit: London minutes, 10:00 to 20:00 (the candles stop at 20:00)
     function wiKey() { return 'st_hawk_whatif' + (sMkt === 'EURUSD' ? '' : ':' + sMkt); }
     var wiFresh = false;
     function wiLoadP() { var s = null; try { s = localStorage.getItem(wiKey()); } catch (x) {} wiFresh = !s; try { return Object.assign({}, WI0, JSON.parse(s || '{}')); } catch (x) { return Object.assign({}, WI0); } }
-    function wi0() { return Object.assign({}, WI0, wiD && wiD[0] && wiD[0].d && wiD[0].d.k != null ? { cost: wiD[0].d.k } : {}); }   // his rules; the market's own costs
+    function wi0() { var o = Object.assign({}, WI0, wiD && wiD[0] && wiD[0].d && wiD[0].d.k != null ? { cost: wiD[0].d.k } : {});
+      var au = wiAuto(), j = wiJ(), c0 = sMeta().nu === 'points' && sMkt !== 'EURUSD' ? 0 : 5;
+      o.spr = +Math.max(0, o.cost - c0 / wiCF()).toFixed(4);   // the spread his rules were tested with
+      o.comm = au ? +(au.u * wiLV()).toFixed(2) : c0;            // the commission: his own when his journal has it
+      o.risk = j && +j.risk > 0 ? +j.risk : null; return o; }
+    function wiJ() { try { return opt.journal ? opt.journal() : null; } catch (x) { return null; } }
+    function wiAuto() { var j = wiJ(); if (!j || !j.trades) return null; var key = opt.canon ? opt.canon(sMkt) : sMkt, nu = sMkt === 'EURUSD' ? 'pips' : sMeta().nu;
+      var xs = j.trades.filter(function (t) { return t.key === key && (t.du || 'pips') === nu; }).map(function (t) { return t.costR * t.sl; }).filter(function (v) { return isFinite(v) && v > 0; }).sort(function (a, b) { return a - b; });
+      return xs.length >= 3 ? { n: xs.length, u: xs[Math.floor(xs.length / 2)] } : null; }   // the middle trade: one odd fill doesn't move it
+    function wiCur() { var j = wiJ(); return (j && j.cur) || '£'; }
+    function wiMoney(x, sign) { var r = +wiP.risk || 0, v = Math.round(Math.abs(x) * r); return (sign ? (x < -0.005 ? '−' : '+') : '') + wiCur() + v.toLocaleString('en-GB'); }
+    function wiCF() { return wiF() * wiLV(); }   // $ a lot per scaled pip
+    function wiCSplit() { var z = null; if (wiP.comm == null || wiP.spr == null) { z = wi0(); wiP.comm = z.comm; wiP.spr = z.spr; wiP.cost = +(z.spr + z.comm / wiCF()).toFixed(4); }   // older saved settings had one cost
+      if (wiP.risk == null) { z = z || wi0(); wiP.risk = z.risk; } }   // his rules; the market's own costs
     function wiU() { return (wiD && wiD[0] && wiD[0].d && wiD[0].d.u) || 1e-5; }   // the price of one int (d.q of them = 1 scaled pip)
     // in the market's own unit (Nestor, 6 Nov 2026: "its all in pips, what about when i am analysing NQ or another asset that is in points?"):
     // stops, targets and costs show in pips on EUR/USD, points on NQ, $ on gold; underneath they stay the scaled pips the study ran in,
@@ -716,12 +731,13 @@
     function wiVU(v, grid) { var x = wiV(Math.abs(v), grid); return wiDol() ? '$' + x : x + ' ' + wiUL(); }
     function wiRg(a, b) { return wiDol() ? '$' + wiV(a) + '–$' + wiV(b) : wiV(a) + '–' + wiV(b) + ' ' + wiUL(); }
     function wiSt(k) { return +(WB[k][2] * wiF()).toPrecision(1); }   // a round step in the market's unit
+    function wiLV() { return ({ EURUSD: 10, GBPUSD: 10, XAUUSD: 100, 'US100.cash': 1 })[sMkt] || (sMeta().nu === 'pips' ? 10 : 1); }   // $ per pip / point / $1 move, one lot
     function wiClampF(k, v) { var b = WB[k]; return Math.min(b[1], Math.max(b[0], +(+v).toFixed(4))); }
     var wiP = wiLoadP();
     var wiD = null, wiErr = '', wiBusy = false, wiBase = null;
     async function wiLoad() { if (wiD || wiBusy) return; wiBusy = true; wiErr = ''; var run1 = sRun();
       var q = await sb.from('hawk_study_days').select('day, d').eq('run', sRun()).order('day', { ascending: true });
-      wiBusy = false; if (q.error) wiErr = q.error.message; else { if (run1 !== sRun()) return; wiD = q.data || []; if (wiFresh) { wiP.cost = wi0().cost; wiFresh = false; } }
+      wiBusy = false; if (q.error) wiErr = q.error.message; else { if (run1 !== sRun()) return; wiD = q.data || []; if (wiFresh) { wiP = wi0(); wiP.cost = +(wiP.spr + wiP.comm / wiCF()).toFixed(4); wiFresh = false; } }
       if (period === 's' && sview === 'whatif') sRefresh(); }
     function wiMB() { var o = {}; (study || []).forEach(function (r) { var b = r.be_mine; if (b) o[r.day + '|' + r.data.side + '|' + Math.round(r.data.entry / wiU())] = b.none ? null : Math.round(b.price / wiU()); }); return o; }
     function wiSim(p) { var out = [], ex = p.close === 'off' ? 9000 : Math.min(+p.exit, 1200), MB = p.be === 'mine' ? wiMB() : {};
@@ -750,8 +766,9 @@
         if (x.o === 'loss') { cur++; s.run = Math.max(s.run, cur); } else if (x.o === 'win') cur = 0;
         if (x.o === 'win') s.win++; if (x.o === 'be') s.be++; if (x.net > 0) s.gp += x.net; else s.gl -= x.net; });
       s.pf = s.gl ? s.gp / s.gl : null; s.avg = s.n ? s.net / s.n : 0; return s; }
-    function wiStep(k, unit, cv) { var b = WB[k], f = !!cv && sMkt !== 'EURUSD', st = f ? wiSt(k) : b[2], wf = f ? ' data-wf="1"' : '';
-      return '<div class="hk-stp"><button data-ws="' + k + '"' + wf + ' data-d="-' + st + '" aria-label="' + L('Less', 'Menos') + '">−</button><label><input type="number" data-wn="' + k + '"' + wf + ' min="' + (f ? wiV(b[0]) : b[0]) + '" max="' + (f ? wiV(b[1]) : b[1]) + '" step="' + (f ? 'any' : b[2]) + '" value="' + (f ? wiV(wiP[k]) : wiP[k]) + '">' + unit + '</label>' +
+    function wiStep(k, unit, fac, st, pre) { var b = WB[k], f = !!fac && fac !== 1, wf = f ? ' data-wf="' + fac + '"' : '', n = function (x) { var a = Math.abs(x); return String(+(+x).toFixed(a >= 100 ? 0 : a >= 10 ? 1 : 2)); };
+      st = f ? (st || +(b[2] * fac).toPrecision(1)) : b[2];
+      return '<div class="hk-stp"><button data-ws="' + k + '"' + wf + ' data-d="-' + st + '" aria-label="' + L('Less', 'Menos') + '">−</button><label>' + (pre ? '<span class="pre">' + pre + '</span>' : '') + '<input type="number" data-wn="' + k + '"' + wf + ' min="' + (f ? n(b[0] * fac) : b[0]) + '" max="' + (f ? n(b[1] * fac) : b[1]) + '" step="' + (f ? 'any' : b[2]) + '" value="' + (f ? n(wiP[k] * fac) : wiP[k]) + '">' + unit + '</label>' +
         '<button data-ws="' + k + '"' + wf + ' data-d="' + st + '" aria-label="' + L('More', 'Más') + '">+</button></div>'; }
     function wiSeg(k, opts) { return '<div class="hk-seg" role="group">' + opts.map(function (o) { return '<button data-wm="' + k + '" data-v="' + o[0] + '" aria-pressed="' + (String(wiP[k]) === String(o[0])) + '">' + o[1] + '</button>'; }).join('') + '</div>'; }
     function wiRow(lbl, seg, body, note) { return '<div class="hk-wr"><div class="h"><span>' + lbl + '</span>' + seg + '</div>' + (body || '') + (note ? '<div class="note">' + note + '</div>' : '') + '</div>'; }
@@ -772,23 +789,35 @@
         '</tbody></table></div>'; }
     function wiHtml() {
       if (!wiD) { if (!wiErr) wiLoad(); return wiErr ? '<p class="hk-empty">' + L('Couldn\'t load the candles behind the study: ', 'No se pudieron cargar las velas del estudio: ') + esc(wiErr) + '</p>' : '<p class="hk-empty">' + L('Loading a year of 1-minute candles…', 'Cargando un año de velas de 1 minuto…') + '</p>'; }
-      var p = wiP, b0 = wi0(), changed = Object.keys(WI0).some(function (k) { return String(p[k]) !== String(b0[k]); });
+      wiCSplit(); var p = wiP, b0 = wi0(); b0.cost = +(b0.spr + b0.comm / wiCF()).toFixed(4);
+      var changed = Object.keys(WI0).some(function (k) { return k !== 'risk' && String(p[k]) !== String(b0[k]); });
       wiBase = wiStats(wiSim(b0));
       var s = wiStats(wiSim(p)), b = wiBase, dn = s.net - b.net, ddd = s.dd - b.dd;
       var h = '<div class="hk-wtop"><span>' + L('Your rules again with these changes: the same entries, the same two-serve day.', 'Tus reglas otra vez con estos cambios: las mismas entradas, el mismo día de dos saques.') + (sMkt === 'EURUSD' ? '' : ' ' + L('In ' + mkName(sMkt) + '\'s ' + wiUW() + ', your rules sized to its London move.', 'En ' + wiUW() + ' de ' + mkName(sMkt) + ', tus reglas a la medida de su movimiento de Londres.')) + '</span>' + (changed ? '<button data-wreset="1">' + L('Back to your rules', 'Volver a tus reglas') + '</button>' : '') + '</div><div class="hk-wc">' +
-        wiRow('Stop', wiSeg('smode', [['hawk', L('Past the high / low', 'Tras el máximo / mínimo')], ['fixed', L('Fixed distance', 'Distancia fija')]]), p.smode === 'hawk' ? wiStep('soff', wiUW(), 1) : wiStep('sfix', wiUW(), 1),
+        wiRow('Stop', wiSeg('smode', [['hawk', L('Past the high / low', 'Tras el máximo / mínimo')], ['fixed', L('Fixed distance', 'Distancia fija')]]), p.smode === 'hawk' ? wiStep('soff', wiUW(), wiF()) : wiStep('sfix', wiUW(), wiF()),
           p.smode === 'hawk' ? (+p.soff ? L('Your rule\'s stop on each trade (' + wiRg(2, 4) + ' from the entry), ' + (p.soff > 0 ? 'widened' : 'tightened') + ' by ' + wiVU(p.soff) + ' (never under ' + wiVU(1) + ').', 'El stop de tu regla en cada operación (' + wiRg(2, 4) + ' desde la entrada), ' + (p.soff > 0 ? 'ampliado' : 'ajustado') + ' en ' + wiVU(p.soff) + ' (nunca menos de ' + wiVU(1) + ').') : L('Your rule: ' + wiVU(0.5) + ' past the high or low that was taken, so ' + wiRg(2, 4) + ' from the entry, different on each trade. Move it with − / +.', 'Tu regla: ' + wiVU(0.5) + ' más allá del máximo o mínimo barrido, así que ' + wiRg(2, 4) + ' desde la entrada, distinto en cada operación. Muévelo con − / +.')) : L('Every trade gets a ' + wiVU(p.sfix) + ' stop from the entry, wherever the high or low was.', 'Cada operación lleva un stop de ' + wiVU(p.sfix) + ' desde la entrada, esté donde esté el máximo o el mínimo.')) +
-        wiRow(L('Target', 'Objetivo'), wiSeg('tmode', [['pips', sMkt === 'EURUSD' ? 'Pips' : wiDol() ? '$' : L('Points', 'Puntos')], ['r', 'R']]), p.tmode === 'pips' ? wiStep('tp', wiUW(), 1) : wiStep('tr', 'R'), p.tmode === 'pips' ? L('A fixed distance from the entry.', 'Una distancia fija desde la entrada.') : L('A multiple of each trade\'s stop.', 'Un múltiplo del stop de cada operación.')) +
+        wiRow(L('Target', 'Objetivo'), wiSeg('tmode', [['pips', sMkt === 'EURUSD' ? 'Pips' : wiDol() ? '$' : L('Points', 'Puntos')], ['r', 'R']]), p.tmode === 'pips' ? wiStep('tp', wiUW(), wiF()) : wiStep('tr', 'R'), p.tmode === 'pips' ? L('A fixed distance from the entry.', 'Una distancia fija desde la entrada.') : L('A multiple of each trade\'s stop.', 'Un múltiplo del stop de cada operación.')) +
         wiRow('Break-even', wiSeg('be', [['hawk', L('Rule', 'Regla')], ['mine', L('Yours', 'El tuyo')], ['r', L('At R', 'En R')], ['off', L('Off', 'Ninguno')]]), p.be === 'r' ? wiStep('ber', 'R') : '',
           p.be === 'hawk' ? L('Stop to entry once price passes the last 1m swing before the entry.', 'Stop a la entrada cuando el precio pasa el último swing de 1m antes de la entrada.') : p.be === 'mine' ? (function () { var k = (study || []).filter(function (r) { return r.be_mine && sIn(r.day); }).length; return k ? L('Your own break-even on the ' + sPl(k, 'trade') + ' you set it on, the rule\'s on the rest.', 'Tu propio break-even en ' + (k === 1 ? 'la operación' : 'las ' + k + ' operaciones') + ' donde lo pusiste, el de la regla en el resto.') : L('You haven\'t set your own break-even on any trade yet, so this is the rule\'s.', 'Aún no has puesto tu propio break-even en ninguna operación, así que este es el de la regla.'); })() : p.be === 'off' ? L('The stop never moves.', 'El stop nunca se mueve.') : L('Stop to entry once the trade is ' + (+p.ber).toFixed(2) + 'R in profit.', 'Stop a la entrada cuando la operación va ' + (+p.ber).toFixed(2) + 'R en beneficio.')) +
         wiRow(L('Close by', 'Cerrar a las'), wiSeg('close', [['on', L('On', 'Sí')], ['off', L('Off', 'No')]]),   // a time picker that looks like the steppers, and a way to turn it off (6 Nov 2026)
           p.close === 'off' ? '' : '<label class="hk-time"><span class="v">' + wiHM(+p.exit) + '</span><span class="u">' + L('London', 'Londres') + '</span><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5l3 3 3-3"/></svg><select data-wn="exit" aria-label="' + L('Close by, London time', 'Cerrar a las, hora de Londres') + '">' + (function () { var o = ''; for (var m = 600; m <= 1200; m += 10) o += '<option value="' + wiHM(m) + '"' + (+p.exit === m ? ' selected' : '') + '>' + wiHM(m) + '</option>'; return o; })() + '</select></label>',
           p.close === 'off' ? L('No time exit: each trade runs to its stop or target.' + (s.end ? ' ' + sPl(s.end, 'trade') + (s.end === 1 ? ' was' : ' were') + ' still open at 20:00 London, where the study\'s candles end, and closed there.' : ''), 'Sin salida por hora: cada operación sigue hasta su stop u objetivo.' + (s.end ? ' ' + sPl(s.end, '', 'operación seguía abierta', 'operaciones seguían abiertas') + ' a las 20:00 de Londres, donde acaban las velas del estudio, y se cerr' + (s.end === 1 ? 'ó' : 'aron') + ' ahí.' : '')) :
           +p.exit === 800 ? L('Out before the 13:30 news if the target hasn\'t hit (your rule).', 'Fuera antes de las noticias de las 13:30 si no ha llegado al objetivo (tu regla).') : L('Closed at ' + wiHM(+p.exit) + ' London if the target hasn\'t hit' + (+p.exit > 810 ? ', held through the 13:30 news.' : '.'), 'Cerrada a las ' + wiHM(+p.exit) + ' hora de Londres si no ha llegado al objetivo' + (+p.exit > 810 ? ', aguantando las noticias de las 13:30.' : '.'))) +
-        wiRow(L('Costs', 'Costes'), '', wiStep('cost', L(wiUW() + ' a trade', wiUW() + ' por operación'), 1), +p.cost ? L('About ' + (s.n ? s.cr / s.n : 0).toFixed(2) + 'R a trade with these stops, ' + s.cr.toFixed(1) + 'R over the period. Spread and commission are a fixed distance, so the tighter the stop, the more R they cost.', 'Unos ' + (s.n ? s.cr / s.n : 0).toFixed(2) + 'R por operación con estos stops, ' + s.cr.toFixed(1) + 'R en el periodo. El spread y la comisión son una distancia fija, así que cuanto más ajustado el stop, más R cuestan.') : L('No spread or commission.', 'Sin spread ni comisión.')) + '</div>';
+        (function () { var lv = wiLV(), per = s.n ? s.cr / s.n : 0, pts = sMkt !== 'EURUSD' && sMeta().nu === 'points', au = wiAuto(), auto = au && Math.abs(+p.comm - +(au.u * lv).toFixed(2)) < 0.005,
+            one = wiDol() ? L('$1 move', 'movimiento de $1') : pts ? L('point', 'punto') : 'pip', tot = wiDol() ? L('a ' + wiVU(p.cost) + ' move', 'un movimiento de ' + wiVU(p.cost)) : wiVU(p.cost), cv = wiVU(p.comm / wiCF());
+          return wiRow(L('Commission', 'Comisión'), '', wiStep('comm', L('dollars a lot, in and out', 'dólares por lote, entrada y salida')),
+              auto ? L('Worked out from your ' + au.n + ' ' + mkName(sMkt) + ' trades in the journal: ' + cv + ' a trade, $' + (+p.comm).toFixed(2) + ' a lot.', 'Calculada con tus ' + au.n + ' operaciones de ' + mkName(sMkt) + ' en el diario: ' + cv + ' por operación, $' + (+p.comm).toFixed(2) + ' por lote.')
+                : L('What your broker charges for one lot, opening and closing, in dollars: $' + (+p.comm).toFixed(2) + ' = ' + cv + ' (1 lot = $' + lv + ' a ' + one + (pts ? ' on most brokers' : '') + ').' + (au ? '' : ' Your journal has no ' + mkName(sMkt) + ' trades with costs to work it out from yet.'),
+                  'Lo que te cobra tu bróker por un lote, al abrir y cerrar, en dólares: $' + (+p.comm).toFixed(2) + ' = ' + cv + ' (1 lote = $' + lv + ' por ' + one + (pts ? ' en la mayoría de brókers' : '') + ').' + (au ? '' : ' Tu diario aún no tiene operaciones de ' + mkName(sMkt) + ' con costes para calcularla.'))) +
+            wiRow(L('Spread', 'Spread'), '', wiStep('spr', wiUW(), wiF()),
+              !+p.cost ? L('No spread or commission.', 'Sin spread ni comisión.') : L('The usual spread when you trade, 08:00–10:00 London. With the commission: ' + tot + ' a trade, about ' + per.toFixed(2) + 'R with these stops' + (+p.risk ? ' (' + wiMoney(per) + ')' : '') + ', ' + s.cr.toFixed(1) + 'R over the period' + (+p.risk ? ' (' + wiMoney(s.cr) + ')' : '') + '.',
+                'El spread habitual cuando operas, 08:00–10:00 de Londres. Con la comisión: ' + tot + ' por operación, unos ' + per.toFixed(2) + 'R con estos stops' + (+p.risk ? ' (' + wiMoney(per) + ')' : '') + ', ' + s.cr.toFixed(1) + 'R en el periodo' + (+p.risk ? ' (' + wiMoney(s.cr) + ')' : '') + '.')) +
+            wiRow(L('Risk per trade', 'Riesgo por operación'), '', wiStep('risk', L('a trade', 'por operación'), 0, 0, esc(wiCur())),
+              +p.risk ? L('Turns the R into money: 1R = ' + wiMoney(1) + '.', 'Pasa las R a dinero: 1R = ' + wiMoney(1) + '.') : L('Add what you risk on a trade to see the results in money.', 'Añade lo que arriesgas por operación para ver los resultados en dinero.')); })() + '</div>';
       h += '<div class="hk-lbl">' + L('Result', 'Resultado') + '</div><div class="hk-kpi">' + [[sR1(s.net), L('Net', 'Neto'), s.net >= 0 ? 'up' : 'dn'], [s.n, L('Trades', 'Operaciones')], [(s.n ? Math.round(s.win / s.n * 100) : 0) + '%', L('Targets', 'Objetivos')], [s.dd.toFixed(1) + 'R', L('Worst dip', 'Peor caída')]]
         .map(function (x) { return '<div><b class="' + (x[2] || '') + '">' + x[0] + '</b><span>' + x[1] + '</span></div>'; }).join('') + '</div>';
-      h += '<div class="hk-cmp">' + (changed ? L('Against your rules: ', 'Frente a tus reglas: ') + '<b class="' + (dn >= 0 ? 'up' : 'dn') + '">' + sR1(dn) + '</b>' + L(' · worst dip ', ' · peor caída ') + (Math.abs(ddd) < 0.05 ? L('the same', 'igual') : Math.abs(ddd).toFixed(1) + 'R ' + (ddd > 0 ? L('deeper', 'más profunda') : L('shallower', 'menos profunda'))) : L('These are your rules as tested: ' + sR1(b.net) + ' over this period.', 'Estas son tus reglas tal como se probaron: ' + sR1(b.net) + ' en este periodo.')) + '</div>';
+      if (+p.risk) h += '<div class="hk-money">' + L('At ' + wiMoney(1) + ' a trade: ', 'Con ' + wiMoney(1) + ' por operación: ') + '<b class="' + (s.net >= 0 ? 'up' : 'dn') + '">' + wiMoney(s.net, 1) + '</b>' + L(' net · worst dip ', ' neto · peor caída ') + '<b>' + wiMoney(s.dd) + '</b>' + L(' · ', ' · ') + wiMoney(s.avg, 1) + L(' a trade', ' por operación') + '</div>';
+      h += '<div class="hk-cmp">' + (changed ? L('Against your rules: ', 'Frente a tus reglas: ') + '<b class="' + (dn >= 0 ? 'up' : 'dn') + '">' + sR1(dn) + (+p.risk ? ' (' + wiMoney(dn, 1) + ')' : '') + '</b>' + L(' · worst dip ', ' · peor caída ') + (Math.abs(ddd) < 0.05 ? L('the same', 'igual') : Math.abs(ddd).toFixed(1) + 'R ' + (ddd > 0 ? L('deeper', 'más profunda') : L('shallower', 'menos profunda'))) : L('These are your rules as tested: ' + sR1(b.net) + ' over this period.', 'Estas son tus reglas tal como se probaron: ' + sR1(b.net) + ' en este periodo.')) + '</div>';
       h += '<div class="hk-kpi sm">' + [[(s.avg >= 0 ? '+' : '−') + Math.abs(s.avg).toFixed(2) + 'R', L('Per trade', 'Por operación')], [s.pf == null ? '–' : s.pf.toFixed(2), L('Profit factor', 'Factor de beneficio')], [(s.n ? Math.round(s.be / s.n * 100) : 0) + '%', 'Break-even'], [s.run, L('Loss streak', 'Racha de pérdidas')]]
         .map(function (x) { return '<div><b>' + x[0] + '</b><span>' + x[1] + '</span></div>'; }).join('') + '</div>';
       h += wiEq(s.eq, b.eq) + '<div class="hk-leg"><span><i></i>' + L('These settings', 'Estos ajustes') + '</span><span><i class="b"></i>' + L('Your rules', 'Tus reglas') + '</span></div>';
@@ -797,13 +826,13 @@
       return h; }
     function wiHM(m) { return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); }
     function wiClamp(k, v) { var b = WB[k]; v = Math.round(v / b[2]) * b[2]; return Math.min(b[1], Math.max(b[0], +v.toFixed(2))); }
-    function wiSet() { try { localStorage.setItem(wiKey(), JSON.stringify(wiP)); } catch (x) {} sRefresh(); }
+    function wiSet() { if (wiP.comm != null && wiP.spr != null) wiP.cost = +(+wiP.spr + +wiP.comm / wiCF()).toFixed(4); try { localStorage.setItem(wiKey(), JSON.stringify(wiP)); } catch (x) {} sRefresh(); }
     function wiClick(e) {
       var a = e.target.closest('[data-wm]'); if (a) { wiP[a.dataset.wm] = a.dataset.wm === 'exit' ? +a.dataset.v : a.dataset.v; wiSet(); return true; }
       var s = e.target.closest('[data-ws]'); if (s) { var k = s.dataset.ws, d = +s.dataset.d;
-        if (s.dataset.wf) { var F = wiF(), st = Math.abs(d); wiP[k] = wiClampF(k, Math.round((+wiP[k] * F + d) / st) * st / F); } else wiP[k] = wiClamp(k, +wiP[k] + d); wiSet(); return true; }
+        if (s.dataset.wf) { var F = +s.dataset.wf, st = Math.abs(d); wiP[k] = wiClampF(k, Math.round((+wiP[k] * F + d) / st) * st / F); } else wiP[k] = wiClamp(k, +wiP[k] + d); wiSet(); return true; }
       var g = e.target.closest('[data-wg]'); if (g) { var v = g.dataset.wg.split('|'); wiP[v[0]] = +v[1]; wiP[v[2]] = +v[3]; wiSet(); return true; }
-      if (e.target.closest('[data-wreset]')) { wiP = wi0(); wiSet(); return true; }
+      if (e.target.closest('[data-wreset]')) { wiP = Object.assign(wi0(), { risk: wiP.risk }); wiSet(); return true; }
       return false; }
     root.addEventListener('click', async function (e) {
       var t = e.target.closest('.hk-tabs button');
@@ -844,7 +873,7 @@
     });
     root.addEventListener('change', function (e) {
       if (e.target.dataset.pd) { sPer[e.target.dataset.pd] = e.target.value || ''; sPerSave(); sRefresh(); return; }
-      if (e.target.dataset.wn) { var k = e.target.dataset.wn, v = e.target.value; if (k === 'exit') { if (!/^\d\d:\d\d/.test(v)) return; v = +v.slice(0, 2) * 60 + +v.slice(3, 5); } wiP[k] = e.target.dataset.wf ? wiClampF(k, (+v || 0) / wiF()) : wiClamp(k, +v || 0); wiSet(); return; }
+      if (e.target.dataset.wn) { var k = e.target.dataset.wn, v = e.target.value; if (k === 'exit') { if (!/^\d\d:\d\d/.test(v)) return; v = +v.slice(0, 2) * 60 + +v.slice(3, 5); } wiP[k] = e.target.dataset.wf ? wiClampF(k, (+v || 0) / +e.target.dataset.wf) : k === 'comm' || k === 'risk' ? wiClampF(k, +v || 0) : wiClamp(k, +v || 0); wiSet(); return; }
       if (e.target.tagName !== 'TEXTAREA') return;
       if (e.target.dataset.snote && study) { var sr = sFind(e.target.dataset.snote); if (sr) { sr.note = e.target.value.trim() || null; sMarkRow(sr); sSave(sr, { note: sr.note }, 'verdict_at', sr.note ? L('Note saved', 'Nota guardada') : L('Note removed', 'Nota quitada')); } return; }
       var r = byId(e.target.dataset.id); if (!r) return;
