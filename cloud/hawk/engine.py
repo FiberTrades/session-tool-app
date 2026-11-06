@@ -64,6 +64,8 @@ def htf_state(i):
 
 # ---------- trade management from the plan
 COST = 0.6
+STOP_MAX = 4.0     # his rule: stop 2-4 pips on every model (6 Nov: was 4.5 on the continuation / initiation pockets)
+TP_LIQ = True      # target 20 pips, cut short at the next HTF liquidity; False = always 20 pips
 EXIT_NEWS = True     # out by 13:20 London if the target hasn't hit (the 13:30 red-news rule, applied every day)
 def manage(j0, side, entry, stop, tgt, be_lvl):
     risk = abs(entry - stop); sl = stop; at_be = False; d = LDAY[j0]
@@ -86,7 +88,7 @@ def target(side, entry, risk, liq=None):
     dist = 20 * PIP
     if liq is not None:
         dd = (liq - entry) * side
-        if dd > 0: dist = min(dist, dd)
+        if dd > 0 and TP_LIQ: dist = min(dist, dd)
     return entry + side * dist if dist / risk >= 5 - 1e-9 else None
 
 def prev_extreme(side, j, look=90, gap=3):
@@ -104,7 +106,7 @@ def reaction(side, a, A):
         if H[k] - L[k] <= 2 * PIP:
             entry = C[k]; stop = A - side * 0.5 * PIP
             r = abs(entry - stop)
-            if 2 * PIP <= r <= 4 * PIP: return (k + 1, entry, stop)
+            if 2 * PIP <= r <= STOP_MAX * PIP + 1e-9: return (k + 1, entry, stop)
             return None
     return None
 
@@ -125,7 +127,7 @@ def continuation(side, a, A, win_end, min_leg=12, on_pocket=None):
     if not best: return None
     _, hi, lo = best
     entry = hi if side > 0 else lo; stop = lo - 0.5 * PIP if side > 0 else hi + 0.5 * PIP
-    if not (2 * PIP <= abs(entry - stop) <= 4.5 * PIP): return None
+    if not (2 * PIP <= abs(entry - stop) <= STOP_MAX * PIP + 1e-9): return None
     if on_pocket: on_pocket(entry, stop, Bv, b, mid)   # the hawk: the pullback level is known before price comes back
     for k in range(b + 1, N):
         if LDAY[k] != LDAY[a] or LMIN[k] >= win_end: return None
@@ -181,7 +183,7 @@ def scan_day(idx, opts):
                     if pk:
                         hi, lo = pk
                         entry = hi if side > 0 else lo; stop = lo - 0.5 * PIP if side > 0 else hi + 0.5 * PIP
-                        if 2 * PIP <= abs(entry - stop) <= 4.5 * PIP:
+                        if 2 * PIP <= abs(entry - stop) <= STOP_MAX * PIP + 1e-9:
                             tg = target(side, entry, abs(entry - stop))
                             if tg:
                                 for k in range(i + 1, N):
