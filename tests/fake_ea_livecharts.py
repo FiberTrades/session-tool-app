@@ -60,13 +60,19 @@ ST = {'risk_mode': 'amount', 'risk_percent': 1.0, 'risk_amount': 250.0, 'fixed_l
 def send_set(): text(bcast('set', {'s': SYM, 'lg': LG, 'st': ST}))
 # EA 9.02's account for the app's Trade tab ("acct") and its History tab ("dh" -> "dhist")
 POS = []            # [ticket, symbol, open time, type, volume, open price, sl, tp] - an order from the app adds one
+if os.environ.get('ST_FAKE_POS'):   # a trade already open at the start (a screenshot of the strip with margin held, 7 Nov 2026)
+    _op = round(P0 - 12 * 10 ** -(DG - 1), DG)
+    POS.append(['777001', SYM, int(T0) - 1500, 'buy', 1.0, _op, round(_op - 10 * 10 ** -(DG - 1), DG), round(_op + 30 * 10 ** -(DG - 1), DG)])
 acc = {'want': 0, 'at': 0}
 def send_acct():
     px = price_at(fnow()); rows = []; prof = 0.0
     for tk, sy, ot, ty, vol, op, sl, tp in POS:
         p = round((px - op if ty == 'buy' else op - px) * vol * 100000, 2); prof += p
         rows.append('%s,%s,%d,%s,%.2f,%.*f,%.*f,%.*f,%.*f,%.2f,0.00,%d' % (tk, sy, ot, ty, vol, DG, op, DG, sl, DG, tp, DG, px, p, DG))
-    bal = 65311.87; text(bcast('acct', {'by': KEYME, 'lg': LG, 'cur': CUR, 'bal': bal, 'eq': round(bal + prof, 2), 'mg': 0, 'fm': round(bal + prof, 2), 'ml': 0, 'pos': ';'.join(rows), 'ord': ''}))
+    # margin held as MT5 reports it: the open trades' deposit at 1:100 (in the account's money, roughly), free margin = equity - margin, the level in %
+    mg = round(sum(vol * 100000 * op / 100 / 1.3 for tk, sy, ot, ty, vol, op, sl, tp in POS), 2)
+    bal = 65311.87; eq = round(bal + prof, 2)
+    text(bcast('acct', {'by': KEYME, 'lg': LG, 'cur': CUR, 'bal': bal, 'eq': eq, 'mg': mg, 'fm': round(eq - mg, 2), 'ml': round(eq / mg * 100, 2) if mg else 0, 'pos': ';'.join(rows), 'ord': ''}))
     log['acct'] += 1
 def send_dhist(p):
     t1 = int(fnow()) - 3600; t0 = t1 - 1800

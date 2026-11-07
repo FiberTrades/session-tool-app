@@ -305,11 +305,22 @@
     data.currentSeries = data.currentSeries.filter(function (x) { return x !== jt; });
     check('the summary along the tabs: Balance, Equity (as MT5), Open P&L, Today, Margin, Free margin', /^Balance.+Equity.+Open P&L/.test($('.pl-sum').textContent) && /Open P&L/.test($('.pl-sum').textContent) && /Free margin/.test($('.pl-sum').textContent), $('.pl-sum').textContent);
     /* Margin only while a trade holds some, as MT5 (Nestor, 7 Nov 2026: "do we need to have margin here?" "i dont see that in MT5") */
-    var TBm = (P._tb || LC._tb)(), pTab = $('[data-pltab="pos"]'), acm = TBm.acct;
-    /* painted and read in one go: the stand-in EA's next account message replaces TB.acct */
+    /* painted and read in one go: the stand-in EA's next account message replaces TB.acct; the Positions button found afresh each time (a
+       repaint replaces it, and a click on the old one reaches nothing) */
+    var TBm = (P._tb || LC._tb)(), acm = TBm.acct, posTab = function () { return $('#lc-tb [data-pltab="pos"]') || $('[data-pltab="pos"]'); }, pTab = { click: function () { var b = posTab(); if (b) b.click(); } };
     var sumWith = function (mg, ml) { var a = TBm.acct, m0 = a.mg, l0 = a.ml; a.mg = mg; a.ml = ml; pTab.click(); var s = $('.pl-sum').textContent; a.mg = m0; a.ml = l0; return s; };
-    if (acm && pTab) {
-      var sm0 = sumWith(0, 0), sm1 = sumWith(1250, 5400); pTab.click(); await W(100);
+    if (acm && posTab()) {
+      var sm0 = sumWith(0, 0), sm1 = sumWith(1250, 5400);
+      /* the strip never cuts off (7 Nov 2026): too little room and the least needed goes first, Equity and Daily loss left always stay */
+      var fitAt = function (w) { var a = TBm.acct, m0 = a.mg, l0 = a.ml, bx = document.getElementById('lc-tb'), w0 = bx.style.width; a.mg = 1250; a.ml = 5400; bx.style.width = w + 'px'; pTab.click();
+        var s = $('.pl-sum'), vis = [].slice.call(s.children).filter(function (e) { return !e.hidden; }).map(function (e) { return e.firstChild.textContent; });
+        var r = { w: w, fits: s.scrollWidth <= s.clientWidth + 1, vis: vis.join('|'), all: s.children.length, dl: /Daily loss left/.test(s.textContent) }; a.mg = m0; a.ml = l0; bx.style.width = w0; bx._sw = -2; pTab.click(); return r; };
+      var fNar = phoneNow ? null : fitAt(700), fWide = phoneNow ? null : fitAt(2400);
+      if (!phoneNow) {
+        check('a narrow panel with a trade open: nothing cut off, Equity (and Daily loss left, when the account has one) stay, Margin level goes first', fNar.fits && /Equity/.test(fNar.vis) && (!fNar.dl || /Daily loss left/.test(fNar.vis)) && !/Margin level/.test(fNar.vis) && fNar.vis.split('|').length < fNar.all, fNar);
+        check('...a wide one shows them all', fWide.fits && fWide.vis.split('|').length === fWide.all && /Margin\|Free margin\|Margin level/.test(fWide.vis), fWide);
+      }
+      pTab.click(); await W(100);
       check('nothing open: no Margin, Free margin right after Equity (as MT5)', sm0.indexOf('Margin') < 0 && /^Balance.+Equity[^A-Za-z]+Free margin[^A-Za-z]+Open P&L/.test(sm0), sm0);
       check('a trade holding margin: Equity, Margin, Free margin, Margin level, then Open P&L', /Equity[^A-Za-z]+Margin\D*1,250\.00Free margin[^A-Za-z]+Margin level\D*5\s?400\.00%Open P&L/.test(sm1), sm1);
     } else check('the strip has its account for the Margin checks', false, [!!acm, !!pTab]);
