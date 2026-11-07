@@ -88556,7 +88556,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if (s === 'b') { g.lineTo(cx + hw, y1); g.lineTo(tp.x, tp.y); g.lineTo(cx - hw, y1); } g.lineTo(x0 + r, y1); g.arcTo(x0, y1, x0, y1 - r, r);
     if (s === 'l') { g.lineTo(x0, cy + hw); g.lineTo(tp.x, tp.y); g.lineTo(x0, cy - hw); } g.lineTo(x0, y0 + r); g.arcTo(x0, y0, x0 + r, y0, r); g.closePath(); }
   function kPaintBox(g, b, tp, C, F, W){ g.save(); g.setLineDash([]); g.lineWidth = W || 1; g.beginPath(); kBub(g, b, tp || { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 }); g.fillStyle = F; g.fill(); g.strokeStyle = C; g.stroke(); g.restore(); }
-  function kTed(b, X, d){ return b ? { x: b.x0 + 4, y: b.y0 + 2, fs: b.T.fs, c: kE(X, d, 'tcol') } : null; }
+  function kTed(b, X, d){ return b ? { x: b.x0 + 4, y: b.y0 + 2, fs: b.T.fs, c: kE(X, d, 'tcol'), bg: kE(X, d, 'fill') } : null; }   // bg: the box's own fill, so the words being typed show as they will
   var KTX = ['color', 'fill', 'tcol', 'tsz'], KTS = { c: '#2962ff', w: 1, f: '#2962ff', tc: '#ffffff', ts: 12 }, KTD = { c: '#2962ff', w: 1, f: 'rgba(19,18,23,0.95)', tc: '#ffffff', ts: 12 };
   // Note
   function kAN(d, X){ var a = X.P(d.a); if (!a) return null; var o = { a: a, m: { x0: Math.round(a.x) - 9, y0: Math.round(a.y) - 27, x1: Math.round(a.x) + 9, y1: Math.round(a.y) - 9 } };
@@ -96927,11 +96927,20 @@ window.__stAZ = (function () {
   function startLoop(){ if (!loopId) { loopW = liveWin(); loopId = loopW.requestAnimationFrame(frame); } }
   function stopLoop(){ if (loopId) try { loopW.cancelAnimationFrame(loopId); } catch (e) {} loopId = 0; }
 
+  // the typing box's background (7 Nov 2026, "i cant see what im writing inside the callout"): the drawing's own fill when it is solid,
+  // else dark or light, whichever the words' colour shows on
+  function tedRGBA(c){ c = String(c || '').trim(); var m = /^#([0-9a-f]{3,8})$/i.exec(c);
+    if (m) { var h = m[1]; if (h.length <= 4) h = h.split('').map(function(x){ return x + x; }).join(''); return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16), h.length >= 8 ? parseInt(h.slice(6, 8), 16) / 255 : 1]; }
+    m = /^rgba?\(([^)]+)\)$/i.exec(c); if (m) { var v = m[1].split(/[ ,\/]+/).filter(Boolean).map(parseFloat); return [v[0], v[1], v[2], v.length > 3 ? (/%/.test(m[1].split(/[ ,\/]+/).filter(Boolean)[3]) ? v[3] / 100 : v[3]) : 1]; }
+    return null; }
+  function tedBg(fill, col){ var f = tedRGBA(fill); if (f && f[3] >= 0.6) return 'rgb(' + Math.round(f[0]) + ',' + Math.round(f[1]) + ',' + Math.round(f[2]) + ')';
+    var t = tedRGBA(col), lum = t ? (0.2126 * t[0] + 0.7152 * t[1] + 0.0722 * t[2]) / 255 : 1; return lum < 0.5 ? 'rgba(255,255,255,0.94)' : 'rgba(11,10,13,0.85)'; }
   function txtEdit(p, d, isNew){
     txtDone(); var nb = (d.type === 'note' && KIT) ? KIT.note(d, kx(p)) : null, kb = (!nb && KIT && KIT.ted) ? KIT.ted(d, kx(p, false, null, d)) : null, a = nb ? { x: nb.x0 + 4, y: nb.y0 + 2 } : (kb || Pt(p, d.a)); if (!a) return; var fs = nb ? nb.fs : (kb ? kb.fs : (TSZ[Math.round(dW(d))] || 14));   // a price note: on its box
     var ta = document.createElement('textarea'); ta.className = 'stpr-txed'; ta.value = d.text || ''; ta.rows = 1; ta.setAttribute('aria-label', T('Text', 'Texto'));
-    ta.style.cssText = 'position:absolute;z-index:8;left:' + (a.x - 4) + 'px;top:' + (a.y - 3) + 'px;min-width:120px;max-width:60%;padding:2px 3px;margin:0;resize:none;overflow:hidden;background:rgba(11,10,13,0.85);'
-      + 'border:1px dashed #f472b6;border-radius:3px;outline:none;color:' + (nb ? window.__stDrawBar.eff(DSTY, 'note', d, 'tcol') : (kb && kb.c ? kb.c : dC(d))) + ';font:600 ' + fs + "px 'DM Mono',monospace;line-height:1.3;white-space:pre;";
+    var tcol = nb ? window.__stDrawBar.eff(DSTY, 'note', d, 'tcol') : (kb && kb.c ? kb.c : dC(d)), tbg = tedBg(nb ? window.__stDrawBar.eff(DSTY, 'note', d, 'fill') : (kb ? kb.bg : null), tcol);
+    ta.style.cssText = 'position:absolute;z-index:8;left:' + (a.x - 4) + 'px;top:' + (a.y - 3) + 'px;min-width:120px;max-width:60%;padding:2px 3px;margin:0;resize:none;overflow:hidden;background:' + tbg + ';'
+      + 'border:1px dashed #f472b6;border-radius:3px;outline:none;color:' + tcol + ';caret-color:' + tcol + ';font:600 ' + fs + "px 'DM Mono',monospace;line-height:1.3;white-space:pre;";
     if (nb) ta.placeholder = Number(d.a.price).toFixed(PS(p).digits);   // a note with no words shows its price
     var fit = function(){ ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; ta.style.width = 'auto'; ta.style.width = Math.max(120, ta.scrollWidth + 8) + 'px'; };
     p.el.appendChild(ta); DW.ted = { p: p, d: d, ta: ta, isNew: !!isNew }; dirty(); fit();

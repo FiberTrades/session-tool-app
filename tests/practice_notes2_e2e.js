@@ -62,6 +62,17 @@
     ok('Callout: two clicks - its point, then its box; then its words', co.type === 'callout' && co.text === 'Liquidity' && texts().indexOf('Liquidity') >= 0 && hit(BA.x + 20, BA.y + 10).part === 'bmv', hit(BA.x + 20, BA.y + 10));
     DW.sel = DW.list.indexOf(co); await drag(BA.x + 20, BA.y + 10, BA.x + 80, BA.y + 40);
     ok('dragging its box moves the box, its point stays', JSON.stringify(co.a) === a0 && Math.abs(at(co.b).x - (BA.x + 60)) < 14 && Math.abs(at(co.b).y - (BA.y + 30)) < 6, [at(co.b), BA]);
+    // the words being typed show on the callout's own colours (7 Nov 2026: "i cant see what im writing inside the callout")
+    var reopen = async function () { var B2 = at(co.b); ch.dispatchEvent(new MouseEvent('dblclick', { clientX: R.left + B2.x + 20, clientY: R.top + B2.y + 10, bubbles: true, cancelable: true, view: window })); await W(80); return ed(); };
+    co.fill = '#ffffff'; co.tcol = '#131722'; var e1 = await reopen(), s1 = e1 && getComputedStyle(e1);
+    ok('a white callout with dark words: typed on white, in its dark colour', !!e1 && s1.backgroundColor === 'rgb(255, 255, 255)' && s1.color === 'rgb(19, 23, 34)', e1 && [s1.backgroundColor, s1.color]);
+    await type('Liquidity');
+    co.fill = 'rgba(0,0,0,0)'; co.tcol = '#131722'; var e2 = await reopen(), s2 = e2 && getComputedStyle(e2);
+    ok('no fill, dark words: a light typing box', !!e2 && /^rgba\(255, 255, 255, 0\.9/.test(s2.backgroundColor), e2 && s2.backgroundColor);
+    await type('Liquidity');
+    co.fill = 'rgba(0,0,0,0)'; co.tcol = '#ffffff'; var e3 = await reopen(), s3 = e3 && getComputedStyle(e3);
+    ok('no fill, light words: a dark typing box', !!e3 && /^rgba\(11, 10, 13/.test(s3.backgroundColor), e3 && s3.backgroundColor);
+    await type('Liquidity'); delete co.fill; delete co.tcol;
     // Price label: the price at its point
     var pl = await place('plabel', [[X(0.62), Y(0.55)]]);
     ok('Price label: one click, the price at its point in a tag', pl.type === 'plabel' && DW.tool === 'none' && texts().indexOf(Number(pl.a.price).toFixed(5)) >= 0, Number(pl.a.price).toFixed(5));
