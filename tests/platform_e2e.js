@@ -304,6 +304,15 @@
     check('a setup changed after the close: the stats keep the pick at entry, the trade says so', window.__stSetupOf(jt) === 'High/Low + Mitigation + Aggression' && /At entry: High\/Low \+ Mitigation \+ Aggression · changed after the close/.test(plt) && /Why: Took the Asia high/.test(plt), plt);
     data.currentSeries = data.currentSeries.filter(function (x) { return x !== jt; });
     check('the summary along the tabs: Balance, Equity (as MT5), Open P&L, Today, Margin, Free margin', /^Balance.+Equity.+Open P&L/.test($('.pl-sum').textContent) && /Open P&L/.test($('.pl-sum').textContent) && /Free margin/.test($('.pl-sum').textContent), $('.pl-sum').textContent);
+    /* Margin only while a trade holds some, as MT5 (Nestor, 7 Nov 2026: "do we need to have margin here?" "i dont see that in MT5") */
+    var TBm = (P._tb || LC._tb)(), pTab = $('[data-pltab="pos"]'), acm = TBm.acct;
+    /* painted and read in one go: the stand-in EA's next account message replaces TB.acct */
+    var sumWith = function (mg, ml) { var a = TBm.acct, m0 = a.mg, l0 = a.ml; a.mg = mg; a.ml = ml; pTab.click(); var s = $('.pl-sum').textContent; a.mg = m0; a.ml = l0; return s; };
+    if (acm && pTab) {
+      var sm0 = sumWith(0, 0), sm1 = sumWith(1250, 5400); pTab.click(); await W(100);
+      check('nothing open: no Margin, Free margin stays (as MT5)', sm0.indexOf('Margin') < 0 && /Free margin/.test(sm0), sm0);
+      check('a trade holding margin: Margin and Margin level show', /Margin\D*1,250\.00/.test(sm1) && /Margin level\D*5\s?400\.00%/.test(sm1) && /Free margin/.test(sm1), sm1);
+    } else check('the strip has its account for the Margin checks', false, [!!acm, !!pTab]);
     check('Chart settings is a gear with teeth, beside the sun / moon (Nestor, 26 Oct 2026: "looks like a sun and its confusing")', /^M12\.22 2h/.test($('.plat-top #stpr-lookbtn svg path').getAttribute('d')) && $('.plat-top .pl-theme svg'), $('.plat-top #stpr-lookbtn').innerHTML.slice(0, 80));
     // the top bar never overflows (25 Oct 2026): every item inside it, the sun and full screen in the row, at this width too
     var top0 = $('.plat-top'), thr = $('.pl-theme').getBoundingClientRect(), tpr = top0.getBoundingClientRect();
