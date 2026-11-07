@@ -1,5 +1,5 @@
-# A real mouse on the main tabs (Nestor, 7 Nov 2026: "when i hover over the main tabs should the tab i am hovering over zoom in a little,
-# as in get slightly larger? you know like in a mac book"): the tab under the mouse grows, its neighbours a touch, nothing moves.
+# A real mouse on the main tabs (Nestor, 7 Nov 2026: "add a bit of pink highlight behind the tab being hovered over"; a Mac-Dock grow tried
+# first was "terrible" and taken out): a soft pink behind the tab under the mouse, nothing grows, nothing moves.
 #   python tests/tabhover_run.py [shots_dir]
 # Signed out, headless Edge at idle, nothing live touched. Exits 1 if any check fails.
 import base64, functools, http.server, io, json, os, shutil, sys, tempfile, threading, time, urllib.request
@@ -16,10 +16,10 @@ def check(name, cond, got=None):
     print(('PASS  ' if cond else 'FAIL  ') + name + ('' if cond else '   got: ' + json.dumps(got)[:400]))
     if not cond: bad += 1
 
-# every visible tab: its scale (from the computed transform), its place in the layout (offsetLeft/Top, which a transform never changes), hovered
+# every shown tab: its background, its transform, its place in the layout and on screen, hovered
 Q = """(function(){return [].slice.call(document.querySelectorAll('.container > .tabs .tab')).filter(function(t){return t.offsetWidth>0;}).map(function(t){
-  var m=getComputedStyle(t).transform, s=1; if (m && m!=='none') s=+m.slice(7).split(',')[0]; var r=t.getBoundingClientRect();
-  return {p:t.getAttribute('data-page'), s:Math.round(s*1000)/1000, x:t.offsetLeft, y:t.offsetTop, w:t.offsetWidth, cx:r.left+r.width/2, cy:r.top+r.height/2, hov:t.matches(':hover'), z:getComputedStyle(t).zIndex};});})()"""
+  var c=getComputedStyle(t), r=t.getBoundingClientRect();
+  return {p:t.getAttribute('data-page'), bg:c.backgroundColor, tf:c.transform, sh:c.boxShadow, x:Math.round(r.left*10)/10, w:Math.round(r.width*10)/10, cx:r.left+r.width/2, cy:r.top+r.height/2, hov:t.matches(':hover')};});})()"""
 
 edge = next(p for p in bt.EDGE_PATHS if os.path.exists(p))
 web = bt.free_port()
@@ -54,29 +54,26 @@ try:
         im = Image.open(io.BytesIO(d)).convert('RGB')
         if SHOTS: im.save(os.path.join(SHOTS, 'tabhover_%s.png' % name))
         return im
+    PINK = 'rgba(244, 114, 182, 0.09)'
     mouse(W // 2, H - 60)
     a = c.eval(Q)
-    check('at rest: every tab its own size', len(a) >= 6 and all(t['s'] == 1 for t in a), a)
+    check('at rest: no tab pink', len(a) >= 6 and all(t['bg'] != PINK for t in a), [t['bg'] for t in a])
     i = 2; tgt = a[i]
     mouse(int(tgt['cx']), int(tgt['cy']))
-    b = c.eval(Q); shot('hover')
-    check('the mouse on %s: it grows (6%%) and sits on top' % tgt['p'], b[i]['hov'] and b[i]['s'] == 1.06 and b[i]['z'] == '2', b[i])
-    check('...its two neighbours a touch (2.5%)', b[i - 1]['s'] == 1.025 and b[i + 1]['s'] == 1.025, [b[i - 1], b[i + 1]])
-    check('...the rest stay their size', all(t['s'] == 1 for k, t in enumerate(b) if abs(k - i) > 1), [t['s'] for t in b])
-    check('...and nothing moves: every tab in the same place', all(p['x'] == q['x'] and p['y'] == q['y'] and p['w'] == q['w'] for p, q in zip(a, b)), [[p['x'], q['x']] for p, q in zip(a, b)])
-    # the first tab: one neighbour only
+    b = c.eval(Q); im = shot('hover')
+    check('the mouse on %s: a soft pink behind it' % tgt['p'], b[i]['hov'] and b[i]['bg'] == PINK, b[i])
+    px = im.getpixel((int(tgt['cx']) - int(tgt['w'] / 2) + 6, int(tgt['cy']) - 10))
+    check('...it shows on screen: pinker than it is grey', px[0] > px[1] + 3 and px[2] > px[1] + 2, px)
+    check('...flat, no glow', b[i]['sh'] in ('none', ''), b[i]['sh'])
+    check('...only that tab', all(t['bg'] != PINK for k, t in enumerate(b) if k != i), [t['bg'] for t in b])
+    check('nothing grows (the Dock zoom is gone)', all(t['tf'] in ('none', '') for t in b), [t['tf'] for t in b])
+    check('...and nothing moves: every tab in the same place and size', all(p['x'] == q['x'] and p['w'] == q['w'] for p, q in zip(a, b)), [[p['x'], q['x'], p['w'], q['w']] for p, q in zip(a, b)])
     mouse(int(a[0]['cx']), int(a[0]['cy']))
     e = c.eval(Q)
-    check('the first tab: it grows, the second a touch', e[0]['s'] == 1.06 and e[1]['s'] == 1.025 and all(t['s'] == 1 for t in e[2:]), [t['s'] for t in e])
+    check('the open tab under the mouse: pink too, its glow as before', e[0]['bg'] == PINK, e[0])
     mouse(W // 2, H - 60)
     d = c.eval(Q)
-    check('mouse away: all back to their size', all(t['s'] == 1 for t in d), [t['s'] for t in d])
-    check('no sideways scroll', c.eval("document.documentElement.scrollWidth<=innerWidth"))
-    # less motion asked for: they stay still
-    c.call('Emulation.setEmulatedMedia', features=[{'name': 'prefers-reduced-motion', 'value': 'reduce'}])
-    mouse(int(tgt['cx']), int(tgt['cy']))
-    f = c.eval(Q)
-    check('less motion asked for: no growing', all(t['s'] == 1 for t in f), [t['s'] for t in f])
+    check('mouse away: no pink', all(t['bg'] != PINK for t in d), [t['bg'] for t in d])
 finally:
     bt.subprocess.run(['taskkill', '/PID', str(proc.pid), '/T', '/F'], stdout=bt.subprocess.DEVNULL, stderr=bt.subprocess.DEVNULL)
     bt.kill_profile(prof); shutil.rmtree(prof, ignore_errors=True)
