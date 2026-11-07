@@ -20,7 +20,7 @@
 #     could still be waiting at a release is told to come out by then; the brief lists the morning's red news.
 #   * each alert goes to the st-hawk edge function (stored in hawk_signals, pushed to the admin's phone, rated on hawk.html).
 # Env (/etc/st-hawk.env): HAWK_KEY, HAWK_URL. `python3 hawk.py replay <csv> <YYYY-MM-DD>` prints what a past day would have sent.
-import base64, datetime as dt, glob, hashlib, json, os, socket, sys, time, urllib.request
+import base64, bisect, datetime as dt, glob, hashlib, json, os, socket, sys, time, urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import engine as E
 
@@ -160,21 +160,29 @@ class Hawk:
         idx = [i for i in range(E.N) if E.LDAY[i] == E.LDAY[last] and E.WIN[0] - 60 <= E.LMIN[i] < E.WIN[1]]
         if not idx: return False
         i0 = idx[0]
-        st = E.htf_state(i0)
-        if not st: return False
-        ph, a2b = st
-        j = i0
-        while j > 0 and E.T[i0] - E.T[j] < 86400: j -= 1
-        bh, bl = max(E.H[j:i0]), min(E.L[j:i0]);   # the 24 h before the window, fixed at its start, as the study (6 Nov)
+        fr = E.frame(i0)   # 7 Nov: his phase on the hour chart decides the rule; premium / discount on the 24 h before the window
+        if not fr: return False
+        ph, a2b, bh, bl, j = fr['ph'], fr['a2b'], fr['bh'], fr['bl'], fr['j']
         q = (bh - bl) / 4; mid = (bh + bl) / 2
         now = E.C[last]
         self.ctx = dict(j=j, i0=i0, last=last, ph=ph, a2b=a2b, bh=bh, bl=bl)
+        dis_now = E.tfx(E.T[last] + 60)   # the 4H and the 15M pointing opposite ways right now
+        dline = (' ' + dis_said(dis_now)) if dis_now else ''
 
         if mins >= E.WIN[0] - 15 and not ws['brief']:
             ws['brief'] = True
             loc = 'in the premium' if now >= bh - q else 'in the discount' if now <= bl + q else 'at the 50%' if abs(now - mid) <= q / 2 else 'between the 50% and the edges'
             lines = ['Watching %s–%s London.' % (clock(E.WIN[0]), clock(E.WIN[1]))]
-            if ph == 'range':
+            tfs = fr.get('tf') and tfs_now(E.T[last] + 60, now)
+            if ph == 'range forming':
+                lines.append('A range is forming on the hour chart (no side tested twice yet): no range trades until one is.')
+                lines.append('Price %s. Range %s–%s.' % (px(now), px(bl), px(bh)))
+            elif ph.startswith('initiation'):
+                up = ph.endswith('up'); base = fr['tf']['1h']['base']
+                lines.append('Initiation %s on the hour chart: a strong close %s %s. Only %s today: the pocket at the break or the 50%% of a new leg.' % (
+                    'up' if up else 'down', 'above' if up else 'below', px(base[0] if up else base[1]), 'buys' if up else 'sells'))
+                lines.append('Price %s. Range %s–%s.' % (px(now), px(bl), px(bh)))
+            elif ph == 'range':
                 lines.append('Range day. Range %s–%s: premium above %s, discount below %s, 50%% at %s.' % (px(bl), px(bh), px(bh - q), px(bl + q), px(mid)))
                 lines.append('Price %s, %s.' % (px(now), loc))
                 lines.append('Sell idea: a high taken in the premium, then the move slows. Buy idea: a low taken in the discount, then it slows.')
@@ -186,6 +194,8 @@ class Hawk:
                     m2 = sum(a2b) / 2
                     lines.append('Last leg %s → %s: its 50%% at %s is the %s zone.' % (px(a2b[0]), px(a2b[1]), px(m2), 'buy' if up else 'sell'))
                 lines.append('Price %s. Range %s–%s.' % (px(now), px(bl), px(bh)))
+            if tfs: lines.append(tf_line(tfs))
+            if dis_now: lines.append(dis_said(dis_now) + ' Setups still come, each marked.')
             # the red news from an hour before the window to 3.5 h after it (trades opened late can still be on: London's 13:30)
             reds = [(at, cur, title) for at, cur, title in NEWS['ev'] if counts(cur, title) and ldt(at).strftime('%Y-%m-%d') == day and E.WIN[0] - 60 <= ldt(at).hour * 60 + ldt(at).minute <= E.WIN[1] + 210]
             if reds:
@@ -194,7 +204,7 @@ class Hawk:
             elif NEWS['ok']: lines.append('No red news in these hours for %s.' % curs_said())
             else: lines.append('Red news unknown (calendar not read): check it before you trade.')
             self.out('brief', 'brief', win_name(E.WIN) + ' brief · ' + MK[CANON][2], ' '.join(lines),
-                     data=dict(phase=ph, bh=bh, bl=bl, price=now, a2b=a2b))
+                     data=dict(phase=ph, bh=bh, bl=bl, price=now, a2b=a2b, tfs=tfs, tfx=dis_now))
 
         ev = []
         setups, _ = E.scan_day(idx, dict(models=OPTS, events=ev))
@@ -203,15 +213,15 @@ class Hawk:
         for e in ev:
             s = e['side']
             if e['kind'] == 'initiation' and recent(e['i']):
-                body = 'Strong 5-minute close %s the range (%s). Don\'t %s against it.' % (word(s, 'above', 'below'), px(e['edge']), word(s, 'sell', 'buy'))
+                body = 'Strong %d-minute close %s the range (%s). Don\'t %s against it.' % (15 if E.PHASES else 5, word(s, 'above', 'below'), px(e['edge']), word(s, 'sell', 'buy'))
                 if e.get('tgt'):
                     body += ' %s pocket: %s %s, stop %s, target %s (%.1fR).' % (word(s, 'Buy-high', 'Sell-low'), word(s, 'buy', 'sell'), px(e['entry']), px(e['stop']), px(e['tgt']), pips(e['tgt'], e['entry']) / pips(e['entry'], e['stop']))
-                self.out('init:%d' % s, 'initiation', 'Initiation · ' + word(s, 'up', 'down'), body, s, e)
+                self.out('init:%d' % s, 'initiation', 'Initiation · ' + word(s, 'up', 'down'), body + dline, s, dict(e, tfx=dis_now))
             elif e['kind'] == 'sweep' and recent(e['i']) and WIN_OK(mins):
                 what = word(s, 'Low', 'High'); where = {'discount': 'in the discount', 'premium': 'in the premium'}.get(e['loc'], e['rule'])
                 body = ('%s taken %s at %s (%s). If it slows here: %s, stop %s. If it moves away fast: wait for the pullback to the 50%% of that move.'
-                        % (what, where, px(e['A']), hm(E.T[e['a']]), word(s, 'buy', 'sell'), px(e['A'] - s * 0.5 * E.PIP)))
-                self.out('sweep:%d:%d' % (s, E.T[e['i']] // 1200), 'sweep', 'Watch · %s idea' % word(s, 'buy', 'sell'), body, s, e)
+                        % (what, where, px(e['A']), hm(E.T[e['a']]), word(s, 'buy', 'sell'), px(e['A'] - s * E.STOP_PAST * E.PIP)))
+                self.out('sweep:%d:%d' % (s, E.T[e['i']] // 1200), 'sweep', 'Watch · %s idea' % word(s, 'buy', 'sell'), body + dline, s, dict(e, tfx=dis_now))
             elif e['kind'] == 'pocket' and e.get('tgt') and WIN_OK(mins):
                 B, A = e['B'], e['A']; leg = abs(B - A)
                 back = (B - now) * s if s > 0 else (now - B) * -s       # how far price has come back from B
@@ -219,12 +229,12 @@ class Hawk:
                 at_pocket = (now <= e['entry']) if s > 0 else (now >= e['entry'])
                 if last >= e['b'] + 2 and back >= 0.2 * leg and not at_pocket:
                     body = ('Fast %s %s → %s. If price comes back to %s–%s (the small range at its 50%%): %s %s, stop %s, target %s (%.1fR).'
-                            % (word(s, 'rise', 'drop'), px(A), px(B), px(min(e['entry'], e['stop'] + s * 0.5 * E.PIP)), px(max(e['entry'], e['stop'] + s * 0.5 * E.PIP)),
+                            % (word(s, 'rise', 'drop'), px(A), px(B), px(min(e['entry'], e['stop'] + s * E.STOP_PAST * E.PIP)), px(max(e['entry'], e['stop'] + s * E.STOP_PAST * E.PIP)),
                                word(s, 'buy', 'sell'), px(e['entry']), px(e['stop']), px(e['tgt']), pips(e['tgt'], e['entry']) / pips(e['entry'], e['stop'])))
                     nx = self.news_ahead(E.T[last] + 60, E.LDAY[last] * 86400 + E.WIN[1] * 60 - (E.LT[last] - E.T[last]))
                     if nx: body += ' Red news %s at %s: no order waiting from %s.' % (nx[1] + ' ' + nx[2], hm(nx[0]), hm(nx[0] - NEWS_BEFORE * 60))
-                    self.out('pocket:%d:%d' % (s, E.T[e['a']]), 'pocket', 'Watch · 50%% pullback %s' % word(s, 'buy', 'sell'), body, s,
-                             {k: e.get(k) for k in ('entry', 'stop', 'tgt', 'A', 'B', 'rule', 'loc', 'box', 'a', 'b')})
+                    self.out('pocket:%d:%d' % (s, E.T[e['a']]), 'pocket', 'Watch · 50%% pullback %s' % word(s, 'buy', 'sell'), body + dline, s,
+                             dict({k: e.get(k) for k in ('entry', 'stop', 'tgt', 'A', 'B', 'rule', 'loc', 'box', 'a', 'b')}, tfx=dis_now))
 
         for su in setups:
             s = su['side']; k = su['i'] - (0 if su.get('stopbar') else 1)    # the candle it happened on
@@ -254,8 +264,9 @@ class Hawk:
                 body = '%s limit %s reached · stop %s (%s) · target %s (%.1fR).%s' % (
                     word(s, 'Buy', 'Sell'), px(su['entry']), px(su['stop']), dist(su['entry'], su['stop']), px(su['tgt']), r,
                     ' It touched the stop in the same minute.' if su.get('stopbar') else '') + ahead
+            if su.get('tfx'): body += ' ' + dis_said(su['tfx'])
             self.out('setup:%s:%d:%s' % (model, s, px(su['entry'])), 'setup', title, body, s,
-                     dict(model=model, entry=su['entry'], stop=su['stop'], tgt=su['tgt'], loc=su['loc'], phase=su['phase'], box=su.get('box')))
+                     dict(model=model, entry=su['entry'], stop=su['stop'], tgt=su['tgt'], loc=su['loc'], phase=su['phase'], box=su.get('box'), tfx=su.get('tfx')))
 
         if mins >= E.WIN[1] + 5 and not ws['done']:
             ws['done'] = True
@@ -264,6 +275,21 @@ class Hawk:
         return True
 
 def WIN_OK(mins): return E.WIN[0] - 30 <= mins < E.WIN[1]
+
+DIRW = {1: 'up', -1: 'down'}
+def tf_line(tfs):
+    """'Timeframes: 4H trend down, discount edge · 1H range, 50% · 15M range forming, premium middle.'"""
+    return 'Timeframes: ' + ' · '.join('%s %s, %s' % (k.upper(), tfs[k]['said'], tfs[k]['loc']) for k in ('4h', '1h', '15m')) + '.'
+def dis_said(x):
+    """x = (4H direction, 15M direction) pointing opposite ways."""
+    return '4H and 15M disagree: the 4H points %s, the 15M %s.' % (DIRW[x[0]], DIRW[x[1]])
+def tfs_now(t, price):
+    """The three readings at UTC second t, with where price sits on each - for the brief's cards."""
+    out = {}
+    for k in ('4h', '1h', '15m'):
+        r = E.read(k, t)
+        if r: out[k] = dict(said=E.tf_said(r), loc=E.where(r, price), d=r['d'])
+    return out if len(out) == 3 else None
 
 # ---------- sending
 def post(msg):
@@ -414,7 +440,7 @@ def live():
             now = time.time()
             if now - t_watch >= 15: line.watch(); t_watch = now
             if now - t_hist >= 1200:
-                line.hist(1500, 1); line.hist(200, 60); t_hist = now
+                line.hist(1500, 1); line.hist(600, 60); t_hist = now   # 600 hours: 150 four-hour candles for the 4H reading (7 Nov)
             msg = line.recv()
             if msg and msg.get('event') == 'broadcast':
                 ev, p = msg['payload'].get('event'), msg['payload'].get('payload') or {}
@@ -446,14 +472,20 @@ def replay(csv, day, wins=None):
     rows = [line.split(',') for line in open(csv)]
     t = [int(r[0]) for r in rows]; o = [float(r[1]) for r in rows]; h = [float(r[2]) for r in rows]
     l = [float(r[3]) for r in rows]; c = [float(r[4]) for r in rows]
+    hb = {}
+    for i in range(len(t)):
+        k = t[i] // 3600 * 3600; b = hb.get(k)
+        hb[k] = [o[i], h[i], l[i], c[i]] if b is None else [b[0], max(b[1], h[i]), min(b[2], l[i]), c[i]]
+    hk = sorted(hb); H1 = [(k,) + tuple(hb[k]) for k in hk]
     d0 = int(dt.datetime.strptime(day, '%Y-%m-%d').replace(tzinfo=dt.timezone.utc).timestamp())
     off = E.ldn(d0 + 12 * 3600) - (d0 + 12 * 3600)            # London's offset that day
     start, end = d0 + (ws[0][0] - 40) * 60 - off, d0 + (ws[-1][1] + 10) * 60 - off
-    lo = next(i for i, x in enumerate(t) if x >= start - 6 * 86400)
+    lo = next(i for i, x in enumerate(t) if x >= start - 2 * 86400)   # two days of minutes, as live has 25 hours (the 15M, the 24 h box)
+    h0 = bisect.bisect_left(hk, start - 40 * 86400)                   # 40 days of hour candles, as live has 25 (the 1H and the 4H)
     out = []
     hawk = Hawk(lambda m: out.append(m), ws)
     for k in range(next(i for i, x in enumerate(t) if x >= start), next(i for i, x in enumerate(t) if x >= end)):
-        hawk.look(t[lo:k + 1], o[lo:k + 1], h[lo:k + 1], l[lo:k + 1], c[lo:k + 1])
+        hawk.look(t[lo:k + 1], o[lo:k + 1], h[lo:k + 1], l[lo:k + 1], c[lo:k + 1], H1[h0:bisect.bisect_right(hk, t[k] + 60 - 3600)])
     for m in out: print(m['kind'].ljust(10), m['title'], '|', m['body'])
     return out
 

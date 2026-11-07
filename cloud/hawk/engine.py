@@ -1,6 +1,6 @@
 # ST Method engine: every entry type from the trading plan, on 1-minute candles. Shared by the rule study (st.py)
 # and the hawk (live alerts on uk1), so the alerts follow exactly the rules that were tested. Call load() first.
-import os, json, sys, datetime as dt
+import os, json, sys, bisect, datetime as dt
 from collections import defaultdict
 HERE = os.path.dirname(os.path.abspath(__file__))
 PIP = 0.0001
@@ -43,6 +43,13 @@ def load(t, o, h, l, c, h1=None):
         conf = hb[k + 2][0] + 3600
         if hb[k][2] > max(hb[k - 1][2], hb[k - 2][2], hb[k + 1][2], hb[k + 2][2]): SWH.append((conf, hb[k][2], k))
         if hb[k][3] < min(hb[k - 1][3], hb[k - 2][3], hb[k + 1][3], hb[k + 2][3]): SWL.append((conf, hb[k][3], k))
+    # his reading on 15M (from the minutes), 1H and 4H (the hour candles, 4-hour blocks from New York's 17:00 close, as brokers draw them)
+    TFS.clear()
+    for tf, sec, src, key, st0 in (('15m', 900, [(T[i], O[i], H[i], L[i], C[i]) for i in range(N)], lambda t: t // 900, lambda k, t: k * 900),
+                                   ('1h', 3600, hb, lambda t: t // 3600, lambda k, t: k * 3600),
+                                   ('4h', 14400, hb, lambda t: (t + ny_off(t) - 17 * 3600) // 14400, lambda k, t: k * 14400 + 17 * 3600 - ny_off(t))):
+        b = agg(src, key, st0)
+        TFS[tf] = dict(b=b, end=[x[0] + sec for x in b], st=read_bars(b))
 
 def htf_state(i):
     """Phase at minute i from confirmed hour swings: trend needs HH+HL twice (3 rising highs and 3 rising lows)."""
@@ -62,11 +69,156 @@ def htf_state(i):
         if los: a2b = (hi[1], min(s[1] for s in los))
     return ph, a2b
 
+# ---------- his three phases, read on 4H / 1H / 15M (7 Nov 2026)
+# Nestor: "there are 3 phases in the market, trend, range and initiation ... you need to study my notes in the academy and community!"
+# From his notes (lessons 3.1-3.2 and 5.1, #market-phases, #the-trading-plan) with the settings he agreed on 7 Nov ("yes build it"):
+#   trend       higher highs and higher lows twice over (lower / lower down). It ends on a CLOSE below the last higher low ("not near
+#               it, not testing it, below it"): a fast break with a firm close is an initiation, a slow one a range forming.
+#   range       a balanced area between premium and discount; confirmed once one side is tested a second time.
+#   initiation  a candle that closes strongly outside the range (body >= 60% of it, at least the size of the recent candles): a close,
+#               not a wick. It lasts until a trend forms out of it; it was fake if price closes back inside the range.
+# Location on that reading's range (range: the range; trend: its last leg; initiation: the range it broke), in his bias form's six
+# places; direction from the phase (a range is unsure). If the 4H and the 15M point opposite ways there is no trade (his rule, 7 Nov).
+PHASES = True          # False: the hour-chart reading the study first ran with (htf_state + the 24 h box)
+SW_K = 2               # a swing high / low: 2 candles on each side, on every timeframe
+# The year of EUR/USD London 08-10 (TP 20, stop 2-4), 7 Nov: the study's reading +35.7R (144 trades, drawdown 15.7R); his phases with
+# the 24 h box +38.1R (103, drawdown 10.7R); premium / discount on the 1H range instead +9.1R; blocking when the 4H and 15M disagree
+# +26.1R (the blocked trades made 12R). He chose: alert, and say they disagree. Never against the hour chart's initiation (INIT_1H):
+# +42.0R (99 trades, drawdown 9.5R). The other markets, scaled: GBP/USD +32.4R, gold +5.8R, US100 +1.0R (before: +17.1, +23.8, -12.8).
+TF_RULE = False        # True: no setup while the 4H and the 15M point opposite ways (his first idea, 7 Nov); False: the alert says it
+INIT_1H = True         # never against an initiation on the hour chart: no 15M pocket the other way
+LOC_24H = True         # premium / discount on the 24 h before the session (False: on the 1H reading's own range, -29R on the year)
+STRONG_BODY, STRONG_SIZE = 0.6, 1.0   # an initiation candle: body >= 60% of its range, range >= the average of the 20 before it
+TFS = {}               # '15m' / '1h' / '4h' -> dict(b=[(start, o, h, l, c)], end=[close time], st=[the reading after each candle])
+US = {y: (ts(nth_sunday(y, 3, 2), 7), ts(nth_sunday(y, 11, 1), 6)) for y in (2025, 2026, 2027)}
+def ny_off(t):
+    y = dt.datetime.fromtimestamp(t, dt.timezone.utc).year; a, b = US[y]; return -4 * 3600 if a <= t < b else -5 * 3600
+def agg(src, key, start):
+    out = []
+    for x in src:
+        k = key(x[0])
+        if out and out[-1][0] == k: y = out[-1]; y[3] = max(y[3], x[2]); y[4] = min(y[4], x[3]); y[5] = x[4]
+        else: out.append([k, start(k, x[0]), x[1], x[2], x[3], x[4]])
+    return [tuple(y[1:]) for y in out]
+
+def read_bars(b):
+    """His reading after each closed candle of one timeframe - dict(ph, d, hi, lo, ok, a2b, base, ext). Uses nothing after that candle."""
+    out = []; sh, sl = [], []   # confirmed swings (price, candle index), known SW_K candles later
+    ph, d, hi, lo, ok, t0 = 'range', 0, None, None, False, 0   # t0: where this range began (tests after it count)
+    tests = [1, 1]; base = ext = brk = None; sz = []
+    def rising(xs, up): return all((xs[n + 1][0] > xs[n][0]) if up else (xs[n + 1][0] < xs[n][0]) for n in range(len(xs) - 1))
+    for j in range(len(b)):
+        _, o, h, l, c = b[j]; m = j - SW_K; new_h = new_l = None
+        if m >= SW_K:
+            nb = [b[x] for x in range(m - SW_K, m + SW_K + 1) if x != m]
+            if b[m][2] > max(x[2] for x in nb): new_h = (b[m][2], m); sh.append(new_h)
+            if b[m][3] < min(x[3] for x in nb): new_l = (b[m][3], m); sl.append(new_l)
+        rg = h - l; avg = sum(sz[-20:]) / len(sz[-20:]) if sz else rg; sz.append(rg)
+        strong = rg > 0 and abs(c - o) >= STRONG_BODY * rg and rg >= STRONG_SIZE * avg
+        if hi is None: hi, lo = h, l
+        if ph == 'initiation':
+            ext = max(ext, h) if d > 0 else min(ext, l)
+            if (c < base[0]) if d > 0 else (c > base[1]):   # back inside the range it broke: it was fake, and that side was tested
+                ph, hi, lo, ok, t0, tests = 'range', max(base[0], ext), min(base[1], ext), True, j, [1, 1]; d = 0
+            else:
+                a_h = [x for x in sh[-2:] if x[1] > brk]; a_l = [x for x in sl[-2:] if x[1] > brk]
+                if len(a_h) >= 2 and len(a_l) >= 2 and rising(a_h[-2:], d > 0) and rising(a_l[-2:], d > 0): ph = 'trend'   # a trend grew out of it
+        elif ph == 'trend':
+            hl = (sl if d > 0 else sh)[-1][0]; hh = (sh if d > 0 else sl)[-1][0]   # the last higher low (lower high) and high (low)
+            if (c < hl) if d > 0 else (c > hl):
+                if strong: ph, base, ext, brk, d = 'initiation', (max(hh, hl), min(hh, hl)), (l if d > 0 else h), j, -d
+                else: ph, hi, lo, ok, t0, tests, d = 'range', max(hh, hl, h), min(hh, hl, l), False, j, [1, 1], 0
+        else:
+            if c > hi or c < lo:
+                dd = 1 if c > hi else -1
+                if strong: ph, d, base, ext, brk = 'initiation', dd, (hi, lo), (h if dd > 0 else l), j
+                else: hi, lo = max(hi, h), min(lo, l)   # a slow break: the range grows
+            elif len(sh) >= 3 and len(sl) >= 3 and (rising(sh[-3:], True) and rising(sl[-3:], True) or rising(sh[-3:], False) and rising(sl[-3:], False)):
+                d = 1 if rising(sh[-3:], True) else -1
+                if (c > sl[-1][0]) if d > 0 else (c < sh[-1][0]): ph = 'trend'
+                else: d = 0
+            q = (hi - lo) / 4
+            if ph == 'range':
+                if new_h and new_h[1] > t0 and new_h[0] >= hi - q: tests[0] += 1
+                if new_l and new_l[1] > t0 and new_l[0] <= lo + q: tests[1] += 1
+                ok = ok or max(tests) >= 2
+        a2b = None
+        if ph == 'trend' and sh and sl:
+            a_, xs = (sl[-1], sh) if d > 0 else (sh[-1], sl)   # the last leg: the last higher low -> the high after it (down: mirror)
+            later = []
+            for x in reversed(xs):
+                if x[1] <= a_[1]: break
+                later.append(x[0])
+            if d > 0: a2b = (a_[0], max(later or [max(x[2] for x in b[a_[1]:j + 1])]))
+            else: a2b = (a_[0], min(later or [min(x[3] for x in b[a_[1]:j + 1])]))
+        out.append(dict(ph=ph, d=d, hi=hi, lo=lo, ok=ok, a2b=a2b, base=base if ph == 'initiation' else None, ext=ext if ph == 'initiation' else None))
+    return out
+
+def read(tf, t):
+    """His reading of timeframe tf as it stood at UTC second t (its last candle closed by then); None without enough history."""
+    x = TFS.get(tf)
+    if not x: return None
+    k = bisect.bisect_right(x['end'], t) - 1
+    return x['st'][k] if k >= 12 else None
+
+def where(r, p):
+    """Where price p sits on reading r, in his bias form's six places."""
+    if r['ph'] == 'trend' and r['a2b']: lo_, hi_ = sorted(r['a2b'])
+    elif r['ph'] == 'initiation': lo_, hi_ = r['base'][1], r['base'][0]
+    else: lo_, hi_ = r['lo'], r['hi']
+    if hi_ - lo_ <= 0: return '50%'
+    x = (p - lo_) / (hi_ - lo_)
+    return ('breakout' if x > 1 or x < 0 else 'premium edge' if x >= .75 else 'premium middle' if x >= .55 else '50%' if x >= .45
+            else 'discount middle' if x >= .25 else 'discount edge')
+
+def tf_said(r):
+    """'trend up' / 'range' / 'range forming' / 'initiation down' for a reading."""
+    if r['ph'] == 'range': return 'range' if r['ok'] else 'range forming'
+    return r['ph'] + (' up' if r['d'] > 0 else ' down')
+
+def disagree(t):
+    """The 4H and the 15M point opposite ways at UTC second t: (4H direction, 15M direction), else None."""
+    a, b = read('4h', t), read('15m', t)
+    return (a['d'], b['d']) if a and b and a['d'] and b['d'] and a['d'] != b['d'] else None
+
+def tfx(t):
+    """For an alert: (4H direction, 15M direction) when they point opposite ways at UTC second t, else None."""
+    return disagree(t) if PHASES else None
+
+def frame(i0):
+    """The window's reading at its start (minute i0): the rules' phase (the hour chart), its last leg, the premium / discount range, and
+    the three timeframes. None before there is enough history."""
+    j = i0
+    while j > 0 and T[i0] - T[j] < 86400: j -= 1
+    if not PHASES:
+        st = htf_state(i0)
+        return st and dict(ph=st[0], a2b=st[1], bh=max(H[j:i0]), bl=min(L[j:i0]), tf=None, j=j)
+    now = T[i0] + 60; r = {tf: read(tf, now) for tf in ('4h', '1h', '15m')}
+    if not all(r.values()): return None
+    h = r['1h']; ph = tf_said(h)
+    if LOC_24H: bh, bl = max(H[j:i0]), min(L[j:i0])
+    elif h['ph'] == 'trend' and h['a2b']: bh, bl = max(h['a2b']), min(h['a2b'])
+    elif h['ph'] == 'initiation': bh, bl = max(h['base'][0], h['ext']), min(h['base'][1], h['ext'])
+    elif h['ph'] == 'range': bh, bl = h['hi'], h['lo']
+    else: bh, bl = max(H[j:i0]), min(L[j:i0])
+    return dict(ph=ph, a2b=h['a2b'], bh=bh, bl=bl, j=j, tf={k: dict(v, said=tf_said(v), loc=where(v, C[i0])) for k, v in r.items()})
+
 # ---------- trade management from the plan
 COST = 0.6
 STOP_MAX = 4.0     # his rule: stop 2-4 pips on every model (6 Nov: was 4.5 on the continuation / initiation pockets)
 TP_LIQ = True      # target 20 pips, cut short at the next HTF liquidity; False = always 20 pips
 EXIT_NEWS = True     # out by 13:20 London if the target hasn't hit (the 13:30 red-news rule, applied every day)
+# Tested 7 Nov on the year and left off: his 0.2-0.3 pip stop (0.25, a stop under 2 widened to 2) +1.2R alone but -3.8R with the phases
+# and twice the drawdown; a 5-pip box with the entry moved inside it -4.3R.
+STOP_PAST = 0.5      # the stop this far past the extreme / the small range (pips)
+BOX_MAX = 4.0        # the small range at the 50% / the pocket at a break: up to this many pips
+FIT_STOP = False     # True: a stop under 2 pips widens to 2; one past 4 moves the entry inside the box
+def fit(side, entry, stop):
+    """His 2-4 pip stop: (entry, stop), or None when it can't fit."""
+    if FIT_STOP:
+        if abs(entry - stop) > STOP_MAX * PIP: entry = stop + side * STOP_MAX * PIP
+        if abs(entry - stop) < 2 * PIP: stop = entry - side * 2 * PIP
+    return (entry, stop) if 2 * PIP - 1e-9 <= abs(entry - stop) <= STOP_MAX * PIP + 1e-9 else None
 def manage(j0, side, entry, stop, tgt, be_lvl):
     risk = abs(entry - stop); sl = stop; at_be = False; d = LDAY[j0]
     for j in range(j0, N):
@@ -104,9 +256,9 @@ def reaction(side, a, A):
     for k in range(a + 1, min(a + 4, N)):
         if (L[k] < A) if side > 0 else (H[k] > A): return None
         if H[k] - L[k] <= 2 * PIP:
-            entry = C[k]; stop = A - side * 0.5 * PIP
-            r = abs(entry - stop)
-            if 2 * PIP <= r <= STOP_MAX * PIP + 1e-9: return (k + 1, entry, stop)
+            entry = C[k]; stop = A - side * STOP_PAST * PIP   # it enters at the close; only the stop can widen
+            if FIT_STOP and abs(entry - stop) < 2 * PIP: stop = entry - side * 2 * PIP
+            if 2 * PIP - 1e-9 <= abs(entry - stop) <= STOP_MAX * PIP + 1e-9: return (k + 1, entry, stop)
             return None
     return None
 
@@ -121,14 +273,15 @@ def continuation(side, a, A, win_end, min_leg=12, on_pocket=None):
     for s in range(a + 1, b - 1):
         for e in range(s + 2, min(s + 8, b)):
             hi, lo = max(H[s:e + 1]), min(L[s:e + 1])
-            if hi - lo <= 4 * PIP and lo <= mid <= hi:
+            if hi - lo <= BOX_MAX * PIP and lo <= mid <= hi:
                 dd = abs((hi + lo) / 2 - mid)
                 if best is None or dd < best[0]: best = (dd, hi, lo, s, e)
     if not best: return None
     _, hi, lo, s0, e0 = best
     bx = (hi, lo, s0, e0)   # the small range itself, for the hawk's box (7 Nov 2026)
-    entry = hi if side > 0 else lo; stop = lo - 0.5 * PIP if side > 0 else hi + 0.5 * PIP
-    if not (2 * PIP <= abs(entry - stop) <= STOP_MAX * PIP + 1e-9): return None
+    f = fit(side, hi if side > 0 else lo, lo - STOP_PAST * PIP if side > 0 else hi + STOP_PAST * PIP)   # first touch of the box, or inside it
+    if not f: return None
+    entry, stop = f
     if on_pocket: on_pocket(entry, stop, Bv, b, mid, bx)   # the hawk: the pullback level is known before price comes back
     for k in range(b + 1, N):
         if LDAY[k] != LDAY[a] or LMIN[k] >= win_end: return None
@@ -150,41 +303,49 @@ def scan_day(idx, opts):
     out = []
     ev = opts.get('events')   # the hawk collects what is forming: sweeps, pockets, initiations
     i0 = idx[0]
-    st = htf_state(i0)
-    if not st: return out, None
-    ph, a2b = st
-    # 24 h box before the session for premium/discount/50%
-    j = i0
-    while j > 0 and T[i0] - T[j] < 86400: j -= 1
-    bh, bl = max(H[j:i0]), min(L[j:i0])   # the 24 h before 08:00 London, fixed then (6 Nov: it took the session's first hour too - look-ahead)
+    fr = frame(i0)   # 7 Nov: his phase on the hour chart and its range; before, the hour swings and the 24 h before 08:00
+    if not fr: return out, None
+    ph, a2b, bh, bl = fr['ph'], fr['a2b'], fr['bh'], fr['bl']
     q = (bh - bl) / 4
     init_dir = 0; init_at = None
     for i in idx:
         if i < 60: continue
         m = LMIN[i]
-        # initiation: a 5-minute candle that closes strongly outside the box (body >= 60%, close >= 2 pips past the edge)
-        if m % 5 == 4 and i >= 4 and init_dir == 0:
+        dis = (PHASES if TF_RULE is None else TF_RULE) and not opts.get('any_tf') and disagree(T[i] + 60)   # 4H and 15M opposite: no trade
+        brk = None
+        if PHASES:
+            # initiation (7 Nov): a 15-minute candle closes strongly out of the 15M range - his definition, read on the 15M
+            if (T[i] + 60) % 900 == 0 and init_dir == 0:
+                r1, r0 = read('15m', T[i] + 60), read('15m', T[i] + 60 - 900)
+                if r1 and r1['ph'] == 'initiation' and not (r0 and r0['ph'] == 'initiation' and r0['d'] == r1['d']):
+                    brk = (r1['d'], r1['base'][0] if r1['d'] > 0 else r1['base'][1])
+        elif m % 5 == 4 and i >= 4 and init_dir == 0:
+            # before 7 Nov: a 5-minute candle that closes strongly outside the 24 h box (body >= 60%, close >= 2 pips past the edge)
             o5, c5 = O[i - 4], C[i]; h5, l5 = max(H[i - 4:i + 1]), min(L[i - 4:i + 1])
             if h5 - l5 >= 4 * PIP and abs(c5 - o5) >= 0.6 * (h5 - l5):
-                if c5 > bh + 2 * PIP and c5 > o5: init_dir, init_at = 1, i
-                if c5 < bl - 2 * PIP and c5 < o5: init_dir, init_at = -1, i
-                if init_dir and WIN[0] <= m < WIN[1] and 'initiation' in opts['models']:
-                    side = init_dir; edge = bh if side > 0 else bl
+                if c5 > bh + 2 * PIP and c5 > o5: brk = (1, bh)
+                if c5 < bl - 2 * PIP and c5 < o5: brk = (-1, bl)
+        if brk:
+                init_dir, init_at = brk[0], i
+                against = INIT_1H and ph.startswith('initiation') and init_dir != (1 if ph.endswith('up') else -1)
+                if not dis and not against and WIN[0] <= m < WIN[1] and 'initiation' in opts['models']:
+                    side = init_dir; edge = brk[1]
                     # the small mitigation pocket at the break: the last tight 1m range (<=4 pips) touching the edge
                     pk = None
-                    for s in range(i - 1, i - 25, -1):
+                    for s in range(i - 1, i - (40 if PHASES else 25), -1):
                         hi, lo = max(H[s:s + 3]), min(L[s:s + 3])
-                        if hi - lo <= 4 * PIP and lo - 1 * PIP <= edge <= hi + 1 * PIP: pk = (hi, lo); break
+                        if hi - lo <= BOX_MAX * PIP and lo - 1 * PIP <= edge <= hi + 1 * PIP: pk = (hi, lo); break
                     if ev is not None:
                         e_ = dict(kind='initiation', i=i, side=side, edge=edge, bh=bh, bl=bl)
-                        if pk:
-                            e_['entry'] = pk[0] if side > 0 else pk[1]; e_['stop'] = pk[1] - 0.5 * PIP if side > 0 else pk[0] + 0.5 * PIP
+                        f = pk and fit(side, pk[0] if side > 0 else pk[1], pk[1] - STOP_PAST * PIP if side > 0 else pk[0] + STOP_PAST * PIP)
+                        if f:
+                            e_['entry'], e_['stop'] = f
                             e_['tgt'] = target(side, e_['entry'], abs(e_['entry'] - e_['stop']))
                         ev.append(e_)
-                    if pk:
-                        hi, lo = pk
-                        entry = hi if side > 0 else lo; stop = lo - 0.5 * PIP if side > 0 else hi + 0.5 * PIP
-                        if 2 * PIP <= abs(entry - stop) <= STOP_MAX * PIP + 1e-9:
+                    f = pk and fit(side, pk[0] if side > 0 else pk[1], pk[1] - STOP_PAST * PIP if side > 0 else pk[0] + STOP_PAST * PIP)
+                    if f:
+                        entry, stop = f
+                        if True:
                             tg = target(side, entry, abs(entry - stop))
                             if tg:
                                 for k in range(i + 1, N):
@@ -194,9 +355,9 @@ def scan_day(idx, opts):
                                         sb = (L[k] <= stop) if side > 0 else (H[k] >= stop)
                                         out.append(dict(model='initiation pocket', phase='initiation', side=side,
                                                         i=k if sb else k + 1, entry=entry, stop=stop, tgt=tg, be=ext,
-                                                        stopbar=sb, loc='break'))
+                                                        stopbar=sb, loc='break', tfx=tfx(T[i] + 60)))
                                         break
-        if not (WIN[0] - 30 <= m < WIN[1]): continue
+        if not (WIN[0] - 30 <= m < WIN[1]) or dis: continue
         for side in (1, -1):
             # liquidity taken: a low (high) beyond the last hour's
             if side > 0 and not L[i] < min(L[i - 60:i]): continue
@@ -209,7 +370,14 @@ def scan_day(idx, opts):
             # which phase rule this setup belongs to
             if init_dir and init_at < a:
                 if side != init_dir and opts.get('respect_init', True): continue   # never against an initiation
-            if ph == 'range':
+            react = True
+            if ph == 'range forming' and not opts.get('any_loc'): continue   # 7 Nov: a range trades once one side was tested again
+            if ph.startswith('initiation'):
+                # 7 Nov: an initiation on the hour chart - only its way, and only the 50% of a new leg (the pocket at the break is the
+                # initiation model above); never its edge or 50% against it
+                if side != (1 if ph.endswith('up') else -1): continue
+                rule = 'initiation'; liq = None; react = False
+            elif ph.startswith('range'):
                 if not edge_ok and not opts.get('any_loc'): continue
                 rule = 'range'; liq = bh if side > 0 else bl
             else:
@@ -227,12 +395,12 @@ def scan_day(idx, opts):
                     if (A - mid) * side > -20 * PIP and not opts.get('any_loc'): continue
                     rule = 'countertrend'; liq = mid
             if ev is not None: ev.append(dict(kind='sweep', i=i, a=a, A=A, side=side, rule=rule, loc=loc, liq=liq, ph=ph))
-            if 'reaction' in opts['models']:
+            if react and 'reaction' in opts['models']:
                 r = reaction(side, a, A)
                 if r and WIN[0] <= LMIN[r[0] - 1] < WIN[1]:
                     tg = target(side, r[1], abs(r[1] - r[2]), liq)
                     if tg: out.append(dict(model=rule + ' · reaction', phase=ph, side=side, i=r[0], entry=r[1],
-                                           stop=r[2], tgt=tg, be=prev_extreme(side, a), stopbar=False, loc=loc))
+                                           stop=r[2], tgt=tg, be=prev_extreme(side, a), stopbar=False, loc=loc, tfx=tfx(T[r[0] - 1] + 60)))
             if 'continuation' in opts['models']:
                 pocket = None
                 if ev is not None:
@@ -246,7 +414,7 @@ def scan_day(idx, opts):
                     if WIN[0] <= LMIN[k - (0 if sb else 1)] < WIN[1]:
                         tg = target(side, e, abs(e - s_), liq)
                         if tg: out.append(dict(model=rule + ' · continuation', phase=ph, side=side, i=k, entry=e,
-                                               stop=s_, tgt=tg, be=Bv, stopbar=sb, loc=loc, box=bx))
+                                               stop=s_, tgt=tg, be=Bv, stopbar=sb, loc=loc, box=bx, tfx=tfx(T[k - 1] + 60)))
     return out, ph
 
 def run(opts):

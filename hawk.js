@@ -43,6 +43,15 @@
     '.hk-chip.buy{color:var(--hk-buy);background:color-mix(in srgb,var(--hk-buy) 14%,transparent)}',
     '.hk-chip.sell{color:var(--hk-sell);background:color-mix(in srgb,var(--hk-sell) 14%,transparent)}',
     '.hk-chip.setup{color:var(--hk-acc);background:color-mix(in srgb,var(--hk-acc) 15%,transparent)}',
+    '.hk-chip.warn{color:var(--hk-warn);background:color-mix(in srgb,var(--hk-warn) 15%,transparent)}',
+    // the brief's three timeframes (7 Nov 2026): phase, and where price sits on it
+    '.hk-tfs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:10px 0 4px}',
+    '.hk-tf{border:1px solid var(--hk-line);border-radius:8px;padding:7px 9px;min-width:0}',
+    '.hk-tf b{display:block;font:500 10px var(--hk-mono);letter-spacing:.08em;color:var(--hk-mut)}',
+    '.hk-tf span{display:block;font-size:13px;font-weight:600;margin-top:2px;overflow-wrap:anywhere}',
+    '.hk-tf.buy span{color:var(--hk-buy)}.hk-tf.sell span{color:var(--hk-sell)}',
+    '.hk-tf i{display:block;font-style:normal;font-size:11.5px;color:var(--hk-mut);margin-top:1px}',
+    '.hk-tf.x{border-color:color-mix(in srgb,var(--hk-warn) 55%,var(--hk-line))}',
     '.hk-time{margin-left:auto;font:12px var(--hk-mono);color:var(--hk-mut)}',
     '.hk-card h3{font-size:16px;font-weight:600;margin:8px 0 2px;color:var(--hk-ink)}',
     '.hk-card p{margin:0;line-height:1.5;color:var(--hk-ink)}',
@@ -187,7 +196,12 @@
     [/Trend (up|down) on the hour chart \((higher|lower) highs and lows ×2\)\./g, function (m) { return 'Tendencia ' + (m[1] === 'up' ? 'alcista' : 'bajista') + ' en el gráfico de 1 hora (máximos y mínimos ' + (m[2] === 'higher' ? 'más altos' : 'más bajos') + ' ×2).'; }],
     [/Last leg (\S+) → (\S+): its 50% at (\S+) is the (buy|sell) zone\./g, function (m) { return 'Último tramo ' + m[1] + ' → ' + m[2] + ': su 50% en ' + m[3] + ' es la zona de ' + A_SIDE[m[4]] + '.'; }],
     [/Price (\S+)\. Range (\S+)–(\S+)\./g, function (m) { return 'Precio ' + m[1] + '. Rango ' + m[2] + '–' + m[3] + '.'; }],
-    [/Strong 5-minute close (above|below) the range \((\S+)\)\. Don't (sell|buy) against it\./g, function (m) { return 'Cierre fuerte de 5 minutos ' + (m[1] === 'above' ? 'por encima' : 'por debajo') + ' del rango (' + m[2] + '). No ' + (m[3] === 'sell' ? 'vendas' : 'compres') + ' en su contra.'; }],
+    [/Strong (\d+)-minute close (above|below) the range \((\S+)\)\. Don't (sell|buy) against it\./g, function (m) { return 'Cierre fuerte de ' + m[1] + ' minutos ' + (m[2] === 'above' ? 'por encima' : 'por debajo') + ' del rango (' + m[3] + '). No ' + (m[4] === 'sell' ? 'vendas' : 'compres') + ' en su contra.'; }],
+    [/A range is forming on the hour chart \(no side tested twice yet\): no range trades until one is\./g, function () { return 'Se está formando un rango en el gráfico de 1 hora (aún no se ha probado ningún lado dos veces): sin operaciones de rango hasta entonces.'; }],
+    [/Initiation (up|down) on the hour chart: a strong close (above|below) (\S+)\. Only (buys|sells) today: the pocket at the break or the 50% of a new leg\./g, function (m) { return 'Iniciación ' + (m[1] === 'up' ? 'al alza' : 'a la baja') + ' en el gráfico de 1 hora: un cierre fuerte ' + (m[2] === 'above' ? 'por encima de ' : 'por debajo de ') + m[3] + '. Hoy solo ' + (m[4] === 'buys' ? 'compras' : 'ventas') + ': el pocket en la ruptura o el 50% de un tramo nuevo.'; }],
+    [/Timeframes: ([^.]+)\./g, function (m) { return 'Temporalidades: ' + m[1].split(' · ').map(function (x) { var k = /^(\S+) (.+), (.+)$/.exec(x); return k ? k[1] + ' ' + tfSaid(k[2]).toLowerCase() + ', ' + tfLoc(k[3]).toLowerCase() : x; }).join(' · ') + '.'; }],
+    [/4H and 15M disagree: the 4H points (up|down), the 15M (up|down)\./g, function (m) { var w = function (d) { return d === 'up' ? 'al alza' : 'a la baja'; }; return '4H y 15M no coinciden: el 4H apunta ' + w(m[1]) + ', el 15M ' + w(m[2]) + '.'; }],
+    [/Setups still come, each marked\./g, function () { return 'Los setups siguen llegando, cada uno marcado.'; }],
     [/(Buy-high|Sell-low) pocket: (buy|sell) (\S+), stop (\S+), target (\S+) \(([\d.]+R)\)\./g, function (m) { return 'Pocket ' + (m[1] === 'Buy-high' ? 'para comprar arriba' : 'para vender abajo') + ': ' + A_DO[m[2]] + ' ' + m[3] + ', stop ' + m[4] + ', objetivo ' + m[5] + ' (' + m[6] + ').'; }],
     [/(Low|High) taken (in the discount|in the premium|[\w %]+?) at (\S+) \((\d\d:\d\d)\)\. If it slows here: (buy|sell), stop (\S+)\. If it moves away fast: wait for the pullback to the 50% of that move\./g, function (m) { return (m[1] === 'Low' ? 'Mínimo' : 'Máximo') + ' barrido ' + (A_WHERE[m[2]] || 'en ' + m[2]) + ' en ' + m[3] + ' (' + m[4] + '). Si se frena aquí: ' + A_DO[m[5]] + ', stop ' + m[6] + '. Si se aleja rápido: espera el retroceso al 50% de ese movimiento.'; }],
     [/Fast (rise|drop) (\S+) → (\S+)\. If price comes back to (\S+)–(\S+) \(the small range at its 50%\): (buy|sell) (\S+), stop (\S+), target (\S+) \(([\d.]+R)\)\./g, function (m) { return (m[1] === 'rise' ? 'Subida rápida ' : 'Caída rápida ') + m[2] + ' → ' + m[3] + '. Si el precio vuelve a ' + m[4] + '–' + m[5] + ' (el pequeño rango en su 50%): ' + A_DO[m[6]] + ' ' + m[7] + ', stop ' + m[8] + ', objetivo ' + m[9] + ' (' + m[10] + ').'; }],
@@ -211,7 +225,19 @@
     A_RULES.forEach(function (r) { s = s.replace(r[0], function () { return r[1](arguments); }); }); return s; }
   var RATE = [['good', 'Good call', 'Bien visto'], ['bad', 'Not my trade', 'No es mi operación'], ['early', 'Too early', 'Demasiado pronto'], ['late', 'Too late', 'Demasiado tarde']];
   var KIND = { brief: ['Brief', 'Resumen'], sweep: ['Watch', 'Vigilar'], pocket: ['Watch', 'Vigilar'], initiation: ['Initiation', 'Iniciación'], setup: ['Setup', 'Setup'], news: ['Red news', 'Noticia roja'], done: ['Done', 'Fin'] };
-  var PHASES = [['range', 'Range', 'Rango'], ['trend up', 'Trend up', 'Tendencia alcista'], ['trend down', 'Trend down', 'Tendencia bajista']];
+  var PHASES = [['range', 'Range', 'Rango'], ['trend up', 'Trend up', 'Tendencia alcista'], ['trend down', 'Trend down', 'Tendencia bajista'],
+    ['initiation up', 'Initiation up', 'Iniciación alcista'], ['initiation down', 'Initiation down', 'Iniciación bajista']];
+  // his three phases on each timeframe (hawk.py tfs_now / engine.tf_said, engine.where): the words, and where price sits
+  var TF_SAID = { 'trend up': ['Trend up', 'Tendencia alcista'], 'trend down': ['Trend down', 'Tendencia bajista'], range: ['Range', 'Rango'], 'range forming': ['Range forming', 'Rango formándose'],
+    'initiation up': ['Initiation up', 'Iniciación alcista'], 'initiation down': ['Initiation down', 'Iniciación bajista'] };
+  var TF_LOC = { breakout: ['Outside the range', 'Fuera del rango'], 'premium edge': ['Premium edge', 'Extremo del premium'], 'premium middle': ['Premium middle', 'Premium medio'],
+    '50%': ['At the 50%', 'En el 50%'], 'discount middle': ['Discount middle', 'Descuento medio'], 'discount edge': ['Discount edge', 'Extremo del descuento'] };
+  function tfSaid(x) { var w = TF_SAID[x]; return w ? L(w[0], w[1]) : String(x || ''); }
+  function tfLoc(x) { var w = TF_LOC[x]; return w ? L(w[0], w[1]) : String(x || ''); }
+  function tfTiles(t, x) {   // x: [4H direction, 15M direction] when they disagree
+    return '<div class="hk-tfs" role="list" aria-label="' + L('The three timeframes', 'Las tres temporalidades') + '">' + ['4h', '1h', '15m'].map(function (k) { var v = t[k]; if (!v) return '';
+      return '<div role="listitem" class="hk-tf' + (v.d > 0 ? ' buy' : v.d < 0 ? ' sell' : '') + (x && k !== '1h' ? ' x' : '') + '"><b>' + k.toUpperCase() + '</b><span>' + esc(tfSaid(v.said)) + '</span><i>' + esc(tfLoc(v.loc)) + '</i></div>'; }).join('') + '</div>';
+  }
   var LDN = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
   // the hours it watches (7 Nov 2026): windows [from, to] in London minutes, as hawk.py's clean_wins / win_name
   function hhmm(m) { return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); }
@@ -295,7 +321,7 @@
     var w0 = xt(d.w0), w1 = d.w1 > bars[n - 1][0] + tf ? PW : xt(d.w1);
     if (w1 > w0) { tint(K.soft, 0.9); g.fillRect(w0, TOP, w1 - w0, PH); g.globalAlpha = 1; if (w1 - w0 > 84) txt(winLbl(d).toUpperCase(), w0 + 6, TOP + PH - 8, K.mut, 'left', 9); }
     // the range it measured: premium (top 25%), discount (bottom 25%), the 50%
-    var xr = xt(d.r0), q = (d.bh - d.bl) / 4, mid = (d.bh + d.bl) / 2, ranged = d.phase === 'range';
+    var xr = xt(d.r0), q = (d.bh - d.bl) / 4, mid = (d.bh + d.bl) / 2, ranged = /^range/.test(d.phase || '');
     tint(K.sell, ranged ? 0.13 : 0.07); g.fillRect(xr, Y(d.bh), PW - xr, Y(d.bh - q) - Y(d.bh));
     tint(K.buy, ranged ? 0.13 : 0.07); g.fillRect(xr, Y(d.bl + q), PW - xr, Y(d.bl) - Y(d.bl + q)); g.globalAlpha = 1;
     line(Y(d.bh), K.mut, 1, null, xr); line(Y(d.bl), K.mut, 1, null, xr); line(Y(mid), K.mut, 1, [4, 4], xr);
@@ -390,7 +416,7 @@
       var ps = root.querySelector('[data-hkp]'); if (ps) { var o0 = ps.options[0], ol = ps.querySelector('option[value="' + lastP + '"]'); if (o0 && ol) o0.textContent = ol.textContent;
         var on = period !== 's' && period !== 1; ps.value = on ? String(period) : ''; ps.classList.toggle('off', !on); } todayPaint(); watchPaint(); }
     // what the hawk reads (hawk_config, admin RLS): any of his MT5 accounts and the markets the study ran; hawk.py on uk1 picks it up within a minute
-    var cfg = null, cfgMsg = '', HKM = [['EURUSD', 'EUR/USD'], ['GBPUSD', 'GBP/USD'], ['XAUUSD', L('Gold', 'Oro')], ['US100', L('US100 · lost in the study', 'US100 · perdió en el estudio')]];
+    var cfg = null, cfgMsg = '', HKM = [['EURUSD', 'EUR/USD · +42.0R' + L(' a year', ' al año')], ['GBPUSD', 'GBP/USD · +32.4R' + L(' a year', ' al año')], ['XAUUSD', L('Gold', 'Oro') + ' · +5.8R' + L(' a year', ' al año')], ['US100', 'US100 · +1.0R' + L(' a year', ' al año')]];   // the year of his rules, London 08-10, after costs (7 Nov)
     var WPRE = [[480, 600], [780, 900]];   // the quick picks: London 08:00-10:00 (the study's hours), New York 13:00-15:00
     function cfgWins() { return winsClean(cfg && cfg.wins); }
     function winsSaid() { return cfgWins().map(function (w) { return hhmm(w[0]) + '–' + hhmm(w[1]); }).join(', '); }
@@ -414,7 +440,7 @@
       if (cfg && !a.some(function (x) { return x.login === cfg.login; })) a.unshift({ login: cfg.login, name: cfg.login === '1515070952' ? L('Demo · 1515070952', 'Demo · 1515070952') : cfg.login }); return a; }
     function watchPaint() { var w = root.querySelector('.hk-watch'); if (!w) return; if (!cfg || period === 's') { if (!w.hidden) w.hidden = true; return; }
       var h = '<div class="hk-picks"><label class="hk-pick"><span>' + L('Account', 'Cuenta') + '</span><select data-hkacc>' + accList().map(function (a) { return '<option value="' + esc(a.login) + '"' + (a.login === cfg.login ? ' selected' : '') + '>' + esc(a.name) + '</option>'; }).join('') + '</select></label>'
-        + '<label class="hk-pick"><span>' + L('Market', 'Mercado') + '</span><select data-hkmk>' + HKM.map(function (m) { return '<option value="' + m[0] + '"' + (m[0] === cfg.sym ? ' selected' : '') + '>' + esc(m[1]) + '</option>'; }).join('') + '</select></label></div>'
+        + '<label class="hk-pick"><span>' + L('Market', 'Mercado') + '</span><select data-hkmk title="' + esc(L('Each market\'s result over a year with the hawk\'s rules, London 08:00–10:00, after costs', 'El resultado de cada mercado en un año con las reglas del halcón, Londres 08:00–10:00, tras costes')) + '">' + HKM.map(function (m) { return '<option value="' + m[0] + '"' + (m[0] === cfg.sym ? ' selected' : '') + '>' + esc(m[1]) + '</option>'; }).join('') + '</select></label></div>'
         + '<p class="hk-hint">' + esc(cfgMsg || L('The hawk reads this account\'s prices. It never trades on it.', 'El halcón lee los precios de esta cuenta. Nunca opera en ella.')) + '</p>' + hoursHtml();
       if (w.innerHTML !== h) w.innerHTML = h; w.hidden = false; }
     function cfgSave(k, v) { if (!cfg) return; var nx = Object.assign({}, cfg); nx[k] = v; cfgMsg = L('Saving…', 'Guardando…'); watchPaint();
@@ -454,8 +480,10 @@
       var ch = r.data && r.data.chart && r.data.chart.c && r.data.chart.c.length, keys = editKeys(r), h = '';
       h += '<article class="hk-card' + (r.kind === 'brief' ? ' hk-brief' : '') + (r.id === focusId ? ' hk-focus' : '') + '" id="hk-a-' + r.id + '">' +
         '<div class="hk-top"><span class="hk-chip' + (r.kind === 'setup' ? ' setup' : '') + '">' + esc(KIND[r.kind] ? L(KIND[r.kind][0], KIND[r.kind][1]) : r.kind) + '</span>' + side +
+        (r.data && r.data.tfx ? '<span class="hk-chip warn" title="' + esc(L('The 4H and the 15M point opposite ways', 'El 4H y el 15M apuntan en sentidos opuestos')) + '">4H ≠ 15M</span>' : '') +
         '<span class="hk-time">' + esc(ldn(r.created_at, { hour: '2-digit', minute: '2-digit' })) + '</span></div>' +
-        '<h3>' + esc(aES(r.title)) + '</h3><p>' + esc(aES(r.body)) + '</p>';
+        '<h3>' + esc(aES(r.title)) + '</h3><p>' + esc(aES(r.data && r.data.tfs ? String(r.body || '').replace(/ ?Timeframes: [^.]+\./, '') : r.body)) + '</p>' +
+        (r.data && r.data.tfs ? tfTiles(r.data.tfs, r.data.tfx) : '');
       if (ch) {
         h += '<div class="hk-chart" data-id="' + r.id + '"><canvas role="img" aria-label="' + L('The hawk\'s chart for this alert', 'El gráfico del halcón para esta alerta') + '"></canvas></div>' + legend(r);
         if (keys.length) h += '<div class="hk-train"><button class="hk-btn you" data-act="edit" data-id="' + r.id + '">' + (r.kind === 'brief' ? L('Correct the read', 'Corregir la lectura') : L('Mark my trade', 'Marcar mi operación')) + '</button>' +
@@ -560,7 +588,8 @@
         '<div class="hk-pr">' + sFmt(r[0]) + ' – ' + sFmt(r[1]) + ' · ' + sPl(n, 'trade', 'operación', 'operaciones') + '</div></div>'; }
     var SOUT = { win: ['Target hit', 'Objetivo alcanzado'], loss: ['Stopped out', 'Saltó el stop'], be: ['Break-even', 'Break-even'], time: ['Closed 13:20', 'Cerrada 13:20'] };
     var MODEL = { reaction: ['Reaction', 'Reacción'], continuation: ['Continuation', 'Continuación'], 'initiation pocket': ['Initiation', 'Iniciación'] };
-    var PHASE = { range: ['Range day', 'Día de rango'], 'trend up': ['Uptrend day', 'Día alcista'], 'trend down': ['Downtrend day', 'Día bajista'], initiation: ['Initiation', 'Iniciación'] };
+    var PHASE = { range: ['Range day', 'Día de rango'], 'trend up': ['Uptrend day', 'Día alcista'], 'trend down': ['Downtrend day', 'Día bajista'], initiation: ['Initiation', 'Iniciación'],
+      'range forming': ['Range forming', 'Rango formándose'], 'initiation up': ['Initiation up', 'Iniciación alcista'], 'initiation down': ['Initiation down', 'Iniciación bajista'] };
     var RULE_ES = { range: 'rango', initiation: 'iniciación', countertrend: 'contratendencia', 'trend 50%': 'tendencia 50%' }, LOC_ES = { discount: 'descuento', premium: 'premium', break: 'ruptura' };
     function sOut(o) { var x = SOUT[o]; return x && L(x[0], x[1]); }
     function sModel(m) { var x = MODEL[m]; return x ? L(x[0], x[1]) : m; }
