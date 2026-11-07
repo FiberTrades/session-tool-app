@@ -779,6 +779,8 @@
     function sPosText(r) { var d = r.data, x = sMoved(r) ? sMine(r) : null;
       return '#' + r.n + ' ' + sBuy(d.side > 0) + ' · ' + sModel(d.model) + ' · ' + sLocW(d.loc) + '\n' + sOut(d.out) + ' ' + hm(d.xts) + ' · ' + sR(d.net) +
         (x ? '\n' + L('With your BE: ', 'Con tu BE: ') + sOut(x.o) + (x.xm != null ? ' ' + sHm(x.xm) : '') + ' · ' + sR(x.net) : ''); }
+    // the P/D zone's window as he dragged it on this trade (Nestor, 7 Nov 2026: "i need to be able to drag the P/D zone"), else the hawk's 24 h
+    function sPd(r) { var d = r.data; try { var o = JSON.parse(localStorage.getItem('st_hk_pd') || '{}')[sRun() + '|' + r.n]; if (o && +o.b > +o.a) return { a: +o.a, b: +o.b }; } catch (x) {} return { a: d.r0, b: d.r1 }; }
     function sNoteSync(r) { if (!r || sOnChart !== r.n || sHid || !opt.study || sNoteT[r.n] == null || sNoteT[r.n] === sPosText(r)) return; try { opt.study({ clear: true, list: sDraw(r) }); } catch (x) {} }
     function sDraw(r) { var d = r.data, buy = d.side > 0, q = (d.bh - d.bl) / 4, mid = (d.bh + d.bl) / 2, w0 = ldnAt(d.ts, 480), t0 = w0 - 25 * 3600, t1 = w0 + 2 * 3600, x1 = d.xts + 60;   // the box ends with the exit candle (Nestor, 7 Nov 2026: a box past the exit made a stopped trade look open when price reached the BE line after the stop)
       // the P/D zone is the Session Indicator's own (pd below); these three only for a study row without its range window
@@ -802,7 +804,7 @@
     }
     async function sOpen(r) { if (!opt.study) return; sHid = false; sStatus(L('Opening ' + sDay(r, { day: 'numeric', month: 'short', year: 'numeric' }) + ' in Study…', 'Abriendo el ' + sDay(r, { day: 'numeric', month: 'short', year: 'numeric' }) + ' en el Estudio…'));
       var d = r.data, at = Math.min(d.sw || d.ts, d.ta || d.ts, d.ts) - 600, ok = false;
-      try { ok = await opt.study({ sym: sMkt, day: nyDay(d.ts), at: at, draw: sDraw(r), pd: d.r0 ? { a: d.r0, b: d.r1 } : null, n: r.n, keep: r.drawings || [], onMine: sOnMine, noAsk: sStudying }); } catch (x) {}
+      try { ok = await opt.study({ sym: sMkt, day: nyDay(d.ts), at: at, draw: sDraw(r), pd: d.r0 ? sPd(r) : null, pd0: d.r0 ? { a: d.r0, b: d.r1 } : null, pid: sRun() + '|' + r.n, n: r.n, keep: r.drawings || [], onMine: sOnMine, noAsk: sStudying }); } catch (x) {}
       if (ok === 'no') { if (ssel === r.n) sStatus(L('Not opened. Press Show in Study when you want it on the chart.', 'No se abrió. Pulsa Ver en el Estudio cuando la quieras en el gráfico.')); return; }   // he chose to stay where he was
       if (ok) { sOnChart = r.n; sStudying = true; delete sBeOn[r.n]; sBeAuto(r); }
       if (ssel === r.n) { sStatus(ok ? L('In Study from ' + hm(at) + ' London. Press Play to watch it unfold.', 'En el Estudio desde las ' + hm(at) + ' hora de Londres. Pulsa Reproducir para ver cómo se desarrolla.') : L('Study couldn\'t open that day.', 'El Estudio no pudo abrir ese día.')); setTimeout(function () { sShow(r.n); }, 120); }   // going into Replay lays the column out again
