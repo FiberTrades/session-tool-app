@@ -7,7 +7,8 @@
 # windows, London time; the study's 08:00-10:00 until he picks), from 40 min before each to 10 min after:
 #   * reads the account + market picked in the hawk tab (hawk_config; 6 Nov: any of his cloud MT5 accounts, EUR/USD, GBP/USD, gold
 #     or US100 - the markets the study ran) over the local relay (the demo 1515070952's EURUSD until he picks): "watch" gets "px" every second with the last closed
-#     1-minute candle; "hist" gets 25 h of 1-minute and 200 hour candles. It sends nothing else: never a command, never an order.
+#     1-minute candle; "hist" gets 25 h of 1-minute, 1000 hour and 700 fifteen-minute candles (7 Nov: the 4H and the 15M read on
+#     weeks, not a day). It sends nothing else: never a command, never an order.
 #   * every closed minute runs engine.py - the exact rules of the rule study (chart-exports/strategy-review) - and sends:
 #       brief       15 min before each window: phase, the range, premium / discount / 50%, what to wait for, the red news
 #       sweep       a high / low taken where the plan trades: what to watch for next
@@ -138,9 +139,9 @@ class Hawk:
                     a2b=x['a2b'] and [r5(v) for v in x['a2b']], sw=[[t, r5(p), k] for t, p, k in sw],
                     w0=w0, w1=w0 + (E.WIN[1] - E.WIN[0]) * 60, now=now, px=r5(E.C[last]))
 
-    def look(self, t, o, h, l, c, h1=None):
+    def look(self, t, o, h, l, c, h1=None, m15=None):
         """Called once a minute with every candle so far (oldest first): reads each window he watches that is on now."""
-        E.load(t, o, h, l, c, h1)
+        E.load(t, o, h, l, c, h1, m15)
         last = E.N - 1
         lt = ldt(E.T[last] + 60)          # the time the last candle closed
         day = lt.strftime('%Y-%m-%d')
@@ -173,6 +174,8 @@ class Hawk:
             ws['brief'] = True
             loc = 'in the premium' if now >= bh - q else 'in the discount' if now <= bl + q else 'at the 50%' if abs(now - mid) <= q / 2 else 'between the 50% and the edges'
             lines = ['Watching %s–%s London.' % (clock(E.WIN[0]), clock(E.WIN[1]))]
+            hb_ = E.htf_bias(E.T[last] + 60, now) if E.PHASES and E.HTF_4H else None
+            if E.PHASES and E.HTF_4H: lines.append(E.htf_said(E.T[last] + 60, now, px))   # the bigger picture first: the 4H decides the side
             tfs = fr.get('tf') and tfs_now(E.T[last] + 60, now)
             if ph == 'range forming':
                 lines.append('A range is forming on the hour chart (no side tested twice yet): no range trades until one is.')
@@ -185,7 +188,9 @@ class Hawk:
             elif ph == 'range':
                 lines.append('Range day. Range %s–%s: premium above %s, discount below %s, 50%% at %s.' % (px(bl), px(bh), px(bh - q), px(bl + q), px(mid)))
                 lines.append('Price %s, %s.' % (px(now), loc))
-                lines.append('Sell idea: a high taken in the premium, then the move slows. Buy idea: a low taken in the discount, then it slows.')
+                if not (E.PHASES and E.HTF_4H): lines.append('Sell idea: a high taken in the premium, then the move slows. Buy idea: a low taken in the discount, then it slows.')
+                elif hb_ == -1: lines.append('Sell idea: a high taken in the premium, then the move slows.')
+                elif hb_ == 1: lines.append('Buy idea: a low taken in the discount, then it slows.')
                 if 'at the 50%' in loc: lines.append('Nothing to do at the 50%.')
             else:
                 up = ph == 'trend up'
@@ -204,7 +209,7 @@ class Hawk:
             elif NEWS['ok']: lines.append('No red news in these hours for %s.' % curs_said())
             else: lines.append('Red news unknown (calendar not read): check it before you trade.')
             self.out('brief', 'brief', win_name(E.WIN) + ' brief · ' + MK[CANON][2], ' '.join(lines),
-                     data=dict(phase=ph, bh=bh, bl=bl, price=now, a2b=a2b, tfs=tfs, tfx=dis_now))
+                     data=dict(phase=ph, bh=bh, bl=bl, price=now, a2b=a2b, tfs=tfs, tfx=dis_now, htf=hb_))
 
         ev = []
         setups, _ = E.scan_day(idx, dict(models=OPTS, events=ev))
@@ -416,7 +421,7 @@ def parse(row):
 
 def live():
     global LOGIN, SYM
-    set_market('EURUSD'); hawk = Hawk(post); line = None; bars, h1 = {}, {}
+    set_market('EURUSD'); hawk = Hawk(post); line = None; bars, h1, m15 = {}, {}, {}
     up = False; t_watch = t_hist = 0; last_eval = 0; t_cfg = 0
     while True:
         ln = ldt(time.time()); m = ln.hour * 60 + ln.minute
@@ -425,7 +430,7 @@ def live():
             if time.time() - NEWS['t'] >= 600: get_news()   # the calendar, every 10 minutes
             if c and (c[0] != LOGIN or c[1] != CANON or line is None):
                 if line: line.close()
-                LOGIN = c[0]; set_market(c[1]); SYM = CANON; up = False; line = None; hawk = Hawk(post, c[2]); bars.clear(); h1.clear(); last_eval = 0
+                LOGIN = c[0]; set_market(c[1]); SYM = CANON; up = False; line = None; hawk = Hawk(post, c[2]); bars.clear(); h1.clear(); m15.clear(); last_eval = 0
                 log('reading', LOGIN, CANON, 'hours', ' '.join('%s-%s' % (clock(a), clock(b)) for a, b in hawk.wins))
             elif c and c[2] != hawk.wins:
                 hawk.wins = c[2]; log('hours', ' '.join('%s-%s' % (clock(a), clock(b)) for a, b in hawk.wins))
@@ -434,13 +439,14 @@ def live():
                 except (IndexError, OSError) as e: log('no template for', LOGIN, e); time.sleep(30); continue
         if ln.weekday() >= 5 or not any(w[0] - 40 <= m < w[1] + 10 for w in hawk.wins):   # 40 min before each window he picked to 10 after
             if up and line: line.close(); up = False; log('window closed')
-            bars.clear(); h1.clear(); time.sleep(30); continue
+            bars.clear(); h1.clear(); m15.clear(); time.sleep(30); continue
         try:
             if not up: line.open(); line.resolve(); up = True; t_watch = t_hist = 0; SYM = line.raw_sym; log('joined the relay:', LOGIN, SYM, line.mode)
             now = time.time()
             if now - t_watch >= 15: line.watch(); t_watch = now
             if now - t_hist >= 1200:
-                line.hist(1500, 1); line.hist(600, 60); t_hist = now   # 600 hours: 150 four-hour candles for the 4H reading (7 Nov)
+                line.hist(1500, 1); line.hist(1000, 60); t_hist = now   # 1000 hours: 250 four-hour candles, the bigger picture's 4H reading (7 Nov)
+                line.hist(700, 15)   # about 7 days of 15-minute candles: the 15M reading as the year's (25 h of minutes missed it on some days)
             msg = line.recv()
             if msg and msg.get('event') == 'broadcast':
                 ev, p = msg['payload'].get('event'), msg['payload'].get('payload') or {}
@@ -451,7 +457,7 @@ def live():
                     if ev == 'px' and p.get('pb'):
                         t, v = parse(p['pb']); bars[t] = v
                     elif ev == 'bars':
-                        dst = bars if int(p.get('tf', 1)) == 1 else h1
+                        tf_ = int(p.get('tf', 1)); dst = bars if tf_ == 1 else m15 if tf_ == 15 else h1
                         for row in str(p.get('rows', '')).split(';'):
                             if row: t, v = parse(row); dst[t] = v
         except (OSError, EOFError, ValueError, IndexError) as e:
@@ -462,7 +468,7 @@ def live():
             ts = sorted(bars)
             try:
                 hawk.look(ts, [bars[t][0] for t in ts], [bars[t][1] for t in ts], [bars[t][2] for t in ts], [bars[t][3] for t in ts],
-                          [(t,) + h1[t] for t in sorted(h1)])
+                          [(t,) + h1[t] for t in sorted(h1)], [(t,) + m15[t] for t in sorted(m15)])
             except Exception as e:
                 log('look failed:', repr(e))
 
@@ -477,15 +483,21 @@ def replay(csv, day, wins=None):
         k = t[i] // 3600 * 3600; b = hb.get(k)
         hb[k] = [o[i], h[i], l[i], c[i]] if b is None else [b[0], max(b[1], h[i]), min(b[2], l[i]), c[i]]
     hk = sorted(hb); H1 = [(k,) + tuple(hb[k]) for k in hk]
+    qb = {}
+    for i in range(len(t)):
+        k = t[i] // 900 * 900; b = qb.get(k)
+        qb[k] = [o[i], h[i], l[i], c[i]] if b is None else [b[0], max(b[1], h[i]), min(b[2], l[i]), c[i]]
+    qk = sorted(qb); Q = [(k,) + tuple(qb[k]) for k in qk]
     d0 = int(dt.datetime.strptime(day, '%Y-%m-%d').replace(tzinfo=dt.timezone.utc).timestamp())
     off = E.ldn(d0 + 12 * 3600) - (d0 + 12 * 3600)            # London's offset that day
     start, end = d0 + (ws[0][0] - 40) * 60 - off, d0 + (ws[-1][1] + 10) * 60 - off
     lo = next(i for i, x in enumerate(t) if x >= start - 2 * 86400)   # two days of minutes, as live has 25 hours (the 15M, the 24 h box)
-    h0 = bisect.bisect_left(hk, start - 40 * 86400)                   # 40 days of hour candles, as live has 25 (the 1H and the 4H)
+    h0 = bisect.bisect_left(hk, start - 42 * 86400)                   # 42 days of hour candles, as live has 1000 hours (the 1H and the 4H)
     out = []
     hawk = Hawk(lambda m: out.append(m), ws)
     for k in range(next(i for i, x in enumerate(t) if x >= start), next(i for i, x in enumerate(t) if x >= end)):
-        hawk.look(t[lo:k + 1], o[lo:k + 1], h[lo:k + 1], l[lo:k + 1], c[lo:k + 1], H1[h0:bisect.bisect_right(hk, t[k] + 60 - 3600)])
+        hawk.look(t[lo:k + 1], o[lo:k + 1], h[lo:k + 1], l[lo:k + 1], c[lo:k + 1], H1[h0:bisect.bisect_right(hk, t[k] + 60 - 3600)],
+                  Q[bisect.bisect_left(qk, t[lo] - 7 * 86400):bisect.bisect_left(qk, t[lo])])   # 7 days of 15-minute candles, as live asks
     for m in out: print(m['kind'].ljust(10), m['title'], '|', m['body'])
     return out
 

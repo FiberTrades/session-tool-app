@@ -18,8 +18,9 @@ def ldn(t):
     y = dt.datetime.fromtimestamp(t, dt.timezone.utc).year; a, b = UK[y]; return t + (3600 if a <= t < b else 0)
 LT, LDAY, LMIN, SWH, SWL, HB = [], [], [], [], [], []
 
-def load(t, o, h, l, c, h1=None):
-    """Set the 1-minute candles (UTC seconds). h1 = [(hour_start_utc, o, h, l, c)], else hour candles are built from the minutes."""
+def load(t, o, h, l, c, h1=None, m15=None):
+    """Set the 1-minute candles (UTC seconds). h1 = [(hour_start_utc, o, h, l, c)], else hour candles are built from the minutes.
+    m15 = older 15-minute candles (start_utc, o, h, l, c) for the 15M reading (live: about 7 days from the EA), the minutes after them."""
     global T, O, H, L, C, N, LT, LDAY, LMIN, SWH, SWL, HB
     T, O, H, L, C = list(t), list(o), list(h), list(l), list(c); N = len(T)
     LT = [ldn(x) for x in T]; LDAY = [x // 86400 for x in LT]; LMIN = [(x % 86400) // 60 for x in LT]
@@ -45,7 +46,10 @@ def load(t, o, h, l, c, h1=None):
         if hb[k][3] < min(hb[k - 1][3], hb[k - 2][3], hb[k + 1][3], hb[k + 2][3]): SWL.append((conf, hb[k][3], k))
     # his reading on 15M (from the minutes), 1H and 4H (the hour candles, 4-hour blocks from New York's 17:00 close, as brokers draw them)
     TFS.clear()
-    for tf, sec, src, key, st0 in (('15m', 900, [(T[i], O[i], H[i], L[i], C[i]) for i in range(N)], lambda t: t // 900, lambda k, t: k * 900),
+    m1 = [(T[i], O[i], H[i], L[i], C[i]) for i in range(N)]
+    if m15 and N:   # the 15M: its own older candles up to the first whole quarter-hour of minutes, the minutes from there
+        q0 = -(-T[0] // 900) * 900; m1 = [tuple(x) for x in sorted(m15) if x[0] < q0] + [x for x in m1 if x[0] >= q0]
+    for tf, sec, src, key, st0 in (('15m', 900, m1, lambda t: t // 900, lambda k, t: k * 900),
                                    ('1h', 3600, hb, lambda t: t // 3600, lambda k, t: k * 3600),
                                    ('4h', 14400, hb, lambda t: (t + ny_off(t) - 17 * 3600) // 14400, lambda k, t: k * 14400 + 17 * 3600 - ny_off(t))):
         b = agg(src, key, st0)
@@ -88,6 +92,13 @@ SW_K = 2               # a swing high / low: 2 candles on each side, on every ti
 TF_RULE = False        # True: no setup while the 4H and the 15M point opposite ways (his first idea, 7 Nov); False: the alert says it
 INIT_1H = True         # never against an initiation on the hour chart: no 15M pocket the other way
 LOC_24H = True         # premium / discount on the 24 h before the session (False: on the 1H reading's own range, -29R on the year)
+# The bigger picture decides the side (Nestor, 7 Nov 2026: "the hawk cant just base its entries on the last 24h, it needs to be able to look
+# further to really know what market structure price is in, location and direction"): the 4H reading, in a trend or an initiation its way
+# only; in a range sells from its premium half, buys from its discount half, nothing in its middle (45-55%). The 24 h box still picks the
+# edge. The year, London 08-10, scaled: EUR/USD +42.0R -> +51.0R (99 -> 55 trades, drawdown 9.5 -> 7.9, the first half -1.1 -> +10.5),
+# gold +5.8 -> +27.3R (drawdown 13.8 -> 6.0), GBP/USD +32.4 -> +22.5R (drawdown 25.4 -> 15.8), US100 +1.0 -> -1.0R. The Daily instead:
+# EUR/USD +42.2R, gold +4.3R; location on the 4H alone lost 31R on gold. Live reads 1000 hour candles (600 matched the year on 99% of days).
+HTF_4H = True
 STRONG_BODY, STRONG_SIZE = 0.6, 1.0   # an initiation candle: body >= 60% of its range, range >= the average of the 20 before it
 TFS = {}               # '15m' / '1h' / '4h' -> dict(b=[(start, o, h, l, c)], end=[close time], st=[the reading after each candle])
 US = {y: (ts(nth_sunday(y, 3, 2), 7), ts(nth_sunday(y, 11, 1), 6)) for y in (2025, 2026, 2027)}
@@ -185,6 +196,33 @@ def tfx(t):
     """For an alert: (4H direction, 15M direction) when they point opposite ways at UTC second t, else None."""
     return disagree(t) if PHASES else None
 
+def htf_pos(r, p):
+    """Where p sits in a reading's own range: 0 its low, 1 its high (a trend: its last leg; an initiation: the range it broke and how far it went)."""
+    if r['ph'] == 'trend' and r['a2b']: lo_, hi_ = sorted(r['a2b'])
+    elif r['ph'] == 'initiation': lo_, hi_ = min(r['base'][1], r['ext']), max(r['base'][0], r['ext'])
+    else: lo_, hi_ = r['lo'], r['hi']
+    return 0.5 if hi_ <= lo_ else (p - lo_) / (hi_ - lo_)
+
+def htf_bias(t, p):
+    """The bigger picture's side at UTC second t for price p: 1 buys, -1 sells, 0 none (a 4H range's middle), None without enough history."""
+    r = read('4h', t)
+    if not r: return None
+    if r['ph'] in ('trend', 'initiation'): return r['d']
+    x = htf_pos(r, p); return -1 if x >= 0.55 else 1 if x <= 0.45 else 0
+
+def htf_ok(side, t, p):
+    return not (PHASES and HTF_4H) or htf_bias(t, p) == side
+
+def htf_said(t, p, px=lambda v: '%.5f' % v):
+    """The brief's line: 'Bigger picture: 4H trend down. Sells only.'"""
+    r = read('4h', t)
+    if not r: return 'Bigger picture: not enough 4H history. No trades.'
+    b = htf_bias(t, p); only = {1: 'Buys only.', -1: 'Sells only.'}.get(b)
+    if r['ph'] in ('trend', 'initiation'): return 'Bigger picture: 4H %s %s. %s' % (r['ph'], 'up' if r['d'] > 0 else 'down', only)
+    rg = '%s–%s' % (px(r['lo']), px(r['hi']))
+    if b == 0: return 'Bigger picture: 4H range %s, price at its middle. No trades until price leaves it.' % rg
+    return 'Bigger picture: 4H range %s, price in its %s half. %s' % (rg, 'premium' if b < 0 else 'discount', only)
+
 def frame(i0):
     """The window's reading at its start (minute i0): the rules' phase (the hour chart), its last leg, the premium / discount range, and
     the three timeframes. None before there is enough history."""
@@ -201,7 +239,8 @@ def frame(i0):
     elif h['ph'] == 'initiation': bh, bl = max(h['base'][0], h['ext']), min(h['base'][1], h['ext'])
     elif h['ph'] == 'range': bh, bl = h['hi'], h['lo']
     else: bh, bl = max(H[j:i0]), min(L[j:i0])
-    return dict(ph=ph, a2b=h['a2b'], bh=bh, bl=bl, j=j, tf={k: dict(v, said=tf_said(v), loc=where(v, C[i0])) for k, v in r.items()})
+    return dict(ph=ph, a2b=h['a2b'], bh=bh, bl=bl, j=j, tf={k: dict(v, said=tf_said(v), loc=where(v, C[i0])) for k, v in r.items()},
+                htf=htf_bias(now, C[i0]) if HTF_4H else None)
 
 # ---------- trade management from the plan
 COST = 0.6
@@ -302,6 +341,7 @@ def sessions():
 def scan_day(idx, opts):
     out = []
     ev = opts.get('events')   # the hawk collects what is forming: sweeps, pockets, initiations
+    n_ev = len(ev) if ev is not None else 0
     i0 = idx[0]
     fr = frame(i0)   # 7 Nov: his phase on the hour chart and its range; before, the hour swings and the 24 h before 08:00
     if not fr: return out, None
@@ -417,9 +457,19 @@ def scan_day(idx, opts):
                         if tg: out.append(dict(model=rule + ' · continuation', phase=ph, side=side, i=k, entry=e,
                                                stop=s_, tgt=tg, be=Bv, stopbar=sb, loc=loc, box=bx, tfx=tfx(T[k - 1] + 60),
                                                A=A, ta=T[a], ts=T[i], liq=liq, B=Bv))
+    if PHASES and HTF_4H:   # the bigger picture: the 4H's side only, at the moment of each one (7 Nov 2026)
+        out = [o_ for o_ in out if htf_ok(o_['side'], T[o_['i'] - 1] + 60, o_['entry'])]
+        if ev is not None:
+            keep = []
+            for e_ in ev[n_ev:]:
+                ok_ = htf_ok(e_['side'], T[e_['i']] + 60, e_.get('entry', e_.get('A', C[e_['i']])))
+                if e_['kind'] == 'initiation':   # still said (don't trade against it); its pocket only on the 4H's side
+                    keep.append(e_ if ok_ else {k: v for k, v in e_.items() if k not in ('entry', 'stop', 'tgt')})
+                elif ok_: keep.append(e_)
+            ev[n_ev:] = keep
     # what the Study tab draws for each one (7 Nov 2026): the 24 h box, the hour chart's last leg, the three timeframes at the start
     tfs = {k: dict(said=v['said'], loc=v['loc'], d=v['d']) for k, v in fr['tf'].items()} if fr.get('tf') else None
-    for o_ in out: o_.update(bh=bh, bl=bl, a2b=a2b, r0=int(T[fr['j']]), r1=int(T[i0]), tfs=tfs)
+    for o_ in out: o_.update(bh=bh, bl=bl, a2b=a2b, r0=int(T[fr['j']]), r1=int(T[i0]), tfs=tfs, htf=fr.get('htf'))
     return out, ph
 
 def run(opts):
