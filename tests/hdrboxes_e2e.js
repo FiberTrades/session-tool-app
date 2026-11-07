@@ -19,6 +19,11 @@
     ok('...the same corners', a.rad === t.rad && t.rad === '12px', [a.rad, t.rad]);
     ok('...the same width', Math.abs(a.w - t.w) < 0.6, [a.w, t.w]);
     ok('Full access is its small pill again (24px tall, round ends, narrower)', p.h === 24 && p.rad === '999px' && p.w < a.w - 10, p);
+    /* the same letters (same evening: "are these fonts the same size and boldness?" "why is bloomberg tv appear lighter than all accounts letters?") */
+    var fo = function (e) { var c = getComputedStyle(e); return [c.fontFamily, c.fontSize, c.fontWeight, c.letterSpacing].join(' / '); };
+    var fl = fo(lbl), fpb = fo(pb), ftv = fo(bb.querySelector('.bb-fold-t'));
+    ok('the three labels: the same font, size, weight and spacing', fl === fpb && fpb === ftv, [fl, fpb, ftv]);
+    ok('...Bloomberg TV the same grey as All accounts', getComputedStyle(bb).color === getComputedStyle(btn).color, [getComputedStyle(bb).color, getComputedStyle(btn).color]);
     var mid = function (e) { var b = e.getBoundingClientRect(); return b.top + b.height / 2; };
     ok('all three sit on one line', Math.abs(mid(btn) - mid(pb)) < 1 && Math.abs(mid(pb) - mid(bb)) < 1, [mid(btn), mid(pb), mid(bb)]);
     /* a longer account name: the picker and the TV button widen together, the badge stays */
