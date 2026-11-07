@@ -17,7 +17,7 @@
     ok('the Session Indicator window opens', !!dl && /Session Indicator/.test(h.textContent), h && h.textContent);
     var pe = function (t, x, y, target) { (target || h).dispatchEvent(new PointerEvent(t, { clientX: x, clientY: y, bubbles: true, cancelable: true, pointerId: 1, button: 0, buttons: t === 'pointerup' ? 0 : 1, isPrimary: true })); };
     var r0 = dl.getBoundingClientRect(), hr = h.getBoundingClientRect(), hx = hr.left + 40, hy = hr.top + 12;
-    ok('its title bar shows it moves', getComputedStyle(h).cursor === 'move', getComputedStyle(h).cursor);
+    ok('its title bar shows the hand, as a drawing does to pick it up (7 Nov 2026)', getComputedStyle(h).cursor === 'pointer', getComputedStyle(h).cursor);
     pe('pointerdown', hx, hy); pe('pointermove', hx + 120, hy + 40); pe('pointermove', hx + 200, hy + 60); pe('pointerup', hx + 200, hy + 60); await W(40);
     var r1 = dl.getBoundingClientRect();
     ok('dragged by its title bar: it follows', dl.style.transform === 'translate(200px, 60px)', dl.style.transform);
