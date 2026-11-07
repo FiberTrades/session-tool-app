@@ -780,7 +780,7 @@
       else if (d.a != null && d.ta) { o.push({ type: 'trend', a: { t: d.ta - 3600, price: d.a }, b: { t: d.ta + 1800, price: d.a }, color: '#e0a84a', width: 2 });
         lqNote(d.ta, d.a, d.model === 'initiation pocket' ? (buy ? L('Range high broken', 'Máximo del rango roto') : L('Range low broken', 'Mínimo del rango roto')) : (buy ? L('Low taken ', 'Mínimo barrido ') : L('High taken ', 'Máximo barrido ')) + hm(d.ta), d.model === 'initiation pocket' ? !buy : buy); }
       o.push({ type: buy ? 'long' : 'short', a: { t: d.ts, price: d.entry }, b: { t: x1, price: d.entry }, sl: d.stop, tp: d.tgt });
-      o.push({ type: 'note', a: { t: d.ts, price: d.entry }, off: { x: 0, y: buy ? 110 : -110 }, color: '#5b8def', tcol: '#5b8def', width: 1, tsz: 11,
+      o.push({ type: 'note', a: { t: d.ts, price: d.entry }, off: { x: 0, y: buy ? 110 : -110 }, color: '#9598a1', tcol: '#ffffff', width: 1, tsz: 11,   // white words, a grey edge (Nestor, 7 Nov 2026: "make these blue font white and no blue")
         text: '#' + r.n + ' ' + sBuy(buy) + ' · ' + sModel(d.model) + ' · ' + sLocW(d.loc) + '\n' + sOut(d.out) + ' ' + hm(d.xts) + ' · ' + sR(d.net) });   // in a box past the stop, pointing at the entry (Nestor, 6 Nov 2026)
       return o;
     }
