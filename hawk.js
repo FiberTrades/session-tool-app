@@ -89,6 +89,9 @@
     '.hk-kpi b{display:block;font:500 15px var(--hk-mono);font-variant-numeric:tabular-nums;color:var(--hk-ink);white-space:nowrap}.hk-kpi b.up{color:var(--hk-buy)}.hk-kpi b.dn{color:var(--hk-sell)}',
     '.hk-kpi span{display:block;margin-top:2px;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--hk-mut);white-space:nowrap}',
     '.hk-flt{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0 0}.hk-flt .hk-hint{margin:0}',
+    '.hk-flc{border:1px solid color-mix(in srgb,var(--hk-acc) 55%,transparent);background:color-mix(in srgb,var(--hk-acc) 8%,transparent);border-radius:10px;padding:10px 12px;margin:12px 0 0}',
+    '.hk-flc b{font-size:13px}.hk-flc p{margin:3px 0 0;font-size:12.5px;color:var(--hk-mut)}.hk-flc .hk-flb{display:flex;gap:8px;margin-top:9px}',
+    '.hk-trm .m .hk-chip{margin-left:7px;padding:1px 6px;font-size:9px;vertical-align:1px}',
     '.hk-prog{margin:12px 0 0}.hk-prog .t{display:flex;justify-content:space-between;gap:8px;font-size:11.5px;color:var(--hk-mut)}.hk-prog .t b{font-weight:500;color:var(--hk-ink)}',
     '.hk-bar{display:flex;height:4px;border-radius:2px;background:var(--hk-soft);overflow:hidden;margin-top:6px}.hk-bar i{display:block;height:100%}.hk-bar i.ok{background:var(--hk-buy)}.hk-bar i.no{background:var(--hk-sell)}',
     '.hk-seg{display:flex;margin:12px 0 0;padding:2px;border-radius:7px;background:var(--hk-soft)}',
@@ -591,7 +594,8 @@
     var MODEL = { reaction: ['Reaction', 'Reacción'], continuation: ['Continuation', 'Continuación'], 'initiation pocket': ['Initiation', 'Iniciación'] };
     var PHASE = { range: ['Range day', 'Día de rango'], 'trend up': ['Uptrend day', 'Día alcista'], 'trend down': ['Downtrend day', 'Día bajista'], initiation: ['Initiation', 'Iniciación'],
       'range forming': ['Range forming', 'Rango formándose'], 'initiation up': ['Initiation up', 'Iniciación alcista'], 'initiation down': ['Initiation down', 'Iniciación bajista'] };
-    var RULE_ES = { range: 'rango', initiation: 'iniciación', countertrend: 'contratendencia', 'trend 50%': 'tendencia 50%' }, LOC_ES = { discount: 'descuento', premium: 'premium', break: 'ruptura' };
+    var RULE_ES = { range: 'rango', initiation: 'iniciación', countertrend: 'contratendencia', 'trend 50%': 'tendencia 50%' }, LOC_ES = { discount: 'descuento', premium: 'premium', break: 'ruptura', between: 'entre medias', '50% zone': 'zona del 50%' };
+    function sSplit(d) { return d && d.tfx ? '<span class="hk-chip warn" title="' + esc(L('The 4H and the 15M pointed opposite ways', 'El 4H y el 15M apuntaban en sentidos opuestos')) + '">4H ≠ 15M</span>' : ''; }
     function sOut(o) { var x = SOUT[o]; return x && L(x[0], x[1]); }
     function sModel(m) { var x = MODEL[m]; return x ? L(x[0], x[1]) : m; }
     function sPhase(p) { var x = PHASE[p]; return x ? L(x[0], x[1]) : p; }
@@ -655,7 +659,7 @@
     function sMarks(r) { var m = [], k = sDwN(r); if (r.note) m.push(L('note', 'nota')); if (r.be_mine) m.push(r.be_mine.none ? L('no BE', 'sin BE') : L('your BE', 'tu BE')); if (k) m.push(sPl(k, 'drawing', 'dibujo', 'dibujos')); return m.length ? '<u> · ' + m.join(' · ') + '</u>' : ''; }
     function sRow(r) { var d = r.data, buy = d.side > 0, rule = d.rule === 'initiation pocket' ? 'initiation' : d.rule;
       return '<div class="hk-tr" data-sn="' + r.n + '" aria-current="' + (ssel === r.n) + '"><button class="hk-trm" data-so="' + r.n + '" aria-expanded="' + (ssel === r.n) + '">' +
-        '<span class="m"><i class="' + (buy ? 'buy' : 'sell') + '"></i>' + sBuy(buy) + ' · ' + esc(sModel(d.model)) + '</span>' +
+        '<span class="m"><i class="' + (buy ? 'buy' : 'sell') + '"></i>' + sBuy(buy) + ' · ' + esc(sModel(d.model)) + sSplit(d) + '</span>' +
         '<span class="r ' + d.out + '">' + sR(d.net) + '</span>' +
         '<span class="s">' + esc(sDay(r, { weekday: 'short', day: '2-digit', month: 'short' }) + ' · ' + d.at + ' · ' + sRuleW(rule) + ' · ' + sLocW(d.loc)) + sMarks(r) + '</span></button>' +
         '<div class="hk-vt">' + sTick(r) + '</div></div>'; }
@@ -664,7 +668,7 @@
     function sWhy(line) { var i = line.indexOf(': '); return '<li>' + (i > 0 && i < 34 ? '<b>' + esc(line.slice(0, i + 1)) + '</b>' + esc(line.slice(i + 1)) : esc(line)) + '</li>'; }
     // the rule test's own lines (hawk_study.data.note, written in English by the study's export): the known sentences in Spanish, anything else as it came
     function sNoteL(l) { if (!ES()) return l; var m;
-      if ((m = /^At (\S+) London price took the last hour's (low|high), extreme (\S+) at (\S+), in (discount|premium)\.$/.exec(l))) return 'A las ' + m[1] + ' (hora de Londres) el precio barrió el ' + (m[2] === 'low' ? 'mínimo' : 'máximo') + ' de la última hora, extremo ' + m[3] + ' a las ' + m[4] + ', en ' + LOC_ES[m[5]] + '.';
+      if ((m = /^At (\S+) London price took the last hour's (low|high), extreme (\S+) at (\S+), in (discount|premium|between|50% zone)\.$/.exec(l))) return 'A las ' + m[1] + ' (hora de Londres) el precio barrió el ' + (m[2] === 'low' ? 'mínimo' : 'máximo') + ' de la última hora, extremo ' + m[3] + ' a las ' + m[4] + ', en ' + LOC_ES[m[5]] + '.';
       if ((m = /^Range rule: (buy|sell) only from (discount|premium)\.$/.exec(l))) return 'Regla de rango: ' + (m[1] === 'buy' ? 'compra' : 'vende') + ' solo desde ' + LOC_ES[m[2]] + '.';
       if ((m = /^Reaction: the first small candle \((\$\S+|\S+ (?:pips?|points)) or less\) after the extreme, no new extreme\. Entry at its close, stop (\$\S+|\S+ (?:pips?|points)) past the extreme\.$/.exec(l))) return 'Reacción: la primera vela pequeña (' + sUes(m[1]) + ' o menos) tras el extremo, sin nuevo extremo. Entrada a su cierre, stop ' + sUes(m[2]) + ' más allá del extremo.';
       if ((m = /^Continuation: an aggressive leg of (\$\S+|\S+ (?:pips?|points)) from the extreme to (\S+); limit at the small range near its 50%, stop past that range\.$/.exec(l))) return 'Continuación: un tramo agresivo de ' + sUes(m[1]) + ' desde el extremo hasta ' + m[2] + '; límite en el pequeño rango cerca de su 50%, stop más allá de ese rango.';
@@ -672,20 +676,22 @@
       if ((m = /^Entry on the pull back into the small pocket at the break \((\S+)\), stop (\$\S+|\S+ (?:pips?|points)) past it\.$/.exec(l))) return 'Entrada en el retroceso al pequeño pocket de la ruptura (' + m[1] + '), stop ' + sUes(m[2]) + ' más allá.';
       if ((m = /^Countertrend rule: back towards the 50%, with (\$\S+|\S+ (?:pips?|points)) of room\.$/.exec(l))) return 'Regla de contratendencia: de vuelta hacia el 50%, con ' + sUes(m[1]) + ' de recorrido.';
       if (l === 'Trend rule: with the trend, at the 50% of the previous A-to-B leg.') return 'Regla de tendencia: a favor de la tendencia, en el 50% del tramo A-B anterior.';
-      return l; }
+      if ((m = /^Initiation rule: the hour chart broke (up|down) strongly, so (buys|sells) only, at the 50% of a new leg\.$/.exec(l))) return 'Regla de iniciación: el gráfico de 1 hora rompió con fuerza ' + (m[1] === 'up' ? 'al alza' : 'a la baja') + ', así que solo ' + (m[2] === 'buys' ? 'compras' : 'ventas') + ', en el 50% de un tramo nuevo.';
+      return aES(l); }
     // the explanation in three short blocks (Nestor: "it looks like a big blob of words"): the day, what happened, the trade's numbers
     function sExplain(d, r) { var buy = d.side > 0, tp = +sPip(d.tgt, d.entry);
-      var what = String(d.note || '').split('\n').filter(function (l) { return l && !/^(HTF read|Buy |Sell |Break-even once|Target hit at|Stopped out at|Closed at)/.test(l); });
+      var what = String(d.note || '').split('\n').filter(function (l) { return l && !/^(HTF read|Buy |Sell |Break-even once|Target hit at|Stopped out at|Closed at)/.test(l) && !(d.tfs && /^Timeframes: /.test(l)); });
       var tt = [[L('Entry', 'Entrada'), sPx(d.entry), sBuy(buy), ''], ['Stop', sPx(d.stop), sDist(d.stop, d.entry), 'sl'], [L('Target', 'Objetivo'), sPx(d.tgt), sDist(d.tgt, d.entry) + ' · ' + (Math.abs(d.tgt - d.entry) / Math.max(1e-9, Math.abs(d.entry - d.stop))).toFixed(1) + 'R', 'tp']];
       if (d.be != null) tt.push(['Break-even', sPx(d.be), L('your rules: last 1m swing', 'tus reglas: último swing de 1m'), '']);
       if (r.be_mine) tt.push([L('Your BE', 'Tu BE'), r.be_mine.none ? '–' : sPx(r.be_mine.price), r.be_mine.none ? L('you wouldn\'t move it', 'no lo moverías') : sBeVs(d, r.be_mine.price), 'mb']);
-      return '<div class="hk-lbl">' + L('The day', 'El día') + '</div><div class="hk-kpi c3">' + [[sPhase(d.phase), L('HTF read', 'Lectura HTF')], [sDist(d.bh, d.bl), L('24h to 08:00', '24h hasta las 08:00')], [sPx((d.bh + d.bl) / 2), '50%']]
-          .map(function (x) { return '<div><b>' + esc(x[0]) + '</b><span>' + x[1] + '</span></div>'; }).join('') + '</div>' +
+      var to = d.r1 ? hm(d.r1) : '08:00';   // the 24 h box ends where the session's scan starts (07:00 London)
+      return '<div class="hk-lbl">' + L('The day', 'El día') + '</div><div class="hk-kpi c3">' + [[sPhase(d.phase), d.tfs ? L('Hour chart', 'Gráfico de 1 hora') : L('HTF read', 'Lectura HTF')], [sDist(d.bh, d.bl), L('24h to ' + to, '24h hasta las ' + to)], [sPx((d.bh + d.bl) / 2), '50%']]
+          .map(function (x) { return '<div><b>' + esc(x[0]) + '</b><span>' + x[1] + '</span></div>'; }).join('') + '</div>' + (d.tfs ? tfTiles(d.tfs, d.tfx) : '') +
         '<div class="hk-lbl">' + L('What happened', 'Qué pasó') + '</div><ul class="hk-why">' + what.map(function (l) { return sWhy(sNoteL(l)); }).join('') + '</ul>' +
         '<div class="hk-lbl">' + L('The trade', 'La operación') + '</div><dl class="hk-tt">' + tt.map(function (x) { return '<dt>' + x[0] + '</dt><dd class="p ' + x[3] + '">' + x[1] + '</dd><dd class="x">' + esc(x[2]) + '</dd>'; }).join('') + '</dl>'; }
     function sDet(r) { var d = r.data, ap = !!opt.study;
       return '<div class="hk-det" id="hk-sd">' +
-        '<div class="hk-dh"><span class="hk-out ' + d.out + '">' + sOut(d.out) + '</span><span class="rr">' + sR(d.net) + '<small>' + sR(d.r) + L(' before costs', ' antes de costes') + '</small></span><span class="n">#' + r.n + L(' · out ', ' · salida ') + hm(d.xts) + '</span></div>' +
+        '<div class="hk-dh"><span class="hk-out ' + d.out + '">' + sOut(d.out) + '</span>' + sSplit(d) + '<span class="rr">' + sR(d.net) + '<small>' + sR(d.r) + L(' before costs', ' antes de costes') + '</small></span><span class="n">#' + r.n + L(' · out ', ' · salida ') + hm(d.xts) + '</span></div>' +
         (ap ? '<div class="hk-nav"><button class="hk-btn go" data-sa="open">' + L('Show in Study', 'Ver en el Estudio') + '</button></div>' : '') +
         (ap ? '<div class="hk-sst"><span id="hk-sst">' + esc(sStat) + '</span></div>' : '') +
         sExplain(d, r) +
@@ -698,19 +704,21 @@
       css(host.ownerDocument);
       var h = '<div class="hk-sh"><div><h4>' + L('Rule study', 'Estudio de reglas') + '</h4><p>' + esc(mkName(sMkt)) + L(' · London 08–10 · 1 year', ' · Londres 08–10 · 1 año') + '</p></div><div class="hk-seg hk-vw" role="group" aria-label="' + L('View', 'Vista') + '">' +
         [['trades', L('Trades', 'Operaciones')], ['whatif', L('Variables', 'Variables')]].map(function (v) { return '<button data-sw="' + v[0] + '" aria-pressed="' + (sview === v[0]) + '">' + v[1] + '</button>'; }).join('') + '</div></div>';
+      if (sFlPend) h += sFlCard(sFlPend);
       h += sMktHtml();
       var all = study.filter(function (r) { return sIn(r.day); });
       h += sPerHtml(sview === 'whatif' && wiD ? wiSim(wi0()).length : all.length);
       if (sview === 'whatif') { list.innerHTML = h + wiHtml(); return; }
       var net = all.reduce(function (s, r) { return s + r.data.net; }, 0), won = all.filter(function (r) { return r.data.out === 'win'; }).length;
       var ag = all.filter(function (r) { return r.verdict === 'agree'; }).length, no = all.filter(function (r) { return r.verdict === 'disagree'; }).length, chk = ag + no;
-      h += '<p class="hk-hint hk-lead">' + (sMkt === 'EURUSD' ? L('Your rules: stop 2–4 pips, target 20 pips, 0.6 pip costs.', 'Tus reglas: stop de 2–4 pips, objetivo de 20 pips, 0.6 pips de costes.') : sLeadMkt()) + (opt.study ? L(' Tap a trade to see it in Study with its zones and position.', ' Toca una operación para verla en el Estudio con sus zonas y su posición.') : '') + L(' Tick the ones you\'d take, cross the ones you wouldn\'t.', ' Marca con ✓ las que tomarías y con ✗ las que no.') + '</p>' +
+      h += '<p class="hk-hint hk-lead">' + (sMkt === 'EURUSD' ? L('Your rules: stop 2–4 pips, target 20 pips, 0.6 pip costs.', 'Tus reglas: stop de 2–4 pips, objetivo de 20 pips, 0.6 pips de costes.') : sLeadMkt()) +
+        (study[0] && study[0].data.rules === 'phases' ? L(' Read with your three phases on 4H / 1H / 15M.', ' Leído con tus tres fases en 4H / 1H / 15M.') : '') + (opt.study ? L(' Tap a trade to see it in Study with its zones and position.', ' Toca una operación para verla en el Estudio con sus zonas y su posición.') : '') + L(' Tick the ones you\'d take, cross the ones you wouldn\'t.', ' Marca con ✓ las que tomarías y con ✗ las que no.') + '</p>' +
         '<div class="hk-kpi">' + [[all.length, L('Trades', 'Operaciones')], [sR1(net), L('Net', 'Neto'), net >= 0 ? 'up' : 'dn'], [won, L('Targets', 'Objetivos')], [ag, L('You ✓', 'Tú ✓'), ag ? 'up' : '']]
           .map(function (s) { return '<div><b class="' + (s[2] || '') + '">' + s[0] + '</b><span>' + s[1] + '</span></div>'; }).join('') + '</div>' +
         '<div class="hk-prog"><div class="t"><span>' + L('Checked <b>' + chk + '</b> of ' + all.length, 'Revisadas <b>' + chk + '</b> de ' + all.length) + '</span><span>' + L(ag + ' valid · ' + no + ' not', ag + ' válidas · ' + no + ' no') + '</span></div>' +
         '<div class="hk-bar"><i class="ok" style="width:' + (ag / Math.max(1, all.length) * 100).toFixed(2) + '%"></i><i class="no" style="width:' + (no / Math.max(1, all.length) * 100).toFixed(2) + '%"></i></div></div>' +
         '<div class="hk-flt"><button class="hk-btn" data-sflight>' + L('Bring in flight marks', 'Traer las marcas del vuelo') + '</button><input type="file" accept=".json,application/json" data-sfile hidden>' +
-        '<p class="hk-hint" aria-live="polite">' + esc(sFlMsg || L('Checked trades in the offline study? Pick the marks file it downloaded.', '¿Revisaste operaciones en el estudio sin conexión? Elige el archivo de marcas que descargó.')) + '</p></div>' +
+        '<p class="hk-hint" aria-live="polite">' + esc(sFlMsg || L('Back from the flight? In the offline study press Send to Session Terminal, or pick a copy it saved.', '¿De vuelta del vuelo? En el estudio sin conexión pulsa Enviar a Session Terminal, o elige una copia que guardó.')) + '</p></div>' +
         '<div class="hk-seg" role="group" aria-label="' + L('Show', 'Mostrar') + '">' + [['all', L('All', 'Todas')], ['win', L('Wins', 'Ganadoras')], ['loss', L('Losses', 'Perdedoras')], ['be', 'BE'], ['time', L('Closed 13:20', 'Cerradas 13:20')], ['open', L('To check', 'Por revisar')]]
           .map(function (f) { return '<button data-sf="' + f[0] + '" aria-pressed="' + (sfil === f[0]) + '">' + f[1] + '</button>'; }).join('') + '</div>';
       var rs = sShown(), last = '', mo = {};
@@ -727,17 +735,33 @@
     function sRefresh() { var sc = sScroller(), k = sc ? sc.scrollTop : 0; studyRender(); if (sc) sc.scrollTop = k; }
     // the offline study's marks (hawk-study-marks-*.json): each changed tick / note goes to its row, any market, then the tab reloads
     var sFlMsg = '';
-    async function sImport(f) {
-      var j = null; try { j = JSON.parse(await f.text()); } catch (x) {}
-      if (!j || j.kind !== 'st-hawk-study-marks' || !Array.isArray(j.marks)) { sFlMsg = L('That file isn\'t marks from the offline study.', 'Ese archivo no son marcas del estudio sin conexión.'); sRefresh(); return; }
-      var ms = j.marks.filter(function (m) { return m && typeof m.run === 'string' && /^strict_20(:[\w.]+)?$/.test(m.run) && +m.n > 0; }), ok = 0, miss = 0;
+    async function sImport(f) { var j = null; try { j = JSON.parse(await f.text()); } catch (x) {} return sImportJ(j); }
+    // v2 (7 Nov 2026, the new-rules study): a mark carries the tick and note, and his drawings (dw, the app's own drawings) and break-even
+    // (be) when he touched them; each saves only onto the trade of that run, number AND day. A v1 file came from the first offline study:
+    // its numbers are the old rules' trades, so it goes to the same trade under the new rules (data.was) or stays on the old one (v1_)
+    async function sImportJ(j) {
+      if (!j || j.kind !== 'st-hawk-study-marks' || !Array.isArray(j.marks)) { sFlMsg = L('That file isn\'t marks from the offline study.', 'Ese archivo no son marcas del estudio sin conexión.'); sRefresh(); return null; }
+      var ms = j.marks.filter(function (m) { return m && typeof m.run === 'string' && /^(v1_)?strict_20(:[\w.]+)?$/.test(m.run) && +m.n > 0 && /^\d{4}-\d\d-\d\d$/.test(String(m.day || '')); }), ok = 0, miss = 0, now = new Date().toISOString();
       sFlMsg = L('Bringing in ' + ms.length + '…', 'Trayendo ' + ms.length + '…'); sRefresh();
-      for (var i = 0; i < ms.length; i++) { var m = ms[i];
-        var q = await sb.from('hawk_study').update({ verdict: m.verdict === 'agree' || m.verdict === 'disagree' ? m.verdict : null, note: String(m.note || '').trim() || null,
-          verdict_at: m.at || new Date().toISOString() }).eq('run', m.run).eq('n', +m.n).select('n');
+      for (var i = 0; i < ms.length; i++) { var m = ms[i], p = {};
+        if ('verdict' in m || 'note' in m) { p.verdict = m.verdict === 'agree' || m.verdict === 'disagree' ? m.verdict : null; p.note = String(m.note || '').trim().slice(0, 4000) || null; p.verdict_at = m.at || now; }
+        if ('dw' in m) { var dw = Array.isArray(m.dw) ? m.dw.filter(function (x) { return x && typeof x === 'object' && typeof x.type === 'string'; }).slice(0, 300) : []; p.drawings = dw.length ? dw : null; p.drawings_at = m.dwAt || m.at || now; }
+        if ('be' in m) p.be_mine = m.be && m.be.none ? { none: true } : m.be && isFinite(+m.be.price) ? { price: +m.be.price } : null;
+        var up = function (run, k, v) { return sb.from('hawk_study').update(p).eq('run', run).eq(k, v).eq('day', m.day).select('n'); }, q;
+        if (+j.v >= 2 || /^v1_/.test(m.run)) q = await up(m.run, 'n', +m.n);
+        else { q = await up(m.run, 'data->>was', String(+m.n)); if (!q.error && !(q.data && q.data.length)) q = await up('v1_' + m.run, 'n', +m.n); }
         if (!q.error && q.data && q.data.length) ok++; else miss++; }
-      sFlMsg = L(sPl(ok, 'mark') + ' brought in' + (miss ? ', ' + miss + ' not saved' : '') + '.', ok + (ok === 1 ? ' marca traída' : ' marcas traídas') + (miss ? ', ' + miss + ' sin guardar' : '') + '.');
-      study = null; await studyLoad(); }
+      sFlMsg = L(sPl(ok, 'trade') + ' brought in' + (miss ? ', ' + miss + ' not saved' : '') + '.', ok + (ok === 1 ? ' operación traída' : ' operaciones traídas') + (miss ? ', ' + miss + ' sin guardar' : '') + '.');
+      study = null; await studyLoad(); return { ok: ok, miss: miss }; }
+    // the offline study's "Send to Session Terminal" (Nestor, 7 Nov 2026: "dont make me click download, just save it as i go along"): it opens
+    // hawk.html#flight and hands its marks over by message once this page says it is ready; nothing is saved until he says yes on this card
+    var sFlPend = null, sFlOp = null;
+    function sFlCard(j) { var ms = j.marks || [], c = function (f) { return ms.filter(f).length; };
+      var bits = [[c(function (m) { return m.verdict; }), 'tick', 'marca'], [c(function (m) { return m.note; }), 'note', 'nota'], [c(function (m) { return m.dw && m.dw.length; }), 'with drawings', 'con dibujos'], [c(function (m) { return m.be; }), 'break-even', 'break-even']]
+        .filter(function (b) { return b[0]; }).map(function (b) { return b[1] === 'with drawings' ? L(b[0] + ' with drawings', b[0] + ' con dibujos') : sPl(b[0], b[1], b[2], b[2] + (b[2] === 'break-even' ? '' : 's')); });
+      return '<div class="hk-flc" role="region" aria-label="' + L('From the offline study', 'Del estudio sin conexión') + '"><b>' + L('From the offline study: ' + sPl(ms.length, 'trade'), 'Del estudio sin conexión: ' + sPl(ms.length, 'trade', 'operación', 'operaciones')) + '</b>' +
+        '<p>' + esc(bits.join(' · ') || L('Nothing changed.', 'Nada cambiado.')) + '</p><div class="hk-flb"><button class="hk-btn go" data-sflgo>' + L('Bring them in', 'Traerlas') + '</button><button class="hk-btn" data-sflno>' + L('Not now', 'Ahora no') + '</button></div></div>'; }
+    function sFlTell(o) { try { if (sFlOp) sFlOp.postMessage(Object.assign({ kind: 'st-hawk-flight-done' }, o), '*'); } catch (x) {} }
     function sMsg(t) { var el = byEl('#hk-ss'); if (el) el.textContent = t; }
     function sStatus(t) { sStat = t; var el = byEl('#hk-sst'); if (el) el.textContent = t; }
     function sMarkRow(r) { var el = byEl('.hk-tr[data-sn="' + r.n + '"] .s'); if (!el) return; var u = el.querySelector('u'); if (u) u.remove(); el.insertAdjacentHTML('beforeend', sMarks(r)); }
@@ -979,6 +1003,8 @@
         var sw = e.target.closest('[data-sw]'); if (sw) { if (sview !== sw.dataset.sw) { sEnd(); sview = sw.dataset.sw; sRefresh(); } return; }
         var pk = e.target.closest('[data-per]'); if (pk) { sPer.k = pk.dataset.per; sPerSave(); sRefresh(); return; }
         if (e.target.closest('[data-sflight]')) { var fi = byEl('[data-sfile]'); if (fi) fi.click(); return; }
+        if (e.target.closest('[data-sflgo]') && sFlPend) { var fj = sFlPend; sFlPend = null; sImportJ(fj).then(function (r) { sFlTell({ made: fj.made, ok: r ? r.ok : 0, miss: r ? r.miss : 0 }); }); return; }
+        if (e.target.closest('[data-sflno]') && sFlPend) { var nj = sFlPend; sFlPend = null; sFlTell({ made: nj.made, no: 1 }); sRefresh(); return; }
         if (sview === 'whatif') { wiClick(e); return; }
         var f = e.target.closest('[data-sf]'); if (f) { sfil = f.dataset.sf; sRefresh(); return; }
         var tk = e.target.closest('[data-tick]'); if (tk) { var tr0 = sFind(tk.dataset.sn); if (tr0) sVerdict(tr0, tk.dataset.tick); return; }
@@ -1028,6 +1054,12 @@
     // the app's language changed (its setLanguage calls STHawk.relang): everything drawn again in it
     function relang() { var hd = root.querySelector('.hk-head'); if (hd) hd.innerHTML = headHtml(); tabs();
       if (period === 's') { if (study) sRefresh(); else load(); } else if (rows.length) render(); else load(); }
+    (function () { var W = doc.defaultView; if (mount.flight || !W || !W.opener || !/(^|[#&])flight($|&)/.test(W.location.hash || '')) return;
+      mount.flight = 1; sFlOp = W.opener; period = 's'; tabs(); var tries = 0, hi = null;
+      W.addEventListener('message', function (e) { var d = e.data; if (e.source !== sFlOp || !d || d.kind !== 'st-hawk-study-marks' || !Array.isArray(d.marks)) return;
+        clearInterval(hi); sFlPend = d; if (period !== 's') { period = 's'; tabs(); } if (study) sRefresh(); else load(); });
+      var hello = function () { try { sFlOp.postMessage({ kind: 'st-hawk-flight-ready' }, '*'); } catch (x) { clearInterval(hi); } };
+      hi = setInterval(function () { if (++tries > 60 || sFlPend) clearInterval(hi); else hello(); }, 500); hello(); })();
     load(); poll();
     var api = { reload: function () { load(); }, redraw: function () { todayPaint(); redraw(); }, today: todayPaint, relang: relang };
     MOUNTS.push(api);

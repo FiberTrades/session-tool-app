@@ -355,7 +355,7 @@ def scan_day(idx, opts):
                                         sb = (L[k] <= stop) if side > 0 else (H[k] >= stop)
                                         out.append(dict(model='initiation pocket', phase='initiation', side=side,
                                                         i=k if sb else k + 1, entry=entry, stop=stop, tgt=tg, be=ext,
-                                                        stopbar=sb, loc='break', tfx=tfx(T[i] + 60)))
+                                                        stopbar=sb, loc='break', tfx=tfx(T[i] + 60), edge=edge, ti=T[i]))
                                         break
         if not (WIN[0] - 30 <= m < WIN[1]) or dis: continue
         for side in (1, -1):
@@ -400,7 +400,8 @@ def scan_day(idx, opts):
                 if r and WIN[0] <= LMIN[r[0] - 1] < WIN[1]:
                     tg = target(side, r[1], abs(r[1] - r[2]), liq)
                     if tg: out.append(dict(model=rule + ' · reaction', phase=ph, side=side, i=r[0], entry=r[1],
-                                           stop=r[2], tgt=tg, be=prev_extreme(side, a), stopbar=False, loc=loc, tfx=tfx(T[r[0] - 1] + 60)))
+                                           stop=r[2], tgt=tg, be=prev_extreme(side, a), stopbar=False, loc=loc, tfx=tfx(T[r[0] - 1] + 60),
+                                           A=A, ta=T[a], ts=T[i], liq=liq))
             if 'continuation' in opts['models']:
                 pocket = None
                 if ev is not None:
@@ -414,7 +415,11 @@ def scan_day(idx, opts):
                     if WIN[0] <= LMIN[k - (0 if sb else 1)] < WIN[1]:
                         tg = target(side, e, abs(e - s_), liq)
                         if tg: out.append(dict(model=rule + ' · continuation', phase=ph, side=side, i=k, entry=e,
-                                               stop=s_, tgt=tg, be=Bv, stopbar=sb, loc=loc, box=bx, tfx=tfx(T[k - 1] + 60)))
+                                               stop=s_, tgt=tg, be=Bv, stopbar=sb, loc=loc, box=bx, tfx=tfx(T[k - 1] + 60),
+                                               A=A, ta=T[a], ts=T[i], liq=liq, B=Bv))
+    # what the Study tab draws for each one (7 Nov 2026): the 24 h box, the hour chart's last leg, the three timeframes at the start
+    tfs = {k: dict(said=v['said'], loc=v['loc'], d=v['d']) for k, v in fr['tf'].items()} if fr.get('tf') else None
+    for o_ in out: o_.update(bh=bh, bl=bl, a2b=a2b, r0=int(T[fr['j']]), r1=int(T[i0]), tfs=tfs)
     return out, ph
 
 def run(opts):
