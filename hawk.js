@@ -88,6 +88,7 @@
     '.hk-kpi div{padding:8px 10px;border-left:1px solid var(--hk-line);min-width:0}.hk-kpi div:first-child{border-left:0}',
     '.hk-kpi b{display:block;font:500 15px var(--hk-mono);font-variant-numeric:tabular-nums;color:var(--hk-ink);white-space:nowrap}.hk-kpi b.up{color:var(--hk-buy)}.hk-kpi b.dn{color:var(--hk-sell)}',
     '.hk-kpi span{display:block;margin-top:2px;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--hk-mut);white-space:nowrap}',
+    '.hk-flt{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0 0}.hk-flt .hk-hint{margin:0}',
     '.hk-prog{margin:12px 0 0}.hk-prog .t{display:flex;justify-content:space-between;gap:8px;font-size:11.5px;color:var(--hk-mut)}.hk-prog .t b{font-weight:500;color:var(--hk-ink)}',
     '.hk-bar{display:flex;height:4px;border-radius:2px;background:var(--hk-soft);overflow:hidden;margin-top:6px}.hk-bar i{display:block;height:100%}.hk-bar i.ok{background:var(--hk-buy)}.hk-bar i.no{background:var(--hk-sell)}',
     '.hk-seg{display:flex;margin:12px 0 0;padding:2px;border-radius:7px;background:var(--hk-soft)}',
@@ -708,6 +709,8 @@
           .map(function (s) { return '<div><b class="' + (s[2] || '') + '">' + s[0] + '</b><span>' + s[1] + '</span></div>'; }).join('') + '</div>' +
         '<div class="hk-prog"><div class="t"><span>' + L('Checked <b>' + chk + '</b> of ' + all.length, 'Revisadas <b>' + chk + '</b> de ' + all.length) + '</span><span>' + L(ag + ' valid · ' + no + ' not', ag + ' válidas · ' + no + ' no') + '</span></div>' +
         '<div class="hk-bar"><i class="ok" style="width:' + (ag / Math.max(1, all.length) * 100).toFixed(2) + '%"></i><i class="no" style="width:' + (no / Math.max(1, all.length) * 100).toFixed(2) + '%"></i></div></div>' +
+        '<div class="hk-flt"><button class="hk-btn" data-sflight>' + L('Bring in flight marks', 'Traer las marcas del vuelo') + '</button><input type="file" accept=".json,application/json" data-sfile hidden>' +
+        '<p class="hk-hint" aria-live="polite">' + esc(sFlMsg || L('Checked trades in the offline study? Pick the marks file it downloaded.', '¿Revisaste operaciones en el estudio sin conexión? Elige el archivo de marcas que descargó.')) + '</p></div>' +
         '<div class="hk-seg" role="group" aria-label="' + L('Show', 'Mostrar') + '">' + [['all', L('All', 'Todas')], ['win', L('Wins', 'Ganadoras')], ['loss', L('Losses', 'Perdedoras')], ['be', 'BE'], ['time', L('Closed 13:20', 'Cerradas 13:20')], ['open', L('To check', 'Por revisar')]]
           .map(function (f) { return '<button data-sf="' + f[0] + '" aria-pressed="' + (sfil === f[0]) + '">' + f[1] + '</button>'; }).join('') + '</div>';
       var rs = sShown(), last = '', mo = {};
@@ -722,6 +725,19 @@
       return L('Your rules sized to ' + nm + '\'s London move: stop ' + sDv(2 * m.pip) + '–' + sDv(4 * m.pip) + ' (your 2–4 pips), target ' + sDv(20 * m.pip) + ' (your 20), ' + sDv(cost) + ' costs.',
                'Tus reglas a la medida del movimiento de ' + nm + ' en Londres: stop de ' + sDv(2 * m.pip) + '–' + sDv(4 * m.pip) + ' (tus 2–4 pips), objetivo de ' + sDv(20 * m.pip) + ' (tus 20), ' + sDv(cost) + ' de costes.'); }
     function sRefresh() { var sc = sScroller(), k = sc ? sc.scrollTop : 0; studyRender(); if (sc) sc.scrollTop = k; }
+    // the offline study's marks (hawk-study-marks-*.json): each changed tick / note goes to its row, any market, then the tab reloads
+    var sFlMsg = '';
+    async function sImport(f) {
+      var j = null; try { j = JSON.parse(await f.text()); } catch (x) {}
+      if (!j || j.kind !== 'st-hawk-study-marks' || !Array.isArray(j.marks)) { sFlMsg = L('That file isn\'t marks from the offline study.', 'Ese archivo no son marcas del estudio sin conexión.'); sRefresh(); return; }
+      var ms = j.marks.filter(function (m) { return m && typeof m.run === 'string' && /^strict_20(:[\w.]+)?$/.test(m.run) && +m.n > 0; }), ok = 0, miss = 0;
+      sFlMsg = L('Bringing in ' + ms.length + '…', 'Trayendo ' + ms.length + '…'); sRefresh();
+      for (var i = 0; i < ms.length; i++) { var m = ms[i];
+        var q = await sb.from('hawk_study').update({ verdict: m.verdict === 'agree' || m.verdict === 'disagree' ? m.verdict : null, note: String(m.note || '').trim() || null,
+          verdict_at: m.at || new Date().toISOString() }).eq('run', m.run).eq('n', +m.n).select('n');
+        if (!q.error && q.data && q.data.length) ok++; else miss++; }
+      sFlMsg = L(sPl(ok, 'mark') + ' brought in' + (miss ? ', ' + miss + ' not saved' : '') + '.', ok + (ok === 1 ? ' marca traída' : ' marcas traídas') + (miss ? ', ' + miss + ' sin guardar' : '') + '.');
+      study = null; await studyLoad(); }
     function sMsg(t) { var el = byEl('#hk-ss'); if (el) el.textContent = t; }
     function sStatus(t) { sStat = t; var el = byEl('#hk-sst'); if (el) el.textContent = t; }
     function sMarkRow(r) { var el = byEl('.hk-tr[data-sn="' + r.n + '"] .s'); if (!el) return; var u = el.querySelector('u'); if (u) u.remove(); el.insertAdjacentHTML('beforeend', sMarks(r)); }
@@ -962,6 +978,7 @@
         var smk = e.target.closest('[data-smk]'); if (smk) { sMktSet(smk.dataset.smk); return; }
         var sw = e.target.closest('[data-sw]'); if (sw) { if (sview !== sw.dataset.sw) { sEnd(); sview = sw.dataset.sw; sRefresh(); } return; }
         var pk = e.target.closest('[data-per]'); if (pk) { sPer.k = pk.dataset.per; sPerSave(); sRefresh(); return; }
+        if (e.target.closest('[data-sflight]')) { var fi = byEl('[data-sfile]'); if (fi) fi.click(); return; }
         if (sview === 'whatif') { wiClick(e); return; }
         var f = e.target.closest('[data-sf]'); if (f) { sfil = f.dataset.sf; sRefresh(); return; }
         var tk = e.target.closest('[data-tick]'); if (tk) { var tr0 = sFind(tk.dataset.sn); if (tr0) sVerdict(tr0, tk.dataset.tick); return; }
@@ -1000,6 +1017,7 @@
       if (e.target.hasAttribute && e.target.hasAttribute('data-hkp')) { if (period === 's') sEnd(); period = lastP = +e.target.value || 7; tabs(); load(); return; }
       if (study && period === 's' && e.target.hasAttribute('data-smksel')) { sMktSet(e.target.value); return; }
       if (study && period === 's' && e.target.hasAttribute('data-persel')) { sPer.k = e.target.value; sPerSave(); sRefresh(); return; }
+      if (study && period === 's' && e.target.hasAttribute('data-sfile')) { var ff = e.target.files && e.target.files[0]; if (ff) sImport(ff); return; }
       if (e.target.dataset.pd) { sPer[e.target.dataset.pd] = e.target.value || ''; sPerSave(); sRefresh(); return; }
       if (e.target.dataset.wn) { var k = e.target.dataset.wn, v = e.target.value; if (k === 'exit') { if (!/^\d\d:\d\d/.test(v)) return; v = +v.slice(0, 2) * 60 + +v.slice(3, 5); } wiP[k] = e.target.dataset.wf ? wiClampF(k, (+v || 0) / +e.target.dataset.wf) : k === 'comm' || k === 'risk' ? wiClampF(k, +v || 0) : wiClamp(k, +v || 0); wiSet(); return; }
       if (e.target.tagName !== 'TEXTAREA') return;
