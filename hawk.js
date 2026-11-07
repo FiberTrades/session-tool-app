@@ -771,6 +771,15 @@
     function sMsg(t) { var el = byEl('#hk-ss'); if (el) el.textContent = t; }
     function sStatus(t) { sStat = t; var el = byEl('#hk-sst'); if (el) el.textContent = t; }
     function sMarkRow(r) { var el = byEl('.hk-tr[data-sn="' + r.n + '"] .s'); if (!el) return; var u = el.querySelector('u'); if (u) u.remove(); el.insertAdjacentHTML('beforeend', sMarks(r)); }
+    // the note boxes move (Nestor, 7 Nov 2026: "i need to be able to move around the callout label messages"): the app keeps where he put
+    // each one (st_hk_noff, by run, trade and box), so it opens there again; the trade's note also says what his own BE line made of it
+    var sNoteT = {};
+    function sNid(r, k) { return sRun() + '|' + r.n + '|' + k; }
+    function sNoff(r, k, def) { try { var o = JSON.parse(localStorage.getItem('st_hk_noff') || '{}')[sNid(r, k)]; if (o && isFinite(o.x) && isFinite(o.y)) return { x: +o.x, y: +o.y }; } catch (x) {} return def; }
+    function sPosText(r) { var d = r.data, x = sMoved(r) ? sMine(r) : null;
+      return '#' + r.n + ' ' + sBuy(d.side > 0) + ' · ' + sModel(d.model) + ' · ' + sLocW(d.loc) + '\n' + sOut(d.out) + ' ' + hm(d.xts) + ' · ' + sR(d.net) +
+        (x ? '\n' + L('With your BE: ', 'Con tu BE: ') + sOut(x.o) + (x.xm != null ? ' ' + sHm(x.xm) : '') + ' · ' + sR(x.net) : ''); }
+    function sNoteSync(r) { if (!r || sOnChart !== r.n || sHid || !opt.study || sNoteT[r.n] == null || sNoteT[r.n] === sPosText(r)) return; try { opt.study({ clear: true, list: sDraw(r) }); } catch (x) {} }
     function sDraw(r) { var d = r.data, buy = d.side > 0, q = (d.bh - d.bl) / 4, mid = (d.bh + d.bl) / 2, w0 = ldnAt(d.ts, 480), t0 = w0 - 25 * 3600, t1 = w0 + 2 * 3600, x1 = d.xts + 60;   // the box ends with the exit candle (Nestor, 7 Nov 2026: a box past the exit made a stopped trade look open when price reached the BE line after the stop)
       // the P/D zone is the Session Indicator's own (pd below); these three only for a study row without its range window
       var o = d.r0 ? [] : [
@@ -780,14 +789,15 @@
       // the high (low) the sweep took, drawn from the candle that made it to the break (Nestor: "can the high line extend from the high so
       // i can see quickly where its coming from?")
       // the line's words sit in a note box off the candles: below a low, above a high (Nestor, 6 Nov 2026)
-      var lqNote = function (t, px, txt, low) { o.push({ type: 'note', a: { t: t, price: px }, off: { x: 46, y: low ? 58 : -58 }, color: '#e0a84a', width: 1, tsz: 11, text: txt }); };
+      var lqNote = function (t, px, txt, low) { o.push({ type: 'note', a: { t: t, price: px }, off: sNoff(r, 'lq', { x: 46, y: low ? 58 : -58 }), sid: sNid(r, 'lq'), color: '#e0a84a', width: 1, tsz: 11, text: txt }); };
       if (d.lq != null && d.lqt) { o.push({ type: 'trend', a: { t: d.lqt, price: d.lq }, b: { t: Math.max(d.sw || d.ts, d.lqt + 60) + 900, price: d.lq }, color: '#e0a84a', width: 2 });
         lqNote(d.lqt, d.lq, (buy ? L('Low of the last hour ', 'Mínimo de la última hora ') : L('High of the last hour ', 'Máximo de la última hora ')) + hm(d.lqt) + '\n' + L('taken ', 'barrido ') + hm(d.sw || d.ts), buy); }
       else if (d.a != null && d.ta) { o.push({ type: 'trend', a: { t: d.ta - 3600, price: d.a }, b: { t: d.ta + 1800, price: d.a }, color: '#e0a84a', width: 2 });
         lqNote(d.ta, d.a, d.model === 'initiation pocket' ? (buy ? L('Range high broken', 'Máximo del rango roto') : L('Range low broken', 'Mínimo del rango roto')) : (buy ? L('Low taken ', 'Mínimo barrido ') : L('High taken ', 'Máximo barrido ')) + hm(d.ta), d.model === 'initiation pocket' ? !buy : buy); }
       o.push({ type: buy ? 'long' : 'short', a: { t: d.ts, price: d.entry }, b: { t: x1, price: d.entry }, sl: d.stop, tp: d.tgt });
-      o.push({ type: 'note', a: { t: d.ts, price: d.entry }, off: { x: 0, y: buy ? 110 : -110 }, color: '#9598a1', tcol: '#ffffff', width: 1, tsz: 11,   // white words, a grey edge (Nestor, 7 Nov 2026: "make these blue font white and no blue")
-        text: '#' + r.n + ' ' + sBuy(buy) + ' · ' + sModel(d.model) + ' · ' + sLocW(d.loc) + '\n' + sOut(d.out) + ' ' + hm(d.xts) + ' · ' + sR(d.net) });   // in a box past the stop, pointing at the entry (Nestor, 6 Nov 2026)
+      o.push({ type: 'note', a: { t: d.ts, price: d.entry }, off: sNoff(r, 'pos', { x: 0, y: buy ? 110 : -110 }), sid: sNid(r, 'pos'), color: '#9598a1', tcol: '#ffffff', width: 1, tsz: 11,   // white words, a grey edge (Nestor, 7 Nov 2026: "make these blue font white and no blue")
+        text: sPosText(r) });   // in a box past the stop, pointing at the entry (Nestor, 6 Nov 2026)
+      sNoteT[r.n] = sPosText(r);
       return o;
     }
     async function sOpen(r) { if (!opt.study) return; sHid = false; sStatus(L('Opening ' + sDay(r, { day: 'numeric', month: 'short', year: 'numeric' }) + ' in Study…', 'Abriendo el ' + sDay(r, { day: 'numeric', month: 'short', year: 'numeric' }) + ' en el Estudio…'));
@@ -846,7 +856,7 @@
     function sYbn(all) { var k = 0, net = 0; if (wiD) all.forEach(function (r) { if (sMoved(r)) { k++; net += sMine(r).net; } else net += r.data.net; });
       return '<p class="hk-ybn" id="hk-ybn">' + (k ? L('With your BE lines: <b>' + sR1(net) + '</b> · ' + k + (k === 1 ? ' trade' : ' trades') + ' changed', 'Con tus líneas de BE: <b>' + sR1(net) + '</b> · ' + k + (k === 1 ? ' operación cambiada' : ' operaciones cambiadas')) : '') + '</p>'; }
     function sMineRender(r) { var a = byEl('#hk-yb'); if (a && ssel === r.n) a.outerHTML = sYb(r); var e = byEl('.hk-tr[data-sn="' + r.n + '"] .r'); if (e) e.outerHTML = sRHtml(r);
-      var b = byEl('#hk-ybn'); if (b) b.outerHTML = sYbn(study.filter(function (x) { return sIn(x.day); })); }
+      var b = byEl('#hk-ybn'); if (b) b.outerHTML = sYbn(study.filter(function (x) { return sIn(x.day); })); sNoteSync(r); }
     async function sBeLine(r) { if (sOnChart !== r.n) { sMsg(L('Open this trade in Study first, then place your line.', 'Abre primero esta operación en el Estudio y luego pon tu línea.')); return; }
       var d = r.data, b = r.be_mine, q = d.out === 'loss' && !(b && b.price != null) ? sLossTip(r) : null, px = q && q.can ? r5(d.entry + d.side * q.gain / 2) : b && b.price != null ? b.price : d.be != null ? d.be : r5(d.entry + d.side * d.risk * 1e-4), ok = false;
       try { ok = await opt.study({ addBe: { n: r.n, t: d.ts, price: px } }); } catch (x) {}
@@ -938,7 +948,7 @@
     async function wiLoad() { if (wiD || wiBusy) return; wiBusy = true; wiErr = ''; var run1 = sRun();
       var q = await sb.from('hawk_study_days').select('day, d').eq('run', sRun()).order('day', { ascending: true });
       wiBusy = false; if (q.error) wiErr = q.error.message; else { if (run1 !== sRun()) return; wiD = q.data || []; if (wiFresh) { wiP = wi0(); wiP.cost = +(wiP.spr + wiP.comm / wiCF()).toFixed(4); wiFresh = false; } }
-      if (period === 's') sRefresh(); }
+      if (period === 's') { sRefresh(); sNoteSync(sFind(sOnChart)); } }
     function wiMB() { var o = {}; (study || []).forEach(function (r) { var b = r.be_mine; if (b) o[r.day + '|' + r.data.side + '|' + Math.round(r.data.entry / wiU())] = b.none ? null : Math.round(b.price / wiU()); }); return o; }
     function wiOK() { var o = {}; (study || []).forEach(function (r) { if (r.verdict === 'agree') o[r.day + '|' + r.data.side + '|' + Math.round(r.data.entry / wiU())] = 1; }); return o; }
     function wiSim(p) { var out = [], ex = p.close === 'off' ? 9000 : Math.min(+p.exit, 1200), MB = p.be === 'mine' ? wiMB() : {}, OK = p.only === 'mine' ? wiOK() : null;
