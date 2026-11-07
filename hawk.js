@@ -187,13 +187,20 @@
     [/Fast (rise|drop) (\S+) → (\S+)\. If price comes back to (\S+)–(\S+) \(the small range at its 50%\): (buy|sell) (\S+), stop (\S+), target (\S+) \(([\d.]+R)\)\./g, function (m) { return (m[1] === 'rise' ? 'Subida rápida ' : 'Caída rápida ') + m[2] + ' → ' + m[3] + '. Si el precio vuelve a ' + m[4] + '–' + m[5] + ' (el pequeño rango en su 50%): ' + A_DO[m[6]] + ' ' + m[7] + ', stop ' + m[8] + ', objetivo ' + m[9] + ' (' + m[10] + ').'; }],
     [/(Buy|Sell) now ~(\S+) · stop (\S+) \(([\d.]+) pips\) · target (\S+) \(([\d.]+) pips, ([\d.]+R)\)\. (Low|High) taken (in the discount|in the premium|at the zone), the move has slowed\./g, function (m) { return A_DO[m[1]] + ' ahora ~' + m[2] + ' · stop ' + m[3] + ' (' + m[4] + ' pips) · objetivo ' + m[5] + ' (' + m[6] + ' pips, ' + m[7] + '). ' + (m[8] === 'Low' ? 'Mínimo' : 'Máximo') + ' barrido ' + A_WHERE[m[9]] + ', el movimiento se ha frenado.'; }],
     [/(Buy|Sell) limit (\S+) reached · stop (\S+) \(([\d.]+) pips\) · target (\S+) \(([\d.]+R)\)\./g, function (m) { return 'Límite de ' + A_SIDE[m[1].toLowerCase()] + ' ' + m[2] + ' alcanzado · stop ' + m[3] + ' (' + m[4] + ' pips) · objetivo ' + m[5] + ' (' + m[6] + ').'; }],
+    [/^No trade · red news$/, function () { return 'Sin operación · noticia roja'; }],
+    [/(Buy|Sell) setup at (\S+) skipped: (.+?) at (\d\d:\d\d)\. No trades from (\d+) min before red news to (\d+) min after\./g, function (m) { return 'Setup de ' + A_SIDE[m[1].toLowerCase()] + ' en ' + m[2] + ' descartado: ' + m[3] + ' a las ' + m[4] + '. Sin operaciones desde ' + m[5] + ' min antes de una noticia roja hasta ' + m[6] + ' min después.'; }],
+    [/Red news (.+?) at (\d\d:\d\d): be out or at break-even by (\d\d:\d\d)\./g, function (m) { return 'Noticia roja ' + m[1] + ' a las ' + m[2] + ': fuera o en break-even antes de las ' + m[3] + '.'; }],
+    [/Red news (.+?) at (\d\d:\d\d): no order waiting from (\d\d:\d\d)\./g, function (m) { return 'Noticia roja ' + m[1] + ' a las ' + m[2] + ': ninguna orden pendiente desde las ' + m[3] + '.'; }],
+    [/Red news: (.+?)\. No trades from (\d+) min before each to (\d+) min after\./g, function (m) { return 'Noticias rojas: ' + m[1] + '. Sin operaciones desde ' + m[2] + ' min antes de cada una hasta ' + m[3] + ' min después.'; }],
+    [/No red news this morning for (.+?)\./g, function (m) { return 'Sin noticias rojas esta mañana para ' + m[1].replace(' or ', ' o ') + '.'; }],
+    [/Red news unknown \(calendar not read\): check it before you trade\./g, function () { return 'Noticias rojas desconocidas (no se pudo leer el calendario): revísalo antes de operar.'; }],
     [/It touched the stop in the same minute\./g, function () { return 'Tocó el stop en el mismo minuto.'; }],
     [/Tap to rate them: good call, not my trade, too early or too late\./g, function () { return 'Tócalas para valorarlas: bien visto, no es mi operación, demasiado pronto o demasiado tarde.'; }]
   ];
   function aES(s) { s = String(s == null ? '' : s); if (!ES()) return s;
     A_RULES.forEach(function (r) { s = s.replace(r[0], function () { return r[1](arguments); }); }); return s; }
   var RATE = [['good', 'Good call', 'Bien visto'], ['bad', 'Not my trade', 'No es mi operación'], ['early', 'Too early', 'Demasiado pronto'], ['late', 'Too late', 'Demasiado tarde']];
-  var KIND = { brief: ['Brief', 'Resumen'], sweep: ['Watch', 'Vigilar'], pocket: ['Watch', 'Vigilar'], initiation: ['Initiation', 'Iniciación'], setup: ['Setup', 'Setup'], done: ['Done', 'Fin'] };
+  var KIND = { brief: ['Brief', 'Resumen'], sweep: ['Watch', 'Vigilar'], pocket: ['Watch', 'Vigilar'], initiation: ['Initiation', 'Iniciación'], setup: ['Setup', 'Setup'], news: ['Red news', 'Noticia roja'], done: ['Done', 'Fin'] };
   var PHASES = [['range', 'Range', 'Rango'], ['trend up', 'Trend up', 'Tendencia alcista'], ['trend down', 'Trend down', 'Tendencia bajista']];
   var LDN = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }

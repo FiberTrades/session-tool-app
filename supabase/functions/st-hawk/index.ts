@@ -4,6 +4,8 @@
 // Guarded by the x-hawk-key header (HAWK_KEY in the function secrets and in /etc/st-hawk.env on uk1). Deploy with --no-verify-jwt.
 // Body: { day, key, kind, side?, title, body, data?, symbol? }   or   { ping: true } to check the key
 //   or { config: true }: the account + market picked in the hawk tab (hawk_config, 6 Nov 2026).
+//   or { news: true, from, to }: the red (high-impact) releases between two ISO times, from the app's calendar_events - the hawk
+//   never gives a setup just before one (7 Nov 2026: prop firms don't allow trading into red news).
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { sendPush } from "../_shared/nudges.ts";
 
@@ -26,6 +28,11 @@ Deno.serve(async (req) => {
   if (b.ping) return json({ ok: true, admin: !!(await adminUser()) });
   if (b.config) { const { data: c } = await admin.from("hawk_config").select("login,sym").eq("id", 1).maybeSingle();
     return json({ ok: true, login: c?.login || "1515070952", sym: c?.sym || "EURUSD" }); }
+  if (b.news) { const from = new Date(String(b.from || "")), to = new Date(String(b.to || ""));
+    if (isNaN(+from) || isNaN(+to) || +to - +from > 7 * 86400e3) return json({ error: "bad range" }, 400);
+    const { data: ev, error } = await admin.from("calendar_events").select("at,currency,title").ilike("impact", "high").eq("timed", true)
+      .gte("at", from.toISOString()).lte("at", to.toISOString()).order("at", { ascending: true });
+    return error ? json({ error: error.message }, 500) : json({ ok: true, events: ev || [] }); }
   const symbol = /^[A-Z0-9.]{3,12}$/.test(String(b.symbol || "")) ? String(b.symbol) : "EURUSD";
   const day = String(b.day || ""), k = String(b.key || ""), kind = String(b.kind || "");
   const title = String(b.title || "").slice(0, 120), body = String(b.body || "").slice(0, 1200);

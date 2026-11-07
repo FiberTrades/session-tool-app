@@ -14,6 +14,9 @@
 #       initiation  a strong 5-minute close outside the range: don't trade against it, the pocket to buy high / sell low
 #       setup       the entry itself: a reaction now, or a pullback that reached its level
 #       done        10:05: how many alerts, tap to rate them
+#   * red news (7 Nov 2026, Nestor: prop firms don't allow trading into it): the app's calendar, for the market's currencies. No setup
+#     from NEWS_BEFORE min before a red release until NEWS_AFTER min after (a 'news' alert says it was skipped); a pullback order that
+#     could still be waiting at a release is told to come out by then; the brief lists the morning's red news.
 #   * each alert goes to the st-hawk edge function (stored in hawk_signals, pushed to the admin's phone, rated on hawk.html).
 # Env (/etc/st-hawk.env): HAWK_KEY, HAWK_URL. `python3 hawk.py replay <csv> <YYYY-MM-DD>` prints what a past day would have sent.
 import base64, datetime as dt, glob, hashlib, json, os, socket, sys, time, urllib.request
@@ -27,6 +30,9 @@ CANON = 'EURUSD'
 MK = {'EURUSD': (0.0001, 5, 'EUR/USD', 'pips', 0.0001), 'GBPUSD': (0.00013360655737705096, 5, 'GBP/USD', 'pips', 0.0001),
       'XAUUSD': (1.127322404371542, 2, 'Gold', '$', 1.0), 'US100': (6.01092896174864, 2, 'US100', 'points', 1.0)}
 DP = 5
+CURS = {'EURUSD': ('EUR', 'USD'), 'GBPUSD': ('GBP', 'USD'), 'XAUUSD': ('USD',), 'US100': ('USD',)}   # whose red news moves the market
+NEWS_BEFORE, NEWS_AFTER = 10, 5   # minutes: no setup in this window around a red release (FTMO's funded rule is 2 and 2; this is stricter)
+NEWS = {'t': 0, 'ev': [], 'ok': False}   # [(utc seconds, currency, title)], refreshed every 10 minutes
 def canon(sym):
     u = str(sym or '').upper()
     for k in MK:
@@ -70,6 +76,18 @@ class Hawk:
             except Exception as e: log('chart failed:', repr(e))
         data.update(sym=CANON, login=LOGIN, dp=DP)
         self.send(dict(day=self.day, key=(key if CANON == 'EURUSD' else CANON + ':' + key), kind=kind, side=side, title=title, body=body, data=data, symbol=CANON))
+
+    def news_near(self, t):
+        """The red release whose no-trade window holds UTC second t, for this market's currencies, else None."""
+        for at, cur, title in NEWS['ev']:
+            if cur in CURS.get(CANON, ('USD',)) and at - NEWS_BEFORE * 60 <= t <= at + NEWS_AFTER * 60: return (at, cur, title)
+        return None
+
+    def news_ahead(self, t, until):
+        """The first red release for this market's currencies after UTC second t and before `until`, else None."""
+        for at, cur, title in NEWS['ev']:
+            if cur in CURS.get(CANON, ('USD',)) and t < at <= until: return (at, cur, title)
+        return None
 
     def chart(self):
         """What the hawk is looking at, for hawk.html: ~a day of 5-minute candles and its reading of them."""
@@ -129,6 +147,10 @@ class Hawk:
                     m2 = sum(a2b) / 2
                     lines.append('Last leg %s → %s: its 50%% at %s is the %s zone.' % (px(a2b[0]), px(a2b[1]), px(m2), 'buy' if up else 'sell'))
                 lines.append('Price %s. Range %s–%s.' % (px(now), px(bl), px(bh)))
+            reds = [(at, cur, title) for at, cur, title in NEWS['ev'] if cur in CURS.get(CANON, ('USD',)) and ldt(at).strftime('%Y-%m-%d') == day and 6 * 60 <= ldt(at).hour * 60 + ldt(at).minute <= 13 * 60 + 30]
+            if reds: lines.append('Red news: ' + '; '.join('%s %s %s' % (hm(at), cur, title) for at, cur, title in reds) + '. No trades from %d min before each to %d min after.' % (NEWS_BEFORE, NEWS_AFTER))
+            elif NEWS['ok']: lines.append('No red news this morning for %s.' % ' or '.join(CURS.get(CANON, ('USD',))))
+            else: lines.append('Red news unknown (calendar not read): check it before you trade.')
             self.out('brief', 'brief', 'London brief · ' + MK[CANON][2], ' '.join(lines),
                      data=dict(phase=ph, bh=bh, bl=bl, price=now, a2b=a2b))
 
@@ -157,6 +179,8 @@ class Hawk:
                     body = ('Fast %s %s → %s. If price comes back to %s–%s (the small range at its 50%%): %s %s, stop %s, target %s (%.1fR).'
                             % (word(s, 'rise', 'drop'), px(A), px(B), px(min(e['entry'], e['stop'] + s * 0.5 * E.PIP)), px(max(e['entry'], e['stop'] + s * 0.5 * E.PIP)),
                                word(s, 'buy', 'sell'), px(e['entry']), px(e['stop']), px(e['tgt']), pips(e['tgt'], e['entry']) / pips(e['entry'], e['stop'])))
+                    nx = self.news_ahead(E.T[last] + 60, E.LDAY[last] * 86400 + E.WIN[1] * 60 - (E.LT[last] - E.T[last]))
+                    if nx: body += ' Red news %s at %s: no order waiting from %s.' % (nx[1] + ' ' + nx[2], hm(nx[0]), hm(nx[0] - NEWS_BEFORE * 60))
                     self.out('pocket:%d:%d' % (s, E.T[e['a']]), 'pocket', 'Watch · 50%% pullback %s' % word(s, 'buy', 'sell'), body, s,
                              {k: e[k] for k in ('entry', 'stop', 'tgt', 'A', 'B', 'rule', 'loc')})
 
@@ -165,16 +189,25 @@ class Hawk:
             if not recent(k): continue
             r = pips(su['tgt'], su['entry']) / pips(su['entry'], su['stop'])
             model = su['model'].replace('·', '·')
+            nn = self.news_near(E.T[k] + 60)
+            if nn:   # red news: no trade (the setup is still shown, so he knows the hawk saw it and why it said no)
+                self.out('news:%s:%d:%s' % (model, s, px(su['entry'])), 'news', 'No trade · red news',
+                         '%s setup at %s skipped: %s %s at %s. No trades from %d min before red news to %d min after.' % (
+                             word(s, 'Buy', 'Sell'), px(su['entry']), nn[1], nn[2], hm(nn[0]), NEWS_BEFORE, NEWS_AFTER), s,
+                         dict(model=model, entry=su['entry'], stop=su['stop'], tgt=su['tgt'], loc=su['loc'], phase=su['phase'], news=[nn[0], nn[1], nn[2]]))
+                continue
+            nx = self.news_ahead(E.T[k] + 60, E.T[k] + 60 + 150 * 60)
+            ahead = (' Red news %s %s at %s: be out or at break-even by %s.' % (nx[1], nx[2], hm(nx[0]), hm(nx[0] - NEWS_BEFORE * 60))) if nx else ''
             if 'reaction' in model:
                 title = 'Setup · reaction %s' % word(s, 'buy', 'sell')
                 body = '%s now ~%s · stop %s (%s) · target %s (%s, %.1fR). %s taken %s, the move has slowed.' % (
                     word(s, 'Buy', 'Sell'), px(su['entry']), px(su['stop']), dist(su['entry'], su['stop']), px(su['tgt']),
-                    dist(su['tgt'], su['entry']), r, word(s, 'Low', 'High'), {'discount': 'in the discount', 'premium': 'in the premium'}.get(su['loc'], 'at the zone'))
+                    dist(su['tgt'], su['entry']), r, word(s, 'Low', 'High'), {'discount': 'in the discount', 'premium': 'in the premium'}.get(su['loc'], 'at the zone')) + ahead
             else:
                 title = 'Setup · %s %s reached' % ('pocket' if 'initiation' in model else '50% pullback', word(s, 'buy', 'sell'))
                 body = '%s limit %s reached · stop %s (%s) · target %s (%.1fR).%s' % (
                     word(s, 'Buy', 'Sell'), px(su['entry']), px(su['stop']), dist(su['entry'], su['stop']), px(su['tgt']), r,
-                    ' It touched the stop in the same minute.' if su.get('stopbar') else '')
+                    ' It touched the stop in the same minute.' if su.get('stopbar') else '') + ahead
             self.out('setup:%s:%d:%s' % (model, s, px(su['entry'])), 'setup', title, body, s,
                      dict(model=model, entry=su['entry'], stop=su['stop'], tgt=su['tgt'], loc=su['loc'], phase=su['phase']))
 
@@ -194,6 +227,20 @@ def post(msg):
     try:
         with urllib.request.urlopen(req, timeout=20) as r: log('sent', msg['key'], r.read()[:120])
     except Exception as e: log('send failed', msg['key'], e)
+
+def get_news():
+    """Red releases from 18 h ago to 30 h ahead, from the app's calendar through st-hawk. Keeps the last list if it can't be read."""
+    if not KEY: return
+    now = time.time(); f = dt.datetime.fromtimestamp(now - 18 * 3600, dt.timezone.utc).isoformat(); t = dt.datetime.fromtimestamp(now + 30 * 3600, dt.timezone.utc).isoformat()
+    req = urllib.request.Request(URL, data=json.dumps({'news': True, 'from': f, 'to': t}).encode(), method='POST', headers={'content-type': 'application/json', 'x-hawk-key': KEY})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r: d = json.loads(r.read())
+        ev = []
+        for e in d.get('events') or []:
+            try: ev.append((int(dt.datetime.fromisoformat(str(e['at']).replace('Z', '+00:00')).timestamp()), str(e.get('currency') or '').upper(), str(e.get('title') or '')[:60]))
+            except Exception: pass
+        NEWS['ev'] = sorted(ev); NEWS['ok'] = True; NEWS['t'] = now
+    except Exception as e: log('news failed:', e)
 
 def get_cfg():
     """The account + market picked in the hawk tab (hawk_config, read through st-hawk). None if it can't be read."""
@@ -303,6 +350,7 @@ def live():
         ln = ldt(time.time()); m = ln.hour * 60 + ln.minute
         if time.time() - t_cfg >= 60:   # his pick in the hawk tab, looked at once a minute
             t_cfg = time.time(); c = get_cfg()
+            if time.time() - NEWS['t'] >= 600: get_news()   # the calendar, every 10 minutes
             if c and (c[0] != LOGIN or c[1] != CANON or line is None):
                 if line: line.close()
                 LOGIN = c[0]; set_market(c[1]); SYM = CANON; up = False; line = None; hawk = Hawk(post); bars.clear(); h1.clear(); last_eval = 0
