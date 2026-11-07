@@ -123,18 +123,19 @@ def continuation(side, a, A, win_end, min_leg=12, on_pocket=None):
             hi, lo = max(H[s:e + 1]), min(L[s:e + 1])
             if hi - lo <= 4 * PIP and lo <= mid <= hi:
                 dd = abs((hi + lo) / 2 - mid)
-                if best is None or dd < best[0]: best = (dd, hi, lo)
+                if best is None or dd < best[0]: best = (dd, hi, lo, s, e)
     if not best: return None
-    _, hi, lo = best
+    _, hi, lo, s0, e0 = best
+    bx = (hi, lo, s0, e0)   # the small range itself, for the hawk's box (7 Nov 2026)
     entry = hi if side > 0 else lo; stop = lo - 0.5 * PIP if side > 0 else hi + 0.5 * PIP
     if not (2 * PIP <= abs(entry - stop) <= STOP_MAX * PIP + 1e-9): return None
-    if on_pocket: on_pocket(entry, stop, Bv, b, mid)   # the hawk: the pullback level is known before price comes back
+    if on_pocket: on_pocket(entry, stop, Bv, b, mid, bx)   # the hawk: the pullback level is known before price comes back
     for k in range(b + 1, N):
         if LDAY[k] != LDAY[a] or LMIN[k] >= win_end: return None
         if (H[k] > Bv) if side > 0 else (L[k] < Bv): return None
         if (L[k] <= entry - 0.1 * PIP) if side > 0 else (H[k] >= entry + 0.1 * PIP):
-            if (L[k] <= stop) if side > 0 else (H[k] >= stop): return ('stopbar', k, entry, stop, Bv)
-            return (k + 1, entry, stop, Bv)
+            if (L[k] <= stop) if side > 0 else (H[k] >= stop): return ('stopbar', k, entry, stop, Bv, bx)
+            return (k + 1, entry, stop, Bv, bx)
     return None
 
 # ---------- scanning one session
@@ -235,17 +236,17 @@ def scan_day(idx, opts):
             if 'continuation' in opts['models']:
                 pocket = None
                 if ev is not None:
-                    def pocket(e, s_, Bv, b, mid, side=side, a=a, A=A, rule=rule, liq=liq, loc=loc):
+                    def pocket(e, s_, Bv, b, mid, bx=None, side=side, a=a, A=A, rule=rule, liq=liq, loc=loc):
                         ev.append(dict(kind='pocket', i=b, a=a, A=A, side=side, rule=rule, loc=loc, entry=e, stop=s_, B=Bv, b=b,
-                                       mid=mid, tgt=target(side, e, abs(e - s_), liq)))
+                                       mid=mid, tgt=target(side, e, abs(e - s_), liq), box=bx))
                 r = continuation(side, a, A, WIN[1], on_pocket=pocket)
                 if r:
                     sb = r[0] == 'stopbar'
-                    k, e, s_, Bv = (r[1], r[2], r[3], r[4]) if sb else r
+                    k, e, s_, Bv, bx = (r[1], r[2], r[3], r[4], r[5]) if sb else r
                     if WIN[0] <= LMIN[k - (0 if sb else 1)] < WIN[1]:
                         tg = target(side, e, abs(e - s_), liq)
                         if tg: out.append(dict(model=rule + ' · continuation', phase=ph, side=side, i=k, entry=e,
-                                               stop=s_, tgt=tg, be=Bv, stopbar=sb, loc=loc))
+                                               stop=s_, tgt=tg, be=Bv, stopbar=sb, loc=loc, box=bx))
     return out, ph
 
 def run(opts):

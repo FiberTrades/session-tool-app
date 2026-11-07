@@ -71,6 +71,8 @@ class Hawk:
         data = dict(data or {})
         for k in ('a', 'b', 'i'):                     # candle indexes -> times, for the chart
             if isinstance(data.get(k), int) and 0 <= data[k] < E.N: data['t' + k] = E.T[data[k]]
+        bx = data.pop('box', None)                    # the small range at the 50%: its high, low and first / last candle's time
+        if bx and 0 <= bx[2] < E.N and 0 <= bx[3] < E.N: data.update(bxh=bx[0], bxl=bx[1], tbx0=E.T[bx[2]], tbx1=E.T[bx[3]] + 60)
         if kind != 'done':
             try: data['chart'] = self.chart()
             except Exception as e: log('chart failed:', repr(e))
@@ -182,7 +184,7 @@ class Hawk:
                     nx = self.news_ahead(E.T[last] + 60, E.LDAY[last] * 86400 + E.WIN[1] * 60 - (E.LT[last] - E.T[last]))
                     if nx: body += ' Red news %s at %s: no order waiting from %s.' % (nx[1] + ' ' + nx[2], hm(nx[0]), hm(nx[0] - NEWS_BEFORE * 60))
                     self.out('pocket:%d:%d' % (s, E.T[e['a']]), 'pocket', 'Watch · 50%% pullback %s' % word(s, 'buy', 'sell'), body, s,
-                             {k: e[k] for k in ('entry', 'stop', 'tgt', 'A', 'B', 'rule', 'loc')})
+                             {k: e.get(k) for k in ('entry', 'stop', 'tgt', 'A', 'B', 'rule', 'loc', 'box', 'a', 'b')})
 
         for su in setups:
             s = su['side']; k = su['i'] - (0 if su.get('stopbar') else 1)    # the candle it happened on
@@ -209,7 +211,7 @@ class Hawk:
                     word(s, 'Buy', 'Sell'), px(su['entry']), px(su['stop']), dist(su['entry'], su['stop']), px(su['tgt']), r,
                     ' It touched the stop in the same minute.' if su.get('stopbar') else '') + ahead
             self.out('setup:%s:%d:%s' % (model, s, px(su['entry'])), 'setup', title, body, s,
-                     dict(model=model, entry=su['entry'], stop=su['stop'], tgt=su['tgt'], loc=su['loc'], phase=su['phase']))
+                     dict(model=model, entry=su['entry'], stop=su['stop'], tgt=su['tgt'], loc=su['loc'], phase=su['phase'], box=su.get('box')))
 
         if mins >= 10 * 60 + 5 and not self.done:
             self.done = True

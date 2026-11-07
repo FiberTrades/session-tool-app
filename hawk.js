@@ -307,6 +307,11 @@
     if (a.A != null && a.B != null && a.ta && a.tb && r.kind !== 'sweep') {
       g.strokeStyle = K.acc; g.lineWidth = 1.6; g.beginPath(); g.moveTo(xt(a.ta), Y(a.A)); g.lineTo(xt(a.tb), Y(a.B)); g.stroke();
       txt('A', xt(a.ta) - 8, Y(a.A), K.acc, 'center', 10, 600); txt('B', xt(a.tb) + 8, Y(a.B), K.acc, 'center', 10, 600); }
+    // the small range at the 50% of the leg: the box a 50% pullback is traded from (7 Nov 2026, Nestor: "yes add the box")
+    if (a.bxh != null && a.bxl != null && a.tbx0) { var bx0 = Math.max(0, xt(a.tbx0)), by0 = Y(a.bxh), by1 = Y(a.bxl);
+      tint(K.acc, 0.16); g.fillRect(bx0, by0, PW - bx0, Math.max(2, by1 - by0)); g.globalAlpha = 1;
+      g.strokeStyle = K.acc; g.lineWidth = 1.5; g.setLineDash([]); g.strokeRect(Math.round(bx0) + 0.5, Math.round(by0) + 0.5, Math.round(Math.max(1, xt(a.tbx1) - bx0, Math.min(PW - 24, xt(d.now)) - bx0)), Math.max(2, Math.round(by1 - by0)));
+      txt(L('50% box', 'Caja del 50%'), bx0 + 3, by0 - 7, K.acc, 'left', 9, 600); }
     if (a.entry != null && a.stop != null && a.tgt != null) { var x0 = Math.min(PW - 24, xt(d.now));
       tint(K.buy, 0.16); g.fillRect(x0, Math.min(Y(a.entry), Y(a.tgt)), PW - x0, Math.abs(Y(a.tgt) - Y(a.entry)));
       tint(K.sell, 0.18); g.fillRect(x0, Math.min(Y(a.entry), Y(a.stop)), PW - x0, Math.max(1, Math.abs(Y(a.stop) - Y(a.entry)))); g.globalAlpha = 1;
