@@ -21,7 +21,7 @@
 #     could still be waiting at a release is told to come out by then; the brief lists the morning's red news.
 #   * each alert goes to the st-hawk edge function (stored in hawk_signals, pushed to the admin's phone, rated on hawk.html).
 # Env (/etc/st-hawk.env): HAWK_KEY, HAWK_URL. `python3 hawk.py replay <csv> <YYYY-MM-DD>` prints what a past day would have sent.
-import base64, bisect, datetime as dt, glob, hashlib, json, os, socket, sys, time, urllib.request
+import base64, bisect, datetime as dt, glob, hashlib, json, os, socket, subprocess, sys, tempfile, threading, time, urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import engine as E
 
@@ -325,9 +325,54 @@ def get_cfg():
     req = urllib.request.Request(URL, data=b'{"config":true}', method='POST', headers={'content-type': 'application/json', 'x-hawk-key': KEY})
     try:
         with urllib.request.urlopen(req, timeout=15) as r: d = json.loads(r.read())
+        SQ['next'] = d.get('sq') if isinstance(d.get('sq'), dict) else None   # a study he asked for in the Hawk tab, if any
         lg, sy = str(d.get('login') or ''), canon(d.get('sym'))
         return (lg, sy, clean_wins(d.get('wins'))) if lg.isdigit() and sy in MK else None
     except Exception as e: log('config failed:', e); return None
+
+# ---------- the rule study on hours he picks (7 Nov 2026 evening, "can i be able to change the sessions and times as i please in here?")
+# The Hawk tab queues it (hawk_study_req); the config answer carries the oldest (`sq`). It runs as its own low-priority process
+# (study_run.py: a year of minutes from /opt/st/hawk/study, a few seconds) so the live hawk's engine is never touched, and the result goes
+# back through st-hawk (study_put) on a thread. One at a time.
+SQ = {'next': None, 'p': None, 'job': None, 't': 0, 'out': '', 'send': None}
+def hawk_call(body, timeout=20):
+    req = urllib.request.Request(URL, data=json.dumps(body, separators=(',', ':')).encode(), method='POST', headers={'content-type': 'application/json', 'x-hawk-key': KEY})
+    with urllib.request.urlopen(req, timeout=timeout) as r: return json.loads(r.read())
+def study_tick():
+    """Starts the next study he asked for, or hands back the one that finished. True while one is running or being sent."""
+    if not KEY: return False
+    if SQ['send'] is not None and SQ['send'].is_alive(): return True
+    p = SQ['p']
+    if p is not None:
+        if p.poll() is None:
+            if time.time() - SQ['t'] < 300: return True
+            p.kill(); res = {'error': 'took over 5 minutes'}
+        else:
+            try: res = json.load(open(SQ['out']))
+            except Exception as e: res = {'error': 'no result (%s)' % e}
+        job = SQ['job']; SQ['p'] = None
+        try: os.remove(SQ['out'])
+        except OSError: pass
+        def send():
+            try:
+                if res.get('error') or res.get('run') != job['run']: hawk_call({'study_fail': job['id'], 'msg': res.get('error') or 'wrong run'}); log('study failed', job['run'], res.get('error'))
+                else:
+                    r = hawk_call({'study_put': job['id'], 'run': job['run'], 'rows': res['rows'], 'days': res['days'], 'n': res['n'], 'net': res['net']}, timeout=90)
+                    log('study done', job['run'], res['n'], 'trades', '%+.1fR' % res['net'], r.get('error') or '')
+            except Exception as e: log('study send failed', job['run'], e)
+        SQ['send'] = threading.Thread(target=send, daemon=True); SQ['send'].start(); return True
+    q, SQ['next'] = SQ['next'], None
+    if not q: return False
+    try:
+        c = hawk_call({'study_claim': q['id']})
+        if not c.get('ok') or not c.get('req'): return False
+        job = c['req']; SQ['out'] = os.path.join(tempfile.gettempdir(), 'st-study-%d.json' % job['id'])
+        SQ['p'] = subprocess.Popen([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'study_run.py'),
+                                    json.dumps({'sym': job['sym'], 'from': job['w_from'], 'to': job['w_to'], 'out': SQ['out']})],
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=lambda: os.nice(10))
+        SQ['job'] = job; SQ['t'] = time.time(); log('study', job['run'], 'running')
+        return True
+    except Exception as e: log('study claim failed', e); return False
 
 # ---------- the relay line (read-only: watch + hist)
 class Line:
@@ -434,12 +479,18 @@ def live():
                 log('reading', LOGIN, CANON, 'hours', ' '.join('%s-%s' % (clock(a), clock(b)) for a, b in hawk.wins))
             elif c and c[2] != hawk.wins:
                 hawk.wins = c[2]; log('hours', ' '.join('%s-%s' % (clock(a), clock(b)) for a, b in hawk.wins))
+            study_tick()
             if line is None:
                 try: line = Line()
                 except (IndexError, OSError) as e: log('no template for', LOGIN, e); time.sleep(30); continue
         if ln.weekday() >= 5 or not any(w[0] - 40 <= m < w[1] + 10 for w in hawk.wins):   # 40 min before each window he picked to 10 after
             if up and line: line.close(); up = False; log('window closed')
-            bars.clear(); h1.clear(); m15.clear(); time.sleep(30); continue
+            bars.clear(); h1.clear(); m15.clear()
+            if SQ['p'] is not None or (SQ['send'] is not None and SQ['send'].is_alive()):   # a study running: back to it in 2 s, then the next
+                time.sleep(2)
+                if not study_tick(): t_cfg = 0
+            else: time.sleep(30)
+            continue
         try:
             if not up: line.open(); line.resolve(); up = True; t_watch = t_hist = 0; SYM = line.raw_sym; log('joined the relay:', LOGIN, SYM, line.mode)
             now = time.time()
@@ -463,6 +514,7 @@ def live():
         except (OSError, EOFError, ValueError, IndexError) as e:
             log('line lost:', e); line.close(); up = False; time.sleep(5); continue
         if line is None: continue
+        if SQ['p'] is not None and SQ['p'].poll() is not None: study_tick(); t_cfg = 0   # a study finished during his hours: send it, look for the next
         if bars and h1 and max(bars) > last_eval and len(bars) > 600:
             last_eval = max(bars)
             ts = sorted(bars)

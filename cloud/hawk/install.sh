@@ -5,8 +5,10 @@
 # Read-only on the market: it only sends `watch`/`hist` to the local relay for the demo (1515070952), never commands or orders.
 set -e
 [ -n "$1" ] || { echo "usage: sh install.sh <HAWK_KEY>"; exit 1; }
-mkdir -p /opt/st/hawk
-cp hawk.py engine.py /opt/st/hawk/
+mkdir -p /opt/st/hawk /opt/st/hawk/study
+cp hawk.py engine.py study_run.py /opt/st/hawk/
+# the study on hours he picks (study_run.py, 7 Nov 2026) reads a year of minutes per market from /opt/st/hawk/study:
+# eurusd_m1.csv gbpusd_m1.csv xauusd_m1.csv us100_cash_m1.csv (utc,o,h,l,c) and high_impact.json (the year's red releases)
 umask 077
 printf 'HAWK_KEY=%s\n' "$1" > /etc/st-hawk.env
 chmod 600 /etc/st-hawk.env
