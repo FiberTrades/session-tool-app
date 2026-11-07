@@ -310,8 +310,8 @@
     var sumWith = function (mg, ml) { var a = TBm.acct, m0 = a.mg, l0 = a.ml; a.mg = mg; a.ml = ml; pTab.click(); var s = $('.pl-sum').textContent; a.mg = m0; a.ml = l0; return s; };
     if (acm && pTab) {
       var sm0 = sumWith(0, 0), sm1 = sumWith(1250, 5400); pTab.click(); await W(100);
-      check('nothing open: no Margin, Free margin stays (as MT5)', sm0.indexOf('Margin') < 0 && /Free margin/.test(sm0), sm0);
-      check('a trade holding margin: Margin and Margin level show', /Margin\D*1,250\.00/.test(sm1) && /Margin level\D*5\s?400\.00%/.test(sm1) && /Free margin/.test(sm1), sm1);
+      check('nothing open: no Margin, Free margin right after Equity (as MT5)', sm0.indexOf('Margin') < 0 && /^Balance.+Equity[^A-Za-z]+Free margin[^A-Za-z]+Open P&L/.test(sm0), sm0);
+      check('a trade holding margin: Equity, Margin, Free margin, Margin level, then Open P&L', /Equity[^A-Za-z]+Margin\D*1,250\.00Free margin[^A-Za-z]+Margin level\D*5\s?400\.00%Open P&L/.test(sm1), sm1);
     } else check('the strip has its account for the Margin checks', false, [!!acm, !!pTab]);
     check('Chart settings is a gear with teeth, beside the sun / moon (Nestor, 26 Oct 2026: "looks like a sun and its confusing")', /^M12\.22 2h/.test($('.plat-top #stpr-lookbtn svg path').getAttribute('d')) && $('.plat-top .pl-theme svg'), $('.plat-top #stpr-lookbtn').innerHTML.slice(0, 80));
     // the top bar never overflows (25 Oct 2026): every item inside it, the sun and full screen in the row, at this width too
