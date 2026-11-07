@@ -13,9 +13,9 @@
     var box = document.querySelector('.stp-fxd');
     ok('confetti as small elements, no full-screen canvas drawing', !!box && getComputedStyle(document.querySelector('.stp-fx')).display === 'none', !!box);
     var pieces = box ? [].slice.call(box.querySelectorAll('.stp-c')) : [], phone = innerWidth < 700, H = innerHeight;
-    ok(phone ? 'phone: 36 pieces' : 'computer: 80 pieces', pieces.length === (phone ? 36 : 80), pieces.length);
+    ok(phone ? 'phone: 80 pieces' : 'computer: 180 pieces', pieces.length === (phone ? 80 : 180), pieces.length);
     var inAir = pieces.filter(function (p) { var r = p.getBoundingClientRect(); return r.top > 0 && r.bottom < H; }).length;
-    ok('it starts with the pop-up: pieces in the air on the first look', inAir >= (phone ? 6 : 15), inAir);
+    ok('it starts with the pop-up: pieces in the air on the first look', inAir >= (phone ? 12 : 30), inAir);
     var anims = pieces.map(function (p) { return p.getAnimations()[0]; });
     ok('every piece moves by a CSS animation of its transform only', anims.every(function (a) { return a && a.effect.getKeyframes().every(function (k) { return k.transform && !k.top && !k.left; }); }));
     // the page's thread blocked for 900 ms: the pieces' clock runs on regardless (a canvas would have stood still and then crawled on at 3 frames' worth)
