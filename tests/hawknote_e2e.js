@@ -1,7 +1,8 @@
 (async function () {
   // The hawk's note boxes in Study move (Nestor, 7 Nov 2026: "i need to be able to move around the callout label messages"): click one,
-  // then drag its box - the point it shows stays, where it went is kept for that trade (st_hk_noff); its point and the hawk's other marks
-  // stay locked; his own drawing stays selected when the hawk's marks are drawn again. Back Testing on EUR/USD of Thu 1 Oct 2026.
+  // then drag its box - the point it shows stays, where it went is kept for that trade (st_hk_noff); since 7 Nov 2026 (evening: "any object
+  // or tool drawn by the hawk i need to be able to move") its point and the hawk's other marks move too (kept in st_hk_mv); his own drawing
+  // stays selected when the hawk's marks are drawn again. Back Testing on EUR/USD of Thu 1 Oct 2026.
   // Run: python tests/browser_test.py tests/hawknote_e2e.js
   var W = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
   var out = [], ok = function (name, cond, got) { out.push({ name: name, ok: !!cond, got: got === undefined ? null : got }); };
@@ -9,7 +10,7 @@
     for (var i = 0; i < 200 && !(window.__stPractice && window.__stSB && window.__stDrawBar && window.__stReplay); i++) await W(100);
     await W(1000);
     var P = window.__stPractice;
-    try { Object.keys(localStorage).filter(function (k) { return /^st_practice/.test(k); }).forEach(function (k) { localStorage.removeItem(k); }); localStorage.removeItem('st_hk_noff'); } catch (e) {}
+    try { Object.keys(localStorage).filter(function (k) { return /^st_practice/.test(k); }).forEach(function (k) { localStorage.removeItem(k); }); localStorage.removeItem('st_hk_noff'); localStorage.removeItem('st_hk_mv'); } catch (e) {}
     var C = P._cfg(); C.mm = Object.assign({}, C.mm, { col: true }); C.layout = 1; C.tfs = [15, 5, 60, 240]; C.mini = false; C.dtpl = {}; C.ddef = {}; C.dwHide = false; C.dwLock = false; C.news = false; C.max = true; C.resume = null;
     await P.open({ symbol: 'EURUSD', day: '2026-10-01' }); for (var k = 0; k < 100 && !(P._s() && P._panes().length && P._panes()[0].n); k++) await W(100);
     var fr = document.getElementById('lp-front'); if (fr) fr.style.display = 'none';
@@ -40,13 +41,14 @@
     ok('then dragging moves its box; its point stays', Math.abs(nd.off.x - 80) <= 1 && Math.abs(nd.off.y - 70) <= 1 && nd.a.t === t && nd.a.price === price, [nd.off, nd.a]);
     ok('where it went is kept for that trade (st_hk_noff)', NO['strict_20|3|pos'] && Math.abs(NO['strict_20|3|pos'].x - 80) <= 1 && Math.abs(NO['strict_20|3|pos'].y - 70) <= 1, NO);
     ok('the hawk\'s marks are never saved with his drawings', !(localStorage.getItem(P._dwRaw ? ('st_replay_draw2_' + P._dwRaw()) : 'x') || '').match(/strict_20\|3/), null);
-    // its point: locked
+    // its point moves too now (7 Nov 2026 evening), kept for that trade
     var a0 = JSON.stringify(nd.a); await drag(ax, ay, ax + 50, ay + 30);
-    ok('its point stays where the hawk put it', JSON.stringify(nd.a) === a0, nd.a);
-    // the hawk's line: locked
+    var MV0 = {}; try { MV0 = JSON.parse(localStorage.getItem('st_hk_mv') || '{}'); } catch (e) {}
+    ok('its point moves when dragged, kept for that trade (st_hk_mv)', JSON.stringify(nd.a) !== a0 && nd.a.t > JSON.parse(a0).t && MV0['strict_20|3|pos'] && MV0['strict_20|3|pos'].a.t === nd.a.t, [nd.a, MV0]);
+    // the hawk's line moves too: click, then drag
     var ln = DW.list.filter(function (d) { return d.type === 'trend'; })[0], lx = (P._xOfT(0, ln.a.t) + P._xOfT(0, ln.b.t)) / 2, ly = P._yOf(0, ln.a.price), l0 = JSON.stringify([ln.a, ln.b]);
     await click(lx, ly); await drag(lx, ly, lx + 40, ly - 30);
-    ok('the hawk\'s other marks stay locked', JSON.stringify([ln.a, ln.b]) === l0, [ln.a, ln.b]);
+    ok('the hawk\'s other marks move the same way (click, then drag)', JSON.stringify([ln.a, ln.b]) !== l0 && ln.a.price > JSON.parse(l0)[0].price, [ln.a, ln.b]);
     // his own line stays picked while the hawk's marks are drawn again (his BE line, as the trade's note says what it made of it)
     var mine = { type: 'hray', a: { t: t, price: price + 0.0005 }, color: '#5b8def', width: 2, mbe: 1 }; DW.list.push(mine); DW.sel = DW.list.length - 1;
     P._studyDraw([LINE, Object.assign({}, NOTE, { off: { x: 80, y: 70 }, text: NOTE.text + '\nWith your BE: Break-even 08:39 · −0.18R' })]); await W(60);
@@ -59,6 +61,6 @@
     ok('with every drawing locked, the box stays too', JSON.stringify(nd2.off) === o0, nd2.off);
     C.dwLock = false;
   } catch (e) { ok('no exception', false, String(e && e.stack || e).slice(0, 600)); }
-  try { localStorage.removeItem('st_hk_noff'); } catch (e) {}
+  try { localStorage.removeItem('st_hk_noff'); localStorage.removeItem('st_hk_mv'); } catch (e) {}
   return JSON.stringify(out);
 })()

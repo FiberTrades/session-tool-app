@@ -116,7 +116,7 @@
     '.hk-dh{display:flex;align-items:center;gap:8px;flex-wrap:wrap}',
     '.hk-out{font:500 10px var(--hk-mono);letter-spacing:.1em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:var(--hk-soft);color:var(--hk-mut)}.hk-out.win{color:var(--hk-buy);background:color-mix(in srgb,var(--hk-buy) 14%,transparent)}.hk-out.loss{color:var(--hk-sell);background:color-mix(in srgb,var(--hk-sell) 14%,transparent)}',
     '.hk-dh .rr{font:500 13px var(--hk-mono);font-variant-numeric:tabular-nums;color:var(--hk-ink)}.hk-dh .rr small{font-size:11px;color:var(--hk-mut);margin-left:4px}.hk-dh .n{margin-left:auto;font:11px var(--hk-mono);color:var(--hk-mut)}',
-    '.hk-nav{display:flex;margin-top:12px}.hk-nav .hk-btn{background:var(--hk-soft);white-space:nowrap;padding:6px 18px}.hk-nav .hk-btn.go{background:#e0a84a;color:#1b1406;font-weight:600}.hk-nav .hk-btn.go:hover{background:#ebb85e;border-color:transparent}',
+    '.hk-nav{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.hk-nav .hk-btn{background:var(--hk-soft);white-space:nowrap;padding:6px 18px}.hk-nav .hk-btn.go{background:#e0a84a;color:#1b1406;font-weight:600}.hk-nav .hk-btn.go:hover{background:#ebb85e;border-color:transparent}',
     '.hk-sst{display:flex;justify-content:space-between;gap:8px;font-size:11.5px;color:var(--hk-mut);margin-top:7px;min-height:16px}.hk-sst button{background:none;border:0;padding:0;font:inherit;color:var(--hk-mut);text-decoration:underline;text-underline-offset:2px;cursor:pointer;white-space:nowrap}',
     '.hk-lbl{margin:16px 0 7px;font:500 10px var(--hk-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--hk-mut)}',
     '.hk-why{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}',
@@ -704,7 +704,8 @@
     function sDet(r) { var d = r.data, ap = !!opt.study;
       return '<div class="hk-det" id="hk-sd">' +
         '<div class="hk-dh"><span class="hk-out ' + d.out + '">' + sOut(d.out) + '</span>' + sSplit(d) + '<span class="rr">' + sR(d.net) + '<small>' + sR(d.r) + L(' before costs', ' antes de costes') + '</small></span><span class="n">#' + r.n + L(' · out ', ' · salida ') + hm(d.xts) + '</span></div>' + sYb(r) +
-        (ap ? '<div class="hk-nav"><button class="hk-btn go" data-sa="open">' + L('Show in Study', 'Ver en el Estudio') + '</button></div>' : '') +
+        (ap ? '<div class="hk-nav"><button class="hk-btn go" data-sa="open">' + L('Show in Study', 'Ver en el Estudio') + '</button>' +
+          (sOnChart === r.n ? '<button class="hk-btn" data-sa="back" title="' + L('The P/D zone, the notes and the marks where the hawk drew them', 'La zona P/D, las notas y las marcas donde las dibujó el halcón') + '">' + L('Put the hawk\'s marks back', 'Volver a las marcas del halcón') + '</button>' : '') + '</div>' : '') +
         (ap ? '<div class="hk-sst"><span id="hk-sst">' + esc(sStat) + '</span></div>' : '') +
         sExplain(d, r) +
         '<div class="hk-lbl">' + L('Your call', 'Tu decisión') + '</div><div class="hk-vb">' + sTick(r, true) + '</div>' +
@@ -796,23 +797,30 @@
     function sDraw(r) { var d = r.data, buy = d.side > 0, q = (d.bh - d.bl) / 4, mid = (d.bh + d.bl) / 2, w0 = ldnAt(d.ts, 480), t0 = w0 - 25 * 3600, t1 = w0 + 2 * 3600, x1 = d.xts + 60;   // the box ends with the exit candle (Nestor, 7 Nov 2026: a box past the exit made a stopped trade look open when price reached the BE line after the stop)
       // the P/D zone is the Session Indicator's own (pd below); these three only for a study row without its range window
       var o = d.r0 ? [] : [
-        { type: 'rect', a: { t: t0, price: d.bh }, b: { t: t1, price: d.bh - q }, color: '#F6465D', width: 1, fill: 'rgba(246,70,93,0.07)', text: 'Premium', tcol: '#F6465D', ta: 'l', tv: 'top' },
-        { type: 'rect', a: { t: t0, price: d.bl + q }, b: { t: t1, price: d.bl }, color: '#2EBD85', width: 1, fill: 'rgba(46,189,133,0.07)', text: L('Discount', 'Descuento'), tcol: '#2EBD85', ta: 'l', tv: 'bottom' },
-        { type: 'trend', a: { t: t0, price: mid }, b: { t: t1, price: mid }, color: '#8b90a0', width: 1, dash: 'dashed', text: '50%' }];
+        { type: 'rect', sid: sNid(r, 'prem'), a: { t: t0, price: d.bh }, b: { t: t1, price: d.bh - q }, color: '#F6465D', width: 1, fill: 'rgba(246,70,93,0.07)', text: 'Premium', tcol: '#F6465D', ta: 'l', tv: 'top' },
+        { type: 'rect', sid: sNid(r, 'disc'), a: { t: t0, price: d.bl + q }, b: { t: t1, price: d.bl }, color: '#2EBD85', width: 1, fill: 'rgba(46,189,133,0.07)', text: L('Discount', 'Descuento'), tcol: '#2EBD85', ta: 'l', tv: 'bottom' },
+        { type: 'trend', sid: sNid(r, 'mid'), a: { t: t0, price: mid }, b: { t: t1, price: mid }, color: '#8b90a0', width: 1, dash: 'dashed', text: '50%' }];
       // the high (low) the sweep took, drawn from the candle that made it to the break (Nestor: "can the high line extend from the high so
       // i can see quickly where its coming from?")
       // the line's words sit in a note box off the candles: below a low, above a high (Nestor, 6 Nov 2026)
-      var lqNote = function (t, px, txt, low) { o.push({ type: 'note', a: { t: t, price: px }, off: sNoff(r, 'lq', { x: 46, y: low ? 58 : -58 }), sid: sNid(r, 'lq'), color: '#e0a84a', width: 1, tsz: 11, text: txt }); };
-      if (d.lq != null && d.lqt) { o.push({ type: 'trend', a: { t: d.lqt, price: d.lq }, b: { t: Math.max(d.sw || d.ts, d.lqt + 60) + 900, price: d.lq }, color: '#e0a84a', width: 2 });
+      var lqNote = function (t, px, txt, low) { o.push({ type: 'note', a: { t: t, price: px }, off: sNoff(r, 'lq', { x: 46, y: low ? 58 : -58 }), sid: sNid(r, 'lq'), lnk: sNid(r, 'lqline'), color: '#e0a84a', width: 1, tsz: 11, text: txt }); };
+      // every mark has its own id: he can move any of them (click, then drag) and the app keeps where (st_hk_mv); a note follows its mark (lnk)
+      if (d.lq != null && d.lqt) { o.push({ type: 'trend', sid: sNid(r, 'lqline'), a: { t: d.lqt, price: d.lq }, b: { t: Math.max(d.sw || d.ts, d.lqt + 60) + 900, price: d.lq }, color: '#e0a84a', width: 2 });
         lqNote(d.lqt, d.lq, (buy ? L('Low of the last hour ', 'Mínimo de la última hora ') : L('High of the last hour ', 'Máximo de la última hora ')) + hm(d.lqt) + '\n' + L('taken ', 'barrido ') + hm(d.sw || d.ts), buy); }
-      else if (d.a != null && d.ta) { o.push({ type: 'trend', a: { t: d.ta - 3600, price: d.a }, b: { t: d.ta + 1800, price: d.a }, color: '#e0a84a', width: 2 });
+      else if (d.a != null && d.ta) { o.push({ type: 'trend', sid: sNid(r, 'lqline'), a: { t: d.ta - 3600, price: d.a }, b: { t: d.ta + 1800, price: d.a }, color: '#e0a84a', width: 2 });
         lqNote(d.ta, d.a, d.model === 'initiation pocket' ? (buy ? L('Range high broken', 'Máximo del rango roto') : L('Range low broken', 'Mínimo del rango roto')) : (buy ? L('Low taken ', 'Mínimo barrido ') : L('High taken ', 'Máximo barrido ')) + hm(d.ta), d.model === 'initiation pocket' ? !buy : buy); }
-      o.push({ type: buy ? 'long' : 'short', a: { t: d.ts, price: d.entry }, b: { t: x1, price: d.entry }, sl: d.stop, tp: d.tgt });
-      o.push({ type: 'note', a: { t: d.ts, price: d.entry }, off: sNoff(r, 'pos', { x: 0, y: buy ? 110 : -110 }), sid: sNid(r, 'pos'), color: '#9598a1', tcol: '#ffffff', width: 1, tsz: 11,   // white words, a grey edge (Nestor, 7 Nov 2026: "make these blue font white and no blue")
+      o.push({ type: buy ? 'long' : 'short', sid: sNid(r, 'posbox'), a: { t: d.ts, price: d.entry }, b: { t: x1, price: d.entry }, sl: d.stop, tp: d.tgt });
+      o.push({ type: 'note', a: { t: d.ts, price: d.entry }, off: sNoff(r, 'pos', { x: 0, y: buy ? 110 : -110 }), sid: sNid(r, 'pos'), lnk: sNid(r, 'posbox'), color: '#9598a1', tcol: '#ffffff', width: 1, tsz: 11,   // white words, a grey edge (Nestor, 7 Nov 2026: "make these blue font white and no blue")
         text: sPosText(r) });   // in a box past the stop, pointing at the entry (Nestor, 6 Nov 2026)
       sNoteT[r.n] = sPosText(r);
       return o;
     }
+    // what he moved on this trade (the P/D zone, the note boxes, any mark) back where the hawk drew it (7 Nov 2026: a double-click on the
+    // P/D zone no longer does that - "dont make session indicator resize when clicking twice on it")
+    function sMvClear(r) { var k = sKey(r) + '|', n = 0; try { var P = JSON.parse(localStorage.getItem('st_hk_pd') || '{}'); if (P[sKey(r)]) { delete P[sKey(r)]; localStorage.setItem('st_hk_pd', JSON.stringify(P)); n++; }
+        ['st_hk_noff', 'st_hk_mv'].forEach(function (s) { var O = JSON.parse(localStorage.getItem(s) || '{}'), c = 0; Object.keys(O).forEach(function (x) { if (x.indexOf(k) === 0) { delete O[x]; c++; } }); if (c) { localStorage.setItem(s, JSON.stringify(O)); n += c; } }); } catch (x) {} return n; }
+    async function sBack(r) { var n = sMvClear(r); if (sOnChart === r.n && opt.study) { try { await opt.study({ pdReset: true }); if (!sHid) await opt.study({ clear: true, list: sDraw(r) }); } catch (x) {} }
+      sStatus(n ? L('The hawk\'s marks are back where it drew them.', 'Las marcas del halcón vuelven a estar donde las dibujó.') : L('The hawk\'s marks are already where it drew them.', 'Las marcas del halcón ya están donde las dibujó.')); }
     async function sOpen(r) { if (!opt.study) return; sHid = false; sStatus(L('Opening ' + sDay(r, { day: 'numeric', month: 'short', year: 'numeric' }) + ' in Study…', 'Abriendo el ' + sDay(r, { day: 'numeric', month: 'short', year: 'numeric' }) + ' en el Estudio…'));
       var d = r.data, at = Math.min(d.sw || d.ts, d.ta || d.ts, d.ts) - 600, ok = false;
       try { ok = await opt.study({ sym: sMkt, day: nyDay(d.ts), at: at, draw: sDraw(r), pd: d.r0 ? sPd(r) : null, pd0: d.r0 ? { a: d.r0, b: d.r1 } : null, pid: sKey(r), n: r.n, keep: r.drawings || [], onMine: sOnMine, noAsk: sStudying }); } catch (x) {}
@@ -1086,6 +1094,7 @@
           else if (sa.dataset.sa === 'mine') sCapture(sr, true);
           else if (sa.dataset.sa === 'beline') sBeLine(sr);
           else if (sa.dataset.sa === 'benone') sBeNone(sr);
+          else if (sa.dataset.sa === 'back') sBack(sr);
           else if (sa.dataset.sa === 'clear') { var hr = sFind(sOnChart); sHid = !sHid; try { opt.study(sHid ? { clear: true } : { clear: true, list: hr ? sDraw(hr) : [] }); } catch (x) {} sRefresh();
             sStatus(sHid ? L('The setup marks are off the chart. Your drawings stay.', 'Las marcas del setup ya no están en el gráfico. Tus dibujos se quedan.') : L('The setup marks are back on the chart.', 'Las marcas del setup vuelven a estar en el gráfico.')); }
           return; }
