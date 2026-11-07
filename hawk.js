@@ -125,6 +125,11 @@
     '.hk-det textarea{margin-top:8px;min-height:64px;background:var(--hk-plot)}',
     '.hk-dw{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--hk-ink)}.hk-dw span{color:var(--hk-mut)}.hk-dw .hk-btn{flex:none;background:var(--hk-soft)}',
     '.hk-hint{font-size:11.5px;color:var(--hk-mut);margin:6px 0 0;line-height:1.45}',
+    '.hk-yb{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;margin:10px 0 0;padding:9px 10px;border:1px solid var(--hk-line);border-radius:8px}',
+    '.hk-yb .k{font:500 10px var(--hk-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--hk-mut)}',
+    '.hk-yb .rr{font:500 13px var(--hk-mono);font-variant-numeric:tabular-nums;color:var(--hk-ink)}.hk-yb .n{margin-left:auto;font:11px var(--hk-mono);color:var(--hk-mut)}',
+    '.hk-yb small{flex-basis:100%;font-size:11.5px;color:var(--hk-mut);line-height:1.45}.hk-yb .hk-btn{padding:5px 12px}',
+    '.hk-ybn{font-size:11.5px;color:var(--hk-mut);margin:6px 0 0}.hk-ybn:empty{display:none}.hk-ybn b{font:500 12px var(--hk-mono);color:var(--hk-ink)}',
     '.hk-picks{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}.hk-pick{display:flex;flex-direction:column;gap:5px;min-width:0}.hk-pick>span{font:500 10px var(--hk-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--hk-mut)}',
     '.hk-pick select{-webkit-appearance:none;appearance:none;min-width:0;height:32px;box-sizing:border-box;padding:0 28px 0 10px;border-radius:8px;border:1px solid var(--hk-line);background:var(--hk-soft) url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 12 12%27%3E%3Cpath d=%27M3 4.5l3 3 3-3%27 fill=%27none%27 stroke=%27%238b93a7%27 stroke-width=%271.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E") no-repeat right 9px center/12px 12px;color:var(--hk-ink);font:500 12.5px var(--hk-font,inherit);cursor:pointer;color-scheme:light dark}',
     '.hk-pick select:hover{border-color:color-mix(in srgb,var(--hk-mut) 55%,transparent)}.hk-pick select:focus-visible{outline:2px solid #e0a84a;outline-offset:1px}.hk-picks+.hk-hint{margin:8px 0 0}.hk-watch{margin:2px 0 10px}.hk-watch .hk-picks{margin-top:10px}',
@@ -660,7 +665,7 @@
     function sRow(r) { var d = r.data, buy = d.side > 0, rule = d.rule === 'initiation pocket' ? 'initiation' : d.rule;
       return '<div class="hk-tr" data-sn="' + r.n + '" aria-current="' + (ssel === r.n) + '"><button class="hk-trm" data-so="' + r.n + '" aria-expanded="' + (ssel === r.n) + '">' +
         '<span class="m"><i class="' + (buy ? 'buy' : 'sell') + '"></i>' + sBuy(buy) + ' · ' + esc(sModel(d.model)) + sSplit(d) + '</span>' +
-        '<span class="r ' + d.out + '">' + sR(d.net) + '</span>' +
+        sRHtml(r) +
         '<span class="s">' + esc(sDay(r, { weekday: 'short', day: '2-digit', month: 'short' }) + ' · ' + d.at + ' · ' + sRuleW(rule) + ' · ' + sLocW(d.loc)) + sMarks(r) + '</span></button>' +
         '<div class="hk-vt">' + sTick(r) + '</div></div>'; }
     function sDwTxt(r) { var k = sDwN(r);
@@ -691,7 +696,7 @@
         '<div class="hk-lbl">' + L('The trade', 'La operación') + '</div><dl class="hk-tt">' + tt.map(function (x) { return '<dt>' + x[0] + '</dt><dd class="p ' + x[3] + '">' + x[1] + '</dd><dd class="x">' + esc(x[2]) + '</dd>'; }).join('') + '</dl>'; }
     function sDet(r) { var d = r.data, ap = !!opt.study;
       return '<div class="hk-det" id="hk-sd">' +
-        '<div class="hk-dh"><span class="hk-out ' + d.out + '">' + sOut(d.out) + '</span>' + sSplit(d) + '<span class="rr">' + sR(d.net) + '<small>' + sR(d.r) + L(' before costs', ' antes de costes') + '</small></span><span class="n">#' + r.n + L(' · out ', ' · salida ') + hm(d.xts) + '</span></div>' +
+        '<div class="hk-dh"><span class="hk-out ' + d.out + '">' + sOut(d.out) + '</span>' + sSplit(d) + '<span class="rr">' + sR(d.net) + '<small>' + sR(d.r) + L(' before costs', ' antes de costes') + '</small></span><span class="n">#' + r.n + L(' · out ', ' · salida ') + hm(d.xts) + '</span></div>' + sYb(r) +
         (ap ? '<div class="hk-nav"><button class="hk-btn go" data-sa="open">' + L('Show in Study', 'Ver en el Estudio') + '</button></div>' : '') +
         (ap ? '<div class="hk-sst"><span id="hk-sst">' + esc(sStat) + '</span></div>' : '') +
         sExplain(d, r) +
@@ -707,6 +712,7 @@
       if (sFlPend) h += sFlCard(sFlPend);
       h += sMktHtml();
       var all = study.filter(function (r) { return sIn(r.day); });
+      if (!wiD && !wiBusy && !wiErr && sview !== 'whatif') wiLoad();   // the day's minutes, for his BE played out
       h += sPerHtml(sview === 'whatif' && wiD ? wiSim(wi0()).length : all.length);
       if (sview === 'whatif') { list.innerHTML = h + wiHtml(); return; }
       var net = all.reduce(function (s, r) { return s + r.data.net; }, 0), won = all.filter(function (r) { return r.data.out === 'win'; }).length;
@@ -714,7 +720,7 @@
       h += '<p class="hk-hint hk-lead">' + (sMkt === 'EURUSD' ? L('Your rules: stop 2–4 pips, target 20 pips, 0.6 pip costs.', 'Tus reglas: stop de 2–4 pips, objetivo de 20 pips, 0.6 pips de costes.') : sLeadMkt()) +
         (study[0] && study[0].data.rules === 'phases' ? L(' Read with your three phases on 4H / 1H / 15M.', ' Leído con tus tres fases en 4H / 1H / 15M.') : '') + (opt.study ? L(' Tap a trade to see it in Study with its zones and position.', ' Toca una operación para verla en el Estudio con sus zonas y su posición.') : '') + L(' Tick the ones you\'d take, cross the ones you wouldn\'t.', ' Marca con ✓ las que tomarías y con ✗ las que no.') + '</p>' +
         '<div class="hk-kpi">' + [[all.length, L('Trades', 'Operaciones')], [sR1(net), L('Net', 'Neto'), net >= 0 ? 'up' : 'dn'], [won, L('Targets', 'Objetivos')], [ag, L('You ✓', 'Tú ✓'), ag ? 'up' : '']]
-          .map(function (s) { return '<div><b class="' + (s[2] || '') + '">' + s[0] + '</b><span>' + s[1] + '</span></div>'; }).join('') + '</div>' +
+          .map(function (s) { return '<div><b class="' + (s[2] || '') + '">' + s[0] + '</b><span>' + s[1] + '</span></div>'; }).join('') + '</div>' + sYbn(all) +
         '<div class="hk-prog"><div class="t"><span>' + L('Checked <b>' + chk + '</b> of ' + all.length, 'Revisadas <b>' + chk + '</b> de ' + all.length) + '</span><span>' + L(ag + ' valid · ' + no + ' not', ag + ' válidas · ' + no + ' no') + '</span></div>' +
         '<div class="hk-bar"><i class="ok" style="width:' + (ag / Math.max(1, all.length) * 100).toFixed(2) + '%"></i><i class="no" style="width:' + (no / Math.max(1, all.length) * 100).toFixed(2) + '%"></i></div></div>' +
         '<div class="hk-flt"><button class="hk-btn" data-sflight>' + L('Bring in flight marks', 'Traer las marcas del vuelo') + '</button><input type="file" accept=".json,application/json" data-sfile hidden>' +
@@ -765,7 +771,7 @@
     function sMsg(t) { var el = byEl('#hk-ss'); if (el) el.textContent = t; }
     function sStatus(t) { sStat = t; var el = byEl('#hk-sst'); if (el) el.textContent = t; }
     function sMarkRow(r) { var el = byEl('.hk-tr[data-sn="' + r.n + '"] .s'); if (!el) return; var u = el.querySelector('u'); if (u) u.remove(); el.insertAdjacentHTML('beforeend', sMarks(r)); }
-    function sDraw(r) { var d = r.data, buy = d.side > 0, q = (d.bh - d.bl) / 4, mid = (d.bh + d.bl) / 2, w0 = ldnAt(d.ts, 480), t0 = w0 - 25 * 3600, t1 = w0 + 2 * 3600, x1 = Math.max(d.xts, d.ts + 1800);
+    function sDraw(r) { var d = r.data, buy = d.side > 0, q = (d.bh - d.bl) / 4, mid = (d.bh + d.bl) / 2, w0 = ldnAt(d.ts, 480), t0 = w0 - 25 * 3600, t1 = w0 + 2 * 3600, x1 = d.xts + 60;   // the box ends with the exit candle (Nestor, 7 Nov 2026: a box past the exit made a stopped trade look open when price reached the BE line after the stop)
       // the P/D zone is the Session Indicator's own (pd below); these three only for a study row without its range window
       var o = d.r0 ? [] : [
         { type: 'rect', a: { t: t0, price: d.bh }, b: { t: t1, price: d.bh - q }, color: '#F6465D', width: 1, fill: 'rgba(246,70,93,0.07)', text: 'Premium', tcol: '#F6465D', ta: 'l', tv: 'top' },
@@ -799,10 +805,52 @@
     var sBeOn = {};   // trade n -> its BE trigger line went on the chart this time
     async function sBeAuto(r) { var d = r.data, b = r.be_mine; if (sOnChart !== r.n || (b && b.none)) return;
       if ((r.drawings || []).some(function (x) { return x && x.mbe; })) { sBeOn[r.n] = 1; return; }
-      var px = b && b.price != null ? b.price : d.be; if (px == null) return; var ok = false; try { ok = await opt.study({ addBe: { n: r.n, t: d.ts, price: px } }); } catch (x) {} if (ok) sBeOn[r.n] = 1; }
+      var px = b && b.price != null ? b.price : d.be; if (px == null) return; var ok = false; try { ok = await opt.study({ addBe: { n: r.n, t: d.ts, price: px } }); } catch (x) {} if (ok) { sBeOn[r.n] = 1; sMineRender(r); } }
+    // ---------- his break-even, played out (7 Nov 2026, Nestor: "on losers you need to give me the option to add a BE trigger line so i can
+    // turn a losing trade into a BE trade"): the study's own management - What if's loop - on the day's minute path (hawk_study_days):
+    // the stop first, then the target, then the trigger (a candle past it moves the stop to the entry), out at 13:20 London
+    var sRunC = {};
+    function sBeRun(r, px) { var key = sRun() + '|' + r.n + '|' + px; if (sRunC[key]) return sRunC[key];
+      var D = wiD && wiD.filter(function (x) { return x.day === r.day; })[0], d = r.data; if (!D || !D.d || !D.d.m) return null;
+      var Dd = D.d, m = Dd.m, base = Dd.b, n = m.length / 5, u = wiU(), Q = Dd.q || 10, side = d.side, e = Math.round(d.entry / u);
+      var c = (Dd.c || []).filter(function (x) { return x[1] === side && x[2] === e; })[0]; if (!c) return null;
+      var cur = Math.round(d.stop / u), risk = Math.abs(e - cur), tg = Math.round(d.tgt / u), bel = px == null ? null : Math.round(px / u), at = false, best = e, o = null, R = 0, j = c[0];
+      if (d.out === 'loss' && d.xts === d.ts) { o = 'loss'; R = d.r; }   // stopped on the fill candle: nothing moves first
+      else for (j = c[0]; j < n; j++) { var x = j * 5;
+        if (m[x] >= 800) { var p = m[x + 1] + base; R = (p - e) * side / risk; o = at && (p - e) * side <= 0.2 * Q ? 'be' : 'time'; break; }
+        var H = m[x + 2] + base, Lo = m[x + 3] + base;
+        if (side > 0) { if (Lo <= cur) { R = (cur - e) / risk; o = at ? 'be' : 'loss'; break; } if (H >= tg) { R = (tg - e) / risk; o = 'win'; break; } best = Math.max(best, H); if (!at && bel != null && H > bel) { cur = e; at = true; } }
+        else { if (H >= cur) { R = (e - cur) / risk; o = at ? 'be' : 'loss'; break; } if (Lo <= tg) { R = (e - tg) / risk; o = 'win'; break; } best = Math.min(best, Lo); if (!at && bel != null && Lo < bel) { cur = e; at = true; } } }
+      if (o == null) { o = d.out; R = d.r; j = -1; }
+      return (sRunC[key] = { o: o, r: R, net: R - (d.r - d.net), best: best * u, xm: j >= 0 && j < n ? m[j * 5] : null }); }
+    function sMyBe(r) { var b = r.be_mine; return !b ? undefined : b.none ? null : b.price; }   // undefined: he kept the rules'
+    function sMine(r) { var b = sMyBe(r); return b === undefined ? null : sBeRun(r, b); }
+    function sMoved(r) { var x = sMine(r), d = r.data; return !!x && (x.o !== d.out || Math.abs(x.r - d.r) > 0.005); }
+    function sHm(mn) { return String(Math.floor(mn / 60)).padStart(2, '0') + ':' + String(mn % 60).padStart(2, '0'); }
+    function sRHtml(r) { var d = r.data, x = sMoved(r) ? sMine(r) : null;
+      return '<span class="r ' + (x ? x.o : d.out) + '"' + (x ? ' title="' + L('With your BE · the study: ', 'Con tu BE · el estudio: ') + sR(d.net) + '"' : '') + '>' + sR(x ? x.net : d.net) + '</span>'; }
+    function sLossTip(r) { var d = r.data, b0 = sBeRun(r, null); if (!b0) return null; var gain = (b0.best - d.entry) * d.side; return { b0: b0, gain: gain, can: gain > 0.1 * sMeta().nunit && d.xts !== d.ts }; }
+    // the strip under the result: his BE's outcome; on a loser how far it went his way before the stop, and the line to add
+    function sYb(r) { var d = r.data, x = sMine(r), id = ' id="hk-yb"'; if (!wiD) return '<div' + id + '></div>';
+      if (d.out === 'loss' && !sMoved(r)) { var q = sLossTip(r); if (!q) return '<div' + id + '></div>';
+        var line = !!(sOnChart === r.n && sBeOn[r.n] && !(r.be_mine && r.be_mine.none));
+        var add = q.can && !line && opt.study ? '<button class="hk-btn go" data-sa="beline">' + L('Add a BE trigger line', 'Añadir una línea de disparo del BE') + '</button>' : '';
+        var tip = q.can ? L('Before the stop it got to ' + sPx(q.b0.best) + ', ' + sDv(q.gain) + ' your way. ' + (line ? 'Drag the BE line inside that to turn this loss into break-even.' : 'Put a BE line inside that to turn this loss into break-even.'),
+          'Antes del stop llegó a ' + sPx(q.b0.best) + ', ' + sDv(q.gain) + ' a tu favor. ' + (line ? 'Arrastra la línea del BE dentro de eso para convertir esta pérdida en break-even.' : 'Pon una línea de BE dentro de eso para convertir esta pérdida en break-even.'))
+          : L('It never went your way before the stop, so no break-even line could have saved it.', 'Nunca fue a tu favor antes del stop, así que ninguna línea de break-even la habría salvado.');
+        return '<div class="hk-yb"' + id + '>' + (x ? '<span class="k">' + L('With your BE', 'Con tu BE') + '</span><span class="hk-out loss">' + sOut('loss') + '</span>' : '') + add + '<small>' + esc(tip) + '</small></div>'; }
+      if (!x) return '<div' + id + '></div>';
+      var same = !sMoved(r);
+      return '<div class="hk-yb"' + id + '><span class="k">' + L('With your BE', 'Con tu BE') + '</span><span class="hk-out ' + x.o + '">' + sOut(x.o) + '</span><span class="rr">' + sR(x.net) + '</span>' + (x.xm != null ? '<span class="n">' + L('out ', 'salida ') + sHm(x.xm) + '</span>' : '') +
+        '<small>' + (same ? L('Same as the study.', 'Igual que el estudio.') : L('The study: ', 'El estudio: ') + sOut(d.out) + ' ' + hm(d.xts) + ' · ' + sR(d.net) + '.') + '</small></div>'; }
+    function sYbn(all) { var k = 0, net = 0; if (wiD) all.forEach(function (r) { if (sMoved(r)) { k++; net += sMine(r).net; } else net += r.data.net; });
+      return '<p class="hk-ybn" id="hk-ybn">' + (k ? L('With your BE lines: <b>' + sR1(net) + '</b> · ' + k + (k === 1 ? ' trade' : ' trades') + ' changed', 'Con tus líneas de BE: <b>' + sR1(net) + '</b> · ' + k + (k === 1 ? ' operación cambiada' : ' operaciones cambiadas')) : '') + '</p>'; }
+    function sMineRender(r) { var a = byEl('#hk-yb'); if (a && ssel === r.n) a.outerHTML = sYb(r); var e = byEl('.hk-tr[data-sn="' + r.n + '"] .r'); if (e) e.outerHTML = sRHtml(r);
+      var b = byEl('#hk-ybn'); if (b) b.outerHTML = sYbn(study.filter(function (x) { return sIn(x.day); })); }
     async function sBeLine(r) { if (sOnChart !== r.n) { sMsg(L('Open this trade in Study first, then place your line.', 'Abre primero esta operación en el Estudio y luego pon tu línea.')); return; }
-      var d = r.data, b = r.be_mine, px = b && b.price != null ? b.price : d.be != null ? d.be : r5(d.entry + d.side * d.risk * 1e-4), ok = false;
+      var d = r.data, b = r.be_mine, q = d.out === 'loss' && !(b && b.price != null) ? sLossTip(r) : null, px = q && q.can ? r5(d.entry + d.side * q.gain / 2) : b && b.price != null ? b.price : d.be != null ? d.be : r5(d.entry + d.side * d.risk * 1e-4), ok = false;
       try { ok = await opt.study({ addBe: { n: r.n, t: d.ts, price: px } }); } catch (x) {}
+      if (ok) { sBeOn[r.n] = 1; sMineRender(r); }
       sMsg(ok ? L('Drag the BE trigger line to your level. It saves by itself.', 'Arrastra la línea del disparo del BE a tu nivel. Se guarda sola.') : L('Replay isn\'t showing this trade any more. Open it again first.', 'Replay ya no muestra esta operación. Ábrela otra vez primero.')); }
     async function sBeNone(r) { var none = !(r.be_mine && r.be_mine.none), be = none ? { none: true } : null;
       if (none && sOnChart === r.n) try { await opt.study({ addBe: { n: r.n, price: null } }); r.drawings = (r.drawings || []).filter(function (x) { return x && !x.mbe; }); if (!r.drawings.length) r.drawings = null; } catch (x) {}
@@ -820,7 +868,7 @@
       var at = new Date().toISOString(), patch = {}; if (!same) { patch.drawings = now; patch.drawings_at = at; } if (!sameBe) patch.be_mine = be;
       var q = await sb.from('hawk_study').update(patch).eq('run', sRun()).eq('n', r.n);
       if (q.error) { sMsg(L('Not saved: ', 'No guardado: ') + q.error.message); return false; }
-      if (!same) { r.drawings = now; r.drawings_at = at; } r.be_mine = be; sMarkRow(r);
+      if (!same) { r.drawings = now; r.drawings_at = at; } r.be_mine = be; sMarkRow(r); sMineRender(r);
       if (ssel === r.n) { var el = byEl('#hk-sdw'); if (el) el.textContent = sDwTxt(r); var eb = byEl('#hk-sbe'); if (eb) eb.innerHTML = sBeTxt(r);
         var nb = byEl('[data-sa="benone"]'); if (nb) nb.setAttribute('aria-pressed', String(!!(be && be.none)));
         var k = sDwN(r); sMsg(!sameBe && be && be.none ? L('Saved: no break-even on this one', 'Guardado: sin break-even en esta') : !sameBe && be && be.price != null ? L('Your break-even saved: ', 'Tu break-even guardado: ') + sPx(be.price) + (same ? '' : ' · ' + sPl(k, 'drawing', 'dibujo', 'dibujos')) : !sameBe && !be ? L('Break-even back to your rules\' level', 'Break-even de vuelta al nivel de tus reglas') : now ? L(sPl(k, 'drawing') + ' saved to #' + r.n, sDwSaved(k) + ' en #' + r.n) : L('Drawings removed from #', 'Dibujos quitados de #') + r.n); }
@@ -890,7 +938,7 @@
     async function wiLoad() { if (wiD || wiBusy) return; wiBusy = true; wiErr = ''; var run1 = sRun();
       var q = await sb.from('hawk_study_days').select('day, d').eq('run', sRun()).order('day', { ascending: true });
       wiBusy = false; if (q.error) wiErr = q.error.message; else { if (run1 !== sRun()) return; wiD = q.data || []; if (wiFresh) { wiP = wi0(); wiP.cost = +(wiP.spr + wiP.comm / wiCF()).toFixed(4); wiFresh = false; } }
-      if (period === 's' && sview === 'whatif') sRefresh(); }
+      if (period === 's') sRefresh(); }
     function wiMB() { var o = {}; (study || []).forEach(function (r) { var b = r.be_mine; if (b) o[r.day + '|' + r.data.side + '|' + Math.round(r.data.entry / wiU())] = b.none ? null : Math.round(b.price / wiU()); }); return o; }
     function wiOK() { var o = {}; (study || []).forEach(function (r) { if (r.verdict === 'agree') o[r.day + '|' + r.data.side + '|' + Math.round(r.data.entry / wiU())] = 1; }); return o; }
     function wiSim(p) { var out = [], ex = p.close === 'off' ? 9000 : Math.min(+p.exit, 1200), MB = p.be === 'mine' ? wiMB() : {}, OK = p.only === 'mine' ? wiOK() : null;
