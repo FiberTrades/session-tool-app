@@ -100,4 +100,7 @@ drop policy if exists hawk_cfg_write on public.hawk_config;
 create policy hawk_cfg_write on public.hawk_config for update to authenticated using (public.st_is_admin()) with check (public.st_is_admin());
 revoke all on public.hawk_config from anon;
 revoke all on public.hawk_config from authenticated;
-grant select, update (login, sym, updated_at) on public.hawk_config to authenticated;
+-- the hours it watches (7 Nov 2026): up to 3 windows [from, to], London minutes since midnight. Migration hawk_config_watch_hours.
+alter table public.hawk_config add column if not exists wins jsonb not null default '[[480,600]]'::jsonb
+  check (jsonb_typeof(wins) = 'array' and jsonb_array_length(wins) between 1 and 3);
+grant select, update (login, sym, wins, updated_at) on public.hawk_config to authenticated;

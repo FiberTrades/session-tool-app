@@ -115,6 +115,11 @@
     '.hk-picks{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}.hk-pick{display:flex;flex-direction:column;gap:5px;min-width:0}.hk-pick>span{font:500 10px var(--hk-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--hk-mut)}',
     '.hk-pick select{-webkit-appearance:none;appearance:none;min-width:0;height:32px;box-sizing:border-box;padding:0 28px 0 10px;border-radius:8px;border:1px solid var(--hk-line);background:var(--hk-soft) url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 12 12%27%3E%3Cpath d=%27M3 4.5l3 3 3-3%27 fill=%27none%27 stroke=%27%238b93a7%27 stroke-width=%271.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E") no-repeat right 9px center/12px 12px;color:var(--hk-ink);font:500 12.5px var(--hk-font,inherit);cursor:pointer;color-scheme:light dark}',
     '.hk-pick select:hover{border-color:color-mix(in srgb,var(--hk-mut) 55%,transparent)}.hk-pick select:focus-visible{outline:2px solid #e0a84a;outline-offset:1px}.hk-picks+.hk-hint{margin:8px 0 0}.hk-watch{margin:2px 0 10px}.hk-watch .hk-picks{margin-top:10px}',
+    // the hours it watches (7 Nov 2026): one row per window, from / to, London time
+    '.hk-hours{margin-top:14px}.hk-hrh{display:flex;align-items:baseline;justify-content:space-between;gap:8px;font:500 10px var(--hk-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--hk-mut)}.hk-hrh i{font-style:normal;letter-spacing:.04em;text-transform:none}',
+    '.hk-hrs{display:flex;flex-direction:column;gap:6px;margin-top:7px}.hk-pick.hk-hr{display:grid;grid-template-columns:minmax(66px,auto) minmax(0,1fr) auto minmax(0,1fr) 30px;align-items:center;gap:6px}.hk-hr>span{white-space:nowrap}.hk-pick.hk-hr>.hk-to{font:12px var(--hk-mono);letter-spacing:0;color:var(--hk-mut)}',
+    '.hk-hrx{width:30px;height:32px;padding:0;border:1px solid transparent;border-radius:8px;background:none;color:var(--hk-mut);font:17px/1 var(--hk-font,inherit);cursor:pointer}.hk-hrx:hover{border-color:var(--hk-line);color:var(--hk-ink)}.hk-hrx[disabled]{visibility:hidden}.hk-hrx:focus-visible,.hk-hradd button:focus-visible{outline:2px solid #e0a84a;outline-offset:1px}',
+    '.hk-hradd{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.hk-hradd button{height:28px;padding:0 11px;border:1px dashed var(--hk-line);border-radius:999px;background:none;color:var(--hk-mut);font:500 11.5px var(--hk-font,inherit);cursor:pointer}.hk-hradd button:hover{border-style:solid;color:var(--hk-ink)}.hk-hours .hk-hint{margin:8px 0 0}',
     '.hk-per{margin-top:0}.hk-per .hk-seg{margin:0}.hk-pr{margin-top:6px;font:11px var(--hk-mono);color:var(--hk-mut);font-variant-numeric:tabular-nums}',
     '.hk-dates{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:6px;margin-top:8px}.hk-dates span{font-size:11px;color:var(--hk-mut)}',
     '.hk-dates input{min-width:0;height:30px;box-sizing:border-box;padding:0 8px;border-radius:7px;border:1px solid var(--hk-line);background:var(--hk-soft);color:var(--hk-ink);font:500 12px var(--hk-mono);color-scheme:light dark}',
@@ -167,7 +172,8 @@
   // Anything not matched stays in English. Keep these in step with the texts in hawk.py.
   var A_SIDE = { buy: 'compra', sell: 'venta' }, A_DO = { buy: 'compra', sell: 'vende', Buy: 'Compra', Sell: 'Vende' }, A_WHERE = { 'in the discount': 'en el descuento', 'in the premium': 'en el premium', 'at the 50%': 'en el 50%', 'between the 50% and the edges': 'entre el 50% y los extremos', 'at the zone': 'en la zona' };
   var A_RULES = [
-    [/^London brief · (.+)$/, function (m) { return 'Brief de Londres · ' + m[1]; }],
+    [/^(London|New York|Asia|Evening) brief · (.+)$/, function (m) { return 'Brief de ' + { London: 'Londres', 'New York': 'Nueva York', Asia: 'Asia', Evening: 'la noche' }[m[1]] + ' · ' + m[2]; }],
+    [/Watching (\d\d:\d\d)–(\d\d:\d\d) London\./g, function (m) { return 'Vigilando de ' + m[1] + ' a ' + m[2] + ' (Londres).'; }],
     [/^Initiation · (up|down)$/, function (m) { return 'Iniciación · ' + (m[1] === 'up' ? 'al alza' : 'a la baja'); }],
     [/^Watch · (buy|sell) idea$/, function (m) { return 'Atento · idea de ' + A_SIDE[m[1]]; }],
     [/^Watch · 50% pullback (buy|sell)$/, function (m) { return 'Atento · ' + A_SIDE[m[1]] + ' en el retroceso al 50%'; }],
@@ -188,10 +194,14 @@
     [/(Buy|Sell) now ~(\S+) · stop (\S+) \(([\d.]+) pips\) · target (\S+) \(([\d.]+) pips, ([\d.]+R)\)\. (Low|High) taken (in the discount|in the premium|at the zone), the move has slowed\./g, function (m) { return A_DO[m[1]] + ' ahora ~' + m[2] + ' · stop ' + m[3] + ' (' + m[4] + ' pips) · objetivo ' + m[5] + ' (' + m[6] + ' pips, ' + m[7] + '). ' + (m[8] === 'Low' ? 'Mínimo' : 'Máximo') + ' barrido ' + A_WHERE[m[9]] + ', el movimiento se ha frenado.'; }],
     [/(Buy|Sell) limit (\S+) reached · stop (\S+) \(([\d.]+) pips\) · target (\S+) \(([\d.]+R)\)\./g, function (m) { return 'Límite de ' + A_SIDE[m[1].toLowerCase()] + ' ' + m[2] + ' alcanzado · stop ' + m[3] + ' (' + m[4] + ' pips) · objetivo ' + m[5] + ' (' + m[6] + ').'; }],
     [/^No trade · red news$/, function () { return 'Sin operación · noticia roja'; }],
+    [/(Buy|Sell) setup at (\S+) skipped: (.+?) at (\d\d:\d\d) \(a talk, counted until (\d\d:\d\d)\)\. No trades from (\d+) min before red news to (\d+) min after\./g, function (m) { return 'Setup de ' + A_SIDE[m[1].toLowerCase()] + ' en ' + m[2] + ' descartado: ' + m[3] + ' a las ' + m[4] + ' (una intervención, cuenta hasta las ' + m[5] + '). Sin operaciones desde ' + m[6] + ' min antes de una noticia roja hasta ' + m[7] + ' min después.'; }],
     [/(Buy|Sell) setup at (\S+) skipped: (.+?) at (\d\d:\d\d)\. No trades from (\d+) min before red news to (\d+) min after\./g, function (m) { return 'Setup de ' + A_SIDE[m[1].toLowerCase()] + ' en ' + m[2] + ' descartado: ' + m[3] + ' a las ' + m[4] + '. Sin operaciones desde ' + m[5] + ' min antes de una noticia roja hasta ' + m[6] + ' min después.'; }],
+    [/Red news (.+?) at (\d\d:\d\d): be out by (\d\d:\d\d), a stop or target filling in that window counts as a news trade at most firms\./g, function (m) { return 'Noticia roja ' + m[1] + ' a las ' + m[2] + ': fuera antes de las ' + m[3] + '; en la mayoría de firmas, un stop o un objetivo que salte en esa ventana cuenta como operar la noticia.'; }],
     [/Red news (.+?) at (\d\d:\d\d): be out or at break-even by (\d\d:\d\d)\./g, function (m) { return 'Noticia roja ' + m[1] + ' a las ' + m[2] + ': fuera o en break-even antes de las ' + m[3] + '.'; }],
     [/Red news (.+?) at (\d\d:\d\d): no order waiting from (\d\d:\d\d)\./g, function (m) { return 'Noticia roja ' + m[1] + ' a las ' + m[2] + ': ninguna orden pendiente desde las ' + m[3] + '.'; }],
     [/Red news: (.+?)\. No trades from (\d+) min before each to (\d+) min after\./g, function (m) { return 'Noticias rojas: ' + m[1] + '. Sin operaciones desde ' + m[2] + ' min antes de cada una hasta ' + m[3] + ' min después.'; }],
+    [/Speeches and press conferences count until they end\./g, function () { return 'Los discursos y las ruedas de prensa cuentan hasta que terminan.'; }],
+    [/No red news in these hours for (.+?)\./g, function (m) { return 'Sin noticias rojas en estas horas para ' + m[1].replace(' or ', ' o ') + '.'; }],
     [/No red news this morning for (.+?)\./g, function (m) { return 'Sin noticias rojas esta mañana para ' + m[1].replace(' or ', ' o ') + '.'; }],
     [/Red news unknown \(calendar not read\): check it before you trade\./g, function () { return 'Noticias rojas desconocidas (no se pudo leer el calendario): revísalo antes de operar.'; }],
     [/It touched the stop in the same minute\./g, function () { return 'Tocó el stop en el mismo minuto.'; }],
@@ -203,6 +213,16 @@
   var KIND = { brief: ['Brief', 'Resumen'], sweep: ['Watch', 'Vigilar'], pocket: ['Watch', 'Vigilar'], initiation: ['Initiation', 'Iniciación'], setup: ['Setup', 'Setup'], news: ['Red news', 'Noticia roja'], done: ['Done', 'Fin'] };
   var PHASES = [['range', 'Range', 'Rango'], ['trend up', 'Trend up', 'Tendencia alcista'], ['trend down', 'Trend down', 'Tendencia bajista']];
   var LDN = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  // the hours it watches (7 Nov 2026): windows [from, to] in London minutes, as hawk.py's clean_wins / win_name
+  function hhmm(m) { return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); }
+  function hhS(m) { return m % 60 ? hhmm(m) : String(Math.floor(m / 60)).padStart(2, '0'); }
+  function wName(a) { return a < 360 ? 'Asia' : a < 720 ? L('London', 'Londres') : a < 1080 ? L('New York', 'Nueva York') : L('Evening', 'Noche'); }
+  function wMin(t) { var s = LDN.format(new Date(t * 1000)); return +s.slice(0, 2) * 60 + +s.slice(3, 5); }
+  function winLbl(d) { var a = wMin(d.w0), b = a + Math.round((d.w1 - d.w0) / 60); return wName(a) + ' ' + hhS(a) + '–' + hhS(b); }
+  function winsClean(w) { var xs = (Array.isArray(w) ? w : []).map(function (x) { return [Math.round(+x[0]), Math.round(+x[1])]; })
+      .filter(function (x) { return x[0] >= 0 && x[1] <= 1440 && x[1] - x[0] >= 30; }).sort(function (a, b) { return a[0] - b[0]; }), out = [];
+    xs.forEach(function (x) { var p = out[out.length - 1]; if (p && x[0] <= p[1]) p[1] = Math.max(p[1], x[1]); else out.push(x); });
+    out = out.slice(0, 3); return out.length ? out : [[480, 600]]; }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function ldn(iso, o) { return new Date(iso).toLocaleString(LOC(), Object.assign({ timeZone: 'Europe/London' }, o)); }
   function p5(v) { v = +v; return v.toFixed(Math.abs(v) >= 1000 ? 2 : Math.abs(v) >= 50 ? 3 : 5); }   // EUR/USD 5, JPY 3, gold / US100 2
@@ -271,9 +291,9 @@
     for (var i = 0; i < n; i++) { var hm = st.hm[i];
       if (hm.slice(3) === '00' && (+hm.slice(0, 2)) % step === 0) { var x = i * bw;
         g.fillStyle = K.line; g.fillRect(Math.round(x), TOP, 1, PH); txt(hm, x, H - 9, K.mut, 'center', 9); } }
-    // the London window, 08:00-10:00
+    // the window it watched (London 08:00-10:00 unless he picked other hours)
     var w0 = xt(d.w0), w1 = d.w1 > bars[n - 1][0] + tf ? PW : xt(d.w1);
-    if (w1 > w0) { tint(K.soft, 0.9); g.fillRect(w0, TOP, w1 - w0, PH); g.globalAlpha = 1; if (w1 - w0 > 84) txt(L('LONDON 08–10', 'LONDRES 08–10'), w0 + 6, TOP + PH - 8, K.mut, 'left', 9); }
+    if (w1 > w0) { tint(K.soft, 0.9); g.fillRect(w0, TOP, w1 - w0, PH); g.globalAlpha = 1; if (w1 - w0 > 84) txt(winLbl(d).toUpperCase(), w0 + 6, TOP + PH - 8, K.mut, 'left', 9); }
     // the range it measured: premium (top 25%), discount (bottom 25%), the 50%
     var xr = xt(d.r0), q = (d.bh - d.bl) / 4, mid = (d.bh + d.bl) / 2, ranged = d.phase === 'range';
     tint(K.sell, ranged ? 0.13 : 0.07); g.fillRect(xr, Y(d.bh), PW - xr, Y(d.bh - q) - Y(d.bh));
@@ -353,7 +373,7 @@
     var focusId = opt.focusId || null, period = focusId ? 7 : 1, lastP = 7, rows = [], charts = {}, pollT = null;   // lastP: the dropdown's period (Today is its own button)
     function headHtml() { return '<div>' +
       '<div class="hk-eye">' + L('Hawk', 'Halcón') + ' <i>' + L('Admin only', 'Solo admin') + '</i></div><div class="hk-title">' + L('Hawk', 'Halcón') + '</div>' +
-      '<p class="hk-sub">' + L('Its read of the market you pick, before and during London 08:00–10:00. Rate each alert, or draw your own read on the chart.', 'Su lectura del mercado que elijas, antes y durante Londres 08:00–10:00. Valora cada alerta o dibuja tu propia lectura en el gráfico.') + '</p></div>' +
+      '<p class="hk-sub">' + L('Its read of the market you pick, in the hours you pick. Rate each alert, or draw your own read on the chart.', 'Su lectura del mercado que elijas, en las horas que elijas. Valora cada alerta o dibuja tu propia lectura en el gráfico.') + '</p></div>' +
       '<div class="hk-tabs"><button data-p="1">' + L('Today', 'Hoy') + '</button><select data-hkp aria-label="' + L('Period', 'Periodo') + '"><option value="" hidden></option>' +
         [[7, L('7 days', '7 días')], [30, L('30 days', '30 días')], [90, L('90 days', '90 días')], [3650, L('All time', 'Todo')]].map(function (x) { return '<option value="' + x[0] + '">' + x[1] + '</option>'; }).join('') +
         '</select><button data-p="s">' + L('Study', 'Estudio') + '</button></div>'; }
@@ -371,16 +391,34 @@
         var on = period !== 's' && period !== 1; ps.value = on ? String(period) : ''; ps.classList.toggle('off', !on); } todayPaint(); watchPaint(); }
     // what the hawk reads (hawk_config, admin RLS): any of his MT5 accounts and the markets the study ran; hawk.py on uk1 picks it up within a minute
     var cfg = null, cfgMsg = '', HKM = [['EURUSD', 'EUR/USD'], ['GBPUSD', 'GBP/USD'], ['XAUUSD', L('Gold', 'Oro')], ['US100', L('US100 · lost in the study', 'US100 · perdió en el estudio')]];
-    function cfgLoad() { try { sb.from('hawk_config').select('login,sym').eq('id', 1).maybeSingle().then(function (q) { if (q && q.data) { cfg = q.data; watchPaint(); } }, function () {}); } catch (x) {} }
+    var WPRE = [[480, 600], [780, 900]];   // the quick picks: London 08:00-10:00 (the study's hours), New York 13:00-15:00
+    function cfgWins() { return winsClean(cfg && cfg.wins); }
+    function winsSaid() { return cfgWins().map(function (w) { return hhmm(w[0]) + '–' + hhmm(w[1]); }).join(', '); }
+    function winFree(W) { var last = W.length ? W[W.length - 1][1] : 480;   // "Other hours": the first free hour after the last window, else before the first
+      for (var a = Math.ceil((last + 30) / 30) * 30; a + 60 <= 1440; a += 30) if (!W.some(function (w) { return w[0] < a + 75 && a - 15 < w[1]; })) return [a, a + 60];
+      for (a = 0; a + 60 <= 1440; a += 30) if (!W.some(function (w) { return w[0] < a + 75 && a - 15 < w[1]; })) return [a, a + 60];
+      return null; }
+    function hoursHtml() { var W = cfgWins(), op = function (lo, hi, v) { var s = ''; for (var m = lo; m <= hi; m += 15) s += '<option value="' + m + '"' + (m === v ? ' selected' : '') + '>' + hhmm(m) + '</option>'; return s; };
+      var add = W.length < 3 ? WPRE.filter(function (p) { return !W.some(function (w) { return w[0] < p[1] && p[0] < w[1]; }); })
+        .map(function (p) { return '<button type="button" data-hkwadd="' + p[0] + '-' + p[1] + '">+ ' + esc(wName(p[0])) + ' ' + hhmm(p[0]) + '–' + hhmm(p[1]) + '</button>'; }).join('')
+        + (winFree(W) ? '<button type="button" data-hkwadd="more">+ ' + L('Other hours', 'Otras horas') + '</button>' : '') : '';
+      return '<div class="hk-hours"><div class="hk-hrh"><span>' + L('Watch hours', 'Horas de vigilancia') + '</span><i>' + L('London time · weekdays', 'Hora de Londres · laborables') + '</i></div><div class="hk-hrs">'
+        + W.map(function (w, i) { return '<div class="hk-pick hk-hr"><span>' + esc(wName(w[0])) + '</span>'
+          + '<select data-hkw="' + i + '" data-e="0" aria-label="' + L('From', 'Desde') + '">' + op(0, 1410, w[0]) + '</select><span class="hk-to">–</span>'
+          + '<select data-hkw="' + i + '" data-e="1" aria-label="' + L('To', 'Hasta') + '">' + op(w[0] + 30, 1440, w[1]) + '</select>'
+          + '<button type="button" class="hk-hrx" data-hkwx="' + i + '" aria-label="' + L('Remove these hours', 'Quitar estas horas') + '"' + (W.length < 2 ? ' disabled' : '') + '>×</button></div>'; }).join('')
+        + '</div>' + (add ? '<div class="hk-hradd">' + add + '</div>' : '')
+        + '<p class="hk-hint">' + L('The brief comes 15 minutes before each, alerts until 5 minutes after.', 'El resumen llega 15 minutos antes de cada una y las alertas hasta 5 minutos después.') + '</p></div>'; }
+    function cfgLoad() { try { sb.from('hawk_config').select('login,sym,wins').eq('id', 1).maybeSingle().then(function (q) { if (q && q.data) { cfg = q.data; watchPaint(); } }, function () {}); } catch (x) {} }
     function accList() { var a = []; try { a = (opt.accounts ? opt.accounts() : []) || []; } catch (x) {}
       if (cfg && !a.some(function (x) { return x.login === cfg.login; })) a.unshift({ login: cfg.login, name: cfg.login === '1515070952' ? L('Demo · 1515070952', 'Demo · 1515070952') : cfg.login }); return a; }
     function watchPaint() { var w = root.querySelector('.hk-watch'); if (!w) return; if (!cfg || period === 's') { if (!w.hidden) w.hidden = true; return; }
       var h = '<div class="hk-picks"><label class="hk-pick"><span>' + L('Account', 'Cuenta') + '</span><select data-hkacc>' + accList().map(function (a) { return '<option value="' + esc(a.login) + '"' + (a.login === cfg.login ? ' selected' : '') + '>' + esc(a.name) + '</option>'; }).join('') + '</select></label>'
         + '<label class="hk-pick"><span>' + L('Market', 'Mercado') + '</span><select data-hkmk>' + HKM.map(function (m) { return '<option value="' + m[0] + '"' + (m[0] === cfg.sym ? ' selected' : '') + '>' + esc(m[1]) + '</option>'; }).join('') + '</select></label></div>'
-        + '<p class="hk-hint">' + esc(cfgMsg || L('The hawk reads this account\'s prices. It never trades on it.', 'El halcón lee los precios de esta cuenta. Nunca opera en ella.')) + '</p>';
+        + '<p class="hk-hint">' + esc(cfgMsg || L('The hawk reads this account\'s prices. It never trades on it.', 'El halcón lee los precios de esta cuenta. Nunca opera en ella.')) + '</p>' + hoursHtml();
       if (w.innerHTML !== h) w.innerHTML = h; w.hidden = false; }
     function cfgSave(k, v) { if (!cfg) return; var nx = Object.assign({}, cfg); nx[k] = v; cfgMsg = L('Saving…', 'Guardando…'); watchPaint();
-      sb.from('hawk_config').update({ login: nx.login, sym: nx.sym, updated_at: new Date().toISOString() }).eq('id', 1).then(function (q) {
+      sb.from('hawk_config').update({ login: nx.login, sym: nx.sym, wins: winsClean(nx.wins), updated_at: new Date().toISOString() }).eq('id', 1).then(function (q) {
         if (q && q.error) { cfgMsg = L('Not saved: ', 'No guardado: ') + q.error.message; } else { cfg = nx; cfgMsg = L('Saved. The hawk switches within a minute.', 'Guardado. El halcón cambia en menos de un minuto.'); }
         watchPaint(); setTimeout(function () { cfgMsg = ''; watchPaint(); }, 6000); }, function (e) { cfgMsg = L('Not saved', 'No guardado'); watchPaint(); }); }
     tabs(); cfgLoad();
@@ -404,7 +442,7 @@
       return L('Your trade: entry ' + p5(m.entry) + ' · stop ' + p5(m.stop) + ' · target ' + p5(m.tgt), 'Tu operación: entrada ' + p5(m.entry) + ' · stop ' + p5(m.stop) + ' · objetivo ' + p5(m.tgt));
     }
     function legend(r) {
-      var it = [['sell', 'Premium', .3], ['buy', L('Discount', 'Descuento'), .3], ['soft', L('London 08–10', 'Londres 08–10'), 1]];
+      var it = [['sell', 'Premium', .3], ['buy', L('Discount', 'Descuento'), .3], ['soft', winLbl(r.data.chart), 1]];
       if (r.data.chart.a2b) it.push(['acc', L('Leg 50%', '50% del tramo'), 1]);
       if (r.data.entry != null) it.push(['ink', L('Entry · stop · target', 'Entrada · stop · objetivo'), 1]);
       it.push(['you', L('You', 'Tú'), 1]);
@@ -434,7 +472,7 @@
     }
     function render() {
       charts = {};
-      if (!rows.length) { list.innerHTML = '<p class="hk-empty">' + L('No alerts in this period. The hawk watches weekdays: the brief comes at 07:45 London time, then alerts until 10:05.', 'No hay alertas en este periodo. El halcón vigila de lunes a viernes: el resumen llega a las 07:45 hora de Londres y luego alertas hasta las 10:05.') + '</p>'; statsEl.hidden = true; return; }
+      if (!rows.length) { list.innerHTML = '<p class="hk-empty">' + L('No alerts in this period. The hawk watches weekdays, in your watch hours (' + winsSaid() + ' London): the brief 15 minutes before, then alerts until 5 minutes after.', 'No hay alertas en este periodo. El halcón vigila de lunes a viernes en tus horas (' + winsSaid() + ' de Londres): el resumen 15 minutos antes y luego alertas hasta 5 minutos después.') + '</p>'; statsEl.hidden = true; return; }
       stats();
       var h = '', last = '';
       rows.forEach(function (r) { var dl = ldn(r.created_at, { weekday: 'long', day: 'numeric', month: 'long' });
@@ -483,7 +521,7 @@
     function poll() { clearTimeout(pollT); pollT = setTimeout(poll, 30000);
       if (doc.hidden || !host.offsetParent || period !== 1) return;
       var hm = LDN.format(new Date()), m = +hm.slice(0, 2) * 60 + +hm.slice(3), wd = new Date().toLocaleDateString('en-GB', { timeZone: 'Europe/London', weekday: 'short' });
-      if (wd === 'Sat' || wd === 'Sun' || m < 7 * 60 + 20 || m > 10 * 60 + 30) return;
+      if (wd === 'Sat' || wd === 'Sun' || !cfgWins().some(function (w) { return m >= w[0] - 40 && m <= w[1] + 20; })) return;
       load(true); }
     async function save(id, patch, label) {
       if ('feedback' in patch || 'note' in patch) patch.feedback_at = new Date().toISOString();
@@ -887,6 +925,8 @@
       if (e.target.closest('[data-wreset]')) { wiP = Object.assign(wi0(), { risk: wiP.risk }); wiSet(); return true; }
       return false; }
     root.addEventListener('click', async function (e) {
+      var wx = e.target.closest('[data-hkwx]'); if (wx) { var W1 = cfgWins().filter(function (x, i) { return i !== +wx.dataset.hkwx; }); if (W1.length) cfgSave('wins', W1); return; }
+      var wa = e.target.closest('[data-hkwadd]'); if (wa) { var W2 = cfgWins().slice(), nw = wa.dataset.hkwadd === 'more' ? winFree(W2) : wa.dataset.hkwadd.split('-').map(Number); if (nw && W2.length < 3) { W2.push(nw); cfgSave('wins', winsClean(W2)); } return; }
       var t = e.target.closest('.hk-tabs button');
       if (t) { if (period === 's' && t.dataset.p !== 's') sEnd(); period = t.dataset.p === 's' ? 's' : +t.dataset.p; tabs(); load(); return; }
       if (study && period === 's') {
@@ -926,6 +966,8 @@
     root.addEventListener('change', function (e) {
       if (e.target.hasAttribute && e.target.hasAttribute('data-hkacc')) { cfgSave('login', e.target.value); return; }
       if (e.target.hasAttribute && e.target.hasAttribute('data-hkmk')) { cfgSave('sym', e.target.value); return; }
+      if (e.target.hasAttribute && e.target.hasAttribute('data-hkw')) { var W3 = cfgWins().map(function (x) { return x.slice(); }), wi = +e.target.dataset.hkw, wv = +e.target.value;
+        if (W3[wi]) { if (e.target.dataset.e === '0') { var len = W3[wi][1] - W3[wi][0]; W3[wi][0] = wv; if (W3[wi][1] < wv + 30) W3[wi][1] = Math.min(1440, wv + Math.max(60, len)); } else W3[wi][1] = wv; cfgSave('wins', winsClean(W3)); } return; }
       if (e.target.hasAttribute && e.target.hasAttribute('data-hkp')) { if (period === 's') sEnd(); period = lastP = +e.target.value || 7; tabs(); load(); return; }
       if (study && period === 's' && e.target.hasAttribute('data-smksel')) { sMktSet(e.target.value); return; }
       if (study && period === 's' && e.target.hasAttribute('data-persel')) { sPer.k = e.target.value; sPerSave(); sRefresh(); return; }

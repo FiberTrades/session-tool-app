@@ -3,17 +3,18 @@
 #
 # Nestor: "build like a hawk to watch the market live and send me nudges when the perfect conditions to enter a trade present
 # themselves ... even before the trade opportunity presents itself you could tell me, watch for price if it retraces to 50% you
-# could look for a sell". Runs on uk1 (systemd st-hawk) in the London window, weekdays 07:20-10:10:
+# could look for a sell". Runs on uk1 (systemd st-hawk) on weekdays, in the hours picked in the hawk tab (7 Nov 2026: up to 3
+# windows, London time; the study's 08:00-10:00 until he picks), from 40 min before each to 10 min after:
 #   * reads the account + market picked in the hawk tab (hawk_config; 6 Nov: any of his cloud MT5 accounts, EUR/USD, GBP/USD, gold
 #     or US100 - the markets the study ran) over the local relay (the demo 1515070952's EURUSD until he picks): "watch" gets "px" every second with the last closed
 #     1-minute candle; "hist" gets 25 h of 1-minute and 200 hour candles. It sends nothing else: never a command, never an order.
 #   * every closed minute runs engine.py - the exact rules of the rule study (chart-exports/strategy-review) - and sends:
-#       brief       07:45: phase, the range, premium / discount / 50%, what to wait for
+#       brief       15 min before each window: phase, the range, premium / discount / 50%, what to wait for, the red news
 #       sweep       a high / low taken where the plan trades: what to watch for next
 #       pocket      a fast leg with a small range at its 50%: the pullback level, stop and target, before price comes back
 #       initiation  a strong 5-minute close outside the range: don't trade against it, the pocket to buy high / sell low
 #       setup       the entry itself: a reaction now, or a pullback that reached its level
-#       done        10:05: how many alerts, tap to rate them
+#       done        5 min after each window: how many alerts, tap to rate them
 #   * red news (7 Nov 2026, Nestor: prop firms don't allow trading into it): the app's calendar, for the market's currencies. No setup
 #     from NEWS_BEFORE min before a red release until NEWS_AFTER min after (a 'news' alert says it was skipped); a pullback order that
 #     could still be waiting at a release is told to come out by then; the brief lists the morning's red news.
@@ -30,9 +31,33 @@ CANON = 'EURUSD'
 MK = {'EURUSD': (0.0001, 5, 'EUR/USD', 'pips', 0.0001), 'GBPUSD': (0.00013360655737705096, 5, 'GBP/USD', 'pips', 0.0001),
       'XAUUSD': (1.127322404371542, 2, 'Gold', '$', 1.0), 'US100': (6.01092896174864, 2, 'US100', 'points', 1.0)}
 DP = 5
-CURS = {'EURUSD': ('EUR', 'USD'), 'GBPUSD': ('GBP', 'USD'), 'XAUUSD': ('USD',), 'US100': ('USD',)}   # whose red news moves the market
-NEWS_BEFORE, NEWS_AFTER = 10, 5   # minutes: no setup in this window around a red release (FTMO's funded rule is 2 and 2; this is stricter)
+# whose red news moves the market (7 Nov 2026, the prop-firm survey: gold counts USD, AUD and CAD news at Maven / Blue Guardian)
+CURS = {'EURUSD': ('EUR', 'USD'), 'GBPUSD': ('GBP', 'USD'), 'XAUUSD': ('USD', 'AUD', 'CAD'), 'US100': ('USD',)}
+ALL_MK = ('cpi', 'non-farm', 'fomc', 'federal funds')   # US CPI, NFP and FOMC count for every market, whatever its currencies (Maven, Alpha)
+TALKS = (('press conference', 60), ('testif', 60), ('speaks', 45), ('speech', 45))   # a talk counts until it ends (start-5 to end+5 at
+                                                                                    # FundingPips): taken as this many minutes long
+NEWS_BEFORE, NEWS_AFTER = 10, 5   # minutes: no setup in this window around a red release (most firms 5 and 5, FTMO 2 and 2; this is stricter)
 NEWS = {'t': 0, 'ev': [], 'ok': False}   # [(utc seconds, currency, title)], refreshed every 10 minutes
+def talk(title):
+    t = str(title).lower()
+    return next((m for k, m in TALKS if k in t), 0)
+def counts(cur, title): return cur in CURS.get(CANON, ('USD',)) or (cur == 'USD' and any(k in str(title).lower() for k in ALL_MK))
+def curs_said():
+    c = CURS.get(CANON, ('USD',)); return c[0] if len(c) == 1 else ', '.join(c[:-1]) + ' or ' + c[-1]
+# the hours he watches (7 Nov 2026): up to 3 windows [from, to] in London minutes, from hawk_config.wins, sorted and merged
+def clean_wins(w):
+    xs = []
+    for x in (w or []):
+        try: a, b = int(x[0]), int(x[1])
+        except Exception: continue
+        if 0 <= a < b <= 1440 and b - a >= 30: xs.append((a, b))
+    out = []
+    for a, b in sorted(xs):
+        if out and a <= out[-1][1]: out[-1] = (out[-1][0], max(out[-1][1], b))
+        else: out.append((a, b))
+    return out[:3] or [(480, 600)]
+def win_name(w): return 'Asia' if w[0] < 360 else 'London' if w[0] < 720 else 'New York' if w[0] < 1080 else 'Evening'
+def clock(m): return '%02d:%02d' % (m // 60, m % 60)
 def canon(sym):
     u = str(sym or '').upper()
     for k in MK:
@@ -57,17 +82,19 @@ def word(side, buy, sell): return buy if side > 0 else sell
 
 # ---------- what to say
 class Hawk:
-    def __init__(self, send):
-        self.send = send; self.seen = set(); self.day = None; self.primed = False; self.count = 0; self.brief = False; self.done = False
+    def __init__(self, send, wins=None):
+        self.send = send; self.wins = clean_wins(wins); self.seen = set(); self.day = None; self.primed = False
+        self.ws = {}; self.cw = dict(count=0); self.suf = ''   # each window's brief / done / count today; the one being read; its key suffix
 
     def new_day(self, day):
-        self.day = day; self.seen = set(); self.primed = False; self.count = 0; self.brief = False; self.done = False
+        self.day = day; self.seen = set(); self.primed = False; self.ws = {}
 
     def out(self, key, kind, title, body, side=None, data=None):
+        key += self.suf                     # the 08:00 window keeps the old keys; another window's carry its start ('@1300')
         if key in self.seen: return
         self.seen.add(key)
         if not self.primed: return          # first look after a (re)start: what already happened stays quiet
-        self.count += kind != 'done'
+        self.cw['count'] += kind != 'done'
         data = dict(data or {})
         for k in ('a', 'b', 'i'):                     # candle indexes -> times, for the chart
             if isinstance(data.get(k), int) and 0 <= data[k] < E.N: data['t' + k] = E.T[data[k]]
@@ -76,19 +103,19 @@ class Hawk:
         if kind != 'done':
             try: data['chart'] = self.chart()
             except Exception as e: log('chart failed:', repr(e))
-        data.update(sym=CANON, login=LOGIN, dp=DP)
+        data.update(sym=CANON, login=LOGIN, dp=DP, win=list(E.WIN))
         self.send(dict(day=self.day, key=(key if CANON == 'EURUSD' else CANON + ':' + key), kind=kind, side=side, title=title, body=body, data=data, symbol=CANON))
 
     def news_near(self, t):
         """The red release whose no-trade window holds UTC second t, for this market's currencies, else None."""
         for at, cur, title in NEWS['ev']:
-            if cur in CURS.get(CANON, ('USD',)) and at - NEWS_BEFORE * 60 <= t <= at + NEWS_AFTER * 60: return (at, cur, title)
+            if counts(cur, title) and at - NEWS_BEFORE * 60 <= t <= at + (talk(title) + NEWS_AFTER) * 60: return (at, cur, title)
         return None
 
     def news_ahead(self, t, until):
         """The first red release for this market's currencies after UTC second t and before `until`, else None."""
         for at, cur, title in NEWS['ev']:
-            if cur in CURS.get(CANON, ('USD',)) and t < at <= until: return (at, cur, title)
+            if counts(cur, title) and t < at <= until: return (at, cur, title)
         return None
 
     def chart(self):
@@ -112,7 +139,7 @@ class Hawk:
                     w0=w0, w1=w0 + (E.WIN[1] - E.WIN[0]) * 60, now=now, px=r5(E.C[last]))
 
     def look(self, t, o, h, l, c, h1=None):
-        """Called once a minute with every candle so far (oldest first)."""
+        """Called once a minute with every candle so far (oldest first): reads each window he watches that is on now."""
         E.load(t, o, h, l, c, h1)
         last = E.N - 1
         lt = ldt(E.T[last] + 60)          # the time the last candle closed
@@ -120,23 +147,33 @@ class Hawk:
         if day != self.day: self.new_day(day)
         if lt.weekday() >= 5: return
         mins = lt.hour * 60 + lt.minute
+        ran = False
+        for w in self.wins:
+            if w[0] - 40 <= mins < w[1] + 10: ran = self.look_win(w, last, mins, day) or ran
+        if ran: self.primed = True
+
+    def look_win(self, w, last, mins, day):
+        """One window [from, to] (London minutes): the study's rules with its hours, its own brief and done."""
+        E.WIN = tuple(w)
+        self.suf = '' if w[0] == 480 else '@' + clock(w[0]).replace(':', '')
+        ws = self.cw = self.ws.setdefault(w[0], dict(brief=False, done=False, count=0))
         idx = [i for i in range(E.N) if E.LDAY[i] == E.LDAY[last] and E.WIN[0] - 60 <= E.LMIN[i] < E.WIN[1]]
-        if not idx: return
+        if not idx: return False
         i0 = idx[0]
         st = E.htf_state(i0)
-        if not st: return
+        if not st: return False
         ph, a2b = st
         j = i0
         while j > 0 and E.T[i0] - E.T[j] < 86400: j -= 1
-        bh, bl = max(E.H[j:i0]), min(E.L[j:i0]);   # fixed at 08:00 London, as the study (6 Nov)
+        bh, bl = max(E.H[j:i0]), min(E.L[j:i0]);   # the 24 h before the window, fixed at its start, as the study (6 Nov)
         q = (bh - bl) / 4; mid = (bh + bl) / 2
         now = E.C[last]
         self.ctx = dict(j=j, i0=i0, last=last, ph=ph, a2b=a2b, bh=bh, bl=bl)
 
-        if mins >= 7 * 60 + 45 and not self.brief:
-            self.brief = True
+        if mins >= E.WIN[0] - 15 and not ws['brief']:
+            ws['brief'] = True
             loc = 'in the premium' if now >= bh - q else 'in the discount' if now <= bl + q else 'at the 50%' if abs(now - mid) <= q / 2 else 'between the 50% and the edges'
-            lines = []
+            lines = ['Watching %s–%s London.' % (clock(E.WIN[0]), clock(E.WIN[1]))]
             if ph == 'range':
                 lines.append('Range day. Range %s–%s: premium above %s, discount below %s, 50%% at %s.' % (px(bl), px(bh), px(bh - q), px(bl + q), px(mid)))
                 lines.append('Price %s, %s.' % (px(now), loc))
@@ -149,11 +186,14 @@ class Hawk:
                     m2 = sum(a2b) / 2
                     lines.append('Last leg %s → %s: its 50%% at %s is the %s zone.' % (px(a2b[0]), px(a2b[1]), px(m2), 'buy' if up else 'sell'))
                 lines.append('Price %s. Range %s–%s.' % (px(now), px(bl), px(bh)))
-            reds = [(at, cur, title) for at, cur, title in NEWS['ev'] if cur in CURS.get(CANON, ('USD',)) and ldt(at).strftime('%Y-%m-%d') == day and 6 * 60 <= ldt(at).hour * 60 + ldt(at).minute <= 13 * 60 + 30]
-            if reds: lines.append('Red news: ' + '; '.join('%s %s %s' % (hm(at), cur, title) for at, cur, title in reds) + '. No trades from %d min before each to %d min after.' % (NEWS_BEFORE, NEWS_AFTER))
-            elif NEWS['ok']: lines.append('No red news this morning for %s.' % ' or '.join(CURS.get(CANON, ('USD',))))
+            # the red news from an hour before the window to 3.5 h after it (trades opened late can still be on: London's 13:30)
+            reds = [(at, cur, title) for at, cur, title in NEWS['ev'] if counts(cur, title) and ldt(at).strftime('%Y-%m-%d') == day and E.WIN[0] - 60 <= ldt(at).hour * 60 + ldt(at).minute <= E.WIN[1] + 210]
+            if reds:
+                lines.append('Red news: ' + '; '.join('%s %s %s' % (hm(at), cur, title) for at, cur, title in reds) + '. No trades from %d min before each to %d min after.' % (NEWS_BEFORE, NEWS_AFTER))
+                if any(talk(x[2]) for x in reds): lines.append('Speeches and press conferences count until they end.')
+            elif NEWS['ok']: lines.append('No red news in these hours for %s.' % curs_said())
             else: lines.append('Red news unknown (calendar not read): check it before you trade.')
-            self.out('brief', 'brief', 'London brief · ' + MK[CANON][2], ' '.join(lines),
+            self.out('brief', 'brief', win_name(E.WIN) + ' brief · ' + MK[CANON][2], ' '.join(lines),
                      data=dict(phase=ph, bh=bh, bl=bl, price=now, a2b=a2b))
 
         ev = []
@@ -193,13 +233,17 @@ class Hawk:
             model = su['model'].replace('·', '·')
             nn = self.news_near(E.T[k] + 60)
             if nn:   # red news: no trade (the setup is still shown, so he knows the hawk saw it and why it said no)
+                tk = talk(nn[2])
                 self.out('news:%s:%d:%s' % (model, s, px(su['entry'])), 'news', 'No trade · red news',
-                         '%s setup at %s skipped: %s %s at %s. No trades from %d min before red news to %d min after.' % (
-                             word(s, 'Buy', 'Sell'), px(su['entry']), nn[1], nn[2], hm(nn[0]), NEWS_BEFORE, NEWS_AFTER), s,
+                         '%s setup at %s skipped: %s %s at %s%s. No trades from %d min before red news to %d min after.' % (
+                             word(s, 'Buy', 'Sell'), px(su['entry']), nn[1], nn[2], hm(nn[0]), (' (a talk, counted until %s)' % hm(nn[0] + tk * 60)) if tk else '',
+                             NEWS_BEFORE, NEWS_AFTER), s,
                          dict(model=model, entry=su['entry'], stop=su['stop'], tgt=su['tgt'], loc=su['loc'], phase=su['phase'], news=[nn[0], nn[1], nn[2]]))
                 continue
             nx = self.news_ahead(E.T[k] + 60, E.T[k] + 60 + 150 * 60)
-            ahead = (' Red news %s %s at %s: be out or at break-even by %s.' % (nx[1], nx[2], hm(nx[0]), hm(nx[0] - NEWS_BEFORE * 60))) if nx else ''
+            # out, not at break-even: at most firms a stop or target filling inside the window counts as a news trade (the survey, 7 Nov)
+            ahead = (' Red news %s %s at %s: be out by %s, a stop or target filling in that window counts as a news trade at most firms.' % (
+                nx[1], nx[2], hm(nx[0]), hm(nx[0] - NEWS_BEFORE * 60))) if nx else ''
             if 'reaction' in model:
                 title = 'Setup · reaction %s' % word(s, 'buy', 'sell')
                 body = '%s now ~%s · stop %s (%s) · target %s (%s, %.1fR). %s taken %s, the move has slowed.' % (
@@ -213,11 +257,11 @@ class Hawk:
             self.out('setup:%s:%d:%s' % (model, s, px(su['entry'])), 'setup', title, body, s,
                      dict(model=model, entry=su['entry'], stop=su['stop'], tgt=su['tgt'], loc=su['loc'], phase=su['phase'], box=su.get('box')))
 
-        if mins >= 10 * 60 + 5 and not self.done:
-            self.done = True
-            if self.count: self.out('done', 'done', 'Session over · %d alert%s' % (self.count, '' if self.count == 1 else 's'),
-                                    'Tap to rate them: good call, not my trade, too early or too late.')
-        self.primed = True
+        if mins >= E.WIN[1] + 5 and not ws['done']:
+            ws['done'] = True
+            if ws['count']: self.out('done', 'done', 'Session over · %d alert%s' % (ws['count'], '' if ws['count'] == 1 else 's'),
+                                     'Tap to rate them: good call, not my trade, too early or too late.')
+        return True
 
 def WIN_OK(mins): return E.WIN[0] - 30 <= mins < E.WIN[1]
 
@@ -251,7 +295,7 @@ def get_cfg():
     try:
         with urllib.request.urlopen(req, timeout=15) as r: d = json.loads(r.read())
         lg, sy = str(d.get('login') or ''), canon(d.get('sym'))
-        return (lg, sy) if lg.isdigit() and sy in MK else None
+        return (lg, sy, clean_wins(d.get('wins'))) if lg.isdigit() and sy in MK else None
     except Exception as e: log('config failed:', e); return None
 
 # ---------- the relay line (read-only: watch + hist)
@@ -355,12 +399,14 @@ def live():
             if time.time() - NEWS['t'] >= 600: get_news()   # the calendar, every 10 minutes
             if c and (c[0] != LOGIN or c[1] != CANON or line is None):
                 if line: line.close()
-                LOGIN = c[0]; set_market(c[1]); SYM = CANON; up = False; line = None; hawk = Hawk(post); bars.clear(); h1.clear(); last_eval = 0
-                log('reading', LOGIN, CANON)
+                LOGIN = c[0]; set_market(c[1]); SYM = CANON; up = False; line = None; hawk = Hawk(post, c[2]); bars.clear(); h1.clear(); last_eval = 0
+                log('reading', LOGIN, CANON, 'hours', ' '.join('%s-%s' % (clock(a), clock(b)) for a, b in hawk.wins))
+            elif c and c[2] != hawk.wins:
+                hawk.wins = c[2]; log('hours', ' '.join('%s-%s' % (clock(a), clock(b)) for a, b in hawk.wins))
             if line is None:
                 try: line = Line()
                 except (IndexError, OSError) as e: log('no template for', LOGIN, e); time.sleep(30); continue
-        if ln.weekday() >= 5 or not (7 * 60 + 20 <= m < 10 * 60 + 10):
+        if ln.weekday() >= 5 or not any(w[0] - 40 <= m < w[1] + 10 for w in hawk.wins):   # 40 min before each window he picked to 10 after
             if up and line: line.close(); up = False; log('window closed')
             bars.clear(); h1.clear(); time.sleep(30); continue
         try:
@@ -394,22 +440,23 @@ def live():
             except Exception as e:
                 log('look failed:', repr(e))
 
-def replay(csv, day):
+def replay(csv, day, wins=None):
     """Feed a past day minute by minute (hour candles built from the minutes) and print what would have been sent."""
+    ws = clean_wins(wins)
     rows = [line.split(',') for line in open(csv)]
     t = [int(r[0]) for r in rows]; o = [float(r[1]) for r in rows]; h = [float(r[2]) for r in rows]
     l = [float(r[3]) for r in rows]; c = [float(r[4]) for r in rows]
     d0 = int(dt.datetime.strptime(day, '%Y-%m-%d').replace(tzinfo=dt.timezone.utc).timestamp())
     off = E.ldn(d0 + 12 * 3600) - (d0 + 12 * 3600)            # London's offset that day
-    start, end = d0 + 7 * 3600 + 20 * 60 - off, d0 + 10 * 3600 + 10 * 60 - off
+    start, end = d0 + (ws[0][0] - 40) * 60 - off, d0 + (ws[-1][1] + 10) * 60 - off
     lo = next(i for i, x in enumerate(t) if x >= start - 6 * 86400)
     out = []
-    hawk = Hawk(lambda m: out.append(m))
+    hawk = Hawk(lambda m: out.append(m), ws)
     for k in range(next(i for i, x in enumerate(t) if x >= start), next(i for i, x in enumerate(t) if x >= end)):
         hawk.look(t[lo:k + 1], o[lo:k + 1], h[lo:k + 1], l[lo:k + 1], c[lo:k + 1])
     for m in out: print(m['kind'].ljust(10), m['title'], '|', m['body'])
     return out
 
 if __name__ == '__main__':
-    if len(sys.argv) > 1 and sys.argv[1] == 'replay': replay(sys.argv[2], sys.argv[3])
+    if len(sys.argv) > 1 and sys.argv[1] == 'replay': replay(sys.argv[2], sys.argv[3], json.loads(sys.argv[4]) if len(sys.argv) > 4 else None)
     else: live()
