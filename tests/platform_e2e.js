@@ -330,14 +330,14 @@
       pTab.click(); await W(100);
       check('nothing open: no Margin, Free margin right after Equity (as MT5)', sm0.indexOf('Margin') < 0 && /^Balance.+Equity[^A-Za-z]+Free margin[^A-Za-z]+Open P&L/.test(sm0), sm0);
       check('a trade holding margin: Equity, Margin, Free margin, Margin level, then Open P&L', /Equity[^A-Za-z]+Margin\D*1,250\.00Free margin[^A-Za-z]+Margin level\D*5\s?400\.00%Open P&L/.test(sm1), sm1);
-      /* the eye hides the strip's money (24 Nov 2026: "i need to be able to hide all these money figures") */
+      /* the eye beside the panel's arrow hides the figures along the tabs, names and all (24 Nov 2026: "move the eye here and make all these dissapear too") */
       var eyeB = function () { return $('#lc-tb .pl-eye') || $('.pl-eye'); };
-      check('an eye before the figures, saying what it does', eyeB() && eyeB().getAttribute('aria-pressed') === 'false' && /Hide the money figures/.test(eyeB().title), eyeB() && eyeB().outerHTML.slice(0, 160));
-      eyeB().click(); var TBa = TBm.acct, mg0 = TBa.mg, ml0 = TBa.ml; TBa.mg = 1250; TBa.ml = 5400; pTab.click(); await W(60);
-      var smH = $('.pl-sum').textContent, hb = [].slice.call(document.querySelectorAll('.pl-sum b')), stH = JSON.parse(localStorage.getItem('st_plat') || '{}').hm;
-      check('...pressed: no money figure left, all four dots, no green or red; Margin level stays; kept on this device', !/\d,\d{3}\.\d\d|£|\$|€/.test(smH) && /Balance••••Equity••••Margin••••Free margin••••Margin level\D*5\s?400\.00%Open P&L••••Today••••/.test(smH) && !hb.some(function (b) { return /\b(u|d)\b/.test(b.className); }) && stH === true && eyeB().getAttribute('aria-pressed') === 'true' && /Show the money figures/.test(eyeB().title), [smH, stH]);
-      eyeB().click(); await W(60); var smS = $('.pl-sum').textContent; TBa.mg = mg0; TBa.ml = ml0; pTab.click();
-      check('...pressed again: the figures are back', /Balance\D*\d[\d,]*\.\d\d/.test(smS) && smS.indexOf('••••') < 0 && JSON.parse(localStorage.getItem('st_plat') || '{}').hm === false, smS);
+      check('an eye between the figures beside the panel arrow, saying what it does', eyeB() && eyeB().nextElementSibling && eyeB().nextElementSibling.classList.contains('pl-fold') && eyeB().previousElementSibling && eyeB().previousElementSibling.classList.contains('pl-sum') && eyeB().getAttribute('aria-pressed') === 'false' && /Hide the account figures/.test(eyeB().title), eyeB() && eyeB().outerHTML.slice(0, 160));
+      eyeB().click(); await W(60);
+      var sH = $('.pl-sum'), stH = JSON.parse(localStorage.getItem('st_plat') || '{}').hm;
+      check('...pressed: every figure and its name gone, only the eye (crossed out) and the arrow; kept on this device', sH && sH.children.length === 0 && sH.textContent === '' && stH === true && eyeB().getAttribute('aria-pressed') === 'true' && /Show the account figures/.test(eyeB().title) && /M4 4l16 16/.test(eyeB().innerHTML), [sH && sH.outerHTML.slice(0, 120), stH]);
+      eyeB().click(); await W(60); var smS = $('.pl-sum').textContent;
+      check('...pressed again: the figures are back', /Balance\D*\d[\d,]*\.\d\d/.test(smS) && /Daily loss left|Today/.test(smS) && JSON.parse(localStorage.getItem('st_plat') || '{}').hm === false, smS);
     } else check('the strip has its account for the Margin checks', false, [!!acm, !!pTab]);
     check('Chart settings is a gear with teeth, beside the sun / moon (Nestor, 26 Oct 2026: "looks like a sun and its confusing")', /^M12\.22 2h/.test($('.plat-top #stpr-lookbtn svg path').getAttribute('d')) && $('.plat-top .pl-theme svg'), $('.plat-top #stpr-lookbtn').innerHTML.slice(0, 80));
     // the top bar never overflows (25 Oct 2026): every item inside it, the sun and full screen in the row, at this width too
