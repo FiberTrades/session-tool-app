@@ -297,6 +297,7 @@
     pdn('pointerdown'); pdn('pointerup');
     for (k = 0; k < 40 && !$('.pl-t [data-tma="close"]'); k++) await W(250);
     var tk = $('.pl-t [data-tma="close"]'), tkn = tk && tk.getAttribute('data-tmk');
+    check('the trade\'s Close button is red, Move to BE and Close 50% stay grey (24 Nov 2026: "this button should be red")', tk && getComputedStyle(tk).backgroundColor === 'rgb(242, 54, 69)' && (!$('.pl-t [data-tma="tobe"]') || getComputedStyle($('.pl-t [data-tma="tobe"]')).backgroundColor !== 'rgb(242, 54, 69)'), tk && getComputedStyle(tk).backgroundColor);
     check('a click where the stop goes: the order goes to MT5 and fills; Positions 1 under the charts', !!tk && /Positions 1/.test($('.pl-tabs').textContent) && /BUY/.test($('.pl-t').textContent), $('.pl-tabs') && $('.pl-tabs').textContent);
     check('...its line in the Trade Manager: Filled', /Filled/.test($('#stpr-mm').textContent), $('.pl-mf') && $('.pl-mf').textContent);
     var tg = data.entryTags && data.entryTags[tkn];
@@ -329,6 +330,14 @@
       pTab.click(); await W(100);
       check('nothing open: no Margin, Free margin right after Equity (as MT5)', sm0.indexOf('Margin') < 0 && /^Balance.+Equity[^A-Za-z]+Free margin[^A-Za-z]+Open P&L/.test(sm0), sm0);
       check('a trade holding margin: Equity, Margin, Free margin, Margin level, then Open P&L', /Equity[^A-Za-z]+Margin\D*1,250\.00Free margin[^A-Za-z]+Margin level\D*5\s?400\.00%Open P&L/.test(sm1), sm1);
+      /* the eye hides the strip's money (24 Nov 2026: "i need to be able to hide all these money figures") */
+      var eyeB = function () { return $('#lc-tb .pl-eye') || $('.pl-eye'); };
+      check('an eye before the figures, saying what it does', eyeB() && eyeB().getAttribute('aria-pressed') === 'false' && /Hide the money figures/.test(eyeB().title), eyeB() && eyeB().outerHTML.slice(0, 160));
+      eyeB().click(); var TBa = TBm.acct, mg0 = TBa.mg, ml0 = TBa.ml; TBa.mg = 1250; TBa.ml = 5400; pTab.click(); await W(60);
+      var smH = $('.pl-sum').textContent, hb = [].slice.call(document.querySelectorAll('.pl-sum b')), stH = JSON.parse(localStorage.getItem('st_plat') || '{}').hm;
+      check('...pressed: no money figure left, all four dots, no green or red; Margin level stays; kept on this device', !/\d,\d{3}\.\d\d|£|\$|€/.test(smH) && /Balance••••Equity••••Margin••••Free margin••••Margin level\D*5\s?400\.00%Open P&L••••Today••••/.test(smH) && !hb.some(function (b) { return /\b(u|d)\b/.test(b.className); }) && stH === true && eyeB().getAttribute('aria-pressed') === 'true' && /Show the money figures/.test(eyeB().title), [smH, stH]);
+      eyeB().click(); await W(60); var smS = $('.pl-sum').textContent; TBa.mg = mg0; TBa.ml = ml0; pTab.click();
+      check('...pressed again: the figures are back', /Balance\D*\d[\d,]*\.\d\d/.test(smS) && smS.indexOf('••••') < 0 && JSON.parse(localStorage.getItem('st_plat') || '{}').hm === false, smS);
     } else check('the strip has its account for the Margin checks', false, [!!acm, !!pTab]);
     check('Chart settings is a gear with teeth, beside the sun / moon (Nestor, 26 Oct 2026: "looks like a sun and its confusing")', /^M12\.22 2h/.test($('.plat-top #stpr-lookbtn svg path').getAttribute('d')) && $('.plat-top .pl-theme svg'), $('.plat-top #stpr-lookbtn').innerHTML.slice(0, 80));
     // the top bar never overflows (25 Oct 2026): every item inside it, the sun and full screen in the row, at this width too
@@ -342,7 +351,7 @@
     window.__stLive = window.__stLive || {}; window.__stLive.openIdeas = function () { rr.tick.at = Date.now(); return [{ main: rr, rows: [rr] }]; };
     for (k = 0; k < 30 && document.querySelectorAll('.pl-tag').length < 3; k++) await W(250); await W(400);
     var tags = Array.prototype.map.call(document.querySelectorAll('.pl-tag:not([hidden])'), function (t) { return t.querySelector('.k').textContent + ' ' + (t.querySelector('.v') ? t.querySelector('.v').textContent : ''); });
-    check('its tags: BUY 13.5 +0.70R, SL −1R, TP 2.0R', tags.indexOf('BUY 13.5 +0.70R') >= 0 && tags.indexOf('SL −1R') >= 0 && tags.indexOf('TP 2.0R') >= 0, tags);
+    check('its tags: BUY 13.5 +0.70R, SL −1R, TP 2R (as Risk/reward says it, 24 Nov 2026)', tags.indexOf('BUY 13.5 +0.70R') >= 0 && tags.indexOf('SL −1R') >= 0 && tags.indexOf('TP 2R') >= 0, tags);
     var bt = Array.prototype.filter.call(document.querySelectorAll('.pl-tag'), function (t) { return /BUY/.test(t.textContent); })[0], br = bt.getBoundingClientRect(), pr0 = p0.chart.priceScale('right').width(), pane = p0.el.getBoundingClientRect();
     check('...against the price scale', Math.abs(br.right - (pane.right - pr0 - 6)) <= 2, [br.right, pane.right - pr0 - 6]);
     check('...opened (the mouse over it): the lots, the money and R, and ✕', /BUY 13\.5 lots/.test(bt.querySelector('.k2').textContent) && /£175\.00/.test(bt.querySelector('.v2').textContent) && bt.querySelector('.xx'), bt.textContent);
