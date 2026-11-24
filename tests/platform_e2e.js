@@ -294,7 +294,12 @@
     pdn('pointerdown'); pdn('pointermove', 30); pdn('pointerup', 30); await W(300);
     check('execution mode: a press dragged 30px (to scroll the chart) places nothing, execution mode stays on', P._s().exec && (LC._ord && LC._ord()) === ord0 && !$('.pl-t [data-tma="close"]'), [P._s().exec, LC._ord && LC._ord()]);
     check('...the lines of the order being aimed show on chart 1 even with its trade lines off', (function () { var C = P._cfg(), was = C.showPer; C.showPer = { 0: { marks: false }, 1: { marks: false } }; P._render(); var ok1 = P._lines(0).some(function (l) { return /^SL /.test(l.title || l.t || '') && l.vis !== false; }); C.showPer = was; P._render(); return ok1; })(), P._lines(0).map(function (l) { return [l.title || l.t, l.vis]; }));
+    var tClk = Date.now(), tLn = 0, lnK = function () { return P._lines(0).filter(function (l) { return /^lt\|555001\|(sl|tp)\|/.test(l.k || ''); }).length; };
     pdn('pointerdown'); pdn('pointerup');
+    for (k = 0; k < 120 && !tLn; k++) { if (lnK() >= 2) tLn = Date.now() - tClk; else await W(25); }
+    /* 24 Nov 2026 (Nestor: "it took at least 2 to 3 seconds for me to see the trade lines on the chart"): the lines come from the live line's
+       figures the moment MT5 answers - no row in the feed here at all (no database in this test), so they can only be those */
+    check('the fill: its SL and TP lines on chart 1 within a second of the click, before the trade reaches the feed (' + tLn + ' ms)', tLn > 0 && tLn < 1000 && !(window.__stLive.openIdeas() || []).length, [tLn, P._lines(0).map(function (l) { return l.k; })]);
     for (k = 0; k < 40 && !$('.pl-t [data-tma="close"]'); k++) await W(250);
     var tk = $('.pl-t [data-tma="close"]'), tkn = tk && tk.getAttribute('data-tmk');
     check('the trade\'s Close button is red, Move to BE and Close 50% stay grey (24 Nov 2026: "this button should be red")', tk && getComputedStyle(tk).backgroundColor === 'rgb(242, 54, 69)' && (!$('.pl-t [data-tma="tobe"]') || getComputedStyle($('.pl-t [data-tma="tobe"]')).backgroundColor !== 'rgb(242, 54, 69)'), tk && getComputedStyle(tk).backgroundColor);
@@ -347,7 +352,7 @@
 
     // ---- the open trade on the chart: its tags against the price scale ----
     var rr = { symbol: 'EURUSD', ticket: tkn || 7001, login: 90001234, direction: 'long', lots: 13.5, openedAt: Date.now() - 50 * 60000, risk0: 250, risk: 250,
-      tick: { op: last - 0.0005, rpx: 0.0007, sl: -1, tp: 2, r: 0.7, pnl: 175, px: last, at: Date.now(), dg: 5, lad: '' } };
+      tick: { op: last - 0.0005, rpx: 0.0007, sl: -1, tp: 2, r: 0.7, pnl: 175, px: last, at: Date.now(), dg: 5, lad: '', ws: true } };   // ws: the live line's figures, as the relay brings them
     window.__stLive = window.__stLive || {}; window.__stLive.openIdeas = function () { rr.tick.at = Date.now(); return [{ main: rr, rows: [rr] }]; };
     for (k = 0; k < 30 && document.querySelectorAll('.pl-tag').length < 3; k++) await W(250); await W(400);
     var tags = Array.prototype.map.call(document.querySelectorAll('.pl-tag:not([hidden])'), function (t) { return t.querySelector('.k').textContent + ' ' + (t.querySelector('.v') ? t.querySelector('.v').textContent : ''); });

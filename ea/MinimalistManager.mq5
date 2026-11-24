@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "9.24"
+#property version   "9.25"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -1013,6 +1013,9 @@ bool g_sendTried=false;   // v9.02: SendOne was reached (an order from the app t
 // v9.17: the send's own result, kept - the fill's re-anchor (a modify) runs straight after and overwrote trade's, so an order from
 // the app was acknowledged with ticket 0 and a guessed price whenever MT5 already showed the position inside PlaceTrade
 uint g_sendRc=0; ulong g_sendOrder=0; double g_sendPx=0.0, g_sendVol=0.0;
+// v9.25: the order from Live Charts being placed (its command's id), and whether it was answered at the fill already (LwAckEarly)
+string g_lwOpenCid=""; bool g_lwOpenAcked=false;
+void LwAckEarly(int dir);   // defined with the live line's orders (below)
 bool SendOneX(int dir,double volume,double entry,double slPrice,double tpPrice);
 bool SendOne(int dir,double volume,double entry,double slPrice,double tpPrice)
   {
@@ -1772,6 +1775,11 @@ void PlaceTrade()
          if(!needSL && !needTP) g_anchorPending=false;   // v9.21: nothing left for the on-fill re-anchor
         }
      }
+
+   // v9.25 (24 Nov 2026, Nestor: "it took at least 2 to 3 seconds for me to see the trade lines on the chart"): an order from Live Charts
+   // is answered HERE, the moment its stop is on the fill. This chart's own lines and panel below took ~0.9 s more under Wine before the
+   // answer went (9 Nov: re-anchor 36.216, "Placed order" 36.694, the answer 37.086), and the app draws the trade from it.
+   if(g_lwOpenCid!="") LwAckEarly(dir);
 
    // ---- Session Terminal: remember this trade's detail, stamped to the position at entry ----
    g_pendSL=slPips; g_pendRisk=riskMoney;
@@ -4129,7 +4137,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.24\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\",\"cloud\":%s,\"company\":\"%s\",\"server\":\"%s\",\"start_bal\":%s,\"bal\":%s,\"dep_total\":%s}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.25\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\",\"cloud\":%s,\"company\":\"%s\",\"server\":\"%s\",\"start_bal\":%s,\"bal\":%s,\"dep_total\":%s}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY),g_inCloud?"true":"false",
                             JsonSafe(AccountInfoString(ACCOUNT_COMPANY)),JsonSafe(AccountInfoString(ACCOUNT_SERVER)),DoubleToString(CpFirstDeposit(),2),   // v9.12: the Accounts tab's "Read from MT5" line
                             DoubleToString(g_setBal,2),DoubleToString(CpDepositsTotal(),2)));   // v9.23: a connected account's balance is MT5's own (ACCOUNT_BALANCE, never the risk override), and its top-ups
@@ -4525,7 +4533,7 @@ void LwOpen()
 // v9.06: MT5's Algo Trading button (and this EA's own "Allow Algo Trading") - off, no order can be placed, from here or from the app
 bool AlgoOn(){ return TerminalInfoInteger(TERMINAL_TRADE_ALLOWED)!=0 && MQLInfoInteger(MQL_TRADE_ALLOWED)!=0; }
 int  g_lwAl=-1;                       // v9.06: Algo Trading as last told to the app
-string LwHi(){ return StringFormat("{\"v\":\"9.24\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d,\"cl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0,g_inCloud?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
+string LwHi(){ return StringFormat("{\"v\":\"9.25\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d,\"cl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0,g_inCloud?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
 // v9.06 (Nestor, 19 Oct 2026: "whatever messages appear in MT5 i need to also see them in the app"): every message this EA writes on its
 // chart (Flash) goes to Session Terminal too, which shows it on Live Charts. Only while the line is up; nothing is queued.
 void LwMsg(string m)
@@ -4751,6 +4759,32 @@ void LwAckOpen(string id,bool ok,string why,double px,double vol,ulong tk,int di
    if(LwText(LwBroadcast("ack",p))) LwCount();
    Print("Session Terminal: order from the app - ",(ok?"done":"not placed"),(why!=""?" ("+why+")":""));
   }
+void LwStream();   // defined below
+// v9.25: a market order from Live Charts answered from inside PlaceTrade once MT5 has it filled and its stop on the fill (an:1, with the
+// position's SL and TP), then the new trade's figures on the live line straight after - before this chart's drawing. Anything else (a
+// refusal, a pending order, a fill not seen yet, a stop still to be re-anchored) is answered after PlaceTrade, as before.
+void LwAckEarly(int dir)
+  {
+   string id=g_lwOpenCid; if(id=="" || g_lwOpenAcked || g_orderKind!=OK_MARKET) return;
+   uint rc=g_sendRc; if(!(rc==TRADE_RETCODE_DONE || rc==TRADE_RETCODE_DONE_PARTIAL)) return;
+   double px=g_sendPx, sl=0.0, tp=0.0; bool an=false;
+   for(int i=PositionsTotal()-1;i>=0;i--)
+     {
+      ulong t=PositionGetTicket(i);
+      if(t==0 || !PositionSelectByTicket(t) || PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
+      if(g_sendOrder>0 && (ulong)PositionGetInteger(POSITION_IDENTIFIER)!=g_sendOrder) continue;
+      if(px<=0) px=PositionGetDouble(POSITION_PRICE_OPEN);
+      sl=PositionGetDouble(POSITION_SL); tp=PositionGetDouble(POSITION_TP); an=!g_anchorPending;
+      break;
+     }
+   if(px<=0 || !an) return;
+   string p=StringFormat("{\"cid\":\"%s\",\"ok\":1,\"ca\":\"open\",\"ctk\":\"%I64u\",\"m\":\"\",\"px\":%s,\"vol\":%s,\"dir\":%d,\"sym\":\"%s\",\"sl\":%s,\"tp\":%s,\"an\":1}",
+                         id,g_sendOrder,DoubleToString(px,_Digits),DoubleToString(g_sendVol,2),dir,_Symbol,DoubleToString(sl,_Digits),DoubleToString(tp,_Digits));
+   if(LwText(LwBroadcast("ack",p))) LwCount();
+   g_lwOpenAcked=true;
+   Print("Session Terminal: order from the app - done (answered at the fill)");
+   if(LwWatched()) LwStream();
+  }
 void LwOpenCmd(string id,string p,string ix)
   {
    if(!g_active){ LwAckOpen(id,false,"inactive",0,0,0,0); return; }
@@ -4772,7 +4806,9 @@ void LwOpenCmd(string id,string p,string ix)
    if(dist<g_minSL) dist=g_minSL; if(dist>g_maxSL) dist=g_maxSL;      // as the line is held on the chart
    g_slSetPips=dist; g_slSetSide=side; RedrawTargets();
    g_sendTried=false; g_flashMsg=""; g_ruCode="";
+   g_lwOpenCid=id; g_lwOpenAcked=false;                               // v9.25: PlaceTrade answers at the fill (LwAckEarly)
    PlaceTrade();                                                      // the click
+   bool early=g_lwOpenAcked; g_lwOpenCid=""; g_lwOpenAcked=false;
    bool ok=false; string why=""; double px=0, vol=0; ulong tk=0;
    if(g_sendTried)
      {
@@ -4783,7 +4819,7 @@ void LwOpenCmd(string id,string p,string ix)
      }
    else { why=g_flashMsg; StringReplace(why,"CANNOT TRADE: ",""); if(why=="") why="not placed"; if(StringLen(g_ruCode)>0) why=g_ruCode; }   // v9.15: a rule's code, the app words it
    if(g_execMode && (!was || !ok)){ g_execMode=false; HideExecutionLines(); BuildPanel(); }   // as it was (a placed trade turns it off anyway)
-   LwAckOpen(id,ok,why,px,vol,tk,-side);
+   if(!early) LwAckOpen(id,ok,why,px,vol,tk,-side);                  // v9.25: answered at the fill already
   }
 // the panel's settings from Live Charts: "k=v;k=v" (the same names travel out in "set")
 void LwCfgCmd(string id,string p)

@@ -152,7 +152,13 @@ def on_cmd(p):
         vol = round(ST['risk_amount'] / (pips * 10.0), 2); fill = round(px + (7 * 10 ** -dg if d > 0 else 0), dg)
         log['opens'].append({'sym': sy, 'sl': p.get('cp'), 'ci': p.get('ci'), 'dir': d, 'vol': vol, 'px': fill, 's': round(time.time() - w0, 2)})
         POS.append(['555001', sy, int(fnow()), 'buy' if d > 0 else 'sell', vol, fill, round(slp, dg), round(fill + 3 * abs(fill - slp) * d, dg)])
-        return text(bcast('ack', {'cid': cid, 'ok': 1, 'ca': 'open', 'ctk': '555001', 'm': '', 'px': fill, 'vol': vol, 'dir': d, 'sym': sy}))
+        # as EA 9.25: the answer as soon as the stop is on the fill (an: anchored), then the new trade's figures on the live line straight
+        # after it (LwStream) - before its row could reach the feed (24 Nov 2026: the lines waited 2-3 s for that row)
+        rpx = round(pips * pip, dg + 1); sl_px = round(fill - d * rpx, dg); tp_px = round(fill + d * 3 * rpx, dg)
+        text(bcast('ack', {'cid': cid, 'ok': 1, 'ca': 'open', 'ctk': '555001', 'm': '', 'px': fill, 'vol': vol, 'dir': d, 'sym': sy, 'sl': sl_px, 'tp': tp_px, 'an': 1}))
+        if os.environ.get('ST_FAKE_NOTICK'): return
+        log.setdefault('ticks', []).append(round(time.time() - w0, 2))
+        return text(bcast('tick', {'k': 555001, 'r': 0, 'pnl': 0, 'sl': -1, 'tp': 3, 'lad': '', 'px': round(px, dg), 'op': fill, 'rpx': rpx, 'dg': dg, 'bar': '', 'sp': round(7 * 10 ** -dg, dg + 1)}))
     if a == 'cfg' and VER >= '9.02':    # the panel's settings from Live Charts (LwCfgCmd), then the settings now in force
         log['cfgs'].append(p.get('cp')); kv = dict(x.split('=', 1) for x in str(p.get('cp') or '').split(';') if '=' in x)
         num = lambda k: float(kv[k]) if k in kv else None

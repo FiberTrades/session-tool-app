@@ -19585,6 +19585,13 @@ try {
   // ===== Live session status (private): ephemeral MT5 open/close feed from the EA =====
   window.__stLive = (function () {
     var rows = {};
+    /* The live line's figures for a trade the feed has not announced yet (24 Nov 2026, Nestor: "it took at least 2 to 3 seconds for me to see
+       the trade lines on the chart"): the EA streams a new trade's figures the moment it answers the order, its row reaches the feed a second
+       or two later (through the database). They were dropped, and the row then waited for the EA's next update; now they are kept a minute,
+       given to the row when it lands, and Live Charts draws the trade from them at once (pendTick). */
+    var _pendTk = {};
+    function _pendOf(k) { var t = _pendTk[String(k)]; return (t && Date.now() - t.at < 60000) ? t : null; }
+    function _linesSoon() { try { if (window.__stLvLinesSoon) window.__stLvLinesSoon(); } catch (e) {} }
     var _lastGreetSig = '';   // last trade-summary signature the greeting was refreshed for (dedupes live P&L ticks)
     /* Live session -> inside the Session Live panel. After it -> directly above the Trade Log, so a
        trade still running at the close stays visible. One element, moved between the two. */
@@ -19782,7 +19789,7 @@ try {
             return;
           }
         } catch (e) {}
-        var k = String(row.ticket), ex = rows[k] || {};
+        var k = String(row.ticket), ex = rows[k] || {}, _et = ex.tick || _pendOf(k);   /* _et: its figures so far - the live line's, kept from before the row (24 Nov 2026) */
         // seen_at: when the EA last announced this trade (it re-sends every 20s while it runs).
         var _seen = Date.parse(row.seen_at);
         var _opn = Date.parse(row.opened_at);   // when the trade first reached the feed - groups a trade with its copies
@@ -19795,15 +19802,17 @@ try {
                     risk0: ex.risk0 || ((row.risk != null && Number(row.risk) > 0) ? Number(row.risk) : undefined),
                     beAt: row.be_at || ex.beAt || null, lockR: (row.lock_r != null) ? Number(row.lock_r) : (ex.lockR != null ? ex.lockR : null),
                     // EA 8.98: the live line streams the figures; a row (refreshed only every 30 s then) never replaces a fresher one
-                    tick: (row.tick_at && !(ex.tick && ex.tick.ws && Date.now() - ex.tick.at < 5000)) ? { r: (row.r_now == null ? NaN : Number(row.r_now)), pnl: (row.pnl_now == null ? NaN : Number(row.pnl_now)), sl: (row.sl_r == null ? NaN : Number(row.sl_r)),
+                    tick: (row.tick_at && !(_et && _et.ws && Date.now() - _et.at < 5000)) ? { r: (row.r_now == null ? NaN : Number(row.r_now)), pnl: (row.pnl_now == null ? NaN : Number(row.pnl_now)), sl: (row.sl_r == null ? NaN : Number(row.sl_r)),
                                           tp: (row.tp_r == null ? NaN : Number(row.tp_r)), lad: row.ladder || '', at: Date.parse(row.tick_at),
                                           // EA 8.89: the live chart - the chart's price, the entry, 1R in price, the digits, the forming 5-minute candle
                                           px: (row.px == null ? NaN : Number(row.px)), op: (row.op == null ? NaN : Number(row.op)), rpx: (row.rpx == null ? NaN : Number(row.rpx)),
                                           dg: (row.digits == null ? NaN : Number(row.digits)), bar: row.bar || '',
-                                          sp: (row.spread == null ? NaN : Number(row.spread)) } : (ex.tick || null) };   // EA 8.90: the spread (ask - bid)
+                                          sp: (row.spread == null ? NaN : Number(row.spread)) } : (_et || null) };   // EA 8.90: the spread (ask - bid)
+        delete _pendTk[k];
         // Live behaviour nudges read the same events (re-entry after a loss, losses in a row, ...).
         try { if (window.__stNudge) window.__stNudge.observe(ex, rows[k], row); } catch (e) {}
         try { if (window.__stLiveBox) window.__stLiveBox.later(); } catch (e) {}
+        _linesSoon();   /* Live Charts' lines now, not at its next second */
         // Remember any ticket that was shown OPEN in the feed. A realtime close event flips the
         // chip closed (here) BEFORE the close-watcher runs, so its "is it still open?" guard would
         // otherwise swallow the close pop-up. This lets the watcher fire for a trade that WAS open.
@@ -19845,12 +19854,19 @@ try {
       // waits for its row; the next update lands a quarter of a second later).
       tick: function (ticket, t) {
         try {
-          var r = rows[String(ticket)]; if (!r || r.closed || !t) return false;
+          var k = String(ticket), r = rows[k]; if (!t) return false;
+          if (!r) {   /* not announced yet: kept for its row and for Live Charts (24 Nov 2026) */
+            _pendTk[k] = t; Object.keys(_pendTk).forEach(function (x) { if (Date.now() - _pendTk[x].at > 60000) delete _pendTk[x]; });
+            _linesSoon(); return false; }
+          if (r.closed) return false;
           r.tick = t;
           if (window.__stLiveBox) window.__stLiveBox.later();
+          _linesSoon();
           return true;
         } catch (e) { return false; }
       },
+      // the live line's latest figures for a ticket the feed has not announced yet (null once its row is in, or after a minute)
+      pendTick: function (ticket) { try { return rows[String(ticket)] ? null : _pendOf(ticket); } catch (e) { return null; } },
       // Trade copier: is this ticket a copy of a trade already in the feed (another of your accounts)?
       isCopy: function (ticket) { try { return _isCopy(ticket); } catch (e) { return false; } },
       // Every ticket of the idea this ticket belongs to (itself and its copies), as strings.
@@ -81744,7 +81760,7 @@ window.__stTM = (function () {
       });
     }, function () { delete busy[key]; emit(); return { ok: false, why: 'crypto' }; });
   }
-  function ack(x) { if (!x || !x.cid || !pend[x.cid]) return; finish(x.cid, { ok: +x.ok === 1, why: String(x.m || ''), sl: +x.sl, tp: +x.tp, open: +x.open === 1, px: +x.px, vol: +x.vol, dir: +x.dir, tk: String(x.ctk || ''), mn: +x.mn || 0 }); }
+  function ack(x) { if (!x || !x.cid || !pend[x.cid]) return; finish(x.cid, { ok: +x.ok === 1, why: String(x.m || ''), sl: +x.sl, tp: +x.tp, open: +x.open === 1, px: +x.px, vol: +x.vol, dir: +x.dir, tk: String(x.ctk || ''), mn: +x.mn || 0, an: +x.an === 1 }); }   // an: an order's stop already on its fill (EA 9.25)
   // a command not about an open trade (EA 9.02, 18 Oct 2026): 'open' a new order from Live Charts (cp: the stop's price; ci: 'm',
   // or 'l' / 's' and the entry), 'cfg' the panel's settings (cp: 'k=v;k=v') - to the EA on that symbol's chart and account
   function acct(o) {
@@ -98736,11 +98752,11 @@ window.__stAZ = (function () {
     var rk = 0; try { rk = riskMoney(v.rd) || 0; } catch (er) {}
     var rc = null; try { rc = window.__stRules ? window.__stRules.check({ login: e.lg, symbol: e.raw, riskMoney: rk }) : null; } catch (er) {}
     if (rc && !rc.ok) { eaMsg(rc.why, { k: 'pre', head: T('Order not sent', 'Orden no enviada') + ' · ' + e.raw, red: false }); return false; }
-    var o = LV.ord = { st: 'sent', dir: v.dir, lots: lotsFor(v.rd), rd: v.rd, sym: e.raw, at: Date.now(), kind: v.kind || null, setup: String(CFG.lvSetup || ''), why: PL.why || '' };   // setup + why (plTagFill)
+    var o = LV.ord = { st: 'sent', dir: v.dir, lots: lotsFor(v.rd), rd: v.rd, sym: e.raw, at: Date.now(), kind: v.kind || null, setup: String(CFG.lvSetup || ''), why: PL.why || '', lg: String(e.lg || ''), v: e.v, risk: rk };   // setup + why (plTagFill); lg, v, risk: its lines before its row (lvIdeas)
     S.exec = false; S.pv = null; render();
     window.__stTM.acct({ login: e.lg, sym: e.raw, a: 'open', cp: v.sl.toFixed(dg), ci: v.kind ? (v.kind === 'limit' ? 'l' : 's') + v.entry.toFixed(dg) : 'm', riskMoney: rk }).then(function(r){
       if (LV.ord !== o) return; o.done = Date.now();
-      if (r.ok) { o.st = 'ok'; o.px = r.px; o.vol = r.vol; o.dir = r.dir || o.dir; lvChime(); if (EM.k === 'ord' || EM.k === 'pre' || EM.k === 'em') eaMsgOff(); try { plTagFill(o, r, e); } catch (er) {} }
+      if (r.ok) { o.st = 'ok'; o.px = r.px; o.vol = r.vol; o.dir = r.dir || o.dir; o.tk = r.tk || ''; o.an = !!r.an; lvChime(); if (EM.k === 'ord' || EM.k === 'pre' || EM.k === 'em') eaMsgOff(); try { plTagFill(o, r, e); } catch (er) {} }
       else { o.st = 'no'; o.why = window.__stTM.whyTxt ? window.__stTM.whyTxt(r.why) : String(r.why); eaMsg(o.why, { k: 'ord', head: T('Order not placed', 'Orden no colocada') + ' · ' + o.sym + ' · ' + e.lg, red: true }); }   // in sight, not only on the panel's last line
       paintMM(); });
     return true; }
@@ -99466,7 +99482,7 @@ window.__stAZ = (function () {
     lvTfAsk(); lvWlSend(false); tbPaint(); lvCloudAll();
     if (!LV.mmStash || LV.setLater) { var ae = SD.activeElement, me = mmEl(); if (!(ae && ae.tagName === 'INPUT' && me && me.contains(ae)) && Date.now() - (LV.cfgAt || 0) >= 1500) { LV.setLater = false; LV.setSig = ''; if (lvMMApply()) render(); } }
     if (again) { goLive(S.sym.raw); return; }   // an EA came on a chart showing 5-minute candles: its minutes from here
-    var sig = lvSig(); if (sig !== LV.sig) { LV.sig = sig; if (LT.k && !LT.wait && LT.at) LT.k = null; panes.forEach(function(p){ try { paintLines(p); } catch (e) {} }); dirty(); }   // MT5's new figures: the line moved there
+    lvLinesNow();   // MT5's new figures: the line moved there
     lvBadges(); panes.forEach(function(p){ try { cdLbl(p); } catch (e) {} }); liveBar(); liveHeader(); lcFit(); lcAcctSync(); lvTm();
     var gsg = (S.ea ? 1 : 0) + '|' + (lvFresh(S) ? 1 : 0) + '|' + (nowS() >= S.f.close ? 1 : 0) + '|' + ((S.ea && S.ea.raw) || S.sym.name);
     if (!LV.grAt || Date.now() - LV.grAt > 5000 || LV.grSig !== gsg) { LV.grAt = Date.now(); LV.grSig = gsg; try { if (window.__stLiveGreet) window.__stLiveGreet(); } catch (e) {} }   // the Assistant's line above the charts
@@ -99596,6 +99612,10 @@ window.__stAZ = (function () {
   /* What is on the chart once an order goes is where it filled, nothing before it (Nestor, 3 Nov 2026: "whatever price i get filled at can that be the only thing it gets displayed on my chart? ... i see the SL, entry and tp move lower, it looks terrible"). A market order
      from this chart stays off it until the EA has its stop on the fill, at the distance asked for: 4 seconds at most, as the EA may have clamped it. */
   function lvSettling(r, tk){ var o = LV.ord; if (!o || o.kind || !(o.rd > 0) || !(Date.now() - o.at < 4000) || canon(o.sym) !== canon(r.symbol)) return false;
+    /* EA 9.21 puts the stop on the fill before it answers the order, and the live line's figures for the trade come after that answer: figures
+       heard after it are the trade as it stays, drawn at once (24 Nov 2026). Waiting for the distance asked for held the lines the whole 4
+       seconds whenever the price had moved between the click and MT5 (the EA measures the stop from its own price then). */
+    if (o.st === 'ok' && o.done && tk && tk.ws && tk.at >= o.done && (o.an || (vNum(o.v) >= 9.21 && vNum(o.v) < 9.25))) return false;   /* 9.25 says so itself (an) */
     var u = 0.00001; try { u = lvPip() * 0.05; } catch (e) {} return Math.abs(+tk.rpx - o.rd) > u; }
   function lvIdeas(sym){ sym = sym || (S && S.sym); var out = []; if (!sym) return out; try { var L0 = (window.__stLive && window.__stLive.openIdeas) ? window.__stLive.openIdeas() : [];
       var lgs = lvMarkLgs(), tkOk = function(x){ return x && x.tick && isFinite(x.tick.op) && isFinite(x.tick.rpx); };
@@ -99603,7 +99623,16 @@ window.__stAZ = (function () {
         var r = rows.filter(function(x){ return tkOk(x) && (!lgs.length || lgs.indexOf(String(x.login)) >= 0); })[0] || rows.filter(tkOk)[0] || (idea && (idea.main || idea));
         if (!r || !r.symbol || canon(r.symbol) !== sym.key) return; var tk = r.tick || {}; if (!(isFinite(tk.op) && isFinite(tk.rpx))) return;
         if (lvSettling(r, tk)) return;
-        out.push({ r: r, tk: tk, long: r.direction !== 'short', at: Math.floor((r.openedAt || Date.parse(r.opened_at) || 0) / 1000) }); }); } catch (e) {} return out; }
+        out.push({ r: r, tk: tk, long: r.direction !== 'short', at: Math.floor((r.openedAt || Date.parse(r.opened_at) || 0) / 1000) }); });
+      /* The order just placed from here, drawn from the live line's figures the moment MT5 answers, before its row reaches the feed (24 Nov
+         2026: the row comes through the database a second or two later, and the lines waited for it). Its row then takes over, same ticket. */
+      var o = LV.ord, pt = (o && o.st === 'ok' && !o.kind && o.tk && o.done && Date.now() - o.done < 120000 && canon(o.sym) === sym.key && window.__stLive && window.__stLive.pendTick) ? window.__stLive.pendTick(o.tk) : null;
+      if (pt && isFinite(pt.op) && isFinite(pt.rpx) && Date.now() - pt.at < 30000 && !out.some(function(x){ return String(x.r.ticket) === String(o.tk); })
+          && !L0.some(function(i){ return ((i && i.rows) || []).some(function(x){ return x && String(x.ticket) === String(o.tk); }); })) {
+        var pr = { ticket: Number(o.tk), symbol: o.sym, login: o.lg || null, direction: o.dir > 0 ? 'long' : 'short', lots: +o.vol || undefined, risk: o.risk > 0 ? o.risk : undefined, risk0: o.risk > 0 ? o.risk : undefined,
+          openedAt: o.done, seenAt: o.done, closed: false, tick: pt, prov: true };
+        if (!lvSettling(pr, pt)) out.push({ r: pr, tk: pt, long: o.dir > 0, at: Math.floor(o.done / 1000) }); }
+    } catch (e) {} return out; }
   function lvLevels(x){ try { return (window.__stLiveBox && window.__stLiveBox.levels) ? window.__stLiveBox.levels(x.r) : []; } catch (e) { return []; } }
   // ---- The member's closed trades on the live chart (Nestor, 19 Oct 2026: "how come i dont see the trade mark around 10:01 of the trade
   //      i took on my MT5 terminal? i should see 2 arrows the one that filled me in and the one when i got taken out, and potentially
@@ -99658,6 +99687,10 @@ window.__stAZ = (function () {
     var due = !LTR.at || now - LTR.at > 120000; if (LTR.soon && LTR.soon.length && now >= LTR.soon[0]) { LTR.soon.shift(); due = true; }
     if (due && !LTR.busy) lvTrLoad(u); }
   function lvSig(){ return JSON.stringify(feeds().map(function(F){ return lvMyIdeas(F.sym).map(lvLevels); })); }
+  function lvLinesNow(){ if (!S || !S.live) return; var sig = lvSig(); if (sig !== LV.sig) { LV.sig = sig; if (LT.k && !LT.wait && LT.at) LT.k = null; panes.forEach(function(p){ try { paintLines(p); } catch (e) {} }); dirty(); } }
+  /* the live feed calls this when a trade's figures arrive (24 Nov 2026): its lines move then, not at the next second's clock - a new
+     trade's lines came up to a second after its figures */
+  window.__stLvLinesSoon = function(){ if (LV.lnT) return; LV.lnT = setTimeout(function(){ LV.lnT = 0; try { lvLinesNow(); } catch (e) {} }, 0); };
   // A trade's SL, TP, BE line and T / P steps can be dragged (18 Oct 2026): each carries its key (lt|ticket|kind|step); one being
   // dragged or sent sits where it was let go (LT) until MT5's next figures move it there
   var LT = { k: null, price: 0, wait: false, at: 0 };
