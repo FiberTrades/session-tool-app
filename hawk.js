@@ -193,6 +193,53 @@
     '.hk-pick select.you{color:var(--hk-you);border-color:color-mix(in srgb,var(--hk-you) 70%,transparent);background-color:color-mix(in srgb,var(--hk-you) 9%,var(--hk-soft))}',
     '.hk-rvf{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px}.hk-rvs{flex:1 1 100%;min-width:0;font-size:11.5px;line-height:1.45;color:var(--hk-mut)}.hk-rvs:empty{display:none}.hk-rvb{margin-left:auto}',
     '.hk-rvb{display:flex;gap:6px;flex:none}.hk-rvb .hk-btn{padding:5px 11px;font-size:12px;white-space:nowrap}.hk-rvb .hk-btn.go{background:#e0a84a;color:#1b1406;font-weight:600}.hk-rvb .hk-btn.go:hover{background:#ebb85e;border-color:transparent}',
+    /* the session review (24 Nov 2026): one card per window once it has ended - before, during, after, one Save - and how often the hawk reads a timeframe as he does */
+    '.hk-chip svg{width:9px;height:9px;margin-right:4px;vertical-align:-1px}',
+    '.hk-chip.rv{color:#e0a84a;background:color-mix(in srgb,#e0a84a 14%,transparent)}.hk-chip.todo{margin-left:auto;color:#1b1406;background:#e0a84a}.hk-chip.ok{margin-left:auto;color:var(--hk-buy);background:color-mix(in srgb,var(--hk-buy) 14%,transparent)}',
+    '.hk-ses.todo{border-color:color-mix(in srgb,#e0a84a 55%,var(--hk-line))}',
+    '.hk-ses .hk-sesl{margin:3px 0 0;font:11px var(--hk-mono);letter-spacing:.02em;color:var(--hk-mut)}',
+    '.hk-ses .hk-hint{margin:6px 0 0;color:var(--hk-mut)}.hk-ses .hk-chart{margin-top:12px}',
+    '.hk-sec{margin-top:14px;padding-top:12px;border-top:1px solid var(--hk-line)}',
+    '.hk-sech{display:flex;align-items:center;gap:8px;margin-bottom:6px}.hk-sech i{flex:none;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;box-sizing:border-box;border-radius:50%;border:1px solid var(--hk-line);font:600 10px var(--hk-mono);font-style:normal;color:var(--hk-mut)}',
+    '.hk-sech b{font-size:13px;font-weight:600;color:var(--hk-ink)}.hk-sech span{margin-left:auto;font:11px var(--hk-mono);color:var(--hk-mut);text-align:right}',
+    '.hk-ses .hk-sbody{font-size:12.5px;line-height:1.5}',
+    '.hk-yr{margin-top:8px;padding:9px 10px 10px;border:1px solid var(--hk-line);border-radius:8px}',
+    '.hk-yrh{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:7px}.hk-yrh span{font:500 10px var(--hk-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--hk-mut)}.hk-yrh i{font-style:normal;font-size:11px;color:var(--hk-mut);text-align:right}',
+    '.hk-yrr{display:grid;grid-template-columns:30px minmax(0,1fr) minmax(0,1fr);gap:6px;align-items:center}.hk-yrr+.hk-yrr{margin-top:5px}.hk-yrr>b{font:600 10.5px var(--hk-mono);letter-spacing:.06em;color:var(--hk-mut)}',
+    '.hk-yrr .hk-pick select{height:29px;padding:0 22px 0 8px;background-position:right 7px center;font-size:12px}',
+    '.hk-si{padding:10px 0 11px}.hk-si+.hk-si{border-top:1px dashed var(--hk-line)}.hk-si:last-child{padding-bottom:2px}',
+    '.hk-sih{display:flex;align-items:center;gap:6px;flex-wrap:wrap}',
+    '.hk-sin{flex:none;display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;box-sizing:border-box;border-radius:9px;font:700 10px var(--hk-mono);font-style:normal;color:var(--hk-card);background:var(--hk-warn)}.hk-sin.buy{background:var(--hk-buy)}.hk-sin.sell{background:var(--hk-sell)}',
+    '.hk-st{font:11.5px var(--hk-mono);color:var(--hk-mut)}',
+    '.hk-sic{margin-left:auto;font:500 11px var(--hk-font,inherit);color:var(--hk-mut);background:none;border:1px solid var(--hk-line);border-radius:999px;padding:2px 9px;cursor:pointer}.hk-sic:hover,.hk-sic[aria-expanded="true"]{color:var(--hk-ink);border-color:var(--hk-mut)}',
+    '.hk-ses .hk-sit{margin:6px 0 0;font-size:13px;font-weight:600}.hk-ses .hk-sib{margin:2px 0 0;font-size:12px;line-height:1.45;color:var(--hk-mut)}',
+    '.hk-ses .hk-then{display:flex;gap:8px;align-items:baseline;margin:7px 0 0;font-size:12px;line-height:1.4}.hk-ses .hk-then:empty{display:none}.hk-then b{flex:none;font:500 9.5px var(--hk-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--hk-mut)}.hk-then .up{color:var(--hk-buy)}.hk-then .dn{color:var(--hk-sell)}',
+    '.hk-ses .hk-sinote{margin:5px 0 0;font-size:12px;color:var(--hk-you)}',
+    '.hk-ses .hk-rate{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;margin-top:9px;border:1px solid var(--hk-line);border-radius:8px;overflow:hidden;background:var(--hk-card)}',
+    '.hk-ses .hk-rate .hk-btn{border:0;border-radius:0;background:none;padding:6px 3px;font-size:11.5px;color:var(--hk-mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hk-ses .hk-rate .hk-btn+.hk-btn{box-shadow:inset 1px 0 0 var(--hk-line)}.hk-ses .hk-rate .hk-btn:hover{background:var(--hk-soft);color:var(--hk-ink)}',
+    '.hk-mv b small{font-size:10px;font-weight:400;color:var(--hk-mut)}.hk-mv b.w{font-family:var(--hk-font,inherit);font-weight:600}',
+    '.hk-aft{margin-top:8px}.hk-aft dd.x.hit{color:var(--hk-ink)}',
+    '.hk-sesf{margin-top:14px;padding-top:12px;border-top:1px solid var(--hk-line)}.hk-ses .hk-sesf textarea{margin-top:0;min-height:54px;background:var(--hk-plot)}',
+    '.hk-sesb{display:flex;align-items:center;gap:10px;margin-top:8px}.hk-sess{flex:1 1 auto;min-width:0;font-size:11.5px;line-height:1.4;color:var(--hk-mut)}',
+    '.hk-sesb .hk-btn.go{flex:none;display:inline-flex;align-items:center;gap:6px;background:#e0a84a;color:#1b1406;font-weight:600;padding:7px 15px;white-space:nowrap}.hk-sesb .hk-btn.go:hover{background:#ebb85e;border-color:transparent}',
+    '.hk-sesb .hk-btn.go.done{background:transparent;color:var(--hk-buy);border-color:color-mix(in srgb,var(--hk-buy) 45%,transparent);cursor:default}.hk-sesb .hk-btn.go svg{width:13px;height:13px}',
+    '.hk-agree{margin:10px 0 2px;padding:11px 12px 12px;border:1px solid var(--hk-line);border-radius:10px;background:var(--hk-card)}.hk-agree[hidden]{display:none}',
+    '.hk-agh{display:flex;align-items:baseline;justify-content:space-between;gap:8px}.hk-agh b{font-size:13px;font-weight:600}.hk-agh i{font:normal 11px var(--hk-mono);color:var(--hk-mut);text-align:right}.hk-agree .hk-hint{margin:6px 0 0}',
+    '.hk-agg{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:9px}',
+    '.hk-agc{padding:7px 9px 8px;border-radius:8px;background:var(--hk-soft);min-width:0}.hk-agc .k{display:block;font:500 10px var(--hk-mono);letter-spacing:.1em;color:var(--hk-mut)}',
+    '.hk-agc .v{display:block;margin-top:1px;font:500 18px var(--hk-mono);font-variant-numeric:tabular-nums;color:var(--hk-ink)}.hk-agc .v small{font-size:11.5px;color:var(--hk-mut)}',
+    '.hk-agc s{display:block;height:3px;margin:5px 0 6px;border-radius:2px;background:color-mix(in srgb,var(--hk-mut) 25%,transparent);overflow:hidden;text-decoration:none}.hk-agc s i{display:block;height:100%;background:var(--hk-buy)}',
+    '.hk-agc .hk-ags{display:flex;justify-content:space-between;gap:4px;font-size:10.5px;line-height:1.5;color:var(--hk-mut);white-space:nowrap}.hk-agc .hk-ags b{font:500 10.5px var(--hk-mono);color:var(--hk-ink)}',
+    '.hk-dis{margin-top:11px}.hk-dish{font:500 10px var(--hk-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--hk-mut);margin-bottom:3px}',
+    '.hk-disr{display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:9px;row-gap:2px;align-items:center;width:100%;box-sizing:border-box;text-align:left;background:transparent;border:0;border-top:1px solid var(--hk-line);border-radius:0;padding:7px 4px;cursor:pointer;color:var(--hk-ink);font:inherit}.hk-dish+.hk-disr{border-top:0}',
+    '.hk-disr:hover{background:var(--hk-soft)}.hk-disr:focus-visible{outline:2px solid #e0a84a;outline-offset:-2px}',
+    '.hk-disr .tf{grid-row:1/3;font:600 10.5px var(--hk-mono);color:#e0a84a;border:1px solid color-mix(in srgb,#e0a84a 50%,transparent);border-radius:5px;padding:3px 6px}',
+    '.hk-disr .w{font-size:11px;color:var(--hk-mut)}.hk-disr .x{font-size:12px;line-height:1.4}.hk-disr .x u{text-decoration:none;color:var(--hk-you)}',
+    '.hk-tog{display:flex;align-items:center;gap:10px;margin-top:14px;cursor:pointer;position:relative}.hk-tog input{position:absolute;opacity:0;width:1px;height:1px;margin:0}',
+    '.hk-tog .sw{flex:none;position:relative;width:30px;height:17px;box-sizing:border-box;border-radius:9px;background:var(--hk-soft);border:1px solid var(--hk-line);transition:background-color .15s,border-color .15s}',
+    '.hk-tog .sw::after{content:"";position:absolute;top:2px;left:2px;width:11px;height:11px;border-radius:50%;background:var(--hk-mut);transition:transform .15s,background-color .15s}',
+    '.hk-tog input:checked+.sw{background:#e0a84a;border-color:#e0a84a}.hk-tog input:checked+.sw::after{transform:translateX(13px);background:#1b1406}',
+    '.hk-tog input:focus-visible+.sw{outline:2px solid #e0a84a;outline-offset:2px}.hk-tog.off{cursor:default}.hk-tog.off .sw,.hk-tog.off .t{opacity:.5}.hk-tog .t{font-size:12.5px;font-weight:500}.hk-tog+.hk-hint{margin:6px 0 0}',
     /* narrow: the Live Charts rail panel */
     '.hk-nar{font-size:13px}.hk-nar .hk-sub{display:none}.hk-nar .hk-head{align-items:center}.hk-nar .hk-tabs button{padding:3px 9px;font-size:11px}',
     '.hk-today{margin:12px 0 2px;padding:10px 12px 4px;border:1px solid var(--hk-line);border-radius:8px}.hk-tdh{display:flex;justify-content:space-between;gap:8px;margin-bottom:8px;font-size:11.5px;color:var(--hk-mut)}.hk-tdh span:first-child{font-weight:600;color:var(--hk-ink)}',
@@ -213,6 +260,7 @@
     [/^Setup · reaction (buy|sell)$/, function (m) { return 'Setup · ' + A_SIDE[m[1]] + ' de reacción'; }],
     [/^Setup · (pocket|50% pullback) (buy|sell) reached$/, function (m) { return 'Setup · ' + A_SIDE[m[2]] + (m[1] === 'pocket' ? ' en el pocket' : ' en el retroceso al 50%') + ' alcanzada'; }],
     [/^Session over · (\d+) alerts?$/, function (m) { return 'Sesión terminada · ' + m[1] + (m[1] === '1' ? ' alerta' : ' alertas'); }],
+    [/^(London|New York|Asia|Evening) review ready · (\d+|no) alerts?$/, function (m) { return 'Revisión de ' + { London: 'Londres', 'New York': 'Nueva York', Asia: 'Asia', Evening: 'la noche' }[m[1]] + ' lista · ' + (m[2] === 'no' ? 'sin alertas' : m[2] + (m[2] === '1' ? ' alerta' : ' alertas')); }],
     [/Range day\. Range (\S+)–(\S+): premium above (\S+), discount below (\S+), 50% at (\S+)\./g, function (m) { return 'Día de rango. Rango ' + m[1] + '–' + m[2] + ': premium por encima de ' + m[3] + ', descuento por debajo de ' + m[4] + ', 50% en ' + m[5] + '.'; }],
     [/Price (\S+), (in the premium|in the discount|at the 50%|between the 50% and the edges)\./g, function (m) { return 'Precio ' + m[1] + ', ' + A_WHERE[m[2]] + '.'; }],
     [/Sell idea: a high taken in the premium, then the move slows\. Buy idea: a low taken in the discount, then it slows\./g, function () { return 'Idea de venta: un máximo barrido en el premium y luego el movimiento se frena. Idea de compra: un mínimo barrido en el descuento y luego se frena.'; }],
@@ -249,11 +297,13 @@
     [/No red news this morning for (.+?)\./g, function (m) { return 'Sin noticias rojas esta mañana para ' + m[1].replace(' or ', ' o ') + '.'; }],
     [/Red news unknown \(calendar not read\): check it before you trade\./g, function () { return 'Noticias rojas desconocidas (no se pudo leer el calendario): revísalo antes de operar.'; }],
     [/It touched the stop in the same minute\./g, function () { return 'Tocó el stop en el mismo minuto.'; }],
-    [/Tap to rate them: good call, not my trade, too early or too late\./g, function () { return 'Tócalas para valorarlas: bien visto, no es mi operación, demasiado pronto o demasiado tarde.'; }]
+    [/Tap to rate them: good call, not my trade, too early or too late\./g, function () { return 'Tócalas para valorarlas: bien visto, no es mi operación, demasiado pronto o demasiado tarde.'; }],
+    [/Before, during and after in one card: rate it all in one go\./g, function () { return 'Antes, durante y después en una tarjeta: valóralo todo de una vez.'; }]
   ];
   function aES(s) { s = String(s == null ? '' : s); if (!ES()) return s;
     A_RULES.forEach(function (r) { s = s.replace(r[0], function () { return r[1](arguments); }); }); return s; }
   var RATE = [['good', 'Good call', 'Bien visto'], ['bad', 'Not my trade', 'No es mi operación'], ['early', 'Too early', 'Demasiado pronto'], ['late', 'Too late', 'Demasiado tarde']];
+  var RATE_S = { good: ['Good call', 'Bien visto'], bad: ['Not mine', 'No es mía'], early: ['Too early', 'Pronto'], late: ['Too late', 'Tarde'] };   // the session card's one row of four
   var KIND = { brief: ['Brief', 'Resumen'], sweep: ['Watch', 'Vigilar'], pocket: ['Watch', 'Vigilar'], initiation: ['Initiation', 'Iniciación'], setup: ['Setup', 'Setup'], news: ['Red news', 'Noticia roja'], done: ['Done', 'Fin'] };
   var PHASES = [['range', 'Range', 'Rango'], ['trend up', 'Trend up', 'Tendencia alcista'], ['trend down', 'Trend down', 'Tendencia bajista'],
     ['initiation up', 'Initiation up', 'Iniciación alcista'], ['initiation down', 'Initiation down', 'Iniciación bajista']];
@@ -400,8 +450,12 @@
       tag(a.entry, L('Entry', 'Entrada'), K.ink); tag(a.tgt, L('Target', 'Objetivo'), K.buy); tag(a.stop, 'Stop', K.sell);
       pill(a.entry, p5(a.entry), K.ink); pill(a.tgt, p5(a.tgt), K.buy); pill(a.stop, p5(a.stop), K.sell); }
     // price when it spoke
-    var lb = bars[n - 1], xn = (n - 0.5) * bw;
-    line(Y(d.px), K.acc, 1, [1, 3], xn); g.fillStyle = K.acc; g.beginPath(); g.arc(xn, Y(d.px), 3, 0, 7); g.fill(); pill(d.px, p5(d.px), K.acc);
+    // a session review's alerts, numbered as in its list (24 Nov 2026)
+    (st.marks || []).forEach(function (m) { var x = xt(m.t), y = Y(m.p), col = m.s > 0 ? K.buy : m.s < 0 ? K.sell : K.warn; if (!(x > 0 && x < PW) || !isFinite(y)) return;
+      g.fillStyle = K.card; g.strokeStyle = col; g.lineWidth = 1.5; g.setLineDash([]); g.beginPath(); g.arc(x, y, 7.5, 0, 7); g.fill(); g.stroke(); txt(String(m.n), x, y + .5, col, 'center', 9, 700); });
+    // price when it spoke (a session review: the brief's price, from the brief's time on)
+    var lb = bars[n - 1], xn = r.kind === 'sess' ? Math.max(0, Math.min(PW - 3, xt(d.now))) : (n - 0.5) * bw;
+    if (d.px != null && isFinite(d.px)) { line(Y(d.px), K.acc, 1, [1, 3], xn); g.fillStyle = K.acc; g.beginPath(); g.arc(xn, Y(d.px), 3, 0, 7); g.fill(); pill(d.px, p5(d.px), K.acc); }
     // his read
     if (mine) keys.forEach(function (k) { if (mine[k] == null) return; var v = +mine[k], same = Math.abs(v - (k === 'bh' || k === 'bl' ? d[k] : a[k])) < 2e-6;
       if (same && !st.edit) return;   // he kept the hawk's level
@@ -501,8 +555,8 @@
         [[7, L('7 days', '7 días')], [30, L('30 days', '30 días')], [90, L('90 days', '90 días')], [3650, L('All time', 'Todo')]].map(function (x) { return '<option value="' + x[0] + '">' + x[1] + '</option>'; }).join('') +
         '</select><button data-p="s">' + L('Study', 'Estudio') + '</button></div>'; }
     host.innerHTML = '<div class="hk' + (opt.app ? ' hk-app' : '') + (opt.narrow ? ' hk-nar' : '') + '"><div class="hk-head">' + headHtml() + '</div>' +
-      '<div class="hk-watch" hidden></div><div class="hk-today" hidden></div><div class="hk-stats" hidden></div><div class="hk-list"><p class="hk-empty">' + L('Loading…', 'Cargando…') + '</p></div></div>';
-    var root = host.firstChild, list = root.querySelector('.hk-list'), statsEl = root.querySelector('.hk-stats'), todayEl = root.querySelector('.hk-today');
+      '<div class="hk-watch" hidden></div><div class="hk-today" hidden></div><div class="hk-stats" hidden></div><div class="hk-agree" hidden></div><div class="hk-list"><p class="hk-empty">' + L('Loading…', 'Cargando…') + '</p></div></div>';
+    var root = host.firstChild, list = root.querySelector('.hk-list'), statsEl = root.querySelector('.hk-stats'), todayEl = root.querySelector('.hk-today'), agEl = root.querySelector('.hk-agree');
     // in the app, the Today view opens with the session's plan, news and risk budget (the app's Today panel, moved in here for the admin)
     function todayPaint() { var t = null; if (opt.today && period === 1) { try { t = opt.today(); } catch (x) {} }
       if (!t || !(t.html || t.sess)) { if (!todayEl.hidden) { todayEl.hidden = true; todayEl.innerHTML = ''; } return; }
@@ -511,7 +565,7 @@
     if (opt.today) setInterval(function () { if (!doc.hidden && host.offsetParent) todayPaint(); }, 15000);
     function tabs() { root.querySelectorAll('.hk-tabs button').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.p === String(period)); });
       var ps = root.querySelector('[data-hkp]'); if (ps) { var o0 = ps.options[0], ol = ps.querySelector('option[value="' + lastP + '"]'); if (o0 && ol) o0.textContent = ol.textContent;
-        var on = period !== 's' && period !== 1; ps.value = on ? String(period) : ''; ps.classList.toggle('off', !on); } todayPaint(); watchPaint(); }
+        var on = period !== 's' && period !== 1; ps.value = on ? String(period) : ''; ps.classList.toggle('off', !on); } todayPaint(); watchPaint(); agPaint(); }
     // what the hawk reads (hawk_config, admin RLS): any of his MT5 accounts and the markets the study ran; hawk.py on uk1 picks it up within a minute
     var cfg = null, cfgMsg = '', HKM = [['EURUSD', 'EUR/USD · +42.0R' + L(' a year', ' al año')], ['GBPUSD', 'GBP/USD · +32.4R' + L(' a year', ' al año')], ['XAUUSD', L('Gold', 'Oro') + ' · +5.8R' + L(' a year', ' al año')], ['US100', 'US100 · +1.0R' + L(' a year', ' al año')]];   // the year of his rules, London 08-10, after costs (7 Nov)
     var WPRE = [[480, 600], [810, 930]];   // the quick picks: London 08:00-10:00 and New York 13:30-15:30, the study's two windows (7 Nov 2026)
@@ -532,16 +586,16 @@
           + '<button type="button" class="hk-hrx" data-hkwx="' + i + '" aria-label="' + L('Remove these hours', 'Quitar estas horas') + '"' + (W.length < 2 ? ' disabled' : '') + '>×</button></div>'; }).join('')
         + '</div>' + (add ? '<div class="hk-hradd">' + add + '</div>' : '')
         + '<p class="hk-hint">' + L('The brief comes 15 minutes before each, alerts until 5 minutes after.', 'El resumen llega 15 minutos antes de cada una y las alertas hasta 5 minutos después.') + '</p></div>'; }
-    function cfgLoad() { try { sb.from('hawk_config').select('login,sym,wins').eq('id', 1).maybeSingle().then(function (q) { if (q && q.data) { cfg = q.data; watchPaint(); } }, function () {}); } catch (x) {} }
+    function cfgLoad() { try { sb.from('hawk_config').select('*').eq('id', 1).maybeSingle().then(function (q) { if (q && q.data) { cfg = q.data; watchPaint(); } }, function () {}); } catch (x) {} }
     function accList() { var a = []; try { a = (opt.accounts ? opt.accounts() : []) || []; } catch (x) {}
       if (cfg && !a.some(function (x) { return x.login === cfg.login; })) a.unshift({ login: cfg.login, name: cfg.login === '1515070952' ? L('Demo · 1515070952', 'Demo · 1515070952') : cfg.login }); return a; }
     function watchPaint() { var w = root.querySelector('.hk-watch'); if (!w) return; if (!cfg || period === 's') { if (!w.hidden) w.hidden = true; return; }
       var h = '<div class="hk-picks"><label class="hk-pick"><span>' + L('Account', 'Cuenta') + '</span><select data-hkacc>' + accList().map(function (a) { return '<option value="' + esc(a.login) + '"' + (a.login === cfg.login ? ' selected' : '') + '>' + esc(a.name) + '</option>'; }).join('') + '</select></label>'
         + '<label class="hk-pick"><span>' + L('Market', 'Mercado') + '</span><select data-hkmk title="' + esc(L('Each market\'s result over a year with the hawk\'s rules, London 08:00–10:00, after costs', 'El resultado de cada mercado en un año con las reglas del halcón, Londres 08:00–10:00, tras costes')) + '">' + HKM.map(function (m) { return '<option value="' + m[0] + '"' + (m[0] === cfg.sym ? ' selected' : '') + '>' + esc(m[1]) + '</option>'; }).join('') + '</select></label></div>'
-        + '<p class="hk-hint">' + esc(cfgMsg || L('The hawk reads this account\'s prices. It never trades on it.', 'El halcón lee los precios de esta cuenta. Nunca opera en ella.')) + '</p>' + hoursHtml();
+        + '<p class="hk-hint">' + esc(cfgMsg || L('The hawk reads this account\'s prices. It never trades on it.', 'El halcón lee los precios de esta cuenta. Nunca opera en ella.')) + '</p>' + hoursHtml() + quietHtml();
       if (w.innerHTML !== h) w.innerHTML = h; w.hidden = false; }
     function cfgSave(k, v) { if (!cfg) return; var nx = Object.assign({}, cfg); nx[k] = v; cfgMsg = L('Saving…', 'Guardando…'); watchPaint();
-      sb.from('hawk_config').update({ login: nx.login, sym: nx.sym, wins: winsClean(nx.wins), updated_at: new Date().toISOString() }).eq('id', 1).then(function (q) {
+      sb.from('hawk_config').update(Object.assign({ login: nx.login, sym: nx.sym, wins: winsClean(nx.wins), updated_at: new Date().toISOString() }, 'quiet' in nx ? { quiet: !!nx.quiet } : {})).eq('id', 1).then(function (q) {
         if (q && q.error) { cfgMsg = L('Not saved: ', 'No guardado: ') + q.error.message; } else { cfg = nx; cfgMsg = L('Saved. The hawk switches within a minute.', 'Guardado. El halcón cambia en menos de un minuto.'); }
         watchPaint(); setTimeout(function () { cfgMsg = ''; watchPaint(); }, 6000); }, function (e) { cfgMsg = L('Not saved', 'No guardado'); watchPaint(); }); }
     tabs(); cfgLoad();
@@ -598,16 +652,27 @@
     }
     function render() {
       charts = {}; rvHint = true;
-      if (!rows.length) { list.innerHTML = '<p class="hk-empty">' + L('No alerts in this period. The hawk watches weekdays, in your watch hours (' + winsSaid() + ' London): the brief 15 minutes before, then alerts until 5 minutes after.', 'No hay alertas en este periodo. El halcón vigila de lunes a viernes en tus horas (' + winsSaid() + ' de Londres): el resumen 15 minutos antes y luego alertas hasta 5 minutos después.') + '</p>'; statsEl.hidden = true; return; }
+      if (!rows.length) { list.innerHTML = '<p class="hk-empty">' + L('No alerts in this period. The hawk watches weekdays, in your watch hours (' + winsSaid() + ' London): the brief 15 minutes before, then alerts until 5 minutes after.', 'No hay alertas en este periodo. El halcón vigila de lunes a viernes en tus horas (' + winsSaid() + ' de Londres): el resumen 15 minutos antes y luego alertas hasta 5 minutos después.') + '</p>'; statsEl.hidden = true; SESS = {}; return; }
       stats();
+      // a window that has ended (its done row in, or 5 minutes past its end) is one card: its brief, its alerts and what came next (24 Nov 2026)
+      var SS = sessions(), of = {}, put = {}; SESS = {};
+      SS.forEach(function (S) { SESS[S.key] = S; if (S.ended && (S.brief || S.al.length)) S.rows.forEach(function (r) { of[r.id] = S; }); });
       var h = '', last = '';
-      rows.forEach(function (r) { var dl = ldn(r.created_at, { weekday: 'long', day: 'numeric', month: 'long' });
-        if (dl !== last) { h += '<div class="hk-day">' + esc(dl) + '</div>'; last = dl; } h += card(r); });
+      rows.forEach(function (r) { var S = of[r.id]; if (S && put[S.key]) return;
+        var dl = ldn(S ? S.rows[0].created_at : r.created_at, { weekday: 'long', day: 'numeric', month: 'long' });
+        if (dl !== last) { h += '<div class="hk-day">' + esc(dl) + '</div>'; last = dl; }
+        if (S) { put[S.key] = 1; h += sesCard(S); } else h += card(r); });
       list.innerHTML = h;
-      list.querySelectorAll('.hk-chart').forEach(function (box) { var r = byId(box.dataset.id);
+      hookCharts(list);
+      if (focusId) { var fs = of[focusId], f = byEl('#hk-a-' + focusId) || (fs && sesEl(fs.key)); if (f) f.scrollIntoView({ block: 'start' }); focusId = null; }
+    }
+    function hookCharts(sc) {
+      sc.querySelectorAll('.hk-chart[data-id]').forEach(function (box) { var r = byId(box.dataset.id); if (!r) return;
         var st = charts[r.id] = { box: box, cv: box.firstChild, row: r };
         draw(st); hookChart(st); });
-      if (focusId) { var f = byEl('#hk-a-' + focusId); if (f) f.scrollIntoView({ block: 'start' }); focusId = null; }
+      sc.querySelectorAll('.hk-chart[data-ses]').forEach(function (box) { var S = SESS[box.dataset.ses], rw = S && sesRow(S); if (!rw) return;
+        var st = charts[rw.id] = { box: box, cv: box.firstChild, row: rw, marks: sesMarks(S) };
+        draw(st); hookChart(st); });
     }
     function byId(id) { return rows.find(function (x) { return x.id === id; }); }
     function hookChart(st) {
@@ -637,10 +702,10 @@
         .gt('created_at', since.toISOString()).order('created_at', { ascending: false }).limit(period > 90 ? 500 : period > 7 ? 200 : 300);
       if (q.error) { if (!more) list.innerHTML = '<p class="hk-empty">' + L('Couldn\'t load the alerts: ', 'No se pudieron cargar las alertas: ') + esc(q.error.message) + '</p>'; return; }
       var got = q.data || [];
-      if (more) { if (!got.length) return; if (Object.keys(charts).some(function (id) { return charts[id].edit; }) || (RV && RV.k === 'b') || (doc.activeElement && root.contains(doc.activeElement) && doc.activeElement.tagName === 'TEXTAREA')) { pending = got.concat(pending); return; }
+      if (more) { if (!got.length) return; if (Object.keys(charts).some(function (id) { return charts[id].edit; }) || (RV && RV.k === 'b') || (doc.activeElement && root.contains(doc.activeElement) && /^(TEXTAREA|SELECT)$/.test(doc.activeElement.tagName))) { pending = got.concat(pending); return; }
         var have = {}; rows.forEach(function (r) { have[r.id] = 1; });
         rows = got.concat(pending).filter(function (r) { return !have[r.id] && (have[r.id] = 1); }).concat(rows); pending = []; } else rows = got;   // never the same alert twice
-      render();
+      render(); if (!more) agSoon(0);
     }
     var pending = [];
     // new alerts appear by themselves while the London window is on and this feed is on screen
@@ -664,6 +729,294 @@
       } else { st.edit = null; st.drag = null; }
       ed.hidden = !on; st.box.classList.toggle('hk-editing', on); draw(st);
     }
+    // ---------- the session review (step 2 of training the hawk, 24 Nov 2026 - Nestor: "after the session i get the full load down of pre
+    // session what the hawk thinks can happen, in session opportunities and then after session, so i can give feed back all at once"):
+    // once a window he watches has ended, its brief (before), its alerts (during) and what price did next (after, from the candle store; on
+    // hawk.html from the rows' own 5-minute candles) are one card, rated in one go with one Save. Where it goes: each alert's rating in
+    // hawk_signals.feedback (+ feedback_at), as before; his 4H / 1H / 15M reads in the brief's mine.tf (seen: true = a timeframe he went
+    // through, kept or changed - what the agreement score counts); the overall note and the time he saved it in the brief's mine.rev.
+    // Unsaved picks are kept on this device (st_hawk_sesd) until he saves them.
+    var HM = { hour: '2-digit', minute: '2-digit' }, SESS = {}, SC = {}, AG = null, agT = null;
+    var SES_U = { EURUSD: [1e-4, 'pips'], GBPUSD: [1e-4, 'pips'], XAUUSD: [1, '$'], US100: [1, 'points'] };   // hawk.py MK: the unit distances are said in
+    var SD = (function () { try { var o = JSON.parse(localStorage.getItem('st_hawk_sesd') || '{}') || {}, now = Date.now();
+      Object.keys(o).forEach(function (k) { var D = o[k]; if (!D || !(now - (D.t || 0) < 30 * 864e5)) delete o[k]; else { D.f = D.f || {}; D.tf = D.tf || {}; delete D.msg; } }); return o; } catch (x) { return {}; } })();
+    function sesKeepD() { try { var o = {}; Object.keys(SD).forEach(function (k) { var D = SD[k]; o[k] = { f: D.f, tf: D.tf, note: D.note, t: D.t || Date.now() }; }); localStorage.setItem('st_hawk_sesd', JSON.stringify(o)); } catch (x) {} }
+    function sesDraft(key) { return SD[key] || (SD[key] = { f: {}, tf: {}, note: null, t: Date.now() }); }
+    function sesDay(r) { return new Date(r.created_at).toLocaleDateString('en-CA', { timeZone: 'Europe/London' }); }
+    function sesT(day, m) { var t = Date.UTC(+day.slice(0, 4), +day.slice(5, 7) - 1, +day.slice(8, 10)) / 1000 + m * 60, off = ((wMin(t) - m) % 1440 + 2160) % 1440 - 720; return t - off * 60; }   // that London day's minute m, as a timestamp
+    function sesId(key) { return 'hk-ses-' + String(key).replace(/[^\w-]/g, '_'); }
+    function sesEl(key) { return root.querySelector('.hk-ses[data-sk="' + key + '"]'); }
+    function sesOfRow(r) { for (var k in SESS) if (SESS[k].rows.indexOf(r) >= 0) return SESS[k]; return null; }
+    // the rows by window: London day + the window's hours + the market (the rows carry data.win, the brief data.chart.w0 / w1)
+    function sessions() { var by = {}, out = [], now = Date.now() / 1000, today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
+      rows.slice().sort(function (a, b) { return a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0; }).forEach(function (r) {
+        var d = r.data || {}, w = Array.isArray(d.win) && d.win.length === 2 ? d.win : null, day = sesDay(r), sym = String(d.sym || 'EURUSD');
+        var key = day + '|' + (w ? w[0] + '-' + w[1] : 'x') + '|' + sym, S = by[key];
+        if (!S) { S = by[key] = { key: key, day: day, sym: sym, win: w, brief: null, done: null, al: [], rows: [] }; out.push(S); }
+        S.rows.push(r); if (r.kind === 'brief') { if (!S.brief) S.brief = r; } else if (r.kind === 'done') S.done = r; else S.al.push(r); });
+      out.forEach(function (S) { var c = S.brief && S.brief.data && S.brief.data.chart;
+        S.w0 = c && c.w0 ? +c.w0 : S.win ? sesT(S.day, S.win[0]) : null; S.w1 = c && c.w1 ? +c.w1 : S.win ? sesT(S.day, S.win[1]) : null;
+        S.ended = !!S.done || (S.w1 != null && now >= S.w1 + 300) || (S.w1 == null && S.day < today);
+        S.home = S.brief || S.done || S.al[S.al.length - 1] || null; S.rev = (S.home && S.home.mine && S.home.mine.rev) || null; });
+      return out; }
+    function sesU(S) { return SES_U[S.sym] || SES_U.EURUSD; }
+    function sesD(v, U) { var x = Math.abs(v) / U[0]; return U[1] === '$' ? '$' + x.toFixed(2) : x.toFixed(1) + ' ' + (U[1] === 'points' ? L('points', 'puntos') : 'pips'); }
+    function sesNum(v, U) { var x = Math.abs(v) / U[0]; return (v >= 0 ? '+' : '−') + (U[1] === '$' ? '$' + x.toFixed(2) : x.toFixed(1) + '<small> ' + (U[1] === 'points' ? 'pts' : 'pips') + '</small>'); }
+    // how long "after" runs: to the study's time exit - London 13:20, a later window 20:00 (study_run.py xm_of)
+    function sesHz(S) { if (!S.win || S.w1 == null) return null; return S.w1 + ((S.win[1] <= 780 ? 800 : sXmOf(S.win[1])) - S.win[1]) * 60; }
+    function sesFrom(S) { var c = S.brief && S.brief.data && S.brief.data.chart; return +(c && c.now) || (S.w0 != null ? S.w0 - 900 : 0); }
+    function alertT(r) { var d = r.data || {}, c = d.chart; return +(c && c.now) || +d.ti || +d.ta || Math.floor(Date.parse(r.created_at) / 1000); }   // the minute after the candle it spoke on
+    function alertP(r) { var d = r.data || {}; return r.kind === 'sweep' && d.A != null ? +d.A : (r.kind === 'setup' || r.kind === 'news') && d.entry != null ? +d.entry : +(d.chart && d.chart.px); }
+    // the rows' own 5-minute candles (the brief's day, each alert's, the done row's once hawk.py sends it): what hawk.html has
+    function sesRowBars(S) { var m = {}; S.rows.forEach(function (r) { var c = r.data && r.data.chart; if (c && Array.isArray(c.c)) c.c.forEach(function (b) { m[b[0]] = b; }); });
+      return Object.keys(m).map(Number).sort(function (a, b) { return a - b; }).map(function (t) { return m[t]; }); }
+    // the minutes from the brief to the time exit (or now), from the app's candle store; else 5-minute ones; else the rows' own
+    function sesFeed(S) { var hz = sesHz(S); if (hz == null) return null; var c = SC[S.key], now = Date.now() / 1000;
+      if (c && (c.p || c.full || now - c.t < 90)) return c;
+      var from = sesFrom(S), to = Math.min(hz, now);
+      c = SC[S.key] = { m: c ? c.m : null, tf: c ? c.tf : 300, src: c ? c.src : '', t: now, full: now >= hz + 120, p: null };
+      if (!opt.bars) { c.m = sesRowBars(S); c.tf = 300; c.src = 'rows'; return c; }
+      c.p = (async function () { var a = null, tf = 60;
+        try { a = await opt.bars(S.sym, 1, from - 60, to); } catch (x) { a = null; }
+        if (!a || a.failed || !a.length) { tf = 300; try { a = await opt.bars(S.sym, 5, from - 300, to); } catch (x) { a = null; } }
+        if (a && !a.failed && a.length) { c.m = a.map(function (x) { return [+x.time, +x.open, +x.high, +x.low, +x.close]; }).filter(function (x) { return x[0] >= from - tf && x[0] < to; }).sort(function (x, y) { return x[0] - y[0]; }); c.tf = tf; c.src = 'bars'; }
+        else { c.m = sesRowBars(S); c.tf = 300; c.src = 'rows'; c.full = false; }
+        c.p = null; c.t = Date.now() / 1000; sesPaint(S.key); })();
+      return c; }
+    setInterval(function () { if (doc.hidden || !host.offsetParent || period === 's') return;   // a window still inside its "after": the candles again every 2 minutes
+      Object.keys(SESS).forEach(function (k) { var c = SC[k]; if (c && !c.full && !c.p && sesEl(k)) sesFeed(SESS[k]); }); }, 120000);
+    // the chart of the session: the brief's day as it measured it, the window, each alert numbered, and the candles after
+    function sesRow(S) { var base = null; [S.brief].concat(S.al).some(function (r) { var c = r && r.data && r.data.chart; if (c && Array.isArray(c.c) && c.c.length) { base = { r: r, c: c }; return true; } return false; });
+      if (!base) return null; var F = SC[S.key], m = {};
+      sesRowBars(S).forEach(function (b) { m[b[0]] = b; });
+      if (F && F.m && F.src === 'bars') (F.tf === 60 ? agg(F.m, 300) : F.m).forEach(function (b) { m[b[0]] = b; });
+      var d = Object.assign({}, base.c, { c: Object.keys(m).map(Number).sort(function (a, b) { return a - b; }).map(function (t) { return m[t]; }) });
+      if (base.r !== S.brief) { d.px = null; d.now = null; }
+      return { id: 'ses:' + S.key, kind: 'sess', data: { chart: d } }; }
+    function sesMarks(S) { return S.al.map(function (r, i) { return { t: alertT(r) - 60, p: alertP(r), n: i + 1, s: r.side }; }).filter(function (m) { return isFinite(m.p); }); }
+    function sesLegend(S, rw) { var d = rw.data.chart, it = [['sell', 'Premium', .3], ['buy', L('Discount', 'Descuento'), .3], ['soft', winLbl(d), 1]];
+      if (d.a2b) it.push(['acc', L('Leg 50%', '50% del tramo'), 1]);
+      return '<div class="hk-legend">' + it.map(function (x) { return '<span><s style="background:var(--hk-' + x[0] + ');opacity:' + x[2] + '"></s>' + x[1] + '</span>'; }).join('') +
+        (d.px != null ? '<span><s style="background:var(--hk-acc);width:7px;height:7px;border-radius:50%"></s>' + L('Price at the brief', 'Precio en el resumen') + '</span>' : '') +
+        (S.al.length ? '<span><i class="hk-sin">1</i>' + L('Alerts, numbered as below', 'Alertas, numeradas como abajo') + '</span>' : '') + '</div>'; }
+    // after: how far it went each way from the brief's price, which of the brief's levels it took, and whether the brief's side played out
+    function sesAfter(S, F) { var B = S.brief, d = B && B.data; if (!d || !F || !F.m || !F.m.length) return null;
+      var t0 = sesFrom(S), px = +(d.price != null ? d.price : d.chart && d.chart.px), M = F.m.filter(function (b) { return b[0] >= t0; });
+      if (!M.length || !isFinite(px)) return null;
+      var hi = M[0], lo = M[0]; M.forEach(function (b) { if (b[2] > hi[2]) hi = b; if (b[3] < lo[3]) lo = b; });
+      var last = M[M.length - 1], hz = sesHz(S), side = d.htf === 1 || d.htf === -1 ? d.htf : /up$/.test(d.phase || '') ? 1 : /down$/.test(d.phase || '') ? -1 : 0, lv = [];
+      if (d.bh != null) lv.push([L('Range high', 'Máximo del rango'), +d.bh]); if (d.bl != null) lv.push([L('Range low', 'Mínimo del rango'), +d.bl]);
+      if (d.bh != null && d.bl != null) lv.push(['50%', (+d.bh + +d.bl) / 2]);
+      if (d.a2b) lv.push([L('Leg 50%', '50% del tramo'), (+d.a2b[0] + +d.a2b[1]) / 2]);
+      var bk = /strong close (?:above|below) (\d+(?:\.\d+)?)/.exec(B.body || ''); if (bk) lv.push([L('Break level', 'Nivel de ruptura'), +bk[1]]);
+      if (/^range/.test(d.phase || '') && side && d.bh != null && d.bl != null) { var q = (d.bh - d.bl) / 4; lv.push([side < 0 ? L('Sell zone', 'Zona de venta') : L('Buy zone', 'Zona de compra'), side < 0 ? d.bh - q : +d.bl + q, 1]); }
+      lv = lv.map(function (x) { var p = x[1], inZ = !!x[2] && (side < 0 ? px >= p : px <= p), up = x[2] ? side < 0 : p >= px, hit = null;
+        if (!inZ) for (var i = 0; i < M.length; i++) if (up ? M[i][2] >= p : M[i][3] <= p) { hit = M[i][0]; break; }
+        return { n: x[0], p: p, z: !!x[2], inZ: inZ, hit: hit, gap: up ? p - hi[2] : lo[3] - p }; }).sort(function (a, b) { return b.p - a.p; });
+      var endT = F.full && F.src === 'bars' ? hz : Math.min(hz, last[0] + F.tf);
+      return { t0: t0, px: px, hi: hi, lo: lo, up: hi[2] - px, dn: px - lo[3], net: last[4] - px, last: last, side: side, lv: lv, end: endT, done: endT >= hz }; }
+    function sesAftSpan(S, F, A) { return A ? hm(A.t0) + ' → ' + hm(A.end) + (A.done ? '' : L(' so far', ' por ahora')) : ''; }
+    function sesAftHtml(S, F, A) {
+      if (!S.brief) return '<p class="hk-hint">' + L('No brief, so nothing to measure it against.', 'Sin resumen, no hay con qué medirlo.') + '</p>';
+      if (!F) return '';
+      if (!A) return '<p class="hk-hint">' + (F.p ? L('Reading the candles…', 'Leyendo las velas…') : L('No candles stored for this window yet.', 'Aún no hay velas guardadas de esta ventana.')) + '</p>';
+      var U = sesU(S), sd = A.side, fav = sd > 0 ? A.up : A.dn, adv = sd > 0 ? A.dn : A.up, ns = A.net * sd;
+      var vd = !sd ? ['', '—'] : ns > 0 && fav > adv ? ['up', L('Played out', 'Se dio')] : ns < 0 && adv > fav ? ['dn', L('Went against', 'Fue en contra')] : ['', L('Mixed', 'Mixto')];
+      var h = '<div class="hk-kpi c3 sm hk-mv"><div><b class="up">' + sesNum(A.up, U) + '</b><span>' + L('Up · ', 'Sube · ') + hm(A.hi[0]) + '</span></div>' +
+        '<div><b class="dn">' + sesNum(-A.dn, U) + '</b><span>' + L('Down · ', 'Baja · ') + hm(A.lo[0]) + '</span></div>' +
+        '<div><b class="w ' + vd[0] + '">' + esc(vd[1]) + '</b><span>' + esc(sd > 0 ? L('Buys only', 'Solo compras') : sd < 0 ? L('Sells only', 'Solo ventas') : L('No side', 'Sin lado')) + '</span></div></div>';
+      if (A.lv.length) h += '<dl class="hk-tt hk-aft">' + A.lv.map(function (x) {
+        var st = x.inZ ? L('In it at the brief', 'Dentro en el resumen') : x.hit ? (x.z ? L('Reached ', 'Alcanzada ') : L('Taken ', 'Tomado ')) + hm(x.hit) : sesD(Math.max(0, x.gap), U) + L(' short', ' antes');
+        return '<dt>' + esc(x.n) + '</dt><dd class="p">' + p5(x.p) + '</dd><dd class="x' + (x.hit || x.inZ ? ' hit' : '') + '">' + esc(st) + '</dd>'; }).join('') + '</dl>';
+      return h + '<p class="hk-hint">' + esc(L('From the brief\'s price ' + p5(A.px) + ', on ' + (F.src === 'rows' ? 'the alerts\' own 5-minute candles' : (F.tf === 60 ? '1-minute' : '5-minute') + ' candles') + '.',
+        'Desde el precio del resumen ' + p5(A.px) + ', con ' + (F.src === 'rows' ? 'las velas de 5 minutos de las alertas' : 'velas de ' + (F.tf === 60 ? '1 minuto' : '5 minutos')) + '.')) + '</p>'; }
+    // what came next for each alert: a trade to its stop, target or the time exit; an order whether it filled; an idea how far it went its way
+    function sesThen(S, r, F) { var d = r.data || {}, s = r.side;
+      if (r.kind === 'news' && d.entry == null) return '';
+      var lab = '<b>' + (r.kind === 'news' ? L('If taken', 'Si se tomaba') : L('Then', 'Después')) + '</b>';
+      if (!F || !F.m) return F && F.p ? lab + '<span>' + L('Reading the candles…', 'Leyendo las velas…') + '</span>' : '';
+      if (!s) return '';
+      var U = sesU(S), t0 = alertT(r), B = F.m.filter(function (b) { return b[0] >= t0; }), hz = sesHz(S);
+      if (!B.length) return lab + '<span>' + L('No candles after it yet.', 'Aún no hay velas después.') + '</span>';
+      var last = B[B.length - 1], endT = F.full && F.src === 'bars' ? hz : Math.min(hz, last[0] + F.tf), by = hm(endT), out = function (c, t) { return lab + '<span class="' + c + '">' + esc(t) + '</span>'; };
+      if (d.entry != null && d.stop != null && d.tgt != null) { var e = +d.entry, st = +d.stop, tg = +d.tgt, rk = Math.abs(e - st), i = 0; if (!(rk > 0)) return '';
+        if (r.kind !== 'setup' && r.kind !== 'news') {   // an order waiting (an initiation's pocket, a 50% pullback): did it fill?
+          for (; i < B.length; i++) { if (s < 0 ? B[i][2] >= e : B[i][3] <= e) break; if (s < 0 ? B[i][3] <= tg : B[i][2] >= tg) return out('', L('Never filled: it went on to the target without it.', 'No entró: siguió hasta el objetivo sin ella.')); }
+          if (i >= B.length) { var cl = s < 0 ? e - Math.max.apply(null, B.map(function (b) { return b[2]; })) : Math.min.apply(null, B.map(function (b) { return b[3]; })) - e;
+            return out('', L('Never filled: ' + sesD(Math.max(0, cl), U) + ' short of ' + p5(e) + ' by ' + by + '.', 'No entró: a ' + sesD(Math.max(0, cl), U) + ' de ' + p5(e) + ' a las ' + by + '.')); } }
+        var best = 0;
+        for (; i < B.length; i++) { var b = B[i];   // the stop first when both are in one candle
+          if (s < 0 ? b[2] >= st : b[3] <= st) return out('dn', L('Stopped ' + hm(b[0]) + ' · −1R', 'Stop a las ' + hm(b[0]) + ' · −1R') + (best >= 0.3 ? L(' (+' + best.toFixed(1) + 'R first)', ' (antes +' + best.toFixed(1) + 'R)') : ''));
+          if (s < 0 ? b[3] <= tg : b[2] >= tg) return out('up', L('Target ' + hm(b[0]) + ' · ', 'Objetivo a las ' + hm(b[0]) + ' · ') + sR1(Math.abs(tg - e) / rk));
+          best = Math.max(best, (s < 0 ? e - b[3] : b[2] - e) / rk); }
+        var nr = (s < 0 ? e - last[4] : last[4] - e) / rk;
+        return out(nr >= 0 ? 'up' : 'dn', (endT >= hz ? L('Closed ' + by + ' · ', 'Cerrada a las ' + by + ' · ') : L('Still open at ' + by + ' · ', 'Aún abierta a las ' + by + ' · ')) + sR1(nr) + L(', best +', ', mejor +') + best.toFixed(1) + 'R'); }
+      var ref = +(d.chart && d.chart.px) || +d.A, sm = /stop (\d+(?:\.\d+)?)/.exec(r.body || ''), sp = sm ? +sm[1] : null, fav = 0, ft = null, adv = 0;
+      if (!isFinite(ref)) return '';
+      for (var j = 0; j < B.length; j++) { var x = B[j], fv = s < 0 ? ref - x[3] : x[2] - ref, av = s < 0 ? x[2] - ref : ref - x[3];
+        if (sp != null && (s < 0 ? x[2] >= sp : x[3] <= sp)) return out('dn', L('Stop ' + p5(sp) + ' hit ' + hm(x[0]), 'Stop ' + p5(sp) + ' tocado a las ' + hm(x[0])) + (fav > 0 ? L(', after ' + sesD(fav, U) + ' its way', ', tras ' + sesD(fav, U) + ' a su favor') : L(', straight away', ', enseguida')));
+        if (fv > fav) { fav = fv; ft = x[0]; } if (av > adv) adv = av; }
+      return out(fav > adv ? 'up' : '', sesD(fav, U) + L(' its way', ' a su favor') + (ft ? ' (' + hm(ft) + ')' : '') + (sp != null ? L(', stop never hit by ', ', stop sin tocar a las ') + by : L(', ' + sesD(adv, U) + ' against', ', ' + sesD(adv, U) + ' en contra'))); }
+    // his picks: the draft first, then what he saved, then the hawk's
+    function sesF(S, r) { var D = SD[S.key]; return D && D.f && r.id in D.f ? D.f[r.id] || null : r.feedback || null; }
+    function sesTf(S, tf, saved) { var B = S.brief, hk = (B.data.tfs || {})[tf] || {}, m = (B.mine && B.mine.tf && B.mine.tf[tf]) || {}, D = !saved && SD[S.key], dr = (D && D.tf && D.tf[tf]) || {};
+      return { said: dr.said || m.said || hk.said, loc: dr.loc || m.loc || hk.loc, hk: hk }; }
+    function sesDirty(S) { var D = SD[S.key]; if (!D) return false;
+      if (S.al.some(function (r) { return r.id in D.f && (D.f[r.id] || null) !== (r.feedback || null); })) return true;
+      if (S.brief && D.tf && Object.keys(D.tf).some(function (tf) { var v = sesTf(S, tf, true), dr = D.tf[tf] || {}; return (dr.said && dr.said !== v.said) || (dr.loc && dr.loc !== v.loc); })) return true;
+      return D.note != null && String(D.note).trim() !== ((S.rev && S.rev.note) || ''); }
+    function sesSumText(S) { var n = S.al.length, k = S.al.filter(function (r) { return sesF(S, r); }).length;
+      return [S.brief ? L('Brief ', 'Resumen ') + ldn(S.brief.created_at, HM) : L('No brief', 'Sin resumen'), sPl(n, 'alert', 'alerta', 'alertas'), n ? L(k + ' of ' + n + ' rated', k + ' de ' + n + ' valoradas') : null].filter(Boolean).join(' · '); }
+    function sesFootHtml(S) { var D = SD[S.key], dirty = sesDirty(S), msg = (D && D.msg) || '', k = esc(S.key);
+      var say = msg || (S.rev && !dirty ? L('Saved: your ratings, your 4H · 1H · 15M reads and your note. Change anything and save again.', 'Guardada: tus valoraciones, tus lecturas de 4H · 1H · 15M y tu nota. Cambia lo que quieras y guarda otra vez.')
+        : L('One save keeps it all: the ratings, your 4H · 1H · 15M reads (what you leave counts as agreeing) and the note.', 'Un solo guardado lo guarda todo: las valoraciones, tus lecturas de 4H · 1H · 15M (lo que dejes cuenta como de acuerdo) y la nota.'));
+      var btn = S.rev && !dirty && !(S.busy) ? '<button type="button" class="hk-btn go done" data-sessave="' + k + '" disabled>' + ICK + L('Saved ', 'Guardada ') + esc(ldn(S.rev.at, HM)) + '</button>'
+        : '<button type="button" class="hk-btn go" data-sessave="' + k + '"' + (S.busy ? ' disabled' : '') + '>' + (S.rev ? L('Save changes', 'Guardar cambios') : L('Save review', 'Guardar revisión')) + '</button>';
+      return '<span class="hk-sess" aria-live="polite">' + esc(say) + '</span>' + btn; }
+    function sesFoot(key) { var S = SESS[key], el = S && root.querySelector('[data-sesb="' + key + '"]'); if (el) el.innerHTML = sesFootHtml(S); }
+    function sesSum(key) { var S = SESS[key], el = S && sesEl(key), p = el && el.querySelector('.hk-sesl'); if (p) p.textContent = sesSumText(S); }
+    // his read of each timeframe, in the card: phase and location, the hawk's to start with (the tiles above still open each in his charts)
+    function sesYr(S) { var T = S.brief.data.tfs || {}, k = esc(S.key), op = function (xs, cur, lab) { return (xs.indexOf(cur) < 0 ? xs.concat([cur]) : xs).map(function (x) { return '<option value="' + esc(x) + '"' + (x === cur ? ' selected' : '') + '>' + esc(lab(x)) + '</option>'; }).join(''); };
+      return '<div class="hk-yr"><div class="hk-yrh"><span>' + L('Your read', 'Tu lectura') + '</span><i>' + L('Change what you see differently', 'Cambia lo que veas distinto') + '</i></div>' +
+        ['4h', '1h', '15m'].filter(function (tf) { return T[tf] && T[tf].said; }).map(function (tf) { var v = sesTf(S, tf), U = tf.toUpperCase();
+          return '<div class="hk-yrr"><b>' + U + '</b><label class="hk-pick"><select data-sesr="said" data-tf="' + tf + '" data-sk="' + k + '" aria-label="' + esc(L('Your ' + U + ' phase', 'Tu fase del ' + U)) + '"' + (v.said !== v.hk.said ? ' class="you"' : '') + '>' + op(RV_SAID, v.said, tfSaid) + '</select></label>' +
+            '<label class="hk-pick"><select data-sesr="loc" data-tf="' + tf + '" data-sk="' + k + '" aria-label="' + esc(L('Your ' + U + ' location', 'Tu ubicación del ' + U)) + '"' + (v.loc !== v.hk.loc ? ' class="you"' : '') + '>' + op(RV_LOC, v.loc, tfLoc) + '</select></label></div>'; }).join('') + '</div>'; }
+    function sesItem(S, r, i, F) { var f = sesF(S, r), sd = r.side === 1 ? 'buy' : r.side === -1 ? 'sell' : '', ch = r.data && r.data.chart && r.data.chart.c && r.data.chart.c.length, k = esc(S.key);
+      return '<div class="hk-si" id="hk-a-' + r.id + '"><div class="hk-sih"><span class="hk-sin ' + sd + '">' + (i + 1) + '</span><span class="hk-st">' + esc(ldn(r.created_at, HM)) + '</span>' +
+        '<span class="hk-chip' + (r.kind === 'setup' ? ' setup' : '') + '">' + esc(KIND[r.kind] ? L(KIND[r.kind][0], KIND[r.kind][1]) : r.kind) + '</span>' +
+        (sd ? '<span class="hk-chip ' + sd + '">' + (r.side === 1 ? L('Buy', 'Compra') : L('Sell', 'Venta')) + '</span>' : '') +
+        (r.data && r.data.tfx ? '<span class="hk-chip warn" title="' + esc(L('The 4H and the 15M point opposite ways', 'El 4H y el 15M apuntan en sentidos opuestos')) + '">4H ≠ 15M</span>' : '') +
+        (ch ? '<button type="button" class="hk-sic" data-sesch="' + r.id + '" aria-expanded="false">' + L('Its chart', 'Su gráfico') + '</button>' : '') + '</div>' +
+        '<p class="hk-sit">' + esc(aES(r.title)) + '</p><p class="hk-sib">' + esc(aES(r.body)) + '</p>' +
+        (ch ? '<div class="hk-chart" data-id="' + r.id + '" hidden><canvas role="img" aria-label="' + L('The hawk\'s chart for this alert', 'El gráfico del halcón para esta alerta') + '"></canvas></div>' : '') +
+        '<p class="hk-then" data-then="' + r.id + '">' + sesThen(S, r, F) + '</p>' +
+        (r.note ? '<p class="hk-sinote">' + esc(L('Your note: ', 'Tu nota: ') + r.note) + '</p>' : '') +
+        '<div class="hk-rate" role="group" aria-label="' + esc(L('Rate alert ' + (i + 1), 'Valorar la alerta ' + (i + 1))) + '">' + RATE.map(function (x) { var sh = RATE_S[x[0]]; return '<button type="button" class="hk-btn ' + x[0] + '" data-sesf="' + x[0] + '" data-id="' + r.id + '" data-sk="' + k + '" aria-pressed="' + (f === x[0]) + '" title="' + esc(L(x[1], x[2])) + '">' + L(sh[0], sh[1]) + '</button>'; }).join('') + '</div></div>'; }
+    function sesCard(S) {
+      var B = S.brief, F = sesFeed(S), A = sesAfter(S, F), n = S.al.length, rw = sesRow(S), k = esc(S.key), D = SD[S.key];
+      var foc = !!focusId && S.rows.some(function (r) { return r.id === focusId; });
+      var h = '<article class="hk-card hk-ses ' + (S.rev ? 'done' : 'todo') + (foc ? ' hk-focus' : '') + '" id="' + sesId(S.key) + '" data-sk="' + k + '">' +
+        '<div class="hk-top"><span class="hk-chip rv">' + L('Session review', 'Revisión de la sesión') + '</span>' +
+        (S.rev ? '<span class="hk-chip ok">' + ICK + L('Reviewed ', 'Revisada ') + esc(ldn(S.rev.at, HM)) + '</span>' : '<span class="hk-chip todo">' + L('To review', 'Por revisar') + '</span>') + '</div>' +
+        '<h3>' + esc((S.w0 != null ? winLbl({ w0: S.w0, w1: S.w1 }) : L('Session', 'Sesión')) + ' · ' + mkName(S.sym)) + '</h3><p class="hk-sesl">' + esc(sesSumText(S)) + '</p>';
+      if (rw) h += '<div class="hk-chart hk-sesc" data-ses="' + k + '"><canvas role="img" aria-label="' + L('The session: the brief\'s range, the window, each alert and what came after', 'La sesión: el rango del resumen, la ventana, cada alerta y lo que vino después') + '"></canvas></div>' + sesLegend(S, rw);
+      h += '<section class="hk-sec"><div class="hk-sech"><i>1</i><b>' + L('Before', 'Antes') + '</b><span>' + (B ? esc(L('The brief · ', 'El resumen · ') + ldn(B.created_at, HM)) : '') + '</span></div>';
+      h += B ? '<p class="hk-sbody">' + esc(aES(String(B.body || '').replace(/ ?Timeframes: [^.]+\./, ''))) + '</p>' + (B.data && B.data.tfs ? rvTiles('b', B) + sesYr(S) : '')
+        : '<p class="hk-hint">' + L('No brief for this window: the hawk wasn\'t running 15 minutes before it.', 'Sin resumen para esta ventana: el halcón no estaba en marcha 15 minutos antes.') + '</p>';
+      h += '</section><section class="hk-sec"><div class="hk-sech"><i>2</i><b>' + L('During', 'Durante') + '</b><span>' + esc(sPl(n, 'alert', 'alerta', 'alertas')) + '</span></div>';
+      h += n ? S.al.map(function (r, i) { return sesItem(S, r, i, F); }).join('') : '<p class="hk-hint">' + L('No alerts: nothing in this window met the hawk\'s rules.', 'Sin alertas: nada en esta ventana cumplió las reglas del halcón.') + '</p>';
+      h += '</section><section class="hk-sec"><div class="hk-sech"><i>3</i><b>' + L('After', 'Después') + '</b><span class="hk-saftw">' + esc(sesAftSpan(S, F, A)) + '</span></div><div class="hk-saft">' + sesAftHtml(S, F, A) + '</div></section>';
+      var note = D && D.note != null ? D.note : (S.rev && S.rev.note) || '';
+      h += '<div class="hk-sesf"><textarea data-sesnote="' + k + '" rows="2" aria-label="' + esc(L('Your note on this session', 'Tu nota de esta sesión')) + '" placeholder="' + esc(L('Your note on the session: what the hawk saw well, what it missed (optional)', 'Tu nota de la sesión: qué vio bien el halcón y qué se le escapó (opcional)')) + '">' + esc(note) + '</textarea>' +
+        '<div class="hk-sesb" data-sesb="' + k + '">' + sesFootHtml(S) + '</div></div>';
+      return h + '</article>'; }
+    function sesRe(key) { var S = SESS[key], el = sesEl(key); if (!S || !el) return; var t = doc.createElement('div'); t.innerHTML = sesCard(S); var nw = t.firstChild; el.parentNode.replaceChild(nw, el); hookCharts(nw); }
+    function sesPaint(key) { var S = SESS[key], el = sesEl(key); if (!S || !el) return; var F = SC[key], A = sesAfter(S, F);
+      var a = el.querySelector('.hk-saft'); if (a) a.innerHTML = sesAftHtml(S, F, A); var w = el.querySelector('.hk-saftw'); if (w) w.textContent = sesAftSpan(S, F, A);
+      S.al.forEach(function (r) { var p = el.querySelector('[data-then="' + r.id + '"]'); if (p) p.innerHTML = sesThen(S, r, F); });
+      var st = charts['ses:' + key], rw = sesRow(S); if (st && rw) { st.row = rw; st.c15 = null; st.hm = null; st.hmFor = null; st.marks = sesMarks(S); draw(st); } }
+    // his reads of the timeframes, written into the brief's mine.tf as the full-charts review writes them, each marked seen
+    function sesMine(S, D, note, iso) { var H = S.home, mine = Object.assign({}, H.mine || {});
+      if (S.brief && H === S.brief) { var T = S.brief.data.tfs || {}, M = Object.assign({}, mine.tf || {});
+        ['4h', '1h', '15m'].forEach(function (tf) { var hk = T[tf]; if (!hk || !hk.said) return; var cur = Object.assign({}, M[tf] || {}), dr = (D.tf && D.tf[tf]) || {}, sd = dr.said || cur.said || hk.said, lc = dr.loc || cur.loc || hk.loc;
+          if (sd !== hk.said) cur.said = sd; else delete cur.said; if (lc !== hk.loc) cur.loc = lc; else delete cur.loc;
+          if (dr.said || dr.loc || !cur.at) cur.at = iso; cur.hk = { said: hk.said, loc: hk.loc }; cur.seen = true; M[tf] = cur; });
+        mine.tf = M; }
+      mine.rev = Object.assign({ at: iso }, note ? { note: note } : {}); return mine; }
+    async function sesSave(key) { var S = SESS[key]; if (!S || S.busy || !S.home) return; var D = SD[key] || { f: {}, tf: {}, note: null }, iso = new Date().toISOString(), errs = [], H = S.home;
+      var ta = root.querySelector('[data-sesnote="' + key + '"]'), note = String(ta ? ta.value : D.note != null ? D.note : (S.rev && S.rev.note) || '').trim().slice(0, 3000);
+      S.busy = true; D.msg = L('Saving…', 'Guardando…'); SD[key] = D; sesFoot(key);
+      for (var i = 0; i < S.al.length; i++) { var r = S.al[i]; if (!(r.id in D.f)) continue; var f = D.f[r.id] || null; if (f === (r.feedback || null)) continue;
+        var q = null; try { q = await sb.from('hawk_signals').update({ feedback: f, feedback_at: iso }).eq('id', r.id); } catch (x) { q = { error: { message: String(x && x.message || x) } }; }
+        if (q && q.error) errs.push(q.error.message); else r.feedback = f; }
+      var q2 = await (rvQ = rvQ.then(function () { var mine = sesMine(S, D, note, iso);   // after any full-charts save in flight, on the brief as it is then
+        return Promise.resolve(sb.from('hawk_signals').update({ mine: mine }).eq('id', H.id)).then(function (q3) { if (!(q3 && q3.error)) H.mine = mine; return q3; }); })
+        .catch(function (x) { return { error: { message: String(x && x.message || x) } }; }));
+      S.busy = false; if (q2 && q2.error) errs.push(q2.error.message);
+      if (errs.length) { D.msg = L('Not saved: ', 'No guardado: ') + errs[0]; sesFoot(key); return; }
+      delete SD[key]; sesKeepD(); S.rev = H.mine.rev; sesRe(key); stats(); agSoon(300);
+      if (RV && RV.k === 'b' && S.brief && String(RV.id) === String(S.brief.id)) rvPaint(); }
+    // a timeframe saved in his full charts: the card's read follows (the saved read wins over a pick not saved yet), and the score
+    function sesOnTf(k, r, tf) { agSoon(); if (k !== 'b') return; var S = sesOfRow(r); if (!S || !S.brief) return; var D = SD[S.key];
+      if (D && D.tf && D.tf[tf]) { delete D.tf[tf]; sesKeepD(); }
+      var el = sesEl(S.key), v = sesTf(S, tf); if (!el) return;
+      ['said', 'loc'].forEach(function (k2) { var sl = el.querySelector('select[data-sesr="' + k2 + '"][data-tf="' + tf + '"]'); if (sl) { sl.value = v[k2]; sl.classList.toggle('you', v[k2] !== v.hk[k2]); } }); sesFoot(S.key); }
+    function sesScroll(el) { var sc = sScroller(); if (sc) { var rt = el.getBoundingClientRect().top - sc.getBoundingClientRect().top; sc.scrollTop += rt - 8; } else if (!opt.app) el.scrollIntoView({ block: 'start' }); }
+    function sesClick(e) {
+      var dz = e.target.closest('[data-dis]'); if (dz) { disOpen(dz.dataset.dis); return true; }
+      var f = e.target.closest('[data-sesf]'); if (f) { var S = SESS[f.dataset.sk], r = S && byId(f.dataset.id); if (!S || !r) return true; var D = sesDraft(S.key);
+        D.f[r.id] = sesF(S, r) === f.dataset.sesf ? '' : f.dataset.sesf; D.msg = ''; D.t = Date.now(); sesKeepD();
+        f.parentNode.querySelectorAll('[data-sesf]').forEach(function (x) { x.setAttribute('aria-pressed', x.dataset.sesf === (D.f[r.id] || null)); }); sesFoot(S.key); sesSum(S.key); return true; }
+      var sv = e.target.closest('[data-sessave]'); if (sv) { if (!sv.disabled) sesSave(sv.dataset.sessave); return true; }
+      var ch = e.target.closest('[data-sesch]'); if (ch) { var bx = root.querySelector('.hk-chart[data-id="' + ch.dataset.sesch + '"]'), on = !!(bx && bx.hidden);
+        if (bx) { bx.hidden = !on; ch.setAttribute('aria-expanded', String(on)); if (on && charts[ch.dataset.sesch]) draw(charts[ch.dataset.sesch]); } return true; }
+      return false; }
+    function sesNoteD(t) { var S = SESS[t.dataset.sesnote]; if (!S) return; var D = sesDraft(S.key); D.note = t.value; D.msg = ''; D.t = Date.now(); sesKeepD(); sesFoot(S.key); }
+    function sesChange(e) { var t = e.target;
+      if (t.dataset && t.dataset.sesr) { var S = SESS[t.dataset.sk]; if (!S || !S.brief) return true; var D = sesDraft(S.key), tf = t.dataset.tf, hk = (S.brief.data.tfs || {})[tf] || {};
+        (D.tf[tf] = D.tf[tf] || {})[t.dataset.sesr] = t.value; D.msg = ''; D.t = Date.now(); sesKeepD(); t.classList.toggle('you', t.value !== hk[t.dataset.sesr]); sesFoot(S.key); return true; }
+      if (t.hasAttribute && t.hasAttribute('data-hkquiet')) { cfgSave('quiet', !t.checked); return true; }
+      if (t.dataset && t.dataset.sesnote != null) { sesNoteD(t); return true; }
+      return false; }
+    root.addEventListener('input', function (e) { if (e.target.dataset && e.target.dataset.sesnote != null) sesNoteD(e.target); });
+    // "Alerts during the session" (hawk_config.quiet, off = quiet): the toggle waits for the column (migration hawk_config_quiet)
+    function quietHtml() { var has = !!cfg && Object.prototype.hasOwnProperty.call(cfg, 'quiet'), on = !(cfg && cfg.quiet);
+      return '<label class="hk-tog' + (has ? '' : ' off') + '"><input type="checkbox" data-hkquiet' + (on ? ' checked' : '') + (has ? '' : ' disabled') + '><span class="sw" aria-hidden="true"></span><span class="t">' + L('Alerts during the session', 'Alertas durante la sesión') + '</span></label>' +
+        '<p class="hk-hint">' + esc(!has ? L('Comes with the next hawk update. Until then each alert comes to your phone as it happens.', 'Llega con la próxima actualización del halcón. Hasta entonces cada alerta llega a tu teléfono al momento.')
+          : on ? L('Each alert comes to your phone as it happens, and the review once the window ends.', 'Cada alerta llega a tu teléfono al momento, y la revisión cuando termina la ventana.')
+          : L('Off: no phone alerts while the window runs. The brief still comes before it, and the review after it with every alert in it.', 'Apagadas: ninguna alerta al teléfono mientras dura la ventana. El resumen sigue llegando antes, y la revisión después con todas las alertas.')) + '</p>'; }
+
+    // ---------- the agreement score (step 3, 24 Nov 2026): his saved 4H / 1H / 15M reads (phase + location) against the hawk's, over the
+    // sessions he reviewed (hawk_signals.mine.tf) and the study trades he read (hawk_study.tf_mine); the latest disagreements open in his charts
+    function agSoon(ms) { clearTimeout(agT); agT = setTimeout(agLoad, ms == null ? 1200 : ms); }
+    async function agLoad() { if (!mount.admin) return; var A = null;
+      try { A = await Promise.all([
+        sb.from('hawk_signals').select('id, created_at, title, mine, tfs:data->tfs, sym:data->>sym, win:data->win').eq('kind', 'brief').not('mine', 'is', null).order('created_at', { ascending: false }).limit(500),
+        sb.from('hawk_study').select('run, n, day, tf_mine, tfs:data->tfs').not('tf_mine', 'is', null).limit(3000)]); } catch (x) { return; }
+      if (!A || ((!A[0] || A[0].error) && (!A[1] || A[1].error))) return;
+      AG = { b: ((A[0] && !A[0].error && A[0].data) || []).filter(function (x) { return x && x.mine && x.mine.tf; }), s: ((A[1] && !A[1].error && A[1].data) || []).filter(function (x) { return x && x.tf_mine; }) };
+      agPaint(); }
+    function agItems() { var out = [], one = function (base, T, tfs) { Object.keys(T || {}).forEach(function (tf) { var m = T[tf], hk = (tfs && tfs[tf]) || (m && m.hk); if (!m || !hk || !hk.said) return;
+        var sd = m.said || hk.said, lc = m.loc || hk.loc; out.push(Object.assign({ tf: tf, hk: hk, said: sd, loc: lc, okS: sd === hk.said, okL: lc === hk.loc, at: Date.parse(m.at || base.when || '') || 0 }, base)); }); };
+      ((AG && AG.b) || []).forEach(function (x) { one({ k: 'b', id: x.id, when: x.created_at, sym: x.sym, win: x.win }, x.mine.tf, x.tfs); });
+      ((AG && AG.s) || []).forEach(function (x) { one({ k: 's', run: x.run, n: x.n, day: x.day, when: x.day + 'T12:00:00Z' }, x.tf_mine, x.tfs); });
+      return out; }
+    function agRunName(run) { var m = /^strict_20(?::([\w.]+))?(@(?:1330|\d{4}-\d{4}))?$/.exec(run || ''); return m ? (m[1] ? ' · ' + mkName(m[1]) : '') + (m[2] ? ' · ' + sSesName(m[2]) : '') : ''; }
+    function agRow(x) { var w = x.k === 'b' ? ldn(x.when, { weekday: 'short', day: 'numeric', month: 'short' }) + ' · ' + (Array.isArray(x.win) ? wName(+x.win[0]) : L('Brief', 'Resumen')) + (x.sym && x.sym !== 'EURUSD' ? ' · ' + mkName(x.sym) : '')
+        : new Date(x.day + 'T12:00:00Z').toLocaleDateString(LOC(), { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }) + ' · ' + L('Study #', 'Estudio n.º ') + x.n + agRunName(x.run);
+      var me = [x.okS ? null : tfSaid(x.said), x.okL ? null : tfLoc(x.loc)].filter(Boolean).join(' · '), v = x.k === 'b' ? 'b|' + x.id + '|' + x.tf : 's|' + x.run + '|' + x.n + '|' + x.tf;
+      return '<button type="button" class="hk-disr" data-dis="' + esc(v) + '" title="' + esc(L('Open it in your charts on the ' + x.tf.toUpperCase(), 'Abrirlo en tus gráficos en el ' + x.tf.toUpperCase())) + '"><span class="tf">' + x.tf.toUpperCase() + '</span><span class="w">' + esc(w) + '</span>' +
+        '<span class="x">' + esc(L('Hawk: ', 'Halcón: ') + tfSaid(x.hk.said) + ' · ' + tfLoc(x.hk.loc)) + ' → <u>' + esc(L('You: ', 'Tú: ') + me) + '</u></span></button>'; }
+    function agPaint() { if (!agEl) return; if (period === 's' || !AG) { if (!agEl.hidden) agEl.hidden = true; return; }
+      var it = agItems(), ns = {}, nt = {}; it.forEach(function (x) { if (x.k === 'b') ns[x.id] = 1; else nt[x.run + '|' + x.n] = 1; });
+      var nS = Object.keys(ns).length, nT = Object.keys(nt).length, sub = [nS ? sPl(nS, 'session', 'sesión', 'sesiones') : null, nT ? sPl(nT, 'study trade', 'operación del estudio', 'operaciones del estudio') : null].filter(Boolean).join(' · ');
+      var h = '<div class="hk-agh"><b>' + L('Agrees with you', 'Coincide contigo') + '</b><i>' + esc(sub || L('nothing read yet', 'nada leído aún')) + '</i></div>';
+      if (!it.length) h += '<p class="hk-hint">' + L('Save a session review, or correct a timeframe in your charts, and the score starts.', 'Guarda una revisión de sesión, o corrige una temporalidad en tus gráficos, y empieza la puntuación.') + '</p>';
+      else { h += '<div class="hk-agg" role="list">' + ['4h', '1h', '15m'].map(function (tf) { var xs = it.filter(function (x) { return x.tf === tf; }), n = xs.length;
+          var b = xs.filter(function (x) { return x.okS && x.okL; }).length, s1 = xs.filter(function (x) { return x.okS; }).length, l1 = xs.filter(function (x) { return x.okL; }).length;
+          return '<div class="hk-agc" role="listitem" aria-label="' + esc(tf.toUpperCase() + ': ' + b + L(' of ', ' de ') + n) + '"><span class="k">' + tf.toUpperCase() + '</span><span class="v">' + (n ? b + '<small>/' + n + '</small>' : '–') + '</span><s><i style="width:' + (n ? Math.round(100 * b / n) : 0) + '%"></i></s>' +
+            (n ? '<span class="hk-ags">' + L('Phase', 'Fase') + ' <b>' + s1 + '/' + n + '</b></span><span class="hk-ags">' + L('Location', 'Ubicación') + ' <b>' + l1 + '/' + n + '</b></span>' : '<span class="hk-ags">' + L('No reads yet', 'Sin lecturas') + '</span>') + '</div>'; }).join('') + '</div>';
+        var dis = it.filter(function (x) { return !(x.okS && x.okL); }).sort(function (a, b) { return b.at - a.at; }).slice(0, 5);
+        h += dis.length ? '<div class="hk-dis"><div class="hk-dish">' + L('Latest disagreements', 'Últimos desacuerdos') + '</div>' + dis.map(agRow).join('') + '</div>'
+          : '<p class="hk-hint">' + L('No disagreements: it reads every timeframe you went through as you do.', 'Sin desacuerdos: lee cada temporalidad que revisaste como tú.') + '</p>'; }
+      if (agEl.innerHTML !== h) agEl.innerHTML = h; agEl.hidden = false; }
+    // a disagreement opens where he made it: a brief's session card (the period widened to reach it) on that timeframe in his charts; a
+    // study trade in Study (its market and hours), its row open, on that timeframe
+    async function disOpen(v) { var p = String(v).split('|');
+      if (p[0] === 'b') { var id = p[1], tf = p[2], r = byId(id);
+        if (!r) { var x = AG && AG.b.filter(function (y) { return y.id === id; })[0]; if (!x) return;
+          var age = (Date.now() - Date.parse(x.created_at)) / 864e5, tdy = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' }) === sesDay(x);
+          if (period === 's') sEnd(); period = tdy ? 1 : age < 6.5 ? 7 : age < 29.5 ? 30 : age < 89.5 ? 90 : 3650; if (period !== 1) lastP = period; tabs(); await load(); r = byId(id); }
+        if (!r) return; var S = sesOfRow(r), el = (S && sesEl(S.key)) || byEl('#hk-a-' + id); if (el) sesScroll(el);
+        if (rvOn() && r.data && r.data.tfs && r.data.tfs[tf]) rvOpen('b', r, tf); return; }
+      if (p[0] !== 's') return; var run = p[1], n = +p[2], tf2 = p[3], m = /^strict_20(?::([\w.]+))?(@(?:1330|\d{4}-\d{4}))?$/.exec(run || ''); if (!m) return;
+      var mk = m[1] || 'EURUSD', ses = m[2] || '';
+      if (sMkt !== mk || sSes !== ses) { sEnd(); sMkt = mk; sSes = ses; try { localStorage.setItem('st_hawk_mkt', mk); localStorage.setItem('st_hawk_ses', ses); } catch (x) {} study = null; ssel = null; wiD = null; wiErr = ''; wiP = wiLoadP(); }
+      if (period !== 's') { period = 's'; tabs(); } sview = 'trades'; sfil = 'all';
+      await studyLoad(); if (sRun() !== run) return; var r2 = sFind(n); if (!r2) return;
+      if (!sIn(r2.day)) { sPer.k = 'all'; sPerSave(); }
+      ssel = n; sRefresh(); sShow(n); if (rvOn() && r2.data && r2.data.tfs && r2.data.tfs[tf2]) rvOpen('s', r2, tf2); }
+
     // ---------- the study (Nestor, 6 Nov 2026: "place it on my chart replay in eurusd with notes, P/D zones, position tools etc for me to
     // check the legitimacy of what you thought were good trades"): the 159 trades of the 1-year rule test (stop 2-4 pips, target 20) from
     // hawk_study (admin RLS). A trade opens on Replay (opt.study, the app) with its drawings. He ticks each one valid / not a setup, writes
@@ -1158,6 +1511,7 @@
       var ok = !(q && q.error), live = RV && RV.k === k && String(RV.id) === String(rvId(k, r)) && RV.tf === tf;
       if (!ok) { if (live) rvMsg(L('Not saved: ', 'No guardado: ') + q.error.message); return false; }
       if (k === 'b') { r.mine = mine; var mt = byEl('#hk-m-' + r.id); if (mt) mt.textContent = mineText(r); stats(); } else { r.tf_mine = M1; sMarkRow(r); }
+      sesOnTf(k, r, tf);
       rvTilesPaint(k, r); if (live) rvMsg(L('Your ' + tf.toUpperCase() + ' read saved · ', 'Tu lectura del ' + tf.toUpperCase() + ' guardada · ') + LDN.format(new Date()));
       return true; }
     async function rvSet(key, v) { if (!RV || !RV.on) return; var R0 = RV, r = rvRow(R0.k, R0.id); if (!r) return; var p = {}; p[key] = key === 'note' ? String(v || '').trim().slice(0, 2000) : v;
@@ -1338,6 +1692,7 @@
       var rt = e.target.closest('[data-rvtf]'); if (rt) { var rk = rt.dataset.rvk, rr = rvRow(rk, rt.dataset.rvid); if (rr) rvOpen(rk, rr, rt.dataset.rvtf); return; }   // a timeframe tile: its review in the charts
       if (e.target.closest('[data-rvdone]')) { rvDone(); return; }
       if (e.target.closest('[data-rvback]')) { rvBack(); return; }
+      if (sesClick(e)) return;   // the session review and the agreement score (24 Nov 2026)
       var wx = e.target.closest('[data-hkwx]'); if (wx) { var W1 = cfgWins().filter(function (x, i) { return i !== +wx.dataset.hkwx; }); if (W1.length) cfgSave('wins', W1); return; }
       var wa = e.target.closest('[data-hkwadd]'); if (wa) { var W2 = cfgWins().slice(), nw = wa.dataset.hkwadd === 'more' ? winFree(W2) : wa.dataset.hkwadd.split('-').map(Number); if (nw && W2.length < 3) { W2.push(nw); cfgSave('wins', winsClean(W2)); } return; }
       var t = e.target.closest('.hk-tabs button');
@@ -1377,7 +1732,7 @@
       if (act === 'edit') { editOpen(r, !(st && st.edit)); return; }
       if (act === 'cancel') { editOpen(r, false); return; }
       if (act === 'ph') { st.phase = b.dataset.ph; b.parentNode.querySelectorAll('.hk-ph').forEach(function (x) { x.setAttribute('aria-pressed', x === b); }); return; }
-      if (act === 'save' || act === 'clear') { var keepTf = r.mine && r.mine.tf ? { tf: r.mine.tf } : null;   // his timeframe reviews stay (24 Nov 2026)
+      if (act === 'save' || act === 'clear') { var keepTf = r.mine && (r.mine.tf || r.mine.rev) ? Object.assign({}, r.mine.tf ? { tf: r.mine.tf } : {}, r.mine.rev ? { rev: r.mine.rev } : {}) : null;   // his timeframe reviews stay (24 Nov 2026)
         var mine = act === 'clear' ? keepTf : Object.assign({}, st.edit, r.kind === 'brief' ? { phase: st.phase } : {}, keepTf || {}, { at: new Date().toISOString() });
         if (await save(r.id, { mine: mine }, act === 'clear' ? L('Your read removed', 'Tu lectura se ha quitado') : L('Your read saved — the hawk will learn from it', 'Tu lectura guardada — el halcón aprenderá de ella'))) {
           r.mine = mine; byEl('#hk-m-' + r.id).textContent = mineText(r); editOpen(r, false); stats(); }
@@ -1385,6 +1740,7 @@
     });
     root.addEventListener('change', function (e) {
       if (e.target.dataset && e.target.dataset.rv) { rvSet(e.target.dataset.rv, e.target.value); return; }   // his read of the timeframe open
+      if (sesChange(e)) return;
       if (e.target.hasAttribute && e.target.hasAttribute('data-hkacc')) { cfgSave('login', e.target.value); return; }
       if (e.target.hasAttribute && e.target.hasAttribute('data-hkmk')) { cfgSave('sym', e.target.value); return; }
       if (e.target.hasAttribute && e.target.hasAttribute('data-hkw')) { var W3 = cfgWins().map(function (x) { return x.slice(); }), wi = +e.target.dataset.hkw, wv = +e.target.value;
@@ -1414,7 +1770,7 @@
       var hello = function () { try { sFlOp.postMessage({ kind: 'st-hawk-flight-ready' }, '*'); } catch (x) { clearInterval(hi); } };
       hi = setInterval(function () { if (++tries > 60 || sFlPend) clearInterval(hi); else hello(); }, 500); hello(); })();
     load(); poll();
-    var api = { reload: function () { load(); }, redraw: function () { todayPaint(); redraw(); }, today: todayPaint, relang: relang, rv: function () { return RV; } };
+    var api = { reload: function () { load(); }, redraw: function () { todayPaint(); redraw(); }, today: todayPaint, relang: relang, rv: function () { return RV; }, sessions: function () { return SESS; }, agree: function () { return AG; } };
     MOUNTS.push(api);
     return api;
   }

@@ -37,9 +37,9 @@ Deno.serve(async (req) => {
   let b: Record<string, unknown> = {};
   try { b = await req.json(); } catch (_) { return json({ error: "bad json" }, 400); }
   if (b.ping) return json({ ok: true, admin: !!(await adminUser()) });
-  if (b.config) { const { data: c } = await admin.from("hawk_config").select("login,sym,wins").eq("id", 1).maybeSingle();
+  if (b.config) { const { data: c } = await admin.from("hawk_config").select("*").eq("id", 1).maybeSingle();   // * : quiet only once its column is in
     let sq = null; try { sq = await nextReq(); } catch (_) { /* the study queue never blocks the hawk */ }
-    return json({ ok: true, login: c?.login || "1515070952", sym: c?.sym || "EURUSD", wins: c?.wins || [[480, 600]], sq }); }
+    return json({ ok: true, login: c?.login || "1515070952", sym: c?.sym || "EURUSD", wins: c?.wins || [[480, 600]], quiet: c?.quiet === true, sq }); }
   if (b.study_claim) { const { data } = await admin.from("hawk_study_req").update({ status: "running", started_at: new Date().toISOString(), msg: null })
       .eq("id", Number(b.study_claim)).in("status", ["queued", "running"]).select(REQ).maybeSingle();
     return json({ ok: !!data, req: data || null }); }
@@ -73,7 +73,8 @@ Deno.serve(async (req) => {
   if (error) return json({ ok: true, dup: true });   // already sent today
   const uid = await adminUser();
   let push = "no-admin";
-  if (uid && !b.quiet) push = await sendPush(admin, uid, "nudge", title, body, "st-hawk-" + k, "hawk.html?id=" + row.id, "hawk");
+  if (uid && b.quiet) push = "quiet";   // 24 Nov 2026: "Alerts during the session" off - kept for the review, not pushed
+  else if (uid) push = await sendPush(admin, uid, "nudge", title, body, "st-hawk-" + k, "hawk.html?id=" + row.id, "hawk");
   await admin.from("hawk_signals").update({ push }).eq("id", row.id);
   return json({ ok: true, id: row.id, push });
 });

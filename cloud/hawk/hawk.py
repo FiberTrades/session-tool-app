@@ -27,6 +27,7 @@ import engine as E
 
 LOGIN, SYM = '1515070952', 'EURUSD'   # what it reads now: set from hawk_config (CANON = the market, SYM = the broker's own name for it)
 CANON = 'EURUSD'
+QUIET = False   # 24 Nov 2026: "Alerts during the session" off in the hawk tab (hawk_config.quiet) - in-session alerts are kept, not pushed
 # the markets the study ran: the scaled pip (his EUR/USD rules sized by how far each moves 08:00-10:00 London), price decimals, name,
 # and the unit distances are said in (bt/multi.py, 6 Nov 2026)
 MK = {'EURUSD': (0.0001, 5, 'EUR/USD', 'pips', 0.0001), 'GBPUSD': (0.00013360655737705096, 5, 'GBP/USD', 'pips', 0.0001),
@@ -95,17 +96,18 @@ class Hawk:
         if key in self.seen: return
         self.seen.add(key)
         if not self.primed: return          # first look after a (re)start: what already happened stays quiet
-        self.cw['count'] += kind != 'done'
+        self.cw['count'] += kind not in ('brief', 'done')   # alerts only: the brief is not one
         data = dict(data or {})
         for k in ('a', 'b', 'i'):                     # candle indexes -> times, for the chart
             if isinstance(data.get(k), int) and 0 <= data[k] < E.N: data['t' + k] = E.T[data[k]]
         bx = data.pop('box', None)                    # the small range at the 50%: its high, low and first / last candle's time
         if bx and 0 <= bx[2] < E.N and 0 <= bx[3] < E.N: data.update(bxh=bx[0], bxl=bx[1], tbx0=E.T[bx[2]], tbx1=E.T[bx[3]] + 60)
-        if kind != 'done':
-            try: data['chart'] = self.chart()
-            except Exception as e: log('chart failed:', repr(e))
+        try: data['chart'] = self.chart()            # 24 Nov: the done row too - the session review draws the whole window
+        except Exception as e: log('chart failed:', repr(e))
         data.update(sym=CANON, login=LOGIN, dp=DP, win=list(E.WIN))
-        self.send(dict(day=self.day, key=(key if CANON == 'EURUSD' else CANON + ':' + key), kind=kind, side=side, title=title, body=body, data=data, symbol=CANON))
+        msg = dict(day=self.day, key=(key if CANON == 'EURUSD' else CANON + ':' + key), kind=kind, side=side, title=title, body=body, data=data, symbol=CANON)
+        if QUIET and kind not in ('brief', 'done'): msg['quiet'] = True   # stored for the review, no push (the brief and the review still push)
+        self.send(msg)
 
     def news_near(self, t):
         """The red release whose no-trade window holds UTC second t, for this market's currencies, else None."""
@@ -275,8 +277,10 @@ class Hawk:
 
         if mins >= E.WIN[1] + 5 and not ws['done']:
             ws['done'] = True
-            if ws['count']: self.out('done', 'done', 'Session over · %d alert%s' % (ws['count'], '' if ws['count'] == 1 else 's'),
-                                     'Tap to rate them: good call, not my trade, too early or too late.')
+            if ws['count'] or ws['brief']:   # 24 Nov: one review per window - before, during and after in one card
+                n = ws['count']
+                self.out('done', 'done', '%s review ready · %s alert%s' % (win_name(E.WIN), n or 'no', '' if n == 1 else 's'),
+                         'Before, during and after in one card: rate it all in one go.')
         return True
 
 def WIN_OK(mins): return E.WIN[0] - 30 <= mins < E.WIN[1]
@@ -326,6 +330,7 @@ def get_cfg():
     try:
         with urllib.request.urlopen(req, timeout=15) as r: d = json.loads(r.read())
         SQ['next'] = d.get('sq') if isinstance(d.get('sq'), dict) else None   # a study he asked for in the Hawk tab, if any
+        global QUIET; QUIET = d.get('quiet') is True
         lg, sy = str(d.get('login') or ''), canon(d.get('sym'))
         return (lg, sy, clean_wins(d.get('wins'))) if lg.isdigit() and sy in MK else None
     except Exception as e: log('config failed:', e); return None

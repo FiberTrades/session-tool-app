@@ -108,3 +108,7 @@ revoke all on public.hawk_config from authenticated;
 alter table public.hawk_config add column if not exists wins jsonb not null default '[[480,600]]'::jsonb
   check (jsonb_typeof(wins) = 'array' and jsonb_array_length(wins) between 1 and 3);
 grant select, update (login, sym, wins, updated_at) on public.hawk_config to authenticated;
+-- "Alerts during the session" (24 Nov 2026): off = the in-session alerts are stored for the session review but not pushed; the brief
+-- and the review still push. hawk.js shows the toggle once this column is in. Migration hawk_config_quiet (NOT applied yet).
+alter table public.hawk_config add column if not exists quiet boolean not null default false;
+grant update (quiet) on public.hawk_config to authenticated;
