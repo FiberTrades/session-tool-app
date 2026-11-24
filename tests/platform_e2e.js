@@ -130,19 +130,33 @@
       var ics = $('.ph-icons'), land = innerWidth > innerHeight, barTop = function () { return bar.getBoundingClientRect().top; };
       var inScr = function (r) { return r.left >= -1 && r.top >= -1 && r.right <= innerWidth + 1 && r.bottom <= innerHeight + 1; };
       var ord = Array.prototype.map.call(ics.children, function (x) { return x.id ? x.id.replace('stpr-', '') : (x.getAttribute('data-phpn') || (x.hasAttribute('data-phtrb') ? 'ticket' : (x.hasAttribute('data-phchat') ? 'chat' : (x.hasAttribute('data-phtheme') ? 'theme' : (x.hasAttribute('data-phplan') ? 'plan' : x.className))))); }).join(' ');
-      check('the toolbar\'s order: Live, the symbol, the timeframe, the ticket, draw, undo, redo, Show on chart, alerts, News, Chat, Chart settings, Snapshot, the theme, Check my bias, Positions & History, Today, Object tree, Watchlist',
-        ord === 'ticket drawbtn undo redo layersbtn alertsbtn newsbtn chat lookbtn snapbtn theme plan tb td ot wl' && bar.children[0] === $('.ph-live') && bar.children[2] === $('.ph-tf') && bar.children[3] === ics, ord);
+      check('the toolbar\'s order: Live, the symbol, the timeframe, the ticket, Positions & History (beside it since 24 Nov 2026), draw, undo, redo, Show on chart, alerts, News, Chat, Chart settings, Snapshot, the theme, Check my bias, Today, Object tree, Watchlist',
+        ord === 'ticket tb drawbtn undo redo layersbtn alertsbtn newsbtn chat lookbtn snapbtn theme plan td ot wl' && bar.children[0] === $('.ph-live') && bar.children[2] === $('.ph-tf') && bar.children[3] === ics, ord);
       var shown = Array.prototype.filter.call(ics.children, function (x) { return getComputedStyle(x).display !== 'none'; }), szs = shown.map(function (x) { var r = x.getBoundingClientRect(), g = x.querySelector('svg'); return Math.round(r.width) + 'x' + Math.round(r.height) + '/' + (g ? Math.round(g.getBoundingClientRect().width) : 0); });
       check('...every one full size (38 px, its icon 21 px): none squeezed', shown.length === 16 && szs.every(function (z) { return z === '38x40/21'; }), szs.join(' '));
       var bcs = getComputedStyle(bar);
       check('...it swipes sideways: a finger pans it only sideways, the flick its own (not the page\'s or the chart\'s)', bcs.overflowX === 'auto' && bcs.touchAction === 'pan-x' && bcs.overscrollBehaviorX === 'contain', [bcs.overflowX, bcs.touchAction, bcs.overscrollBehaviorX]);
-      var fa = function (pe) { return getComputedStyle(bar, pe).opacity; };
-      if (bar.scrollWidth > bar.clientWidth + 2) {
-        bar.scrollLeft = 0; await until(function () { return fa('::after') === '1' && fa('::before') === '0'; });
-        check('...more than fits: a soft fade at the right edge, none at the left', bar.classList.contains('ph-fr') && !bar.classList.contains('ph-fl') && fa('::after') === '1' && fa('::before') === '0', [bar.className, fa('::before'), fa('::after')]);
-        bar.scrollLeft = bar.scrollWidth; await until(function () { return fa('::before') === '1' && fa('::after') === '0'; }); var wq = $('.ph-icons [data-phpn="wl"]').getBoundingClientRect();
-        check('...swiped to the end: the Watchlist (last) on screen, the fade at the left now and none at the right', inScr(wq) && wq.right <= bar.getBoundingClientRect().right + 1 && bar.classList.contains('ph-fl') && !bar.classList.contains('ph-fr') && fa('::before') === '1' && fa('::after') === '0', [Math.round(wq.right), bar.className]);
-      } else check('...all of it fits this screen: no fade', !bar.classList.contains('ph-fr') && !bar.classList.contains('ph-fl'), [bar.scrollWidth, bar.clientWidth, bar.className]);
+      /* nothing drawn over the icons at either edge as it scrolls (Nestor, 24 Nov 2026: "there is some strange effect going over the icons as I scroll") */
+      var fa = function (pe) { var c = getComputedStyle(bar, pe).content; return !c || c === 'none' || c === 'normal'; };
+      bar.scrollLeft = 120; await W(250);
+      check('...mid-swipe: no fade or anything else over the icons at either edge', fa('::before') && fa('::after'), [getComputedStyle(bar, '::before').content, getComputedStyle(bar, '::after').content]);
+      if (bar.scrollWidth > bar.clientWidth + 2) { bar.scrollLeft = bar.scrollWidth; await W(250); var wq = $('.ph-icons [data-phpn="wl"]').getBoundingClientRect();
+        check('...swiped to the end: the Watchlist (last) on screen', inScr(wq) && wq.right <= bar.getBoundingClientRect().right + 1, [Math.round(wq.right)]); }
+      bar.scrollLeft = 0; await W(150);
+      // a phone's scales a point smaller (Nestor, 24 Nov 2026: "I feel like the price scale is too wide, make narrower so I can see more chart")
+      await until(function () { return P._panes()[0].chart.priceScale('right').width() > 0; });
+      var pfs = P._panes()[0].chart.options().layout.fontSize, psw = P._panes()[0].chart.priceScale('right').width();
+      check('a phone\'s scales a point smaller than a computer\'s (10 px): the price scale narrower, more chart', pfs === 10 && psw > 30 && psw <= 58, [pfs, psw]);
+      // News this week on a phone, scrolled sideways: each day's band as wide as its rows, its name in view (24 Nov 2026: "Why do these not extend all the way to the right?")
+      var nwL0 = window.__stReplay._newsWeek.load, ats = function (d, h) { return d + 'T' + h + ':00Z'; };
+      window.__stReplay._newsWeek.load = async function () { return { from: '2026-10-12', to: '2026-10-16', rows: [{ at: ats('2026-10-12', '13:30'), timed: true, currency: 'USD', title: 'Core Retail Sales m/m', impact: 'High', forecast: '0.4%', previous: '0.9%', actual: '' }, { at: ats('2026-10-13', '07:00'), timed: true, currency: 'GBP', title: 'CPI y/y', impact: 'High', forecast: '3.6%', previous: '3.5%', actual: '' }] }; };
+      $('.ph-icons #stpr-newsbtn').click(); await W(300); var nwo = $('#stpr-menu [data-nwopen]'); if (nwo) nwo.click();
+      await until(function () { return document.querySelectorAll('.stpr-news .strp-nday').length >= 2; });
+      var nbd = $('.stpr-news .strp-newsbody'), dys = document.querySelectorAll('.stpr-news .strp-nday'), rw0 = $('.stpr-news .strp-nrow:not(.strp-nhdr)');
+      if (nbd) { nbd.scrollLeft = 110; await W(200); }
+      var br0 = nbd && nbd.getBoundingClientRect(), bandOk = !!(nbd && rw0) && dys.length >= 2 && nbd.scrollLeft > 50 && [].every.call(dys, function (d) { var dr = d.getBoundingClientRect(), lr = (d.firstElementChild || d).getBoundingClientRect(); return dr.right >= rw0.getBoundingClientRect().right - 1 && lr.left >= br0.left - 1; });
+      check('News this week scrolled sideways: each day\'s band as wide as its rows, its name still in view', bandOk, nbd && rw0 && dys.length ? [nbd.scrollLeft, nbd.scrollWidth, nbd.clientWidth, Math.round(dys[0].getBoundingClientRect().right), Math.round(rw0.getBoundingClientRect().right), Math.round((dys[0].firstElementChild || dys[0]).getBoundingClientRect().left - br0.left)] : 'no panel');
+      var nwx = $('.stpr-news [data-nwx]'); if (nwx) nwx.click(); window.__stReplay._newsWeek.load = nwL0; await W(200);
       var pnl = $('.ph-pnl'), PN = [['wl', 'Watchlist', function () { return document.querySelectorAll('.ph-pnc .pl-wlr').length >= 1 && /EURUSD/.test(($('.ph-pnc .pl-wld') || {}).textContent || '') && !!$('.ph-pnl [data-plwladd]'); }],
         ['td', 'Today', function () { return !!$('.ph-pnc .pl-tdb') && $('.ph-pnc .pl-tdb').textContent.length > 5; }],
         ['ot', 'Object tree', function () { return !!$('.ph-pnc .pl-otb') && $('.ph-pnc .pl-otb').textContent.length > 3; }],

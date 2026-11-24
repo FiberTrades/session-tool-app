@@ -118,6 +118,17 @@
     ok('...and the chart does not', Math.abs(view().from - v6.from) < 0.01, [view(), v6]);
     await W(200); var v7a = view(), zA7 = C.miniS.zA; await drag(r.width * 0.6, r.height * 0.4, r.width * 0.6 - 70, r.height * 0.4); await W(200);
     ok('a drag off its edge is still the chart\'s', C.miniS.zA === zA7 && Math.abs(view().from - v7a.from) > 1, [view(), v7a]);
+    // ...by a finger (Nestor, 24 Nov 2026: "I can't drag the P/D zone on phone"): tapped first - it lights up - then dragged; a swipe across it is the chart's
+    await W(150); mz = pane()._mz; zy = (mz.y0 + mz.y1) / 2; var DWz = P._dr(), zT0 = C.miniS.zA;
+    tch('touchstart', mz.x0 + 10, zy); for (var s2 = 1; s2 <= 5; s2++) { tch('touchmove', mz.x0 + 10 - s2 * 12, zy); await W(16); } tch('touchend', mz.x0 - 50, zy); await W(150);
+    ok('a finger: a swipe across the zone\'s edge (not lit) leaves the zone where it is', C.miniS.zA === zT0 && DWz.mzSel !== pane(), [zT0, C.miniS.zA]);
+    await W(150); mz = pane()._mz; zy = (mz.y0 + mz.y1) / 2;
+    tch('touchstart', mz.x0 + 10, zy); await W(40); tch('touchend', mz.x0 + 10, zy); await W(120);
+    ok('...a tap on it (10 px off, a fingertip): its edge lit, nothing moved', DWz.mzSel === pane() && C.miniS.zA === zT0, [DWz.mzSel === pane(), C.miniS.zA]);
+    var v8 = view(); tch('touchstart', mz.x0 + 6, zy); for (s2 = 1; s2 <= 6; s2++) { tch('touchmove', mz.x0 + 6 - s2 * 12, zy); await W(16); } tch('touchend', mz.x0 - 66, zy); await until(function () { return C.miniS.zA !== zT0; }, 1500); await W(100);
+    ok('...then a finger drag moves the zone\'s start, not the chart', C.miniS.zA < zT0 && Math.abs(view().from - v8.from) < 0.01, [zT0, C.miniS.zA, view(), v8]);
+    tch('touchstart', r.width * 0.8, r.height * 0.3); await W(40); tch('touchend', r.width * 0.8, r.height * 0.3); await W(120);
+    ok('...a tap elsewhere puts it out', DWz.mzSel !== pane(), DWz.mzSel === pane());
     C.mini = false; C.miniS = {}; P._miniFresh(); P.close(); await W(150);
 
     // ---- Trade Replay ----
