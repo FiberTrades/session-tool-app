@@ -10,7 +10,7 @@
   var errs = []; window.addEventListener('error', function (e) { errs.push(String(e.message) + ' @' + (e.filename || '') + ':' + e.lineno); });
   var hosts = [];
   try {
-    try { localStorage.removeItem('st_hawk_sesd'); localStorage.setItem('st_ui_lang', 'en'); } catch (e) {}
+    try { localStorage.removeItem('st_hawk_sesd'); localStorage.removeItem('st_hawk_chh'); localStorage.setItem('st_ui_lang', 'en'); } catch (e) {}
     if (!(window.STHawk && window.STHawk.mount)) { var sc = document.createElement('script'); sc.src = 'hawk.js?t=' + Date.now(); document.head.appendChild(sc); for (var k = 0; k < 100 && !(window.STHawk && window.STHawk.mount); k++) await W(100); }
     var r5 = function (v) { return Math.round(v * 1e5) / 1e5; };
     var ldnDay = function (t) { return new Date(t * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' }); };
@@ -122,6 +122,35 @@
     ok('...which of the brief\'s levels were taken, highest first', lv.join(' | ') === 'Range high 1.09400 27.8 pips short | Sell zone 1.09250 12.8 pips short | 50% 1.09100 Taken 08:16 | Range low 1.08800 Taken 09:29', lv);
     ok('...measured from the brief to the 13:20 time exit, on 1-minute candles from the store', tx(card().querySelector('.hk-saftw')) === '07:45 → 13:20' && /1-minute candles/.test(tx(card().querySelector('.hk-saft .hk-hint'))) && BARS.some(function (b) { return b[1] === 1; }), [tx(card().querySelector('.hk-saftw')), BARS.slice(0, 4)]);
     ok('the session chart: drawn with the three alerts numbered on it', !!Q('.hk-ses[data-sk="' + sk + '"] .hk-sesc canvas') && Q('.hk-ses[data-sk="' + sk + '"] .hk-sesc canvas').width > 100, null);
+    // his own view of the session chart (24 Nov 2026, Nestor: "could i please be able to control de time and price scales on this chart?")
+    var zb = Q('.hk-ses[data-sk="' + sk + '"] .hk-sesc'), zc = zb.querySelector('canvas'), zr0 = zb.querySelector('.hk-zr'), zimg0 = zc.toDataURL(), zR = zb.getBoundingClientRect(), ZW = zb.clientWidth, ZH = zb.clientHeight;
+    var PE = function (ty, x, y) { zc.dispatchEvent(new PointerEvent(ty, { clientX: zR.left + x, clientY: zR.top + y, pointerId: 7, button: 0, buttons: ty === 'pointerup' ? 0 : 1, pointerType: 'mouse', bubbles: true, cancelable: true })); };
+    var drag = function (x0, y0, x1, y1) { PE('pointerdown', x0, y0); PE('pointermove', (x0 + x1) / 2, (y0 + y1) / 2); PE('pointermove', x1, y1); PE('pointerup', x1, y1); };
+    var dbl = function (x, y) { zc.dispatchEvent(new MouseEvent('dblclick', { clientX: zR.left + x, clientY: zR.top + y, bubbles: true })); };
+    ok('the session chart: taller than an alert chart to start (300 px in a side panel, 380 in a page), a Reset view chip hidden, how to zoom said in its legend', Math.abs(zb.offsetHeight - (zb.closest('.hk-nar') ? 300 : 380)) <= 2 && zr0 && zr0.hidden && /drag the price or time scale to stretch .* double-click to reset/.test(tx(zb.parentNode.querySelector('.hk-lgh'))), [zb.offsetHeight, zr0 && zr0.hidden, tx(zb.parentNode.querySelector('.hk-lgh'))]);
+    drag(ZW / 2, ZH - 8, ZW / 2 + 140, ZH - 8); var zimg1 = zc.toDataURL();
+    ok('dragging the time scale to the right zooms in: redrawn, Reset view shown', zimg1 !== zimg0 && !zr0.hidden, null);
+    drag(ZW - 30, ZH / 2, ZW - 30, ZH / 2 + 90); var zimg2 = zc.toDataURL();
+    ok('dragging the price scale down squeezes the price: redrawn again', zimg2 !== zimg1, null);
+    drag(ZW / 3, ZH / 2, ZW / 3 + 60, ZH / 2); var zimg3 = zc.toDataURL();
+    ok('dragging the chart moves it', zimg3 !== zimg2, null);
+    dbl(ZW - 30, ZH / 2);
+    ok('double-click on the price scale: only the price back to the hawk\'s, the time zoom kept', zc.toDataURL() !== zimg3 && zc.toDataURL() !== zimg0 && !zr0.hidden, null);
+    dbl(ZW / 2, ZH / 2);
+    ok('double-click on the chart: the hawk\'s own view, exactly as it was, Reset view hidden', zc.toDataURL() === zimg0 && zr0.hidden, null);
+    zb.dispatchEvent(new PointerEvent('pointerleave', { pointerId: 7 }));
+    var wv = new WheelEvent('wheel', { clientX: zR.left + ZW / 2, clientY: zR.top + ZH / 2, deltaY: -300, bubbles: true, cancelable: true }); zc.dispatchEvent(wv);
+    ok('a wheel over a chart he hasn\'t clicked scrolls the page, not the chart', !wv.defaultPrevented && zc.toDataURL() === zimg0, null);
+    PE('pointerdown', ZW / 2, ZH / 2); PE('pointerup', ZW / 2, ZH / 2);
+    var wv2 = new WheelEvent('wheel', { clientX: zR.left + ZW / 2, clientY: zR.top + ZH / 2, deltaY: -300, bubbles: true, cancelable: true }); zc.dispatchEvent(wv2);
+    ok('...after a click on it, the wheel zooms it', wv2.defaultPrevented && zc.toDataURL() !== zimg0 && !zr0.hidden, null);
+    zr0.click();
+    ok('Reset view: the hawk\'s own view again', zc.toDataURL() === zimg0 && zr0.hidden, null);
+    var rz = zb.nextElementSibling, zh0 = zb.offsetHeight, rR = rz.getBoundingClientRect(), RP = function (ty, dy) { rz.dispatchEvent(new PointerEvent(ty, { clientX: rR.left + 20, clientY: rR.top + 5 + dy, pointerId: 8, button: 0, pointerType: 'mouse', bubbles: true, cancelable: true })); };
+    RP('pointerdown', 0); RP('pointermove', 50); RP('pointermove', 100); RP('pointerup', 100);
+    var chh = {}; try { chh = JSON.parse(localStorage.getItem('st_hawk_chh') || '{}'); } catch (e) {}
+    ok('the bar under it: dragged down 100 px, the chart 100 px taller, redrawn to fit, kept for the next session charts', rz.classList.contains('hk-rsz') && Math.abs(zb.offsetHeight - zh0 - 100) <= 1 && (chh.s || chh.ns) === parseInt(zb.style.height, 10) && Math.abs(zc.height / (window.devicePixelRatio || 1) - zb.clientHeight) <= 1, [zh0, zb.offsetHeight, chh, zc.height]);
+    try { localStorage.removeItem('st_hawk_chh'); } catch (e) {} zb.style.height = '';
     // the agreement score before he saves: his reviewed window (4H changed, 1H and 15M kept) and two study trades (1H kept, 15M changed)
     var ag = function () { return [].slice.call(root.querySelectorAll('.hk-agree .hk-agc')).map(function (e) { return e.querySelector('.k').textContent.trim() + ' ' + e.querySelector('.v').textContent.replace(/ +/g, '').trim(); }).join(' · '); };
     ok('Agrees with you: 4H 0/1 · 1H 2/2 · 15M 1/2, over 1 session and 2 study trades', ag() === '4H 0/1 · 1H 2/2 · 15M 1/2' && /1 session · 2 study trades/.test(tx(Q('.hk-agh'))), [ag(), tx(Q('.hk-agh'))]);

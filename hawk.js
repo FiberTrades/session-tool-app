@@ -60,6 +60,10 @@
     '@media (max-width:560px){.hk-chart,.hk-card.hk-brief .hk-chart{height:250px}}',
     '.hk-chart canvas{position:absolute;inset:0;width:100%;height:100%;display:block}',
     '.hk-chart.hk-editing{touch-action:none;cursor:ns-resize;box-shadow:0 0 0 1px var(--hk-you)}',
+    /* his own view of a hawk chart (24 Nov 2026): a chip to go back to the hawk's, a bar under it to make it taller, the hint in its legend */
+    '.hk-zr{position:absolute;left:8px;top:8px;z-index:2;font:500 11px var(--hk-font,inherit);padding:4px 9px;border-radius:6px;border:1px solid var(--hk-line);background:var(--hk-card);color:var(--hk-ink);cursor:pointer}.hk-zr:hover{border-color:var(--hk-mut)}.hk-zr[hidden]{display:none}',
+    '.hk-rsz{display:flex;align-items:center;justify-content:center;height:12px;margin:0 0 -6px;cursor:ns-resize;touch-action:none}.hk-rsz::before{content:"";width:34px;height:3px;border-radius:2px;background:var(--hk-line)}.hk-rsz:hover::before,.hk-rsz.on::before{background:var(--hk-mut)}.hk-chart[hidden]+.hk-rsz{display:none}',
+    '.hk-legend .hk-lgh{flex-basis:100%;opacity:.85}',
     '.hk-legend{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:8px;font-size:12px;color:var(--hk-mut)}',
     '.hk-legend span{display:inline-flex;align-items:center;gap:6px}',
     '.hk-legend s{display:inline-block;width:14px;height:8px;border-radius:2px;text-decoration:none}',
@@ -198,7 +202,7 @@
     '.hk-chip.rv{color:#e0a84a;background:color-mix(in srgb,#e0a84a 14%,transparent)}.hk-chip.todo{margin-left:auto;color:#1b1406;background:#e0a84a}.hk-chip.ok{margin-left:auto;color:var(--hk-buy);background:color-mix(in srgb,var(--hk-buy) 14%,transparent)}',
     '.hk-ses.todo{border-color:color-mix(in srgb,#e0a84a 55%,var(--hk-line))}',
     '.hk-ses .hk-sesl{margin:3px 0 0;font:11px var(--hk-mono);letter-spacing:.02em;color:var(--hk-mut)}',
-    '.hk-ses .hk-hint{margin:6px 0 0;color:var(--hk-mut)}.hk-ses .hk-chart{margin-top:12px}',
+    '.hk-ses .hk-hint{margin:6px 0 0;color:var(--hk-mut)}.hk-ses .hk-chart{margin-top:12px;height:380px}@media (max-width:560px){.hk-ses .hk-chart{height:280px}}',
     '.hk-sec{margin-top:14px;padding-top:12px;border-top:1px solid var(--hk-line)}',
     '.hk-sech{display:flex;align-items:center;gap:8px;margin-bottom:6px}.hk-sech i{flex:none;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;box-sizing:border-box;border-radius:50%;border:1px solid var(--hk-line);font:600 10px var(--hk-mono);font-style:normal;color:var(--hk-mut)}',
     '.hk-sech b{font-size:13px;font-weight:600;color:var(--hk-ink)}.hk-sech span{margin-left:auto;font:11px var(--hk-mono);color:var(--hk-mut);text-align:right}',
@@ -245,7 +249,7 @@
     '.hk-today{margin:12px 0 2px;padding:10px 12px 4px;border:1px solid var(--hk-line);border-radius:8px}.hk-tdh{display:flex;justify-content:space-between;gap:8px;margin-bottom:8px;font-size:11.5px;color:var(--hk-mut)}.hk-tdh span:first-child{font-weight:600;color:var(--hk-ink)}',
     '.hk-nar .hk-stats{grid-template-columns:repeat(4,1fr);gap:4px;margin:10px 0 0}.hk-nar .hk-stat{padding:6px 8px;border-radius:6px}.hk-nar .hk-stat b{font-size:14px}.hk-nar .hk-stat span{font-size:10px}',
     '.hk-nar .hk-day{margin:14px 0 2px}.hk-nar .hk-card{padding:10px 11px;border-radius:8px;margin-top:8px}.hk-nar .hk-card h3{font-size:13.5px;margin:6px 0 2px}.hk-nar .hk-card p{font-size:12.5px}',
-    '.hk-nar .hk-chart,.hk-nar .hk-card.hk-brief .hk-chart{height:220px;margin-top:10px}.hk-nar .hk-legend{font-size:11px;gap:2px 10px}.hk-nar .hk-btn{font-size:12px;padding:5px 8px}.hk-nar textarea{font-size:12.5px}'
+    '.hk-nar .hk-chart,.hk-nar .hk-card.hk-brief .hk-chart{height:220px;margin-top:10px}.hk-nar .hk-ses .hk-chart{height:300px}.hk-nar .hk-legend{font-size:11px;gap:2px 10px}.hk-nar .hk-btn{font-size:12px;padding:5px 8px}.hk-nar textarea{font-size:12.5px}'
   ].join('\n');
   // the hawk's alerts in Spanish (Nestor, 6 Nov 2026: "did you also translate the hawks alerts to spanish?"): the service on the server
   // writes them in English (title + body, cloud/hawk/hawk.py), so they're translated here as they're shown, the saved ones too.
@@ -347,6 +351,13 @@
       if (l && l[0] === k) { l[2] = Math.max(l[2], b[2]); l[3] = Math.min(l[3], b[3]); l[4] = b[4]; } else out.push([k, b[1], b[2], b[3], b[4]]); });
     return out;
   }
+  // a time on a bar scale (gaps closed up; before the first candle and after the last, a candle a step) and back - his view of a chart is
+  // kept in times, so it holds when the candles come in or turn into 15-minute ones (24 Nov 2026)
+  function bIx(bars, tf, t) { var n = bars.length; if (t <= bars[0][0]) return (t - bars[0][0]) / tf;
+    var lo = 0, hi = n - 1; while (lo < hi) { var m = (lo + hi + 1) >> 1; if (bars[m][0] <= t) lo = m; else hi = m - 1; }
+    return lo + Math.min(t - bars[lo][0], lo === n - 1 ? 1e12 : tf) / tf; }
+  function bTm(bars, tf, i) { var n = bars.length; if (i <= 0) return bars[0][0] + i * tf; if (i >= n - 1) return bars[n - 1][0] + (i - n + 1) * tf;
+    var k = Math.floor(i); return bars[k][0] + (i - k) * tf; }
   function editKeys(r) { return r.kind === 'brief' ? ['bh', 'bl'] : r.data && r.data.entry != null && r.data.stop != null && r.data.tgt != null ? ['entry', 'stop', 'tgt'] : []; }
   var NAMES = { bh: ['Your high', 'Tu máximo'], bl: ['Your low', 'Tu mínimo'], entry: ['Your entry', 'Tu entrada'], stop: ['Your stop', 'Tu stop'], tgt: ['Your target', 'Tu objetivo'] };
 
@@ -365,14 +376,17 @@
     // the brief shows the whole day it measured; an alert zooms in on the session, so a 3-pip stop can be seen
     var tf = d.tf * 60, src = d.c;
     if (r.kind !== 'brief') { var t0 = Math.max(d.r0, d.w0 - 3 * 3600); src = d.c.filter(function (b) { return b[0] >= t0; }); if (src.length < 36) src = d.c.slice(-36); }
-    var bars = src;
-    if (PW / (src.length * 1.16) < 2.8) { if (!st.c15) st.c15 = agg(src, 900); bars = st.c15; tf = 900; }
+    var bars = src, vw = st.vw || null, zt = !!(vw && vw.t1 > vw.t0 && src.length);   // his view (24 Nov 2026): a span of time and / or a price range, set by dragging
+    if (PW / (zt ? bIx(src, tf, vw.t1) - bIx(src, tf, vw.t0) : src.length * 1.16) < 2.8) { if (!st.c15) st.c15 = agg(src, 900); bars = st.c15; tf = 900; }
     var n = bars.length; if (!n) return;
-    var fut = Math.max(8, Math.round(n * 0.16)), bw = PW / (n + fut);
+    var fut = Math.max(8, Math.round(n * 0.16)), NT = n + fut, i0 = 0, i1 = NT;
+    if (zt) { i0 = bIx(bars, tf, vw.t0); i1 = bIx(bars, tf, vw.t1); if (!(i1 - i0 >= 3)) { i0 = 0; i1 = NT; } }
+    // drawn on the whole bar scale, slid left by OX: VR is the right edge in view, XR how far lines and zones run
+    var bw = PW / (i1 - i0), OX = i0 * bw, VR = OX + PW, XR = Math.max(NT * bw, VR);
+    st.view = { i0: i0, i1: i1, bw: bw, bars: bars, tf: tf, n: n, NT: NT };
     function xt(t) {   // a time on the bar scale (gaps closed up)
       if (t <= bars[0][0]) return 0;
-      var lo = 0, hi = n - 1; while (lo < hi) { var m = (lo + hi + 1) >> 1; if (bars[m][0] <= t) lo = m; else hi = m - 1; }
-      return Math.min(PW, (lo + Math.min(t - bars[lo][0], lo === n - 1 ? 1e9 : tf) / tf) * bw);
+      return Math.min(XR, bIx(bars, tf, t) * bw);
     }
     var mine = st.edit || r.mine || null, keys = editKeys(r);
     var lv = [];
@@ -383,35 +397,36 @@
     if (mine) keys.forEach(function (k) { if (mine[k] != null) lv.push(+mine[k]); });
     var hi = Math.max.apply(null, lv), lo = Math.min.apply(null, lv), pad = (hi - lo) * 0.06 || 0.0005;
     hi += pad; lo -= pad;
-    if (st.frozen) { hi = st.frozen[0]; lo = st.frozen[1]; } else st.scale = [hi, lo];
+    if (st.frozen) { hi = st.frozen[0]; lo = st.frozen[1]; } else { if (vw && vw.p && vw.p[0] > vw.p[1]) { hi = vw.p[0]; lo = vw.p[1]; } st.scale = [hi, lo]; }
     st.y = function (p) { return TOP + (hi - p) / (hi - lo) * PH; };
     st.p = function (y) { return hi - (y - TOP) / PH * (hi - lo); };
     var Y = st.y;
-    st.PW = PW;
-    function line(y, col, w, dash, x0, x1) { g.save(); g.strokeStyle = col; g.lineWidth = w; g.setLineDash(dash || []); g.beginPath(); g.moveTo(x0 || 0, Math.round(y) + .5); g.lineTo(x1 == null ? PW : x1, Math.round(y) + .5); g.stroke(); g.restore(); }
+    st.PW = PW; st.H = H; st.BOT = BOT; st.PH = PH; if (st.zr) st.zr.hidden = !vw;
+    function line(y, col, w, dash, x0, x1) { g.save(); g.strokeStyle = col; g.lineWidth = w; g.setLineDash(dash || []); g.beginPath(); g.moveTo(x0 == null ? Math.min(0, OX) : x0, Math.round(y) + .5); g.lineTo(x1 == null ? XR : x1, Math.round(y) + .5); g.stroke(); g.restore(); }
     function tint(col, al) { g.globalAlpha = al; g.fillStyle = col; }
     function txt(s, x, y, col, al, size, w) { g.font = (w || 500) + ' ' + (size || 9) + 'px ' + MONO; g.fillStyle = col; g.textAlign = al || 'left'; g.textBaseline = 'middle'; g.fillText(s, x, y); }
     var pills = [];
     function pill(p, text, bg, fg) { pills.push({ y: Y(p), t: text, bg: bg, fg: fg || K.card }); }
-    function tag(p, s, col, x) { txt(s, x == null ? PW - 6 : x, Y(p) - 7, col, 'right', 9); }
+    var tags = [];   // the names at the lines' right ends: drawn last, kept apart
+    function tag(p, s, col) { var y = Y(p) - 7; if (isFinite(y)) tags.push({ y: y, s: s, col: col }); }
 
-    g.save(); g.beginPath(); g.rect(0, 0, PW, H); g.clip();   // nothing spills into the price column
+    g.save(); g.beginPath(); g.rect(0, 0, PW, H); g.clip(); g.translate(-OX, 0);   // nothing spills into the price column
     // London hours along the bottom, faint grid
     if (!st.hm || st.hmFor !== bars) { st.hmFor = bars; st.hm = bars.map(function (b) { return LDN.format(new Date(b[0] * 1000)); }); }
-    var step = [1, 2, 3, 4, 6].find(function (s) { return 3600 * s / tf * bw >= 58; }) || 6;
-    for (var i = 0; i < n; i++) { var hm = st.hm[i];
-      if (hm.slice(3) === '00' && (+hm.slice(0, 2)) % step === 0) { var x = i * bw;
+    var step = [5, 15, 30, 60, 120, 180, 240, 360, 720].find(function (s) { return s * 60 >= tf && s * 60 / tf * bw >= 58; }) || 720;   // minutes between the marks: finer as he zooms in
+    for (var i = Math.max(0, Math.floor(i0) - 2); i < n && i * bw < VR + 40; i++) { var hm = st.hm[i];
+      if ((+hm.slice(0, 2) * 60 + +hm.slice(3, 5)) % step === 0) { var x = i * bw;
         g.fillStyle = K.line; g.fillRect(Math.round(x), TOP, 1, PH); txt(hm, x, H - 9, K.mut, 'center', 9); } }
     // the window it watched (London 08:00-10:00 unless he picked other hours)
-    var w0 = xt(d.w0), w1 = d.w1 > bars[n - 1][0] + tf ? PW : xt(d.w1);
-    if (w1 > w0) { tint(K.soft, 0.9); g.fillRect(w0, TOP, w1 - w0, PH); g.globalAlpha = 1; if (w1 - w0 > 84) txt(winLbl(d).toUpperCase(), w0 + 6, TOP + PH - 8, K.mut, 'left', 9); }
+    var w0 = xt(d.w0), w1 = d.w1 > bars[n - 1][0] + tf ? XR : xt(d.w1);
+    if (w1 > w0) { tint(K.soft, 0.9); g.fillRect(w0, TOP, w1 - w0, PH); g.globalAlpha = 1; if (Math.min(w1, VR) - Math.max(w0, OX) > 84) txt(winLbl(d).toUpperCase(), Math.max(w0, OX) + 6, TOP + PH - 8, K.mut, 'left', 9); }
     // the range it measured: premium (top 25%), discount (bottom 25%), the 50%
     var xr = xt(d.r0), q = (d.bh - d.bl) / 4, mid = (d.bh + d.bl) / 2, ranged = /^range/.test(d.phase || '');
-    tint(K.sell, ranged ? 0.13 : 0.07); g.fillRect(xr, Y(d.bh), PW - xr, Y(d.bh - q) - Y(d.bh));
-    tint(K.buy, ranged ? 0.13 : 0.07); g.fillRect(xr, Y(d.bl + q), PW - xr, Y(d.bl) - Y(d.bl + q)); g.globalAlpha = 1;
+    tint(K.sell, ranged ? 0.13 : 0.07); g.fillRect(xr, Y(d.bh), XR - xr, Y(d.bh - q) - Y(d.bh));
+    tint(K.buy, ranged ? 0.13 : 0.07); g.fillRect(xr, Y(d.bl + q), XR - xr, Y(d.bl) - Y(d.bl + q)); g.globalAlpha = 1;
     line(Y(d.bh), K.mut, 1, null, xr); line(Y(d.bl), K.mut, 1, null, xr); line(Y(mid), K.mut, 1, [4, 4], xr);
     // zone names go where the candles aren't: over the window band at the right, else at the left
-    var zx = w1 > w0 && w1 - w0 > 70 ? w0 + 6 : xr + 6;
+    var zx = Math.max(OX + 6, w1 > w0 && w1 - w0 > 70 ? w0 + 6 : xr + 6);
     if (Y(d.bh - q) - Y(d.bh) > 14) txt('PREMIUM', zx, Y(d.bh - q) - 8, K.sell, 'left', 9, 600);
     if (Y(d.bl) - Y(d.bl + q) > 14) txt(L('DISCOUNT', 'DESCUENTO'), zx, Y(d.bl + q) + 9, K.buy, 'left', 9, 600);
     tag(d.bh, L('Range high', 'Máximo del rango'), K.mut); tag(d.bl, L('Range low', 'Mínimo del rango'), K.mut); tag(mid, '50%', K.mut);
@@ -440,34 +455,39 @@
       txt('A', xt(a.ta) - 8, Y(a.A), K.acc, 'center', 10, 600); txt('B', xt(a.tb) + 8, Y(a.B), K.acc, 'center', 10, 600); }
     // the small range at the 50% of the leg: the box a 50% pullback is traded from (7 Nov 2026, Nestor: "yes add the box")
     if (a.bxh != null && a.bxl != null && a.tbx0) { var bx0 = Math.max(0, xt(a.tbx0)), by0 = Y(a.bxh), by1 = Y(a.bxl);
-      tint(K.acc, 0.16); g.fillRect(bx0, by0, PW - bx0, Math.max(2, by1 - by0)); g.globalAlpha = 1;
-      g.strokeStyle = K.acc; g.lineWidth = 1.5; g.setLineDash([]); g.strokeRect(Math.round(bx0) + 0.5, Math.round(by0) + 0.5, Math.round(Math.max(1, xt(a.tbx1) - bx0, Math.min(PW - 24, xt(d.now)) - bx0)), Math.max(2, Math.round(by1 - by0)));
+      tint(K.acc, 0.16); g.fillRect(bx0, by0, XR - bx0, Math.max(2, by1 - by0)); g.globalAlpha = 1;
+      g.strokeStyle = K.acc; g.lineWidth = 1.5; g.setLineDash([]); g.strokeRect(Math.round(bx0) + 0.5, Math.round(by0) + 0.5, Math.round(Math.max(1, xt(a.tbx1) - bx0, Math.min(XR - 24, xt(d.now)) - bx0)), Math.max(2, Math.round(by1 - by0)));
       txt(L('50% box', 'Caja del 50%'), bx0 + 3, by0 - 7, K.acc, 'left', 9, 600); }
-    if (a.entry != null && a.stop != null && a.tgt != null) { var x0 = Math.min(PW - 24, xt(d.now));
-      tint(K.buy, 0.16); g.fillRect(x0, Math.min(Y(a.entry), Y(a.tgt)), PW - x0, Math.abs(Y(a.tgt) - Y(a.entry)));
-      tint(K.sell, 0.18); g.fillRect(x0, Math.min(Y(a.entry), Y(a.stop)), PW - x0, Math.max(1, Math.abs(Y(a.stop) - Y(a.entry)))); g.globalAlpha = 1;
+    if (a.entry != null && a.stop != null && a.tgt != null) { var x0 = Math.min(XR - 24, xt(d.now));
+      tint(K.buy, 0.16); g.fillRect(x0, Math.min(Y(a.entry), Y(a.tgt)), XR - x0, Math.abs(Y(a.tgt) - Y(a.entry)));
+      tint(K.sell, 0.18); g.fillRect(x0, Math.min(Y(a.entry), Y(a.stop)), XR - x0, Math.max(1, Math.abs(Y(a.stop) - Y(a.entry)))); g.globalAlpha = 1;
       line(Y(a.entry), K.ink, 1.2, null, x0); line(Y(a.tgt), K.buy, 1.2, null, x0); line(Y(a.stop), K.sell, 1.2, null, x0);
       tag(a.entry, L('Entry', 'Entrada'), K.ink); tag(a.tgt, L('Target', 'Objetivo'), K.buy); tag(a.stop, 'Stop', K.sell);
       pill(a.entry, p5(a.entry), K.ink); pill(a.tgt, p5(a.tgt), K.buy); pill(a.stop, p5(a.stop), K.sell); }
     // price when it spoke
     // a session review's alerts, numbered as in its list (24 Nov 2026)
-    (st.marks || []).forEach(function (m) { var x = xt(m.t), y = Y(m.p), col = m.s > 0 ? K.buy : m.s < 0 ? K.sell : K.warn; if (!(x > 0 && x < PW) || !isFinite(y)) return;
+    (st.marks || []).forEach(function (m) { var x = xt(m.t), y = Y(m.p), col = m.s > 0 ? K.buy : m.s < 0 ? K.sell : K.warn; if (!(x > 0 && x < XR) || !isFinite(y)) return;
       g.fillStyle = K.card; g.strokeStyle = col; g.lineWidth = 1.5; g.setLineDash([]); g.beginPath(); g.arc(x, y, 7.5, 0, 7); g.fill(); g.stroke(); txt(String(m.n), x, y + .5, col, 'center', 9, 700); });
     // price when it spoke (a session review: the brief's price, from the brief's time on)
-    var lb = bars[n - 1], xn = r.kind === 'sess' ? Math.max(0, Math.min(PW - 3, xt(d.now))) : (n - 0.5) * bw;
+    var lb = bars[n - 1], xn = r.kind === 'sess' ? Math.max(0, Math.min(XR - 3, xt(d.now))) : (n - 0.5) * bw;
     if (d.px != null && isFinite(d.px)) { line(Y(d.px), K.acc, 1, [1, 3], xn); g.fillStyle = K.acc; g.beginPath(); g.arc(xn, Y(d.px), 3, 0, 7); g.fill(); pill(d.px, p5(d.px), K.acc); }
     // his read
     if (mine) keys.forEach(function (k) { if (mine[k] == null) return; var v = +mine[k], same = Math.abs(v - (k === 'bh' || k === 'bl' ? d[k] : a[k])) < 2e-6;
       if (same && !st.edit) return;   // he kept the hawk's level
-      line(Y(v), K.you, st.edit ? 2 : 1.5, st.edit ? null : [7, 4]); tag(v, L(NAMES[k][0], NAMES[k][1]), K.you, PW - 6);
-      if (st.edit) { g.fillStyle = K.you; g.beginPath(); g.arc(PW - 14, Y(v), st.drag === k ? 7 : 5.5, 0, 7); g.fill(); }
+      line(Y(v), K.you, st.edit ? 2 : 1.5, st.edit ? null : [7, 4]); tag(v, L(NAMES[k][0], NAMES[k][1]), K.you);
+      if (st.edit) { g.fillStyle = K.you; g.beginPath(); g.arc(VR - 14, Y(v), st.drag === k ? 7 : 5.5, 0, 7); g.fill(); }
       pill(v, p5(v), K.you); });
-    // hover
-    if (st.hover && !st.edit) { var hx = st.hover.x, hy = st.hover.y;
+    // the names at the right, 11 px apart
+    tags.sort(function (p, q2) { return p.y - q2.y; });
+    for (var j = 1; j < tags.length; j++) if (tags[j].y - tags[j - 1].y < 11) tags[j].y = tags[j - 1].y + 11;
+    tags.forEach(function (t) { txt(t.s, VR - 6, t.y, t.col, 'right', 9); });
+    g.translate(OX, 0);
+    // hover (on the screen, not the slid scale)
+    if (st.hover && !st.edit && !st.pan) { var hx = st.hover.x, hy = st.hover.y;
       if (hx < PW && hy > TOP && hy < TOP + PH) {
         g.fillStyle = K.mut; g.globalAlpha = .5; g.fillRect(Math.round(hx), TOP, 1, PH); g.fillRect(0, Math.round(hy), PW, 1); g.globalAlpha = 1;
         pill(st.p(hy), p5(st.p(hy)), K.ink);
-        var bi = Math.floor(hx / bw); if (bi >= 0 && bi < n) { var tl = st.hm[bi]; g.font = '500 9px ' + MONO; var tw = g.measureText(tl).width + 10;
+        var bi = Math.floor((hx + OX) / bw), tl = bi >= 0 && bi < n ? st.hm[bi] : LDN.format(new Date(bTm(bars, tf, (hx + OX) / bw) * 1000)); if (tl) { g.font = '500 9px ' + MONO; var tw = g.measureText(tl).width + 10;
           g.fillStyle = K.ink; g.fillRect(hx - tw / 2, H - BOT + 3, tw, 14); txt(tl, hx, H - BOT + 10, K.card, 'center', 9); } } }
     g.restore();
     // price labels in the gutter, kept apart (only those in view)
@@ -547,7 +567,7 @@
   // ---------- the feed
   function mount(host, sb, opt) {
     opt = opt || {}; var doc = host.ownerDocument || document; css(doc);
-    var focusId = opt.focusId || null, period = focusId ? 7 : 1, lastP = 7, rows = [], charts = {}, pollT = null;   // lastP: the dropdown's period (Today is its own button)
+    var focusId = opt.focusId || null, period = focusId ? 7 : 1, lastP = 7, rows = [], charts = {}, views = {}, pollT = null;   // lastP: the dropdown's period (Today is its own button)
     function headHtml() { return '<div>' +
       '<div class="hk-eye">' + L('Hawk', 'Halcón') + ' <i>' + L('Admin only', 'Solo admin') + '</i></div><div class="hk-title">' + L('Hawk', 'Halcón') + '</div>' +
       '<p class="hk-sub">' + L('Its read of the market you pick, in the hours you pick. Rate each alert, or draw your own read on the chart.', 'Su lectura del mercado que elijas, en las horas que elijas. Valora cada alerta o dibuja tu propia lectura en el gráfico.') + '</p></div>' +
@@ -625,7 +645,9 @@
       if (r.data.entry != null) it.push(['ink', L('Entry · stop · target', 'Entrada · stop · objetivo'), 1]);
       it.push(['you', L('You', 'Tú'), 1]);
       return '<div class="hk-legend">' + it.map(function (x) { return '<span><s style="background:var(--hk-' + x[0] + ');opacity:' + x[2] + '"></s>' + x[1] + '</span>'; }).join('') +
-        '<span>' + L('HH · HL · LH · LL = hour swings', 'HH · HL · LH · LL = swings de 1 hora') + '</span></div>';
+        '<span>' + L('HH · HL · LH · LL = hour swings', 'HH · HL · LH · LL = swings de 1 hora') + '</span>' + zHint() + '</div>';
+    }
+    function zHint() { return '<span class="hk-lgh">' + L('Drag to move · drag the price or time scale to stretch · click, then scroll to zoom · double-click to reset', 'Arrastra para moverlo · arrastra la escala de precio o de tiempo para estirarla · haz clic y luego usa la rueda para el zoom · doble clic para volver') + '</span>';
     }
     function card(r) {
       var side = r.side === 1 ? '<span class="hk-chip buy">' + L('Buy', 'Compra') + '</span>' : r.side === -1 ? '<span class="hk-chip sell">' + L('Sell', 'Venta') + '</span>' : '';
@@ -669,26 +691,76 @@
     function hookCharts(sc) {
       sc.querySelectorAll('.hk-chart[data-id]').forEach(function (box) { var r = byId(box.dataset.id); if (!r) return;
         var st = charts[r.id] = { box: box, cv: box.firstChild, row: r };
-        draw(st); hookChart(st); });
+        hookChart(st); draw(st); });
       sc.querySelectorAll('.hk-chart[data-ses]').forEach(function (box) { var S = SESS[box.dataset.ses], rw = S && sesRow(S); if (!rw) return;
         var st = charts[rw.id] = { box: box, cv: box.firstChild, row: rw, marks: sesMarks(S) };
-        draw(st); hookChart(st); });
+        hookChart(st); draw(st); });
     }
     function byId(id) { return rows.find(function (x) { return x.id === id; }); }
+    // his own view of a hawk chart (24 Nov 2026, Nestor: "could i please be able to control de time and price scales on this chart? evrything
+    // just looks so on top of eachother right now, very messy"): drag it to move it, drag the price scale or the time scale to stretch, click
+    // it and then the wheel zooms (not before: a list of charts would catch the page's scrolling), double-click to go back; the bar under
+    // it makes it taller (remembered per kind of chart). Kept per chart, in times, through the redraws and the list's re-renders.
+    function chKey(box) { return (box.closest('.hk-nar') ? 'n' : '') + (box.hasAttribute('data-ses') ? 's' : box.closest('.hk-brief') ? 'b' : 'a'); }
+    function chHs() { try { return JSON.parse(localStorage.getItem('st_hawk_chh') || '{}') || {}; } catch (x) { return {}; } }
     function hookChart(st) {
-      var box = st.box;
+      var box = st.box, key = st.row.id, g0 = null;
+      st.vw = views[key] || null;
+      var zr = doc.createElement('button'); zr.type = 'button'; zr.className = 'hk-zr'; zr.textContent = L('Reset view', 'Restablecer vista'); zr.hidden = !st.vw; box.appendChild(zr); st.zr = zr;
+      zr.addEventListener('click', function (e) { e.stopPropagation(); setV(null); });
+      var hk = chKey(box), hh = +chHs()[hk]; if (hh >= 160) box.style.height = hh + 'px';
+      var rz = doc.createElement('div'); rz.className = 'hk-rsz'; rz.title = L('Drag to make the chart taller or shorter', 'Arrastra para hacer el gráfico más alto o más bajo'); box.insertAdjacentElement('afterend', rz);
+      rz.addEventListener('pointerdown', function (e) { if (e.button > 0) return; e.preventDefault(); var y0 = e.clientY, h0 = parseFloat(getComputedStyle(box).height) || box.offsetHeight;
+        try { rz.setPointerCapture(e.pointerId); } catch (x) {} rz.classList.add('on');
+        function mv(ev) { box.style.height = Math.max(160, Math.min(900, Math.round(h0 + ev.clientY - y0))) + 'px'; draw(st); }
+        function done() { rz.removeEventListener('pointermove', mv); rz.removeEventListener('pointerup', done); rz.removeEventListener('pointercancel', done); rz.classList.remove('on');
+          var all = chHs(); all[hk] = parseInt(box.style.height, 10); try { localStorage.setItem('st_hawk_chh', JSON.stringify(all)); } catch (x) {} }
+        rz.addEventListener('pointermove', mv); rz.addEventListener('pointerup', done); rz.addEventListener('pointercancel', done); });
+      function setV(v) { if (v && v.t1 == null && !v.p) v = null; st.vw = v; if (v) views[key] = v; else delete views[key]; draw(st); }
       function pos(e) { var b = box.getBoundingClientRect(); return { x: e.clientX - b.left, y: e.clientY - b.top }; }
+      function zone(p) { return p.x >= st.PW ? 'p' : p.y >= st.H - st.BOT ? 't' : 'c'; }   // the price scale, the time scale, the chart
+      function span(nv, a, b) { var V = st.view, s = b - a, l0 = -s * 0.5, r1 = V.NT + s * 0.5;   // never more than half a chart of nothing at either end
+        if (a < l0) { b += l0 - a; a = l0; } if (b > r1) { a -= b - r1; b = r1; }
+        nv.t0 = bTm(V.bars, V.tf, a); nv.t1 = bTm(V.bars, V.tf, b); return nv; }
+      function wide(V, s) { return Math.max(6, Math.min(V.NT * 3, s)); }   // 6 candles at the closest, three charts' worth at the farthest
+      box.addEventListener('pointerdown', function (e) { if (e.target !== st.cv || e.button > 0 || !st.view) return; var p = pos(e);
+        st.act = true;
+        if (st.edit) { var best = null, bd = e.pointerType === 'touch' ? 26 : 14;
+          editKeys(st.row).forEach(function (k) { var dd = Math.abs(st.y(st.edit[k]) - p.y); if (dd < bd) { bd = dd; best = k; } });
+          if (best) { e.preventDefault(); st.drag = best; st.frozen = st.scale; try { box.setPointerCapture(e.pointerId); } catch (x) {} draw(st); return; } }
+        var V = st.view; g0 = { z: zone(p), x: p.x, y: p.y, t0: bTm(V.bars, V.tf, V.i0), t1: bTm(V.bars, V.tf, V.i1), hi: st.scale[0], lo: st.scale[1], mv: false, py: null };
+        if (e.pointerType !== 'touch') e.preventDefault();
+        try { box.setPointerCapture(e.pointerId); } catch (x) {} });
       box.addEventListener('pointermove', function (e) { var p = pos(e);
         if (st.drag) { st.edit[st.drag] = r5(st.p(p.y)); draw(st); return; }
+        if (g0) { var V = st.view, dx = p.x - g0.x, dy = p.y - g0.y;
+          if (!g0.mv && Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
+          g0.mv = true; st.pan = true;
+          var a0 = bIx(V.bars, V.tf, g0.t0), a1 = bIx(V.bars, V.tf, g0.t1), nv = Object.assign({}, st.vw || {});
+          if (g0.z === 'c') { var sh = -dx * (a1 - a0) / st.PW; span(nv, a0 + sh, a1 + sh);
+            if (g0.py == null && Math.abs(dy) > 8) g0.py = p.y;   // up and down too, once he means it: the price range is his from then
+            if (g0.py != null) { var pp = (g0.hi - g0.lo) / st.PH * (p.y - g0.py); nv.p = [g0.hi + pp, g0.lo + pp]; } }
+          else if (g0.z === 't') { var fx = Math.max(0, Math.min(1, g0.x / st.PW)), c = a0 + fx * (a1 - a0), s = wide(V, (a1 - a0) * Math.exp(-dx / 160)); span(nv, c - fx * s, c + (1 - fx) * s); }   // right: wider candles, round the time he took hold of
+          else { var f = Math.exp(dy / 140), md = (g0.hi + g0.lo) / 2, hf = (g0.hi - g0.lo) / 2 * f; nv.p = [md + hf, md - hf]; }   // down: more price in view
+          box.style.cursor = g0.z === 'c' ? 'grabbing' : g0.z === 't' ? 'ew-resize' : 'ns-resize'; setV(nv); return; }
+        var z = zone(p); box.style.cursor = z === 'p' ? 'ns-resize' : z === 't' ? 'ew-resize' : st.edit ? '' : 'crosshair';
         if (!st.edit) { st.hover = p; draw(st); } });
-      box.addEventListener('pointerleave', function () { if (st.hover) { st.hover = null; draw(st); } });
-      box.addEventListener('pointerdown', function (e) { if (!st.edit) return; var p = pos(e), best = null, bd = e.pointerType === 'touch' ? 26 : 14;
-        editKeys(st.row).forEach(function (k) { var dd = Math.abs(st.y(st.edit[k]) - p.y); if (dd < bd) { bd = dd; best = k; } });
-        if (!best) return; e.preventDefault(); st.drag = best; st.frozen = st.scale; try { box.setPointerCapture(e.pointerId); } catch (x) {} draw(st); });
-      function up() { if (!st.drag) return; st.drag = null; st.frozen = null;
-        if (st.edit.bh != null && st.edit.bl != null && st.edit.bl > st.edit.bh) { var t = st.edit.bh; st.edit.bh = st.edit.bl; st.edit.bl = t; }
-        draw(st); }
+      box.addEventListener('pointerleave', function () { st.act = false; if (st.hover) { st.hover = null; draw(st); } });
+      function up() {
+        if (st.drag) { st.drag = null; st.frozen = null;
+          if (st.edit.bh != null && st.edit.bl != null && st.edit.bl > st.edit.bh) { var t = st.edit.bh; st.edit.bh = st.edit.bl; st.edit.bl = t; }
+          draw(st); return; }
+        if (g0) { g0 = null; st.pan = false; box.style.cursor = ''; draw(st); } }
       box.addEventListener('pointerup', up); box.addEventListener('pointercancel', up);
+      box.addEventListener('dblclick', function (e) { if (e.target !== st.cv || !st.vw) return; var z = zone(pos(e)), nv = Object.assign({}, st.vw);
+        if (z === 'p') delete nv.p; else if (z === 't') { delete nv.t0; delete nv.t1; } else nv = null;
+        setV(nv); });
+      box.addEventListener('wheel', function (e) { if (!(st.act || e.ctrlKey) || !st.view || st.drag) return; e.preventDefault();
+        var p = pos(e), V = st.view, k = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1, wy = e.deltaY * k, wx = e.deltaX * k, nv = Object.assign({}, st.vw || {});
+        if (zone(p) === 'p') { var pc = st.p(p.y), f = Math.exp(wy * 0.0015); nv.p = [pc + (st.scale[0] - pc) * f, pc - (pc - st.scale[1]) * f]; }   // over the price scale: price, round the pointer
+        else { var c = V.i0 + Math.min(p.x, st.PW) / V.bw, s = wide(V, (V.i1 - V.i0) * Math.exp(wy * 0.0015)), a = c - (c - V.i0) * s / (V.i1 - V.i0), sh = wx / V.bw;   // else time, round the pointer; sideways moves it
+          span(nv, a + sh, a + s + sh); }
+        setV(nv); }, { passive: false });
     }
     async function load(more) {
       if (period === 's') { if (!more) studyLoad(); return; }
@@ -798,7 +870,7 @@
       if (d.a2b) it.push(['acc', L('Leg 50%', '50% del tramo'), 1]);
       return '<div class="hk-legend">' + it.map(function (x) { return '<span><s style="background:var(--hk-' + x[0] + ');opacity:' + x[2] + '"></s>' + x[1] + '</span>'; }).join('') +
         (d.px != null ? '<span><s style="background:var(--hk-acc);width:7px;height:7px;border-radius:50%"></s>' + L('Price at the brief', 'Precio en el resumen') + '</span>' : '') +
-        (S.al.length ? '<span><i class="hk-sin">1</i>' + L('Alerts, numbered as below', 'Alertas, numeradas como abajo') + '</span>' : '') + '</div>'; }
+        (S.al.length ? '<span><i class="hk-sin">1</i>' + L('Alerts, numbered as below', 'Alertas, numeradas como abajo') + '</span>' : '') + zHint() + '</div>'; }
     // after: how far it went each way from the brief's price, which of the brief's levels it took, and whether the brief's side played out
     function sesAfter(S, F) { var B = S.brief, d = B && B.data; if (!d || !F || !F.m || !F.m.length) return null;
       var t0 = sesFrom(S), px = +(d.price != null ? d.price : d.chart && d.chart.px), M = F.m.filter(function (b) { return b[0] >= t0; });
