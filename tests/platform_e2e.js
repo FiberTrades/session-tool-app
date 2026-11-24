@@ -288,7 +288,13 @@
     px.click(); await W(300);
     check('...pressed: execution mode, the button says Cancel', P._s().exec && $('.pl-x').textContent === 'Cancel' && $('.pl-x').classList.contains('on'));
     var p0 = P._panes()[0], pc = $('#stpr-grid .stpr-pc'), r0 = pc.getBoundingClientRect(), last = p0.bars[p0.bars.length - 1].close, y = p0.series.priceToCoordinate(last - 0.0007);
-    pc.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerType: 'mouse', button: 0, clientX: r0.left + r0.width * 0.6, clientY: r0.top + y, pointerId: 1 }));
+    /* a press that moves (a drag to scroll the chart) never places a trade; a clean click does (24 Nov 2026) */
+    var pdn = function (t, dy) { pc.dispatchEvent(new PointerEvent(t, { bubbles: true, cancelable: true, pointerType: 'mouse', button: 0, clientX: r0.left + r0.width * 0.6, clientY: r0.top + y + (dy || 0), pointerId: 1 })); };
+    var ord0 = LC._ord && LC._ord();
+    pdn('pointerdown'); pdn('pointermove', 30); pdn('pointerup', 30); await W(300);
+    check('execution mode: a press dragged 30px (to scroll the chart) places nothing, execution mode stays on', P._s().exec && (LC._ord && LC._ord()) === ord0 && !$('.pl-t [data-tma="close"]'), [P._s().exec, LC._ord && LC._ord()]);
+    check('...the lines of the order being aimed show on chart 1 even with its trade lines off', (function () { var C = P._cfg(), was = C.showPer; C.showPer = { 0: { marks: false }, 1: { marks: false } }; P._render(); var ok1 = P._lines(0).some(function (l) { return /^SL /.test(l.title || l.t || '') && l.vis !== false; }); C.showPer = was; P._render(); return ok1; })(), P._lines(0).map(function (l) { return [l.title || l.t, l.vis]; }));
+    pdn('pointerdown'); pdn('pointerup');
     for (k = 0; k < 40 && !$('.pl-t [data-tma="close"]'); k++) await W(250);
     var tk = $('.pl-t [data-tma="close"]'), tkn = tk && tk.getAttribute('data-tmk');
     check('a click where the stop goes: the order goes to MT5 and fills; Positions 1 under the charts', !!tk && /Positions 1/.test($('.pl-tabs').textContent) && /BUY/.test($('.pl-t').textContent), $('.pl-tabs') && $('.pl-tabs').textContent);

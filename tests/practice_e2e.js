@@ -137,7 +137,9 @@
     ok('the mouse 8 pips above price: a sell with an 8-pip stop', S().pv.dir === -1 && near(S().pv.rd, 0.0008, 0.00002), S().pv);
     pev('pointermove', 1.12324); await W(60);
     ok('30 pips above: held at Max SL, 12 pips', S().pv.dir === -1 && near(S().pv.rd, 0.0012, 1e-9), S().pv);
-    pev('pointerdown', 1.12144); await W(60);
+    pev('pointerdown', 1.12144); await W(30);
+    ok('pressed, not yet let go: nothing placed (a clean click only, 24 Nov 2026)', !S().pos && S().exec, S().pos);
+    pev('pointerup', 1.12144); await W(60);
     var p = S().pos;
     ok('the click places it at once, as the EA does (no box to answer): SELL at 1.12024, stop 1.12144, target 1.11784; execution mode ends', p && p.dir === -1 && near(p.entry, 1.12024) && near(p.sl, 1.12144, 1e-9) && near(p.tp, 1.11784, 1e-9) && !S().exec && !document.getElementById('stpr-cf'), p && { e: p.entry, sl: p.sl, tp: p.tp });
     ok('the BE line is parked just inside the target, as the EA parks it (5 pips)', p && near(p.be, 1.11834, 1e-9) && find('be'), p && p.be);

@@ -57,6 +57,7 @@ PIP = 10 ** -(DG - 1)
 ST = {'risk_mode': 'amount', 'risk_percent': 1.0, 'risk_amount': 250.0, 'fixed_lot': 0.1, 'sl_min': 4.0, 'sl_max': 20.0, 'unit': 'pips', 'tp_on': True, 'tp_mode': 'rr', 'tp_value': 3.0,
       'tp_close_pct': 100.0, 'be_on': True, 'be_trigger_r': 1.0, 'be_offset': 0.5, 'be_offset_mode': 'pips', 'max_trades_day': 3, 'partials': '50', 'order_kind': 'market', 'exec_key': 'O',
       'active': 1, 'pip': PIP, 'ts_unit': 'rr', 'ts': '0.50', 'digits': DG}
+if os.environ.get('ST_FAKE_ST'): ST.update(json.loads(os.environ['ST_FAKE_ST']))   # a member's own settings for a reproduction (24 Nov 2026)
 def send_set(): text(bcast('set', {'s': SYM, 'lg': LG, 'st': ST}))
 # EA 9.02's account for the app's Trade tab ("acct") and its History tab ("dh" -> "dhist")
 POS = []            # [ticket, symbol, open time, type, volume, open price, sl, tp] - an order from the app adds one

@@ -94472,7 +94472,7 @@ window.__stAZ = (function () {
   }
 
   // ---- state ----
-  var S = null, panes = [], drag = null, timer = 0, timerW = window, flashT = 0, flashEl = null, popped = false, staticCache = {};
+  var S = null, panes = [], drag = null, xdown = null, timer = 0, timerW = window, flashT = 0, flashEl = null, popped = false, staticCache = {};
   var POP = {}, WH = {}, UI = { w: window };   // charts in windows of their own, the window-wide handlers they share, the window last used
   function phone(){ var w = SW; try { if (w.closed) w = window; } catch (e) { w = window; } return (w.innerWidth || 1200) <= 760; }
   // ---- each chart its own symbol (Nestor, 17 Oct 2026: "Should each chart also get its own symbol, so EUR/USD and gold can
@@ -95236,7 +95236,9 @@ window.__stAZ = (function () {
   }
   function pvTitles(v, su){ return { e: v.kind ? pendName({ dir: v.dir, kind: v.kind }) : sideW(v.dir), sl: 'SL ' + fmtU(v.rd, su) + ' ' + uLbl(su), tp: v.tp ? 'TP ' + (Math.abs(v.tp - v.entry) / v.rd).toFixed(1) + 'R' : '' }; }
   // Trade lines off on a chart: the order being aimed shows no line or tag there either, and none to drag (Nestor, 2 Nov 2026: "if i dont want to see the execution lines on the other charts i can turn it off but when i turn it off the lines dont dissapear")
-  function pvDraw(p, v, su){ var hd = !showOn(p, 'marks'), t = pvTitles(v, su), as = function(k, pr){ var l = p.lines[p.lines.length - 1]; if (l && !l._pv && l._p === pr) { l._pv = k; l._ti = t[k]; } };   // _pv: moved in place while aimed (pvMove)
+  /* ...but never on the chart that takes the order (24 Nov 2026): with trade lines off on all his charts, Execute was armed with no line
+     anywhere and a click placed a real trade he never saw coming. The 2 Nov wish was for the OTHER charts. */
+  function pvDraw(p, v, su){ var hd = PS(p) !== S && !showOn(p, 'marks'), t = pvTitles(v, su), as = function(k, pr){ var l = p.lines[p.lines.length - 1]; if (l && !l._pv && l._p === pr) { l._pv = k; l._ti = t[k]; } };   // _pv: moved in place while aimed (pvMove)
     addLine(p, v.entry, '#c0c0c0', 2, t.e, v.kind ? 'pvent' : null, hd); as('e', v.entry);
     // solid, as in the trade (Nestor, 17 Oct 2026: "i dont like the fact the SL and TP lines are dotted")
     addLine(p, v.sl, '#E56767', 0, t.sl, 'pvsl', hd); as('sl', v.sl);
@@ -97931,12 +97933,20 @@ window.__stAZ = (function () {
       if (mouse && l && l._k === 'pvsl' && S.exec && !S.pos && !S.pend) l = null;   // in execution mode the stop line sits under the mouse: a click there places the stop
       if (l) { e.preventDefault(); e.stopPropagation(); drag = { k: l._k, p: p }; hold(true); try { el.setPointerCapture(e.pointerId); } catch (x) {} return; }
       // execution mode: a mouse click where the stop goes places the trade there and then; a touch never does (the SL line is
-      // dragged and the panel's SELL / BUY button places it), so a finger meant to scroll the chart cannot open a trade
+      // dragged and the panel's SELL / BUY button places it), so a finger meant to scroll the chart cannot open a trade.
+      /* A CLEAN click only (24 Nov 2026): the order goes when the button is let go without the mouse having moved - never on the press.
+         A press to scroll or drag the chart while execution mode was on placed a real trade on his 70K with a 2-pip stop ("out of nowhere
+         i get entered into a position without me clicking on anything"). While pressed, the chart holds still; moved: nothing is sent. */
       if (mouse && S.exec && !S.pos && !S.pend && e.button === 0) {
         if (PS(p) !== S) { e.preventDefault(); e.stopPropagation(); flash(T('Trades go on chart 1 (' + S.sym.name + '): click that chart.', 'Las operaciones van en el gráfico 1 (' + S.sym.name + '): haz clic en ese gráfico.')); return; }
-        var pr = p.series.coordinateToPrice(rel(e).y); if (pr == null) return;
-        e.preventDefault(); e.stopPropagation(); aim(pr); if (!fire()) { linesAll(); paintPill(); } }
+        if (p.series.coordinateToPrice(rel(e).y) == null) return;
+        e.preventDefault(); e.stopPropagation(); xdown = { p: p, id: e.pointerId, x: e.clientX, y: e.clientY, ry: rel(e).y }; hold(true); try { el.setPointerCapture(e.pointerId); } catch (x) {} }
     }, true);
+    el.addEventListener('pointerup', function(e){ var xd = xdown; if (!xd || xd.p !== p || xd.id !== e.pointerId) return; xdown = null; hold(false); e.preventDefault(); e.stopPropagation();
+      if (!S || !S.exec || S.pos || S.pend) return;
+      if (Math.abs(e.clientX - xd.x) > 5 || Math.abs(e.clientY - xd.y) > 5) { flash(T('The mouse moved while pressed, so no trade was placed. Click without moving to place it.', 'El ratón se movió al pulsar, así que no se colocó ninguna operación. Haz clic sin moverlo para colocarla.')); linesAll(); paintPill(); return; }
+      var pr = p.series.coordinateToPrice(xd.ry); if (pr == null) return;
+      aim(pr); if (!fire()) { linesAll(); paintPill(); } }, true);
     // and before the click, the stop follows the mouse
     el.addEventListener('pointermove', function(e){ if (!S || drag || !S.exec || S.pos || S.pend || e.pointerType !== 'mouse' || PS(p) !== S) return; var pr = p.series.coordinateToPrice(rel(e).y); if (pr != null) { aim(pr); aimSoon(p); } });
     el.addEventListener('pointermove', function(e){ if (!S || !drag || drag.p !== p) return; var pr = p.series.coordinateToPrice(rel(e).y); if (pr == null) return;
@@ -97947,7 +97957,7 @@ window.__stAZ = (function () {
       if (k === 'pvsl' || k === 'pvtp' || k === 'pvent') save();
       else if (S && S.pos) settleNow();
       render(); }, true);
-    el.addEventListener('pointercancel', function(){ if (drag && drag.p === p) { drag = null; hold(false); } }, true);
+    el.addEventListener('pointercancel', function(){ if (drag && drag.p === p) { drag = null; hold(false); } if (xdown && xdown.p === p) { xdown = null; hold(false); } }, true);
     // a hand on this chart (for loading older candles at its left edge)
     p.el.addEventListener('pointerdown', function(){ p.hand = true; p.handAt = Date.now(); dwFocus(p);
       paneActivate(p); }, true);   // the chart clicked last is the one Play steps by
