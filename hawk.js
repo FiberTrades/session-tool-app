@@ -179,6 +179,20 @@
     '.hk-hm td button{position:relative;display:block;width:100%;height:26px;border:0;border-radius:4px;color:var(--hk-ink);font:inherit;cursor:pointer;padding:0}',
     '.hk-hm td button:hover{box-shadow:inset 0 0 0 1px var(--hk-mut)}.hk-hm td button[aria-current="true"]{box-shadow:inset 0 0 0 1.5px var(--hk-ink)}',
     '.hk-hm td button.base::after{content:"";position:absolute;top:3px;right:3px;width:4px;height:4px;border-radius:50%;background:var(--hk-ink);opacity:.7}',
+    /* the review in his full charts (24 Nov 2026): a timeframe tile opens it; his read where it differs in pink; the editor under the tiles */
+    '.hk-tf.hk-tfb{display:block;width:100%;box-sizing:border-box;font:inherit;color:var(--hk-ink);text-align:left;background:transparent;cursor:pointer;transition:border-color .12s,background-color .12s}',
+    '.hk-tf.hk-tfb b{display:flex;align-items:center;justify-content:space-between;gap:4px}.hk-tf.hk-tfb b svg{width:11px;height:11px;flex:none;opacity:.5}',
+    '.hk-tf.hk-tfb:hover{border-color:color-mix(in srgb,#e0a84a 55%,var(--hk-line))}.hk-tf.hk-tfb:hover b svg{opacity:.9}',
+    '.hk-tf.hk-tfb[aria-pressed="true"]{border-color:#e0a84a;background:color-mix(in srgb,#e0a84a 9%,transparent);box-shadow:inset 0 0 0 1px #e0a84a}.hk-tf.hk-tfb[aria-pressed="true"] b{color:#e0a84a}.hk-tf.hk-tfb[aria-pressed="true"] b svg{opacity:1}',
+    '.hk-tf.mine b{color:var(--hk-you)}.hk-tf u{display:block;margin-top:4px;text-decoration:none;font-size:11px;line-height:1.35;color:var(--hk-you);overflow-wrap:anywhere}',
+    '.hk-tf.hk-tfb:focus-visible{outline:2px solid #e0a84a;outline-offset:1px}',
+    '.hk-rvbox:empty{display:none}.hk-rvhint{margin:2px 0 0}',
+    '.hk-rv{margin:6px 0 4px;padding:10px 12px 12px;border-radius:10px;border:1px solid color-mix(in srgb,#e0a84a 45%,var(--hk-line));background:color-mix(in srgb,#e0a84a 5%,var(--hk-card))}',
+    '.hk-rvh{display:flex;align-items:baseline;gap:8px}.hk-rvh .k{flex:none;font:600 11px var(--hk-mono);letter-spacing:.1em;color:#e0a84a}.hk-rvh .w{min-width:0;font-size:12px;color:var(--hk-mut)}.hk-rvh .w b{font-weight:600;color:var(--hk-ink)}',
+    '.hk-rv .hk-picks{margin-top:9px}.hk-rv .hk-pick select{padding:0 22px 0 9px;background-position:right 7px center;font-size:12px}.hk-rv textarea{min-height:44px;margin-top:8px;background:var(--hk-plot)}.hk-rv .hk-hint{margin:7px 0 0}',
+    '.hk-pick select.you{color:var(--hk-you);border-color:color-mix(in srgb,var(--hk-you) 70%,transparent);background-color:color-mix(in srgb,var(--hk-you) 9%,var(--hk-soft))}',
+    '.hk-rvf{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px}.hk-rvs{flex:1 1 100%;min-width:0;font-size:11.5px;line-height:1.45;color:var(--hk-mut)}.hk-rvs:empty{display:none}.hk-rvb{margin-left:auto}',
+    '.hk-rvb{display:flex;gap:6px;flex:none}.hk-rvb .hk-btn{padding:5px 11px;font-size:12px;white-space:nowrap}.hk-rvb .hk-btn.go{background:#e0a84a;color:#1b1406;font-weight:600}.hk-rvb .hk-btn.go:hover{background:#ebb85e;border-color:transparent}',
     /* narrow: the Live Charts rail panel */
     '.hk-nar{font-size:13px}.hk-nar .hk-sub{display:none}.hk-nar .hk-head{align-items:center}.hk-nar .hk-tabs button{padding:3px 9px;font-size:11px}',
     '.hk-today{margin:12px 0 2px;padding:10px 12px 4px;border:1px solid var(--hk-line);border-radius:8px}.hk-tdh{display:flex;justify-content:space-between;gap:8px;margin-bottom:8px;font-size:11.5px;color:var(--hk-mut)}.hk-tdh span:first-child{font-weight:600;color:var(--hk-ink)}',
@@ -246,13 +260,18 @@
   // his three phases on each timeframe (hawk.py tfs_now / engine.tf_said, engine.where): the words, and where price sits
   var TF_SAID = { 'trend up': ['Trend up', 'Tendencia alcista'], 'trend down': ['Trend down', 'Tendencia bajista'], range: ['Range', 'Rango'], 'range forming': ['Range forming', 'Rango formándose'],
     'initiation up': ['Initiation up', 'Iniciación alcista'], 'initiation down': ['Initiation down', 'Iniciación bajista'] };
-  var TF_LOC = { breakout: ['Outside the range', 'Fuera del rango'], 'premium edge': ['Premium edge', 'Extremo del premium'], 'premium middle': ['Premium middle', 'Premium medio'],
+  var TF_LOC = { breakout: ['Breakout', 'Ruptura'], 'premium edge': ['Premium edge', 'Extremo del premium'], 'premium middle': ['Premium middle', 'Premium medio'],
     '50%': ['At the 50%', 'En el 50%'], 'discount middle': ['Discount middle', 'Descuento medio'], 'discount edge': ['Discount edge', 'Extremo del descuento'] };
   function tfSaid(x) { var w = TF_SAID[x]; return w ? L(w[0], w[1]) : String(x || ''); }
   function tfLoc(x) { var w = TF_LOC[x]; return w ? L(w[0], w[1]) : String(x || ''); }
-  function tfTiles(t, x) {   // x: [4H direction, 15M direction] when they disagree
-    return '<div class="hk-tfs" role="list" aria-label="' + L('The three timeframes', 'Las tres temporalidades') + '">' + ['4h', '1h', '15m'].map(function (k) { var v = t[k]; if (!v) return '';
-      return '<div role="listitem" class="hk-tf' + (v.d > 0 ? ' buy' : v.d < 0 ? ' sell' : '') + (x && k !== '1h' ? ' x' : '') + '"><b>' + k.toUpperCase() + '</b><span>' + esc(tfSaid(v.said)) + '</span><i>' + esc(tfLoc(v.loc)) + '</i></div>'; }).join('') + '</div>';
+  var ICH = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" aria-hidden="true"><path d="M3 1.5v9M9 2.5v8"/><rect x="1.8" y="3.6" width="2.4" height="4.2" rx=".4"/><rect x="7.8" y="4.6" width="2.4" height="3.4" rx=".4"/></svg>';
+  function tfTiles(t, x, o) {   // x: [4H direction, 15M direction] when they disagree; o: the review's buttons (24 Nov 2026) - { k: 'b' brief / 's' study trade, id, mine: his reads by timeframe, cur: the one open }
+    return '<div class="hk-tfs" ' + (o ? 'role="group" data-rvk="' + o.k + '" data-rvid="' + esc(o.id) + '"' : 'role="list"') + ' aria-label="' + L('The three timeframes', 'Las tres temporalidades') + '">' + ['4h', '1h', '15m'].map(function (k) { var v = t[k]; if (!v) return '';
+      var cls = 'hk-tf' + (v.d > 0 ? ' buy' : v.d < 0 ? ' sell' : '') + (x && k !== '1h' ? ' x' : ''), body = '<span>' + esc(tfSaid(v.said)) + '</span><i>' + esc(tfLoc(v.loc)) + '</i>';
+      if (!o) return '<div role="listitem" class="' + cls + '"><b>' + k.toUpperCase() + '</b>' + body + '</div>';
+      var m = o.mine && o.mine[k], ms = m && m.said && m.said !== v.said ? m.said : null, ml = m && m.loc && m.loc !== v.loc ? m.loc : null;
+      var you = ms || ml ? '<u>' + L('You: ', 'Tú: ') + esc([ms ? tfSaid(ms) : null, ml ? tfLoc(ml) : null].filter(Boolean).join(' · ')) + '</u>' : '';
+      return '<button type="button" class="' + cls + ' hk-tfb' + (m ? ' mine' : '') + '" data-rvtf="' + k + '" data-rvk="' + o.k + '" data-rvid="' + esc(o.id) + '" aria-pressed="' + (o.cur === k) + '" title="' + esc(L('See the ' + k.toUpperCase() + ' in your charts and correct the hawk\'s read', 'Ver el ' + k.toUpperCase() + ' en tus gráficos y corregir la lectura del halcón')) + '"><b>' + k.toUpperCase() + ICH + '</b>' + body + you + '</button>'; }).join('') + '</div>';
   }
   var LDN = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
   // the hours it watches (7 Nov 2026): windows [from, to] in London minutes, as hawk.py's clean_wins / win_name
@@ -409,6 +428,68 @@
       txt(p.t, PW + RG / 2, p.y + .5, p.fg, 'center', 10, 500); });
   }
 
+  // ---------- his reading of a timeframe as the hawk makes it - cloud/hawk/engine.py read_bars / read / where / tf_said, line for line (keep
+  // them in step). The review in his full charts (24 Nov 2026) draws it on his own chart's candles: the 1H and the 15M from the candle
+  // store (the hawk's 1000 and 700), the 4H built from the 1H on New York's 17:00 grid as the engine builds it.
+  var HE = (function () {
+    var K = 2, SEC = { '15m': 900, '1h': 3600, '4h': 14400 };   // SW_K: a swing high / low has 2 candles each side
+    function rising(xs, up) { for (var n = 0; n < xs.length - 1; n++) if (up ? !(xs[n + 1][0] > xs[n][0]) : !(xs[n + 1][0] < xs[n][0])) return false; return true; }
+    function sun(y, m, n) { var w = new Date(Date.UTC(y, m, 1)).getUTCDay(); return Date.UTC(y, m, 1 + (7 - w) % 7 + 7 * (n - 1)) / 1000; }   // nth_sunday
+    function nyOff(t) { var y = new Date(t * 1000).getUTCFullYear(); return t >= sun(y, 2, 2) + 25200 && t < sun(y, 10, 1) + 21600 ? -14400 : -18000; }   // ny_off
+    function agg4(h1) { var out = [];
+      h1.forEach(function (x) { var k = Math.floor((x[0] + nyOff(x[0]) - 61200) / 14400), l = out[out.length - 1];
+        if (l && l.k === k) { l.b[2] = Math.max(l.b[2], x[2]); l.b[3] = Math.min(l.b[3], x[3]); l.b[4] = x[4]; } else out.push({ k: k, b: [k * 14400 + 61200 - nyOff(x[0]), x[1], x[2], x[3], x[4]] }); });
+      return out.map(function (x) { return x.b; }); }
+    // b: [[start, o, h, l, c]] -> the reading after each candle; sh / sl: the swings [price, index], each known 2 candles after it
+    function readBars(b) {
+      var out = [], sh = [], sl = [], ph = 'range', d = 0, hi = null, lo = null, ok = false, t0 = 0, tests = [1, 1], base = null, ext = null, brk = null, bs = null, sz = [];
+      for (var j = 0; j < b.length; j++) {
+        var o = b[j][1], h = b[j][2], l = b[j][3], c = b[j][4], m = j - K, nH = null, nL = null, x;
+        if (m >= K) { var mh = -Infinity, ml = Infinity; for (x = m - K; x <= m + K; x++) if (x !== m) { if (b[x][2] > mh) mh = b[x][2]; if (b[x][3] < ml) ml = b[x][3]; }
+          if (b[m][2] > mh) { nH = [b[m][2], m]; sh.push(nH); } if (b[m][3] < ml) { nL = [b[m][3], m]; sl.push(nL); } }
+        var rg = h - l, w = sz.slice(-20), avg = w.length ? w.reduce(function (s, v) { return s + v; }, 0) / w.length : rg; sz.push(rg);
+        var strong = rg > 0 && Math.abs(c - o) >= 0.6 * rg && rg >= avg;   // STRONG_BODY, STRONG_SIZE
+        if (hi == null) { hi = h; lo = l; }
+        if (ph === 'initiation') {
+          ext = d > 0 ? Math.max(ext, h) : Math.min(ext, l);
+          if (d > 0 ? c < base[0] : c > base[1]) { ph = 'range'; hi = Math.max(base[0], ext); lo = Math.min(base[1], ext); ok = true; t0 = j; tests = [1, 1]; d = 0; }   // back inside: it was fake
+          else { var aH = sh.slice(-2).filter(function (q) { return q[1] > brk; }), aL = sl.slice(-2).filter(function (q) { return q[1] > brk; });
+            if (aH.length >= 2 && aL.length >= 2 && rising(aH, d > 0) && rising(aL, d > 0)) ph = 'trend'; }
+        } else if (ph === 'trend') {
+          var hl = (d > 0 ? sl : sh), hh = (d > 0 ? sh : sl); hl = hl[hl.length - 1][0]; hh = hh[hh.length - 1][0];
+          if (d > 0 ? c < hl : c > hl) {
+            if (strong) { ph = 'initiation'; base = [Math.max(hh, hl), Math.min(hh, hl)]; ext = d > 0 ? l : h; brk = j; bs = Math.min(sh[sh.length - 1][1], sl[sl.length - 1][1]); d = -d; }
+            else { ph = 'range'; hi = Math.max(hh, hl, h); lo = Math.min(hh, hl, l); ok = false; t0 = j; tests = [1, 1]; d = 0; } }
+        } else {
+          if (c > hi || c < lo) { var dd = c > hi ? 1 : -1;
+            if (strong) { ph = 'initiation'; d = dd; base = [hi, lo]; ext = dd > 0 ? h : l; brk = j; bs = t0; } else { hi = Math.max(hi, h); lo = Math.min(lo, l); } }
+          else if (sh.length >= 3 && sl.length >= 3 && (rising(sh.slice(-3), true) && rising(sl.slice(-3), true) || rising(sh.slice(-3), false) && rising(sl.slice(-3), false))) {
+            d = rising(sh.slice(-3), true) ? 1 : -1;
+            if (d > 0 ? c > sl[sl.length - 1][0] : c < sh[sh.length - 1][0]) ph = 'trend'; else d = 0; }
+          var q4 = (hi - lo) / 4;
+          if (ph === 'range') { if (nH && nH[1] > t0 && nH[0] >= hi - q4) tests[0]++; if (nL && nL[1] > t0 && nL[0] <= lo + q4) tests[1]++; ok = ok || Math.max(tests[0], tests[1]) >= 2; }
+        }
+        var a2b = null, aI = null, bI = null;
+        if (ph === 'trend' && sh.length && sl.length) { var A = d > 0 ? sl[sl.length - 1] : sh[sh.length - 1], xs = d > 0 ? sh : sl, B = null;   // the last leg: the last higher low -> the high after it (down: mirror)
+          for (x = xs.length - 1; x >= 0 && xs[x][1] > A[1]; x--) if (!B || (d > 0 ? xs[x][0] > B[0] : xs[x][0] < B[0])) B = xs[x];
+          if (!B) for (x = A[1]; x <= j; x++) if (!B || (d > 0 ? b[x][2] > B[0] : b[x][3] < B[0])) B = [d > 0 ? b[x][2] : b[x][3], x];
+          a2b = [A[0], B[0]]; aI = A[1]; bI = B[1]; }
+        var ini = ph === 'initiation';
+        out.push({ ph: ph, d: d, hi: hi, lo: lo, ok: ok, a2b: a2b, aI: aI, bI: bI, base: ini ? base : null, ext: ini ? ext : null, brk: ini ? brk : null, bs: ini ? bs : null, t0: t0 });
+      }
+      return { st: out, sh: sh, sl: sl }; }
+    // the reading of timeframe tf at UTC second t (its last candle closed by then), with the swings known then; null without 12 candles
+    function read(B, tf, t) { var b = B[tf], s = SEC[tf], k = -1; if (!b || !s) return null; var R = B['_' + tf] || (B['_' + tf] = readBars(b));
+      for (var i = b.length - 1; i >= 0; i--) if (b[i][0] + s <= t) { k = i; break; }
+      if (k < 12) return null; var kn = function (q) { return q[1] <= k - K; };
+      return { tf: tf, st: R.st[k], b: b, k: k, sec: s, sh: R.sh.filter(kn), sl: R.sl.filter(kn) }; }
+    function zone(r) { if (r.ph === 'trend' && r.a2b) return [Math.min(r.a2b[0], r.a2b[1]), Math.max(r.a2b[0], r.a2b[1])]; if (r.ph === 'initiation') return [r.base[1], r.base[0]]; return [r.lo, r.hi]; }
+    function where(r, p) { var z = zone(r); if (z[1] - z[0] <= 0) return '50%'; var x = (p - z[0]) / (z[1] - z[0]);
+      return x > 1 || x < 0 ? 'breakout' : x >= .75 ? 'premium edge' : x >= .55 ? 'premium middle' : x >= .45 ? '50%' : x >= .25 ? 'discount middle' : 'discount edge'; }
+    function said(r) { return r.ph === 'range' ? (r.ok ? 'range' : 'range forming') : r.ph + (r.d > 0 ? ' up' : ' down'); }
+    return { SEC: SEC, nyOff: nyOff, agg4: agg4, readBars: readBars, read: read, zone: zone, where: where, said: said };
+  })();
+
   // ---------- the feed
   function mount(host, sb, opt) {
     opt = opt || {}; var doc = host.ownerDocument || document; css(doc);
@@ -479,8 +560,9 @@
     }
     function mineText(r) {
       var m = r.mine; if (!m) return '';
-      if (r.kind === 'brief') return L('Your read: ', 'Tu lectura: ') + (PHASES.filter(function (p) { return p[0] === m.phase; }).map(function (p) { return L(p[1], p[2]); })[0] || '') +
-        (m.bh != null ? L(' · range ', ' · rango ') + p5(m.bl) + '–' + p5(m.bh) : '');
+      if (r.kind === 'brief') { var tk = m.tf ? ['4h', '1h', '15m'].filter(function (k) { return m.tf[k]; }) : [];
+        return (m.phase || m.bh != null ? L('Your read: ', 'Tu lectura: ') + (PHASES.filter(function (p) { return p[0] === m.phase; }).map(function (p) { return L(p[1], p[2]); })[0] || '') +
+          (m.bh != null ? L(' · range ', ' · rango ') + p5(m.bl) + '–' + p5(m.bh) : '') : '') + (tk.length ? (m.phase || m.bh != null ? ' · ' : '') + L('You went through the ', 'Revisaste el ') + tk.map(function (k) { return k.toUpperCase(); }).join(', ') : ''); }
       return L('Your trade: entry ' + p5(m.entry) + ' · stop ' + p5(m.stop) + ' · target ' + p5(m.tgt), 'Tu operación: entrada ' + p5(m.entry) + ' · stop ' + p5(m.stop) + ' · objetivo ' + p5(m.tgt));
     }
     function legend(r) {
@@ -499,7 +581,7 @@
         (r.data && r.data.tfx ? '<span class="hk-chip warn" title="' + esc(L('The 4H and the 15M point opposite ways', 'El 4H y el 15M apuntan en sentidos opuestos')) + '">4H ≠ 15M</span>' : '') +
         '<span class="hk-time">' + esc(ldn(r.created_at, { hour: '2-digit', minute: '2-digit' })) + '</span></div>' +
         '<h3>' + esc(aES(r.title)) + '</h3><p>' + esc(aES(r.data && r.data.tfs ? String(r.body || '').replace(/ ?Timeframes: [^.]+\./, '') : r.body)) + '</p>' +
-        (r.data && r.data.tfs ? tfTiles(r.data.tfs, r.data.tfx) : '');
+        (r.data && r.data.tfs ? rvTiles('b', r) : '');
       if (ch) {
         h += '<div class="hk-chart" data-id="' + r.id + '"><canvas role="img" aria-label="' + L('The hawk\'s chart for this alert', 'El gráfico del halcón para esta alerta') + '"></canvas></div>' + legend(r);
         if (keys.length) h += '<div class="hk-train"><button class="hk-btn you" data-act="edit" data-id="' + r.id + '">' + (r.kind === 'brief' ? L('Correct the read', 'Corregir la lectura') : L('Mark my trade', 'Marcar mi operación')) + '</button>' +
@@ -515,7 +597,7 @@
       return h + '</article>';
     }
     function render() {
-      charts = {};
+      charts = {}; rvHint = true;
       if (!rows.length) { list.innerHTML = '<p class="hk-empty">' + L('No alerts in this period. The hawk watches weekdays, in your watch hours (' + winsSaid() + ' London): the brief 15 minutes before, then alerts until 5 minutes after.', 'No hay alertas en este periodo. El halcón vigila de lunes a viernes en tus horas (' + winsSaid() + ' de Londres): el resumen 15 minutos antes y luego alertas hasta 5 minutos después.') + '</p>'; statsEl.hidden = true; return; }
       stats();
       var h = '', last = '';
@@ -555,7 +637,7 @@
         .gt('created_at', since.toISOString()).order('created_at', { ascending: false }).limit(period > 90 ? 500 : period > 7 ? 200 : 300);
       if (q.error) { if (!more) list.innerHTML = '<p class="hk-empty">' + L('Couldn\'t load the alerts: ', 'No se pudieron cargar las alertas: ') + esc(q.error.message) + '</p>'; return; }
       var got = q.data || [];
-      if (more) { if (!got.length) return; if (Object.keys(charts).some(function (id) { return charts[id].edit; }) || (doc.activeElement && root.contains(doc.activeElement) && doc.activeElement.tagName === 'TEXTAREA')) { pending = got.concat(pending); return; }
+      if (more) { if (!got.length) return; if (Object.keys(charts).some(function (id) { return charts[id].edit; }) || (RV && RV.k === 'b') || (doc.activeElement && root.contains(doc.activeElement) && doc.activeElement.tagName === 'TEXTAREA')) { pending = got.concat(pending); return; }
         var have = {}; rows.forEach(function (r) { have[r.id] = 1; });
         rows = got.concat(pending).filter(function (r) { return !have[r.id] && (have[r.id] = 1); }).concat(rows); pending = []; } else rows = got;   // never the same alert twice
       render();
@@ -713,7 +795,7 @@
       if (!s.data || !s.data.session) { list.innerHTML = '<p class="hk-empty">' + L('Sign in to Session Terminal first.', 'Inicia sesión en Session Terminal primero.') + '</p>'; return; }
       if (!sRuns) await sRunsLoad();
       if (sSes && (sSesL[sMkt] || []).indexOf(sSes) < 0) sSes = '';   // that market hasn't these hours: London
-      var run0 = sRun(), q = await sb.from('hawk_study').select('n, day, data, verdict, note, drawings, drawings_at, be_mine').eq('run', run0).order('n', { ascending: true });
+      var run0 = sRun(), q = await sb.from('hawk_study').select('n, day, data, verdict, note, drawings, drawings_at, be_mine, tf_mine').eq('run', run0).order('n', { ascending: true });
       if (run0 !== sRun()) return;   // switched market meanwhile
       if (q.error) { list.innerHTML = '<p class="hk-empty">' + L('Couldn\'t load the study: ', 'No se pudo cargar el estudio: ') + esc(q.error.message) + '</p>'; return; }
       study = q.data || [];
@@ -725,7 +807,7 @@
     function sTick(r, big) { return ['agree', 'disagree'].map(function (v) { var ok = v === 'agree', w = ok ? L('Valid setup', 'Setup válido') : L('Not a setup', 'No es un setup');
       return '<button data-tick="' + v + '" data-sn="' + r.n + '" aria-pressed="' + (r.verdict === v) + '" title="' + w + '" aria-label="' + w + ' #' + r.n + '">' + (ok ? ICK : IX) + (big ? '<span>' + w + '</span>' : '') + '</button>'; }).join(''); }
     function sDwN(r) { return (r.drawings || []).filter(function (x) { return x && !x.mbe; }).length; }
-    function sMarks(r) { var m = [], k = sDwN(r); if (r.note) m.push(L('note', 'nota')); if (r.be_mine) m.push(r.be_mine.none ? L('no BE', 'sin BE') : L('your BE', 'tu BE')); if (k) m.push(sPl(k, 'drawing', 'dibujo', 'dibujos')); return m.length ? '<u> · ' + m.join(' · ') + '</u>' : ''; }
+    function sMarks(r) { var m = [], k = sDwN(r); if (r.note) m.push(L('note', 'nota')); if (r.be_mine) m.push(r.be_mine.none ? L('no BE', 'sin BE') : L('your BE', 'tu BE')); if (k) m.push(sPl(k, 'drawing', 'dibujo', 'dibujos')); var tk = r.tf_mine ? ['4h', '1h', '15m'].filter(function (x) { return r.tf_mine[x]; }) : []; if (tk.length) m.push(L('your ', 'tu ') + tk.map(function (x) { return x.toUpperCase(); }).join('/')); return m.length ? '<u> · ' + m.join(' · ') + '</u>' : ''; }
     function sRow(r) { var d = r.data, buy = d.side > 0, rule = d.rule === 'initiation pocket' ? 'initiation' : d.rule;
       return '<div class="hk-tr" data-sn="' + r.n + '" aria-current="' + (ssel === r.n) + '"><button class="hk-trm" data-so="' + r.n + '" aria-expanded="' + (ssel === r.n) + '">' +
         '<span class="m"><i class="' + (buy ? 'buy' : 'sell') + '"></i>' + sBuy(buy) + ' · ' + esc(sModel(d.model)) + sSplit(d) + '</span>' +
@@ -756,7 +838,7 @@
       if (r.be_mine) tt.push([L('Your BE', 'Tu BE'), r.be_mine.none ? '–' : sPx(r.be_mine.price), r.be_mine.none ? L('you wouldn\'t move it', 'no lo moverías') : sBeVs(d, r.be_mine.price), 'mb']);
       var to = d.r1 ? hm(d.r1) : '08:00';   // the 24 h box ends where the session's scan starts (07:00 London)
       return '<div class="hk-lbl">' + L('The day', 'El día') + '</div><div class="hk-kpi c3">' + [[sPhase(d.phase), d.tfs ? L('Hour chart', 'Gráfico de 1 hora') : L('HTF read', 'Lectura HTF')], [sDist(d.bh, d.bl), L('24h to ' + to, '24h hasta las ' + to)], [sPx((d.bh + d.bl) / 2), '50%']]
-          .map(function (x) { return '<div><b>' + esc(x[0]) + '</b><span>' + x[1] + '</span></div>'; }).join('') + '</div>' + (d.tfs ? tfTiles(d.tfs, d.tfx) : '') + (big ? '<p class="hk-hint hk-big">' + esc(aES(big)) + '</p>' : '') +
+          .map(function (x) { return '<div><b>' + esc(x[0]) + '</b><span>' + x[1] + '</span></div>'; }).join('') + '</div>' + (d.tfs ? rvTiles('s', r) : '') + (big ? '<p class="hk-hint hk-big">' + esc(aES(big)) + '</p>' : '') +
         '<div class="hk-lbl">' + L('What happened', 'Qué pasó') + '</div><ul class="hk-why">' + what.map(function (l) { return sWhy(sNoteL(l)); }).join('') + '</ul>' +
         '<div class="hk-lbl">' + L('The trade', 'La operación') + '</div><dl class="hk-tt">' + tt.map(function (x) { return '<dt>' + x[0] + '</dt><dd class="p ' + x[3] + '">' + x[1] + '</dd><dd class="x">' + esc(x[2]) + '</dd>'; }).join('') + '</dl>'; }
     function sDet(r) { var d = r.data, ap = !!opt.study;
@@ -880,7 +962,7 @@
         ['st_hk_noff', 'st_hk_mv'].forEach(function (s) { var O = JSON.parse(localStorage.getItem(s) || '{}'), c = 0; Object.keys(O).forEach(function (x) { if (x.indexOf(k) === 0) { delete O[x]; c++; } }); if (c) { localStorage.setItem(s, JSON.stringify(O)); n += c; } }); } catch (x) {} return n; }
     async function sBack(r) { var n = sMvClear(r); if (sOnChart === r.n && opt.study) { try { await opt.study({ pdReset: true }); if (!sHid) await opt.study({ clear: true, list: sDraw(r) }); } catch (x) {} }
       sStatus(n ? L('The hawk\'s marks are back where it drew them.', 'Las marcas del halcón vuelven a estar donde las dibujó.') : L('The hawk\'s marks are already where it drew them.', 'Las marcas del halcón ya están donde las dibujó.')); }
-    async function sOpen(r) { if (!opt.study) return; sHid = false; sStatus(L('Opening ' + sDay(r, { day: 'numeric', month: 'short', year: 'numeric' }) + ' in Study…', 'Abriendo el ' + sDay(r, { day: 'numeric', month: 'short', year: 'numeric' }) + ' en el Estudio…'));
+    async function sOpen(r) { if (!opt.study) return; sHid = false; if (RV) { RV = null; rvPaint(); }   // a timeframe's review gives way (its drawings handed back first) sStatus(L('Opening ' + sDay(r, { day: 'numeric', month: 'short', year: 'numeric' }) + ' in Study…', 'Abriendo el ' + sDay(r, { day: 'numeric', month: 'short', year: 'numeric' }) + ' en el Estudio…'));
       var d = r.data, at = Math.min(d.sw || d.ts, d.ta || d.ts, d.ts) - 600, ok = false;
       try { ok = await opt.study({ sym: sMkt, day: nyDay(d.ts), at: at, draw: sDraw(r), pd: d.r0 ? sPd(r) : null, pd0: d.r0 ? { a: d.r0, b: d.r1 } : null, pid: sKey(r), n: r.n, keep: r.drawings || [], onMine: sOnMine, noAsk: sStudying }); } catch (x) {}
       if (ok === 'no') { if (ssel === r.n) sStatus(L('Not opened. Press Show in Study when you want it on the chart.', 'No se abrió. Pulsa Ver en el Estudio cuando la quieras en el gráfico.')); return; }   // he chose to stay where he was
@@ -973,6 +1055,125 @@
     setInterval(async function () { if (sAutoBusy || sOnChart == null || !opt.study || doc.hidden) return; var r = sFind(sOnChart); if (!r) return;
       sAutoBusy = true; try { await sCapture(r, false); } catch (x) {} sAutoBusy = false; }, 3000);
     function sEnd() { sStudying = false; if (sOnChart == null || !opt.study) return; sOnChart = null; try { opt.study({ end: true }); } catch (x) {} }
+    // ---------- the review in his full charts (Nestor, 24 Nov 2026: "adjusting this tiny graph is a nightmare ... if i click on the 4h in brief
+    // the chart changes to 4h so i can give you feedback for the 4h, then do the same for the 1h, then 15m. i should be able to do the same
+    // for the trades in study list. basically you tell me what you think and see and then i correct you"). A brief's - or a study trade's -
+    // 4H / 1H / 15M opens the Charts platform in Study at that moment: chart 1 on that timeframe, his other charts as he has them, his own
+    // drawings put away (the app's study layer). The hawk's read of it (HE on his chart's candles) is drawn as ordinary drawings he moves,
+    // deletes or adds to: the range or the last leg with its premium / discount and 50%, the swings behind the phase. Under the tiles the
+    // phase and the location, the hawk's to start with, his changes in pink, and a note. Kept per timeframe with his drawings - a brief's in
+    // hawk_signals.mine.tf, a study trade's in hawk_study.tf_mine: { said, loc, note, dw, hk: the hawk's said / loc, at }.
+    var RV = null, rvBusy = false, rvStudy = false, rvQ = Promise.resolve(), rvHk = {}, rvC = {}, rvHint = true, TFM = { '4h': 240, '1h': 60, '15m': 15 };
+    var RV_SAID = ['trend up', 'trend down', 'range forming', 'range', 'initiation up', 'initiation down'], RV_LOC = ['premium edge', 'premium middle', '50%', 'discount middle', 'discount edge', 'breakout'];
+    function rvOn() { return !!(opt.study && opt.bars); }
+    function rvId(k, r) { return k === 'b' ? r.id : r.n; }
+    function rvRow(k, id) { return k === 'b' ? byId(id) : sFind(id); }
+    function rvIs(k, r) { return !!(RV && r && RV.k === k && String(RV.id) === String(rvId(k, r))); }
+    function rvMap(k, r) { return (k === 'b' ? r.mine && r.mine.tf : r.tf_mine) || null; }
+    function rvMineOf(k, r, tf) { var m = rvMap(k, r); return (m && m[tf]) || null; }
+    function rvAt(k, r) { var d = r.data || {}; return k === 'b' ? +(d.chart && d.chart.now) || 0 : Math.min(d.sw || d.ts, d.ta || d.ts, d.ts) - 600; }   // the brief's moment; the trade's, as Show in Study
+    function rvReadAt(k, r) { return k === 'b' ? rvAt(k, r) : +r.data.r1 + 60; }   // when the hawk read the timeframes: a study day's 07:00 + 1 min (engine.frame)
+    function rvTiles(k, r) { var d = r.data || {}; if (!d.tfs) return ''; if (!rvOn() || !(rvAt(k, r) > 0)) return tfTiles(d.tfs, d.tfx);
+      var id = rvId(k, r), on = rvIs(k, r), hint = !on && (k === 's' || rvHint); if (k === 'b') rvHint = false;
+      return tfTiles(d.tfs, d.tfx, { k: k, id: id, mine: rvMap(k, r), cur: on ? RV.tf : null }) + '<div class="hk-rvbox" data-rvk="' + k + '" data-rvid="' + esc(id) + '">' +
+        (on ? rvHtml(k, r) : hint ? '<p class="hk-hint hk-rvhint">' + L('Tap 4H, 1H or 15M to check the hawk\'s read in your own charts and correct it.', 'Toca 4H, 1H o 15M para revisar la lectura del halcón en tus propios gráficos y corregirla.') + '</p>' : '') + '</div>'; }
+    function rvHtml(k, r) { var tf = RV.tf, T = tf.toUpperCase(), hk = RV.hk || {}, m = rvMineOf(k, r, tf) || {}, sd = m.said || hk.said, lc = m.loc || hk.loc, dv = RV.dv;
+      var op = function (xs, cur, lab) { return xs.map(function (x) { return '<option value="' + esc(x) + '"' + (x === cur ? ' selected' : '') + '>' + esc(lab(x)) + '</option>'; }).join(''); };
+      return '<div class="hk-rv" role="region" aria-label="' + esc(L('Your read of the ' + T, 'Tu lectura del ' + T)) + '"><div class="hk-rvh"><span class="k">' + T + '</span><span class="w">' + L('The hawk: ', 'El halcón: ') + '<b>' + esc(tfSaid(hk.said)) + '</b> · ' + esc(tfLoc(hk.loc)) + '</span></div>' +
+        '<div class="hk-picks"><label class="hk-pick"><span>' + L('Phase', 'Fase') + '</span><select data-rv="said"' + (sd !== hk.said ? ' class="you"' : '') + '>' + op(RV_SAID, sd, tfSaid) + '</select></label>' +
+        '<label class="hk-pick"><span>' + L('Location', 'Ubicación') + '</span><select data-rv="loc"' + (lc !== hk.loc ? ' class="you"' : '') + '>' + op(RV_LOC, lc, tfLoc) + '</select></label></div>' +
+        '<textarea data-rv="note" rows="2" placeholder="' + esc(L('What do you see on the ' + T + '? (optional)', '¿Qué ves en el ' + T + '? (opcional)')) + '">' + esc(m.note || '') + '</textarea>' +
+        '<div class="hk-rvf"><span class="hk-rvs" aria-live="polite">' + esc(RV.msg || '') + '</span><span class="hk-rvb"><button type="button" class="hk-btn" data-rvback title="' + esc(L('The hawk\'s phase, location and drawings again (your note stays)', 'La fase, la ubicación y los dibujos del halcón otra vez (tu nota se queda)')) + '">' + L('Hawk\'s read', 'La del halcón') + '</button><button type="button" class="hk-btn go" data-rvdone>' + L('Done', 'Listo') + '</button></span></div>' +
+        (dv && dv.said !== hk.said ? '<p class="hk-hint">' + esc(L('On your chart\'s candles the ' + T + ' reads ' + tfSaid(dv.said).toLowerCase() + ': the drawings show that. The hawk\'s broker\'s candles differ a little.', 'Con las velas de tu gráfico el ' + T + ' se lee ' + tfSaid(dv.said).toLowerCase() + ': los dibujos muestran eso. Las velas del bróker del halcón difieren un poco.')) + '</p>' : '') +
+        '<p class="hk-hint">' + esc(L('The hawk\'s lines are ordinary drawings: move them, delete them or add your own. They save with this ' + T + ' read, apart from your own drawings.', 'Las líneas del halcón son dibujos normales: muévelos, bórralos o añade los tuyos. Se guardan con esta lectura del ' + T + ', aparte de tus propios dibujos.')) + '</p></div>'; }
+    function rvTilesPaint(k, r) { var id = String(rvId(k, r)), d = r.data; root.querySelectorAll('.hk-tfs[data-rvk="' + k + '"]').forEach(function (el) { if (el.dataset.rvid !== id) return;
+      var nx = tfTiles(d.tfs, d.tfx, { k: k, id: rvId(k, r), mine: rvMap(k, r), cur: rvIs(k, r) ? RV.tf : null }); if (el.outerHTML !== nx) el.outerHTML = nx; }); }
+    function rvPaint() { root.querySelectorAll('.hk-rvbox').forEach(function (bx) { var k = bx.dataset.rvk, r = rvRow(k, bx.dataset.rvid); if (!r) return;
+      if (rvIs(k, r)) bx.innerHTML = rvHtml(k, r); else if (bx.querySelector('.hk-rv')) bx.innerHTML = ''; rvTilesPaint(k, r); }); }
+    function rvMsg(t) { if (RV) RV.msg = t; var el = root.querySelector('.hk-rv .hk-rvs'); if (el) el.textContent = t; }
+    // the 1H and the 15M before t (closed by then), the 4H from the 1H - once per brief / study day
+    function rvGet(sym, t) { t = Math.floor(t); var key = sym + '|' + t; if (rvC[key]) return rvC[key];
+      var p = rvC[key] = (async function () {
+        var cv = function (a, s, n) { return (a || []).filter(function (x) { return x && x.time + s <= t; }).map(function (x) { return [x.time, +x.open, +x.high, +x.low, +x.close]; }).slice(-n); };
+        var A = await Promise.all([opt.bars(sym, 60, t - 80 * 86400, t), opt.bars(sym, 15, t - 16 * 86400, t)]);
+        if ((A[0] && A[0].failed) || (A[1] && A[1].failed)) throw new Error('candles');
+        var h1 = cv(A[0], 3600, 1000), m15 = cv(A[1], 900, 700); return { '1h': h1, '4h': HE.agg4(h1), '15m': m15 }; })();
+      p.catch(function () { delete rvC[key]; }); return p; }
+    // the hawk's read drawn: the range (a trend: its last leg; an initiation: the range it broke) as premium / discount with the 50% band
+    // between 45 and 55% - his six places - the leg, how far an initiation went, and the swings behind the phase as HH / HL / LH / LL
+    function rvDraw(rd, tf) { var st = rd.st, b = rd.b, k = rd.k, s = rd.sec, T = tf.toUpperCase(), z = HE.zone(st), lo = z[0], hi = z[1], o = [];
+      var tA = function (i) { return b[Math.max(0, Math.min(b.length - 1, i))][0]; }, x1 = b[k][0] + 8 * s;
+      var i0 = st.ph === 'trend' && st.aI != null ? st.aI : st.ph === 'initiation' ? Math.max(st.bs != null ? st.bs : 0, st.brk - 60) : Math.max(st.t0, k - 120);
+      var nm = st.ph === 'trend' ? [L('leg low', 'mínimo del tramo'), L('leg high', 'máximo del tramo')] : st.ph === 'initiation' ? [L('broken range low', 'mínimo del rango roto'), L('broken range high', 'máximo del rango roto')]
+        : st.ok ? [L('range low', 'mínimo del rango'), L('range high', 'máximo del rango')] : [L('range low, forming', 'mínimo del rango, formándose'), L('range high, forming', 'máximo del rango, formándose')];
+      if (hi > lo) o.push({ type: 'fib', a: { t: tA(i0), price: lo }, b: { t: x1, price: hi }, levels: [0, 0.25, 0.45, 0.5, 0.55, 0.75, 1], lbls: [T + ' ' + nm[0], '', '', '50%', '', '', T + ' ' + nm[1]],
+        bands: ['rgba(46,189,133,0.15)', 'rgba(46,189,133,0.06)', 'rgba(149,152,161,0.12)', 'rgba(149,152,161,0.12)', 'rgba(246,70,93,0.06)', 'rgba(246,70,93,0.15)'], color: '#e0a84a', width: 1, hkr: 'zone', hktf: tf });
+      if (st.ph === 'trend' && st.a2b && st.aI != null && st.bI != null) o.push({ type: 'trend', a: { t: tA(st.aI), price: st.a2b[0] }, b: { t: tA(st.bI), price: st.a2b[1] }, color: '#5b8def', width: 2, text: T + ' ' + L('last leg', 'último tramo'), hkr: 'leg', hktf: tf });
+      if (st.ph === 'initiation' && st.ext != null) o.push({ type: 'trend', a: { t: tA(st.brk), price: st.ext }, b: { t: x1, price: st.ext }, color: '#e0a84a', width: 1, dash: 'dashed', text: T + ' ' + (st.d > 0 ? L('highest since the break', 'máximo desde la ruptura') : L('lowest since the break', 'mínimo desde la ruptura')), hkr: 'ext', hktf: tf });
+      [[rd.sh, 1], [rd.sl, -1]].forEach(function (S) { var xs = S[0].slice(-4);
+        for (var i = 1; i < xs.length; i++) { var up = xs[i][0] > xs[i - 1][0];
+          o.push({ type: 'note', a: { t: tA(xs[i][1]), price: xs[i][0] }, off: { x: 0, y: S[1] > 0 ? -24 : 24 }, color: '#9598a1', tcol: '#ffffff', width: 1, tsz: 10, text: S[1] > 0 ? (up ? 'HH' : 'LH') : (up ? 'HL' : 'LL'), hkr: (S[1] > 0 ? 'h' : 'l') + i, hktf: tf }); } });
+      return o; }
+    async function rvBase(n) { try { var g = await opt.study({ get: n }); if (Array.isArray(g)) rvHk[n] = JSON.stringify(g); } catch (x) {} }   // the hawk's drawings as they went on: no entry saved while he leaves them be
+    async function rvOpen(k, r, tf) { if (!rvOn() || !r || !r.data || !r.data.tfs || !r.data.tfs[tf]) return; if (rvIs(k, r) && RV.tf === tf && RV.on) return;
+      var d = r.data, at = rvAt(k, r), tR = rvReadAt(k, r), sym = k === 'b' ? String(d.sym || 'EURUSD') : sMkt, T = tf.toUpperCase(), same = rvIs(k, r) && RV.on, P0 = RV && RV.on ? RV : null;
+      var n = (k === 'b' ? 'hb|' + r.id : 'hs|' + sRun() + '|' + r.n) + '|' + tf;
+      var R0 = RV = { k: k, id: rvId(k, r), tf: tf, n: n, at: at, tR: tR, sym: sym, hk: d.tfs[tf] || {}, draw: null, dv: null, on: false, msg: L('Reading the ' + T + '…', 'Leyendo el ' + T + '…') };
+      if (k === 'b' && sOnChart != null) sOnChart = null; rvPaint();
+      var B = null; try { B = await rvGet(sym, tR); } catch (x) {}
+      if (RV !== R0) return;
+      var rd = B ? HE.read(B, tf, tR) : null; R0.draw = rd ? rvDraw(rd, tf) : [];
+      if (rd) { var z = HE.zone(rd.st), px = k === 'b' ? +(d.price || (d.chart && d.chart.px)) : NaN; R0.dv = { said: HE.said(rd.st), loc: isFinite(px) ? HE.where(rd.st, px) : null, lo: z[0], hi: z[1] }; }
+      var mine = rvMineOf(k, r, tf), keep = mine && Array.isArray(mine.dw) ? mine.dw : R0.draw, ok = false;
+      try { ok = await opt.study({ sym: sym, day: nyDay(at), at: at, draw: k === 's' ? sDraw(r) : [], pd: null, pid: k === 's' ? sKey(r) : null, n: n, keep: keep, onMine: rvOnMine, noAsk: sStudying || rvStudy, tf: TFM[tf], stay: same }); } catch (x) {}
+      if (RV !== R0) return;
+      if (ok === 'no') { RV = null; rvPaint(); return; }   // he chose to stay where he was
+      if (!ok) { var dn = new Date(nyDay(at) + 'T12:00:00Z').toLocaleDateString(L('en-GB', 'es-ES'), { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+        var no = L('Study couldn\'t open ' + dn + ': not enough candles stored for it yet.', 'El Estudio no pudo abrir el ' + dn + ': aún no hay suficientes velas guardadas.');
+        if (P0 && P0.n !== n) { RV = P0; P0.msg = no; } else R0.msg = no; rvPaint(); return; }   // the last read stays open where it was
+      rvStudy = true; if (k === 's') { sOnChart = r.n; sStudying = true; }
+      await rvBase(n); if (RV !== R0) return; R0.on = true;
+      R0.msg = rd ? (k === 'b' ? L('Chart 1 on the ' + T + ' at ' + hm(at) + ' London, as the hawk saw it. Press Play to see what came next.', 'El gráfico 1 en el ' + T + ' a las ' + hm(at) + ' (hora de Londres), como lo vio el halcón. Pulsa Reproducir para ver qué vino después.')
+          : L('Chart 1 on the ' + T + ' at ' + hm(at) + ' London, before the trade. The hawk read the ' + T + ' at ' + hm(tR - 60) + '. Press Play to see what came next.', 'El gráfico 1 en el ' + T + ' a las ' + hm(at) + ' (hora de Londres), antes de la operación. El halcón leyó el ' + T + ' a las ' + hm(tR - 60) + '. Pulsa Reproducir para ver qué vino después.'))
+        : L('Not enough ' + T + ' candles stored to draw the hawk\'s read. Draw yours: it saves with this read.', 'No hay suficientes velas de ' + T + ' guardadas para dibujar la lectura del halcón. Dibuja la tuya: se guarda con esta lectura.');
+      rvPaint(); rvShow(); }
+    function rvShow() { var e = root.querySelector('.hk-rv'), sc = e && sScroller(); if (!sc) return;   // the editor in view under the tiles: the panel scrolls, never the page
+      var a = e.getBoundingClientRect(), b = sc.getBoundingClientRect(), over = a.bottom - b.bottom + 12; if (a.top < b.top + 90) sc.scrollTop += a.top - b.top - 150; else if (over > 0) sc.scrollTop += Math.min(over, a.top - b.top - 90); }
+    // his drawings handed back by the app (another timeframe, brief or trade, the study ended), and the 3-second save
+    function rvOnMine(n, list, ended) { var p = String(n).split('|'), tf = p[p.length - 1], k = p[0] === 'hb' ? 'b' : 's', id = k === 'b' ? p[1] : +p[p.length - 2], r = k === 's' && p[1] !== sRun() ? null : rvRow(k, id);
+      if (r && Array.isArray(list)) rvKeep(k, r, tf, list, null, n);
+      if (ended) { rvStudy = false; if (k === 's' && sOnChart === id) sOnChart = null; if (RV && RV.n === n) { RV = null; rvPaint(); } } }
+    function rvKeep(k, r, tf, list, patch, n) { rvQ = rvQ.then(function () { return rvWrite(k, r, tf, list, patch, n); }).catch(function () { return false; }); return rvQ; }
+    async function rvWrite(k, r, tf, list, patch, n) {
+      var m0 = rvMineOf(k, r, tf) || {}, nb = {}, hk = (r.data.tfs || {})[tf] || {}; Object.keys(m0).forEach(function (x) { if (x !== 'at' && x !== 'hk') nb[x] = m0[x]; });
+      var b0 = JSON.stringify(nb);
+      Object.keys(patch || {}).forEach(function (x) { var v = patch[x]; if (v == null || v === '' || ((x === 'said' || x === 'loc') && v === hk[x])) delete nb[x]; else nb[x] = v; });
+      if (list && ('dw' in nb || !n || JSON.stringify(list) !== rvHk[n])) nb.dw = list;   // the hawk's drawings left as they went on: nothing to keep
+      if (JSON.stringify(nb) === b0) return true;
+      var has = Object.keys(nb).length > 0; if (has) { nb.hk = { said: hk.said, loc: hk.loc }; nb.at = new Date().toISOString(); }
+      var M = Object.assign({}, rvMap(k, r) || {}); if (has) M[tf] = nb; else delete M[tf]; var M1 = Object.keys(M).length ? M : null, q, mine = null;
+      if (k === 'b') { mine = Object.assign({}, r.mine || {}); if (M1) mine.tf = M1; else delete mine.tf; if (!Object.keys(mine).length) mine = null;
+        q = await sb.from('hawk_signals').update({ mine: mine }).eq('id', r.id); }
+      else q = await sb.from('hawk_study').update({ tf_mine: M1 }).eq('run', sRun()).eq('n', r.n);
+      var ok = !(q && q.error), live = RV && RV.k === k && String(RV.id) === String(rvId(k, r)) && RV.tf === tf;
+      if (!ok) { if (live) rvMsg(L('Not saved: ', 'No guardado: ') + q.error.message); return false; }
+      if (k === 'b') { r.mine = mine; var mt = byEl('#hk-m-' + r.id); if (mt) mt.textContent = mineText(r); stats(); } else { r.tf_mine = M1; sMarkRow(r); }
+      rvTilesPaint(k, r); if (live) rvMsg(L('Your ' + tf.toUpperCase() + ' read saved · ', 'Tu lectura del ' + tf.toUpperCase() + ' guardada · ') + LDN.format(new Date()));
+      return true; }
+    async function rvSet(key, v) { if (!RV || !RV.on) return; var R0 = RV, r = rvRow(R0.k, R0.id); if (!r) return; var p = {}; p[key] = key === 'note' ? String(v || '').trim().slice(0, 2000) : v;
+      if (key !== 'note') { var sel = root.querySelector('.hk-rv [data-rv="' + key + '"]'); if (sel) sel.classList.toggle('you', v !== (R0.hk || {})[key]); }
+      var got = null; try { got = await opt.study({ get: R0.n }); } catch (x) {}
+      await rvKeep(R0.k, r, R0.tf, Array.isArray(got) ? got : null, p, R0.n); }
+    async function rvBack() { if (!RV || !RV.on) return; var R0 = RV, r = rvRow(R0.k, R0.id); if (!r) return;
+      try { await opt.study({ sym: R0.sym, day: nyDay(R0.at), at: R0.at, draw: R0.k === 's' ? sDraw(r) : [], pd: null, pid: R0.k === 's' ? sKey(r) : null, n: R0.n, keep: R0.draw || [], onMine: rvOnMine, noAsk: true, tf: TFM[R0.tf], stay: true }); } catch (x) {}
+      await rvBase(R0.n); await rvKeep(R0.k, r, R0.tf, null, { said: null, loc: null, dw: null }, R0.n);
+      if (RV === R0) { rvPaint(); rvMsg(L('The hawk\'s read is back. Your note stays.', 'La lectura del halcón ha vuelto. Tu nota se queda.')); } }
+    async function rvDone() { if (!RV) return; var R0 = RV, r = rvRow(R0.k, R0.id), ta = root.querySelector('.hk-rv [data-rv="note"]'); if (ta && R0.on) await rvSet('note', ta.value);
+      if (R0.on && R0.k === 's' && r) { sOpen(r); return; }   // a study trade: back to the trade in Study
+      if (R0.on || rvStudy) try { await opt.study({ end: true }); } catch (x) {}   // a brief: his own charts back (the hand-back saves the drawings)
+      RV = null; rvPaint(); }
+    setInterval(async function () { if (rvBusy || !RV || !RV.on || !opt.study || doc.hidden) return; var R0 = RV, r = rvRow(R0.k, R0.id); if (!r) return;
+      rvBusy = true; try { var got = await opt.study({ get: R0.n }); if (Array.isArray(got) && RV === R0) await rvKeep(R0.k, r, R0.tf, got, null, R0.n); } catch (x) {} rvBusy = false; }, 3000);
     function sScroller() { for (var e = host; e && e !== doc.body; e = e.parentElement) { var o = getComputedStyle(e).overflowY; if ((o === 'auto' || o === 'scroll') && e.scrollHeight > e.clientHeight) return e; } return null; }
     function sShow(n) { var sc = sScroller(), row = byEl('.hk-tr[data-sn="' + n + '"]');   // the open trade in view: the panel scrolls, never the page (the platform's bars stay put)
       if (row && sc) { var rt = row.getBoundingClientRect().top - sc.getBoundingClientRect().top; if (rt < 40 || rt > sc.clientHeight * 0.45) sc.scrollTop += rt - 40; }
@@ -1134,6 +1335,9 @@
       if (e.target.closest('[data-wreset]')) { wiP = Object.assign(wi0(), { risk: wiP.risk }); wiSet(); return true; }
       return false; }
     root.addEventListener('click', async function (e) {
+      var rt = e.target.closest('[data-rvtf]'); if (rt) { var rk = rt.dataset.rvk, rr = rvRow(rk, rt.dataset.rvid); if (rr) rvOpen(rk, rr, rt.dataset.rvtf); return; }   // a timeframe tile: its review in the charts
+      if (e.target.closest('[data-rvdone]')) { rvDone(); return; }
+      if (e.target.closest('[data-rvback]')) { rvBack(); return; }
       var wx = e.target.closest('[data-hkwx]'); if (wx) { var W1 = cfgWins().filter(function (x, i) { return i !== +wx.dataset.hkwx; }); if (W1.length) cfgSave('wins', W1); return; }
       var wa = e.target.closest('[data-hkwadd]'); if (wa) { var W2 = cfgWins().slice(), nw = wa.dataset.hkwadd === 'more' ? winFree(W2) : wa.dataset.hkwadd.split('-').map(Number); if (nw && W2.length < 3) { W2.push(nw); cfgSave('wins', winsClean(W2)); } return; }
       var t = e.target.closest('.hk-tabs button');
@@ -1173,13 +1377,14 @@
       if (act === 'edit') { editOpen(r, !(st && st.edit)); return; }
       if (act === 'cancel') { editOpen(r, false); return; }
       if (act === 'ph') { st.phase = b.dataset.ph; b.parentNode.querySelectorAll('.hk-ph').forEach(function (x) { x.setAttribute('aria-pressed', x === b); }); return; }
-      if (act === 'save' || act === 'clear') {
-        var mine = act === 'clear' ? null : Object.assign({}, st.edit, r.kind === 'brief' ? { phase: st.phase } : {}, { at: new Date().toISOString() });
+      if (act === 'save' || act === 'clear') { var keepTf = r.mine && r.mine.tf ? { tf: r.mine.tf } : null;   // his timeframe reviews stay (24 Nov 2026)
+        var mine = act === 'clear' ? keepTf : Object.assign({}, st.edit, r.kind === 'brief' ? { phase: st.phase } : {}, keepTf || {}, { at: new Date().toISOString() });
         if (await save(r.id, { mine: mine }, act === 'clear' ? L('Your read removed', 'Tu lectura se ha quitado') : L('Your read saved — the hawk will learn from it', 'Tu lectura guardada — el halcón aprenderá de ella'))) {
           r.mine = mine; byEl('#hk-m-' + r.id).textContent = mineText(r); editOpen(r, false); stats(); }
       }
     });
     root.addEventListener('change', function (e) {
+      if (e.target.dataset && e.target.dataset.rv) { rvSet(e.target.dataset.rv, e.target.value); return; }   // his read of the timeframe open
       if (e.target.hasAttribute && e.target.hasAttribute('data-hkacc')) { cfgSave('login', e.target.value); return; }
       if (e.target.hasAttribute && e.target.hasAttribute('data-hkmk')) { cfgSave('sym', e.target.value); return; }
       if (e.target.hasAttribute && e.target.hasAttribute('data-hkw')) { var W3 = cfgWins().map(function (x) { return x.slice(); }), wi = +e.target.dataset.hkw, wv = +e.target.value;
@@ -1209,9 +1414,9 @@
       var hello = function () { try { sFlOp.postMessage({ kind: 'st-hawk-flight-ready' }, '*'); } catch (x) { clearInterval(hi); } };
       hi = setInterval(function () { if (++tries > 60 || sFlPend) clearInterval(hi); else hello(); }, 500); hello(); })();
     load(); poll();
-    var api = { reload: function () { load(); }, redraw: function () { todayPaint(); redraw(); }, today: todayPaint, relang: relang };
+    var api = { reload: function () { load(); }, redraw: function () { todayPaint(); redraw(); }, today: todayPaint, relang: relang, rv: function () { return RV; } };
     MOUNTS.push(api);
     return api;
   }
-  window.STHawk = { mount: mount, draw: draw, relang: function () { MOUNTS.forEach(function (m) { try { m.relang(); } catch (e) {} }); } };
+  window.STHawk = { mount: mount, draw: draw, engine: HE, mounts: MOUNTS, relang: function () { MOUNTS.forEach(function (m) { try { m.relang(); } catch (e) {} }); } };
 })();

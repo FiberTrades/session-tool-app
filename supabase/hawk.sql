@@ -83,6 +83,10 @@ create policy hawk_study_days_admin_read on public.hawk_study_days for select to
 -- where HE would move to break-even on each study trade ({price} or {none:true}), set from the Study tab (6 Nov 2026)
 alter table public.hawk_study add column if not exists be_mine jsonb;
 grant update (be_mine) on public.hawk_study to authenticated;
+-- his read of each timeframe on a study trade, from the review in his full charts (24 Nov 2026): {'4h'|'1h'|'15m': {said, loc, note, dw, hk, at}}
+-- (a brief's goes in hawk_signals.mine.tf)
+alter table public.hawk_study add column if not exists tf_mine jsonb;
+grant update (tf_mine) on public.hawk_study to authenticated;
 
 -- The hawk's account + market (6 Nov 2026: "inside the hawk tab i need to be able to select what account and market/symbol i want the
 -- hawk be reading price from"). One row; hawk.py reads it through st-hawk {config:true} once a minute. Migration hawk_config.
