@@ -143,10 +143,10 @@
       if (bar.scrollWidth > bar.clientWidth + 2) { bar.scrollLeft = bar.scrollWidth; await W(250); var wq = $('.ph-icons [data-phpn="wl"]').getBoundingClientRect();
         check('...swiped to the end: the Watchlist (last) on screen', inScr(wq) && wq.right <= bar.getBoundingClientRect().right + 1, [Math.round(wq.right)]); }
       bar.scrollLeft = 0; await W(150);
-      // a phone's scales two points smaller (Nestor, 24 Nov 2026: "I feel like the price scale is too wide, make narrower so I can see more chart")
+      // a phone's price scale narrower by its padding, its prices the same size and as many (Nestor, 24 Nov 2026: "make scale price narrower on phone" ... "all you had to do is make the scale narrower!")
       await until(function () { return P._panes()[0].chart.priceScale('right').width() > 0; });
       var pfs = P._panes()[0].chart.options().layout.fontSize, psw = P._panes()[0].chart.priceScale('right').width();
-      check('a phone\'s scales two points smaller than a computer\'s (9 px): the price scale 52 px, not 60 - more chart ("make scale price narrower on phone")', pfs === 9 && psw > 30 && psw <= 54, [pfs, psw]);
+      check('a phone\'s price scale about 48 px (was 60): the same 11 px prices as a computer, only the padding round them cut ("all you had to do is make the scale narrower!")', pfs === 11 && self.__stLwcTight === true && psw > 30 && psw <= 50, [pfs, psw, self.__stLwcTight]);
       // News this week on a phone, scrolled sideways: each day's band as wide as its rows, its name in view (24 Nov 2026: "Why do these not extend all the way to the right?")
       var nwL0 = window.__stReplay._newsWeek.load, ats = function (d, h) { return d + 'T' + h + ':00Z'; };
       window.__stReplay._newsWeek.load = async function () { return { from: '2026-10-12', to: '2026-10-16', rows: [{ at: ats('2026-10-12', '13:30'), timed: true, currency: 'USD', title: 'Core Retail Sales m/m', impact: 'High', forecast: '0.4%', previous: '0.9%', actual: '' }, { at: ats('2026-10-13', '07:00'), timed: true, currency: 'GBP', title: 'CPI y/y', impact: 'High', forecast: '3.6%', previous: '3.5%', actual: '' }] }; };
