@@ -147,6 +147,9 @@
     '.hk-dates{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:6px;margin-top:8px}.hk-dates span{font-size:11px;color:var(--hk-mut)}',
     '.hk-dates input{min-width:0;height:30px;box-sizing:border-box;padding:0 8px;border-radius:7px;border:1px solid var(--hk-line);background:var(--hk-soft);color:var(--hk-ink);font:500 12px var(--hk-mono);color-scheme:light dark}',
     '.hk-sh{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.hk-vw{margin:0;flex:none}.hk-vw button{padding:4px 9px}.hk-lead{margin:10px 0 0}',
+    // the way back from Test the rules: a drawn chevron, not a text arrow (26 Nov 2026, Nestor: "what is this pathetic arrow?")
+    '.hk-btn.hk-back{display:inline-flex;align-items:center;gap:7px;padding-left:10px}.hk-back svg{width:7px;height:12px;flex:none;color:var(--hk-mut);transition:transform .15s ease,color .15s ease}.hk-back:hover svg{color:var(--hk-ink);transform:translateX(-2px)}',
+    '@media (prefers-reduced-motion:reduce){.hk-back svg{transition:none}.hk-back:hover svg{transform:none}}',
     '.hk-vb button span{white-space:nowrap}.hk-saved:empty{display:none}.hk-det .hk-saved{margin-top:8px;font-size:11.5px;color:var(--hk-mut)}',
     '.hk-kpi.c3{grid-template-columns:repeat(3,1fr);margin:0}.hk-kpi.c3 b{font-size:12.5px}',
     '.hk-tt dd.p.mb{color:var(--hk-you)}.hk-bb{display:flex;gap:6px;flex:none}.hk-dw span b{font:500 12px var(--hk-mono);color:var(--hk-you)}',
@@ -1390,7 +1393,7 @@
       var h = '<div class="hk-sh"><div><h4>' + L('Rule study', 'Estudio de reglas') + '</h4><p>' + esc(mkName(sMkt)) + (sSes ? ' · ' + sSesName(sSes) + L(' · 1 year', ' · 1 año') : L(' · London 08–10 · 1 year', ' · Londres 08–10 · 1 año')) + '</p></div>' +
         // the What if lab (stops, targets, break-even, costs, the Net R grid) is for tuning rules before the hawk ever trades money, not for
         // training it: one quiet button, closed by default (26 Nov 2026, Nestor: "i feel like the hawk section is overly engineered")
-        (sview === 'whatif' ? '<button type="button" class="hk-btn hk-vw" data-sw="trades">' + L('← The trades', '← Las operaciones') + '</button>'
+        (sview === 'whatif' ? '<button type="button" class="hk-btn hk-vw hk-back" data-sw="trades"><svg viewBox="0 0 7 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.8 1.2L1.4 6l4.4 4.8"/></svg>' + L('The trades', 'Las operaciones') + '</button>'
           : '<button type="button" class="hk-btn hk-vw" data-sw="whatif" title="' + L('Try other stops, targets, break-even and costs on the year', 'Prueba otros stops, objetivos, break-even y costes en el año') + '">' + L('Test the rules', 'Probar las reglas') + '</button>') + '</div>';
       if (sFlPend) h += sFlCard(sFlPend);
       h += sMktHtml();
