@@ -242,6 +242,15 @@
     ok('...it opens the lab, with a way back to the trades', bk && /The trades/.test(tx(bk)), bk && tx(bk));
     bk.click(); for (k = 0; k < 30 && !Q('.hk-sh [data-sw="whatif"]'); k++) await W(100);
     ok('...and back', !!Q('.hk-sh [data-sw="whatif"]'));
+    // flight marks numbered by the study archived on 26 Nov 2026 (offline file v3): onto the same trade in the new study (data->>was), else
+    // onto the archive v3_ - never onto whatever trade now has that number
+    var fl = { kind: 'st-hawk-study-marks', v: 3, made: new Date().toISOString(), marks: [{ run: 'strict_20', n: 7, day: '2026-10-20', verdict: 'agree', at: new Date().toISOString() }] };
+    var fin = Q('[data-sfile]'), dt = new DataTransfer(); dt.items.add(new File([JSON.stringify(fl)], 'marks.json', { type: 'application/json' })); fin.files = dt.files;
+    var nS = SAVES.length; fin.dispatchEvent(new Event('change', { bubbles: true }));
+    for (k = 0; k < 40 && SAVES.length < nS + 2; k++) await W(100);
+    var fs = SAVES.slice(nS).filter(function (x) { return x.t === 'hawk_study'; });
+    ok('flight marks from the archived study go to the same trade (was 7), else to its archive v3_ #7', fs.length === 2 && fs[0].f.run === 'strict_20' && fs[0].f['data->>was'] === '7' && fs[0].f.day === '2026-10-20' && fs[0].p.verdict === 'agree'
+      && fs[1].f.run === 'v3_strict_20' && fs[1].f.n === 7, fs.map(function (x) { return x.f; }));
     var M2 = mk({}, CFG2), r2 = M2.host;
     for (k = 0; k < 80 && !r2.querySelector('.hk-ses[data-sk="' + sk + '"] .hk-aft'); k++) await W(100);
     var c2 = r2.querySelector('.hk-ses[data-sk="' + sk + '"]');

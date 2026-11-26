@@ -1434,16 +1434,19 @@
     // study) through data.was1, else v1_
     async function sImportJ(j) {
       if (!j || j.kind !== 'st-hawk-study-marks' || !Array.isArray(j.marks)) { sFlMsg = L('That file isn\'t marks from the offline study.', 'Ese archivo no son marcas del estudio sin conexión.'); sRefresh(); return null; }
-      var ms = j.marks.filter(function (m) { return m && typeof m.run === 'string' && /^(v[12]_)?strict_20(:[\w.]+)?(@(?:1330|\d{4}-\d{4}))?$/.test(m.run) && +m.n > 0 && /^\d{4}-\d\d-\d\d$/.test(String(m.day || '')); }), ok = 0, miss = 0, now = new Date().toISOString();
+      var ms = j.marks.filter(function (m) { return m && typeof m.run === 'string' && /^(v[123]_)?strict_20(:[\w.]+)?(@(?:1330|\d{4}-\d{4}))?$/.test(m.run) && +m.n > 0 && /^\d{4}-\d\d-\d\d$/.test(String(m.day || '')); }), ok = 0, miss = 0, now = new Date().toISOString();
       sFlMsg = L('Bringing in ' + ms.length + '…', 'Trayendo ' + ms.length + '…'); sRefresh();
       for (var i = 0; i < ms.length; i++) { var m = ms[i], p = {};
         if ('verdict' in m || 'note' in m) { p.verdict = m.verdict === 'agree' || m.verdict === 'disagree' ? m.verdict : null; p.note = String(m.note || '').trim().slice(0, 4000) || null; p.verdict_at = m.at || now; }
         if ('dw' in m) { var dw = Array.isArray(m.dw) ? m.dw.filter(function (x) { return x && typeof x === 'object' && typeof x.type === 'string'; }).slice(0, 300) : []; p.drawings = dw.length ? dw : null; p.drawings_at = m.dwAt || m.at || now; }
         if ('be' in m) p.be_mine = m.be && m.be.none ? { none: true } : m.be && isFinite(+m.be.price) ? { price: +m.be.price } : null;
         var up = function (run, k, v) { return sb.from('hawk_study').update(p).eq('run', run).eq(k, v).eq('day', m.day).select('n'); }, q;
+        // which study the file was numbered by: v3 = the 7 Nov study (archived as v3_ when the 1H's blocks came off, 26 Nov 2026), v2 = the one
+        // before it, v1 = the first. The live rows carry was = their v3 trade's n and was1 = its v2 n; a trade with no match goes to its archive.
         var V = +j.v || 1;
-        if (V >= 3 || /^v[12]_/.test(m.run)) q = await up(m.run, 'n', +m.n);
-        else { q = await up(m.run, V === 2 ? 'data->>was' : 'data->>was1', String(+m.n)); if (!q.error && !(q.data && q.data.length)) q = await up((V === 2 ? 'v2_' : 'v1_') + m.run, 'n', +m.n); }
+        if (V >= 4 || /^v[123]_/.test(m.run)) q = await up(m.run, 'n', +m.n);
+        else if (V === 1) q = await up('v1_' + m.run, 'n', +m.n);
+        else { q = await up(m.run, V === 3 ? 'data->>was' : 'data->>was1', String(+m.n)); if (!q.error && !(q.data && q.data.length)) q = await up('v' + V + '_' + m.run, 'n', +m.n); }
         if (!q.error && q.data && q.data.length) ok++; else miss++; }
       sFlMsg = L(sPl(ok, 'trade') + ' brought in' + (miss ? ', ' + miss + ' not saved' : '') + '.', ok + (ok === 1 ? ' operación traída' : ' operaciones traídas') + (miss ? ', ' + miss + ' sin guardar' : '') + '.');
       study = null; await studyLoad(); return { ok: ok, miss: miss }; }
