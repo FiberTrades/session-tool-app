@@ -64,6 +64,9 @@
   for (var k = 0; k < 20 && !ask(); k++) await W(200);
   var at = ask() ? ask().innerText.replace(/\s+/g, ' ') : '';
   ok('a new MT5 account connects with 2 accounts: it asks which one its trades go into', ask() && /New MT5 account connected/.test(at) && /555111/.test(at) && /GBPUSD/.test(at) && /FTMO 70K - Challenge/.test(at) && /FTMO 70K - Demo/.test(at) && /Decide later/i.test(at) && /Settings → Accounts/.test(at), at.slice(0, 220));
+  (function () { var h = ask().querySelector('.mt5c-ask-hint').getBoundingClientRect(), b = ask().querySelector('.modal-actions [data-mt5c-ask=""]').getBoundingClientRect(), m = ask().querySelector('.modal').getBoundingClientRect();
+    // 26 Nov 2026: "why is decide later box so close to You can change it any time in Settings -> Accounts" (it sat 6px under it, on the left)
+    ok('Decide later has room under the hint and sits in the middle', b.top - h.bottom >= 16 && Math.abs((b.left + b.right) / 2 - (m.left + m.right) / 2) < 3, [Math.round(b.top - h.bottom), Math.round((b.left + b.right) / 2 - (m.left + m.right) / 2)]); })();
   ask().querySelector('[data-mt5c-ask="' + a3.id + '"]').click(); await W(300);
   ok('picking one links it and closes the question', !ask() && data.mt5LoginMap['555111'] === a3.id && !!data.mt5Asked['555111'], data.mt5LoginMap['555111']);
   await W(2000);
@@ -73,6 +76,10 @@
   ask().querySelector('[data-mt5c-ask=""]').click(); await W(300);
   await W(2000);
   ok('Decide later leaves it unlinked and does not ask again', !ask() && !('555222' in data.mt5LoginMap) && !!data.mt5Asked['555222']);
+  // 26 Nov 2026: his new demo took his old demo's account, and the old one (last heard two weeks before) asked as "New MT5 account connected"
+  window.__stEA.apply({ login: '555444', symbol: 'EURUSD', ea_version: '9.24', updated_at: new Date(Date.now() - 14 * 86400e3).toISOString(), settings: { unit: 'pips' } });
+  await W(2200);
+  ok('an MT5 account last heard from two weeks ago is not a new one: no question', !ask() && !data.mt5Asked['555444']);
   window.__stEA.apply({ login: '555333', symbol: 'XAUUSD', ea_version: '9.06', updated_at: new Date().toISOString(), settings: { unit: 'points' } });
   data.accounts = [a1]; await W(2200);
   ok('with one account it does not ask (its trades go to that account)', !ask());
@@ -80,7 +87,7 @@
   for (k = 0; k < 20 && !ask(); k++) await W(200);
   ok('...and asks once a second account exists', !!ask());
   if (ask()) ask().querySelector('[data-mt5c-ask=""]').click();
-  ['555111', '555222', '555333'].forEach(function (lg) { delete data.mt5LoginMap[lg]; Object.keys(rows0).forEach(function (k2) { if (k2.indexOf(lg + '|') === 0) delete rows0[k2]; }); });
+  ['555111', '555222', '555333', '555444'].forEach(function (lg) { delete data.mt5LoginMap[lg]; Object.keys(rows0).forEach(function (k2) { if (k2.indexOf(lg + '|') === 0) delete rows0[k2]; }); });
   window.currentUser = null;
 
   // ---- and the point of it: with the demo linked and kept separate, its live trades are not counted ----
