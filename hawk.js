@@ -1804,9 +1804,13 @@
       var mx = Math.max.apply(null, v.map(function (r) { return Math.max.apply(null, r.map(Math.abs)); })) || 1;
       var isBase = function (rv, cv) { return sk === 'soff' && tk === 'tp' && rv === 0 && cv === 20 && p.be === 'hawk' && +p.exit === sXm() && +p.cost === +wi0().cost; };
       var U = wiUL(), vc = '<b>' + (sk === 'soff' ? L('Your stop (' + U + ')', 'Tu stop (' + U + ')') : L('Stop (' + U + ')', 'Stop (' + U + ')')) + '</b>';
-      return '<div class="hk-hm"><table><thead><tr><th class="vc"></th><th class="y"></th><th class="cap" colspan="' + cols.length + '"><b>' + L('Target (', 'Objetivo (') + (tk === 'tp' ? U : 'R') + ')</b></th></tr><tr><th class="vc"></th><th class="y"></th>' +
+      // the row labels are bare numbers like the target columns (the unit rides on the tab), and their column is as wide as the longest
+      // one (26 Nov 2026: "Your stops" and "-0.5 pips" ran left under the tab in a fixed 44px column)
+      var yl = rows.map(function (rv) { return sk === 'soff' ? (rv === 0 ? L('Your stops', 'Tus stops') : (rv > 0 ? '+' : '−') + wiV(Math.abs(rv), 1)) : String(wiV(rv, 1)); });
+      var yw = ' style="width:calc(' + (Math.max.apply(null, yl.map(function (t) { return t.length; })) + 1) + 'ch + 6px)"';
+      return '<div class="hk-hm"><table><thead><tr><th class="vc"></th><th class="y"' + yw + '></th><th class="cap" colspan="' + cols.length + '"><b>' + L('Target (', 'Objetivo (') + (tk === 'tp' ? U : 'R') + ')</b></th></tr><tr><th class="vc"></th><th class="y"' + yw + '></th>' +
         cols.map(function (c) { return '<th>' + (tk === 'tp' ? wiV(c, 1) : c) + '</th>'; }).join('') + '</tr></thead><tbody>' +
-        rows.map(function (rv, i) { return '<tr>' + (i ? '' : '<th class="vc" rowspan="' + rows.length + '"><span>' + vc + '</span></th>') + '<th class="y">' + (sk === 'soff' ? (rv === 0 ? L('Your stops', 'Tus stops') : (rv > 0 ? '+' : '−') + wiVU(rv, 1)) : wiV(rv, 1)) + '</th>' + cols.map(function (cv, j) { var x = v[i][j], a = Math.round(Math.min(1, Math.abs(x) / mx) * 62);
+        rows.map(function (rv, i) { return '<tr>' + (i ? '' : '<th class="vc" rowspan="' + rows.length + '"><span>' + vc + '</span></th>') + '<th class="y">' + yl[i] + '</th>' + cols.map(function (cv, j) { var x = v[i][j], a = Math.round(Math.min(1, Math.abs(x) / mx) * 62);
           return '<td><button data-wg="' + sk + '|' + rv + '|' + tk + '|' + cv + '" class="' + (isBase(rv, cv) ? 'base' : '') + '" aria-current="' + (+p[sk] === rv && +p[tk] === cv) + '" title="Stop ' + (sk === 'soff' ? (rv === 0 ? L('as your rule places it', 'como lo pone tu regla') : wiVU(rv, 1) + L((rv > 0 ? ' wider' : ' tighter') + ' than yours', (rv > 0 ? ' más ancho' : ' más ajustado') + ' que el tuyo')) : wiVU(rv, 1)) + L(', target ', ', objetivo ') + (tk === 'tp' ? wiVU(cv, 1) : cv + 'R') + ': ' + sR1(x) + '" style="background:color-mix(in srgb,var(' + (x >= 0 ? '--hk-buy' : '--hk-sell') + ') ' + a + '%,transparent)">' + (x < -0.5 ? '−' : '') + Math.abs(Math.round(x)) + '</button></td>'; }).join('') + '</tr>'; }).join('') +
         '</tbody></table></div>'; }
     function wiHtml() {
