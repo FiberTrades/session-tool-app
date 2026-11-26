@@ -366,21 +366,28 @@
     if (!W || !H) return;
     var dpr = window.devicePixelRatio || 1;
     if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+    if (st.load) st.load();   // its 1-minute candles, fetched the first time it is drawn in view
     var g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
     var cs = getComputedStyle(box), K = {};
     ['ink', 'mut', 'line', 'soft', 'acc', 'buy', 'sell', 'warn', 'you', 'cup', 'cdn', 'card', 'plot'].forEach(function (n) { K[n] = cs.getPropertyValue('--hk-' + n).trim() || '#888'; });
     var MONO = cs.getPropertyValue('--hk-mono').trim() || 'monospace';
     var r = st.row, a = r.data || {}, d = a.chart;
     var RG = W < 480 ? 60 : 70, TOP = 10, BOT = 20, PW = W - RG, PH = H - TOP - BOT;
-    // fewer, wider candles when the chart is narrow
     // the brief shows the whole day it measured; an alert zooms in on the session, so a 3-pip stop can be seen
+    // always 1-minute candles (26 Nov 2026, Nestor: "make it always show 1m candles"), never merged into 15-minute ones: the app's candle
+    // store's for the chart's span (st.m1); the row's own 5-minute ones only until they come, or where the store has none
     var tf = d.tf * 60, src = d.c;
-    if (r.kind !== 'brief') { var t0 = Math.max(d.r0, d.w0 - 3 * 3600); src = d.c.filter(function (b) { return b[0] >= t0; }); if (src.length < 36) src = d.c.slice(-36); }
+    if (st.m1 && st.m1.length) { src = st.m1; tf = 60; }
+    else if (r.kind !== 'brief') { var t0 = Math.max(d.r0, d.w0 - 3 * 3600); src = d.c.filter(function (b) { return b[0] >= t0; }); if (src.length < 36) src = d.c.slice(-36); }
     var bars = src, vw = st.vw || null, zt = !!(vw && vw.t1 > vw.t0 && src.length);   // his view (24 Nov 2026): a span of time and / or a price range, set by dragging
-    if (PW / (zt ? bIx(src, tf, vw.t1) - bIx(src, tf, vw.t0) : src.length * 1.16) < 2.8) { if (!st.c15) st.c15 = agg(src, 900); bars = st.c15; tf = 900; }
     var n = bars.length; if (!n) return;
-    var fut = Math.max(8, Math.round(n * 0.16)), NT = n + fut, i0 = 0, i1 = NT;
-    if (zt) { i0 = bIx(bars, tf, vw.t0); i1 = bIx(bars, tf, vw.t1); if (!(i1 - i0 >= 3)) { i0 = 0; i1 = NT; } }
+    // a session opens on its whole window, a quarter of an hour each side (every alert in it in view); an alert or a brief with more
+    // candles than fit at 3 px on its last ones - the moment it spoke; the rest a drag or a zoom away
+    var fit = Math.max(30, PW / 3), fut = Math.max(6, Math.round(Math.min(n, fit) * 0.15)), NT = n + fut, i0 = 0, i1 = NT;
+    if (zt) { i0 = bIx(bars, tf, vw.t0); i1 = bIx(bars, tf, vw.t1); if (!(i1 - i0 >= 3)) zt = false; }
+    if (!zt && r.kind === 'sess' && d.w1 > d.w0) { i0 = Math.max(0, bIx(bars, tf, d.w0 - 900)); i1 = Math.min(NT, Math.max(i0 + 30, bIx(bars, tf, d.w1 + 900))); }
+    else if (!zt && NT > fit) { i1 = NT; i0 = NT - fit; }
+    else if (!zt) { i0 = 0; i1 = NT; }
     // drawn on the whole bar scale, slid left by OX: VR is the right edge in view, XR how far lines and zones run
     var bw = PW / (i1 - i0), OX = i0 * bw, VR = OX + PW, XR = Math.max(NT * bw, VR);
     st.view = { i0: i0, i1: i1, bw: bw, bars: bars, tf: tf, n: n, NT: NT };
@@ -500,8 +507,8 @@
     pills.forEach(function (p) { g.fillStyle = p.bg; g.beginPath();
       if (g.roundRect) g.roundRect(PW + 4, p.y - 7, RG - 8, 14, 3); else g.rect(PW + 4, p.y - 7, RG - 8, 14); g.fill();
       txt(p.t, PW + RG / 2, p.y + .5, p.fg, 'center', 10, 500); });
-    // its candles' timeframe, in the corner under the prices (26 Nov 2026, Nestor: "what timeframe is this suppossed to be?"): 5M, 15M once
-    // the chart is too narrow (or zoomed out too far) for 5-minute candles
+    // its candles' timeframe, in the corner under the prices (26 Nov 2026, Nestor: "what timeframe is this suppossed to be?"): 1M, or 5M
+    // while the 1-minute ones are on their way or where the candle store has none
     var tfL = tf % 3600 ? tf / 60 + 'M' : tf / 3600 + 'H'; txt(tfL, PW + RG / 2, H - 9, K.mut, 'center', 9, 600); if (box.dataset.tf !== tfL) box.dataset.tf = tfL;
   }
 
@@ -716,11 +723,32 @@
     // touches the chart (it zoomed the price once he had clicked the chart, while he scrolled the page), a double-click resets with a real
     // mouse (its target is the box the press captured to, not the canvas), and a drag ends the moment the button is up, even if the
     // let-go never reaches the chart.
+    // 1-minute candles for every hawk chart (26 Nov 2026, Nestor: "make it always show 1m candles"), from the app's candle store over the
+    // chart's own span; kept per market and start, only the newer ones fetched as a session's candles come in; none tried again for a minute
+    var M1 = {};
+    function m1Span(r) { var d = r.data && r.data.chart; if (!d || !d.c || !d.c.length) return null;
+      var from = d.c[0][0];
+      if (r.kind !== 'brief') { from = Math.max(d.r0 || 0, d.w0 - 3 * 3600); if (d.c.filter(function (b) { return b[0] >= from; }).length < 36) from = d.c[Math.max(0, d.c.length - 36)][0]; }
+      return { k: String((r.data && r.data.sym) || 'EURUSD') + '|' + from, sym: String((r.data && r.data.sym) || 'EURUSD'), from: from, to: d.c[d.c.length - 1][0] + (d.tf || 5) * 60 }; }
+    function m1Load(st) { if (!opt.bars) return; var sp = m1Span(st.row); if (!sp) return; var c = M1[sp.k];
+      if (c && c.m) st.m1 = c.m;
+      if (c && (c.p || c.none || c.to >= sp.to || Date.now() - (c.failAt || 0) < 60000)) return;
+      c = M1[sp.k] = c || { m: null, to: 0, p: null };
+      var a = c.m && c.m.length ? c.m[c.m.length - 1][0] : sp.from - 60;
+      c.p = Promise.resolve(opt.bars(sp.sym, 1, a, sp.to)).then(function (x) {
+        if (x && !x.failed && x.length) { var mm = {}; (c.m || []).forEach(function (b) { mm[b[0]] = b; });
+          x.forEach(function (b) { var t = +b.time; if (t >= sp.from && t < sp.to) mm[t] = [t, +b.open, +b.high, +b.low, +b.close]; });
+          c.m = Object.keys(mm).map(Number).sort(function (p, q) { return p - q; }).map(function (t) { return mm[t]; }); c.to = sp.to; }
+        else if (x && !x.failed) { if (c.m) c.to = sp.to; else c.none = true; }   // the store has no 1-minute candles there: its 5-minute ones stay
+        else c.failAt = Date.now();
+        c.p = null;
+        Object.keys(charts).forEach(function (id) { var s2 = charts[id], p2 = m1Span(s2.row); if (p2 && p2.k === sp.k && c.m && s2.m1 !== c.m) { s2.m1 = c.m; draw(s2); } });
+      }, function () { c.p = null; c.failAt = Date.now(); }); }
     function chKey(box) { return (box.closest('.hk-nar') ? 'n' : '') + (box.hasAttribute('data-ses') ? 's' : box.closest('.hk-brief') ? 'b' : 'a'); }
     function chHs() { try { return JSON.parse(localStorage.getItem('st_hawk_chh') || '{}') || {}; } catch (x) { return {}; } }
     function hookChart(st) {
       var box = st.box, key = st.row.id, g0 = null;
-      st.vw = views[key] || null;
+      st.vw = views[key] || null; st.load = function () { m1Load(st); };
       var zr = doc.createElement('button'); zr.type = 'button'; zr.className = 'hk-zr'; zr.textContent = L('Reset view', 'Restablecer vista'); zr.hidden = !st.vw; box.appendChild(zr); st.zr = zr;
       zr.addEventListener('click', function (e) { e.stopPropagation(); setV(null); });
       var hk = chKey(box), hh = +chHs()[hk]; if (hh >= 160) box.style.height = hh + 'px';
@@ -879,7 +907,7 @@
       if (F && F.m && F.src === 'bars') (F.tf === 60 ? agg(F.m, 300) : F.m).forEach(function (b) { m[b[0]] = b; });
       var d = Object.assign({}, base.c, { c: Object.keys(m).map(Number).sort(function (a, b) { return a - b; }).map(function (t) { return m[t]; }) });
       if (base.r !== S.brief) { d.px = null; d.now = null; }
-      return { id: 'ses:' + S.key, kind: 'sess', data: { chart: d } }; }
+      return { id: 'ses:' + S.key, kind: 'sess', data: { chart: d, sym: S.sym } }; }
     function sesMarks(S) { return S.al.map(function (r, i) { return { t: alertT(r) - 60, p: alertP(r), n: i + 1, s: r.side }; }).filter(function (m) { return isFinite(m.p); }); }
     function sesLegend(S, rw) { var d = rw.data.chart, it = [['sell', 'Premium', .3], ['buy', L('Discount', 'Descuento'), .3], ['soft', winLbl(d), 1]];
       if (d.a2b) it.push(['acc', L('Leg 50%', '50% del tramo'), 1]);
