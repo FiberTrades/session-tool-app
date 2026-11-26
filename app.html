@@ -100618,6 +100618,39 @@ window.__stAZ = (function () {
   /* The hawk on the rail (6 Nov 2026) - the admin's alone: its button shows once the loader under the Charts page has found the admin's
      account (window.__stHawk), and its feed (hawk.js) is mounted in its panel the first time it opens; drawn again whenever it opens. */
   var PLHK = null;
+  // ---- the hawk's trade times: begin
+  /* his journal trades for the hawk's "Your trades in its hours" (26 Nov 2026, "yes do step 1"), at the broker's own open times: some
+     journal rows carry an entryTime 9 hours out (19 Nov's London buy reads 17:04, its MT5 deal opened 08:04:56 UTC; 9 Nov's 18:31 was
+     09:31:36), which would drop them out of its hours. trades_inbox (his EAs' deals, UTC) is read for the last 120 days - five columns, at
+     most every 10 minutes, while the hawk paints - and each journal trade takes its deal's time: the same ticket, else that London day's
+     deal on that side and market on one of his journal accounts' logins (never the demo's EA tests), nearest in time; entryTime (London
+     time since the MT5 time fix) only where there is no deal. The journal itself is left as it is. One per trade: its copies on his other
+     accounts (within 2 minutes) dropped. */
+  var HKIB = { at: 0, busy: false, rows: [] };
+  function hkLdn(d){ var s = d.toLocaleTimeString('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+    return { day: d.toLocaleDateString('en-CA', { timeZone: 'Europe/London' }), min: (+s.slice(0, 2)) * 60 + (+s.slice(3, 5)) }; }
+  function hkIbRow(x){ if (!x || !x.open_time) return null; var d = new Date(x.open_time); if (isNaN(d.getTime())) return null;
+    var sd = String(x.direction || ''), side = /sell|short/i.test(sd) ? -1 : /buy|long/i.test(sd) ? 1 : 0; if (!side) return null;
+    var w = hkLdn(d); return { tk: String(x.ticket), lg: String(x.login == null ? '' : x.login), sym: canon(x.symbol || ''), side: side, day: w.day, min: w.min }; }
+  function hkInbox(){ var c = window.__stHawk && window.__stHawk.sb, u = window.currentUser; if (!c || !u || !u.id || HKIB.busy || Date.now() - HKIB.at < 600000) return;
+    HKIB.busy = true; HKIB.at = Date.now();
+    Promise.resolve(c.from('trades_inbox').select('ticket,symbol,direction,open_time,login').eq('token', u.id).gte('open_time', new Date(Date.now() - 120 * 864e5).toISOString()).limit(3000))
+      .then(function(r){ HKIB.busy = false; if (!r || r.error || !Array.isArray(r.data)) return; HKIB.rows = r.data.map(hkIbRow).filter(Boolean); try { if (PLHK) PLHK.redraw(); } catch (e) {} },
+        function(){ HKIB.busy = false; }); }
+  function hkTrades(){ try { hkInbox(); var all = (typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades() : [], out = [], map = (data && data.mt5LoginMap) || {}, own = {}, any = {}, nAny = 0;
+      Object.keys(map).forEach(function(lg){ if (!/^\d+$/.test(lg)) return; (own[map[lg]] = own[map[lg]] || {})[lg] = 1; any[lg] = 1; nAny++; });
+      all.forEach(function(t){ if (!t || !t.date) return; var dt = new Date(t.date); if (isNaN(dt.getTime())) return;
+        var day = dt.toLocaleDateString('en-CA', { timeZone: 'Europe/London' }), m = /^(\d{1,2}):(\d{2})/.exec(String(t.entryTime || '')), min = m ? (+m[1]) * 60 + (+m[2]) : null;
+        var sd = String(t.side || t.type || t.direction || ''), side = /short|sell/i.test(sd) ? -1 : /long|buy/i.test(sd) ? 1 : 0; if (!side) return;
+        var sym = canon(t.mt5Symbol || t.symbol || ''), tk = t.mt5Ticket ? String(t.mt5Ticket) : '', lgs = own[t.accountId] || (nAny ? any : null);
+        var c = tk ? HKIB.rows.filter(function(x){ return x.tk === tk; }) : [];
+        if (!c.length) c = HKIB.rows.filter(function(x){ return x.day === day && x.side === side && x.sym === sym && (!lgs || lgs[x.lg]); });
+        if (c.length) { if (min != null) c = c.slice().sort(function(a, b){ return Math.abs(a.min - min) - Math.abs(b.min - min); }); day = c[0].day; min = c[0].min; }
+        if (min == null) return;
+        if (out.some(function(o){ return o.day === day && o.side === side && o.sym === sym && Math.abs(o.min - min) <= 2; })) return;
+        out.push({ day: day, min: min, side: side, sym: sym }); });
+      return out; } catch (e) { return []; } }
+  // ---- the hawk's trade times: end
   function plHawk(pn){ var E = PL.el, ok = !!window.__stHawk; if (!E.rail) return;
     var b = E.rail.querySelector('[data-plr="hk"]'), sp = E.rail.querySelector('.pl-hks');
     if (b && b.hidden === ok) { b.hidden = !ok; if (sp) sp.hidden = !ok; }
@@ -100641,18 +100674,11 @@ window.__stAZ = (function () {
         return { trades: out, risk: dr || (rs.length ? rs[Math.floor(rs.length / 2)] : 0), cur: (typeof curSym === 'function') ? curSym() : '£' }; } catch (e) { return null; } },
       /* his Check my bias answers and journal trades, for the hawk's "Agrees with you" score (26 Nov 2026, Nestor: "would you suggest an
          easier way to train it that doesnt add too much work for me?" - "yes do step 1"): it learns from what he does anyway. Bias: London
-         day, session, market, his HTF read (the hawk's 4H) and LTF read (its 15M). Trades: London day and clock minute (entryTime is London
-         time since the MT5 time fix), side, market - one per trade, its copies on his other accounts dropped. */
+         day, session, market, his HTF read (the hawk's 4H) and LTF read (its 15M). Trades: hkTrades, above (the broker's open times). */
       bias: function(){ try { var B = (data && Array.isArray(data.biasHistory)) ? data.biasHistory : [];
         return B.filter(function(b){ return b && b.dateKey && (b.structure || b.structureLtf); }).map(function(b){ return { day: String(b.dateKey).slice(0, 10), ses: b.sessionName || '', sym: b.symbol ? canon(b.symbol) : '', at: b.date || '',
           htf: { s: b.structure || '', l: b.location || '', d: b.direction || '' }, ltf: { s: b.structureLtf || '', l: b.locationLtf || '', d: b.directionLtf || '' } }; }); } catch (e) { return []; } },
-      trades: function(){ try { var all = (typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades() : [], seen = {}, out = [];
-        all.forEach(function(t){ if (!t || !t.date) return; var m = /^(\d{1,2}):(\d{2})/.exec(String(t.entryTime || '')); if (!m) return;
-          var dt = new Date(t.date); if (isNaN(dt.getTime())) return; var day = dt.toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
-          var sd = String(t.side || t.type || t.direction || ''), side = /short|sell/i.test(sd) ? -1 : /long|buy/i.test(sd) ? 1 : 0; if (!side) return;
-          var sym = canon(t.mt5Symbol || t.symbol || ''), min = (+m[1]) * 60 + (+m[2]), k = day + '|' + min + '|' + side + '|' + sym;
-          if (seen[k]) return; seen[k] = 1; out.push({ day: day, min: min, side: side, sym: sym }); });
-        return out; } catch (e) { return []; } },
+      trades: function(){ return hkTrades(); },
       today: function(){ return null; } });   // the session and its news are in Check my bias now (Nestor, 6 Nov 2026), the plan too, the budget in the Trade Manager
     if (first || PLHK._lt !== lt || !PLHK._shown) { PLHK._lt = lt; PLHK._shown = true; setTimeout(function(){ try { PLHK.redraw(); } catch (e) {} }, 30); } }   // drawn again when it opens and when the theme flips
   function platBuild(win){ var D = win.ownerDocument, E = PL.el, mk = function(cls, html){ var d = D.createElement('div'); d.className = cls; d.innerHTML = html || ''; win.appendChild(d); return d; };

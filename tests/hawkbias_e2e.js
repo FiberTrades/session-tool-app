@@ -31,18 +31,35 @@
       { accountId: 'a1', date: '2026-11-13T12:00:00.000Z', entryTime: '14:21', type: 'sell', symbol: 'EUR/USD' },
       { accountId: 'a1', date: '2026-11-12T12:00:00.000Z', entryTime: '', side: 'Long', symbol: 'EUR/USD' },   // no time: left out
       { accountId: 'a1', date: '2026-11-11T12:00:00.000Z', entryTime: '09:00', side: '', symbol: 'EUR/USD' } ];   // no side: left out
-    var acc = (new Function('data', 'getAllLifetimeTrades', 'canon', 'return {' + body + '};'))(D, function () { return J; }, canon);
+    // the broker's deals (trades_inbox, UTC) as his account holds them on 26 Nov 2026: 19 Nov's buy on his three real logins at 08:04:56
+    // (his journal says 17:04, 9 hours out), 24 Nov's sell at 08:02:37; and the demo's EA tests, which must never stand in for his trades
+    D.mt5LoginMap = { '541419576': 'a1', '27007659': 'a2', '1009000': 'a3' };
+    var IB = [
+      { ticket: 184835159, symbol: 'EURUSD', direction: 'buy', open_time: '2026-11-19T08:04:56+00:00', login: 541419576 },
+      { ticket: 2647386, symbol: 'EURUSD', direction: 'buy', open_time: '2026-11-19T08:04:56+00:00', login: 27007659 },
+      { ticket: 2171621, symbol: 'EURUSD', direction: 'buy', open_time: '2026-11-19T08:04:57+00:00', login: 1009000 },
+      { ticket: 579000001, symbol: 'EURUSD', direction: 'buy', open_time: '2026-11-19T08:46:11+00:00', login: 1515070952 },   // the demo, nearer 17:04
+      { ticket: 186032442, symbol: 'EURUSD', direction: 'sell', open_time: '2026-11-24T08:02:37+00:00', login: 541419576 } ];
+    var a2 = src.indexOf("  // ---- the hawk's trade times: begin"), b2 = src.indexOf("  // ---- the hawk's trade times: end", a2);
+    ok('app.html times his trades from the broker\'s deals (trades_inbox)', a2 > 0 && b2 > a2 && /from\('trades_inbox'\)/.test(src.slice(a2, b2)), [a2, b2]);
+    var TT = (new Function('data', 'getAllLifetimeTrades', 'canon', src.slice(a2, b2) + '\nreturn { HKIB: HKIB, hkIbRow: hkIbRow, hkTrades: hkTrades };'))(D, function () { return J; }, canon);
+    var ts0 = TT.hkTrades();   // no deals read yet (not signed in): the journal's own times
+    TT.HKIB.rows = IB.map(TT.hkIbRow).filter(Boolean);
+    var acc = (new Function('data', 'getAllLifetimeTrades', 'canon', 'hkTrades', 'return {' + body + '};'))(D, function () { return J; }, canon, TT.hkTrades);
     var bs = acc.bias(), ts = acc.trades();
+    ok('...without the deals: the journal\'s times (19 Nov at its 17:04)', ts0.length === 3 && ts0[1].day === '2026-11-19' && ts0[1].min === 1024, ts0);
     ok('his bias: the answered days only, London day, session, market, HTF and LTF reads', bs.length === 3 && bs[0].day === '2026-11-26' && bs[0].ses === 'London' && bs[0].sym === 'EURUSD' && bs[0].htf.s === 'Ranging' && bs[0].htf.l === 'Premium Edge' && bs[0].htf.d === 'Unsure' && bs[0].ltf.s === ''
       && bs[1].ltf.s === 'Trending' && bs[1].ltf.l === 'Premium Middle' && bs[2].ses === '' && bs[2].sym === 'XAUUSD', bs);
     ok('his trades: London day and minute, side, market - the copy on his other account once, no time or no side left out', ts.length === 3 && JSON.stringify(ts[0]) === JSON.stringify({ day: '2026-11-24', min: 482, side: -1, sym: 'EURUSD' })
-      && ts[1].day === '2026-11-19' && ts[1].min === 1024 && ts[1].side === 1 && ts[2].side === -1 && ts[2].min === 861, ts);
+      && ts[1].side === 1 && ts[2].side === -1 && ts[2].min === 861, ts);
+    ok('...19 Nov at the broker\'s 08:04 (his account\'s deal, not the demo\'s nearer one); 13 Nov, with no deal, at its journal 14:21', ts[1].day === '2026-11-19' && ts[1].min === 484, ts[1]);
     // ---- hawk.js scores them: today's brief (4H range at the premium middle) and 24 Nov's, an alert on the 13th
     if (!(window.STHawk && window.STHawk.mount)) { var sc = document.createElement('script'); sc.src = 'hawk.js?t=' + Date.now(); document.head.appendChild(sc); for (k = 0; k < 100 && !(window.STHawk && window.STHawk.mount); k++) await W(100); }
     var L = function (day, m) { var t = Date.parse(day + 'T00:00:00Z') + m * 60000; return new Date(t).toISOString(); };   // November: London is UTC
     var BR = [
       { id: 'b26', created_at: L('2026-11-26', 465), kind: 'brief', side: null, mine: null, data: { sym: 'EURUSD', win: [480, 600], tfs: { '4h': { d: 0, loc: 'premium middle', said: 'range' }, '1h': { d: 0, loc: 'premium middle', said: 'range' }, '15m': { d: 1, loc: 'breakout', said: 'initiation up' } } } },
       { id: 'b24', created_at: L('2026-11-24', 465), kind: 'brief', side: null, mine: null, data: { sym: 'EURUSD', win: [480, 600], tfs: { '4h': { d: -1, loc: 'discount edge', said: 'initiation down' }, '1h': { d: 0, loc: '50%', said: 'range' }, '15m': { d: -1, loc: 'discount middle', said: 'trend down' } } } },
+      { id: 'b19', created_at: L('2026-11-19', 465), kind: 'brief', side: null, mine: null, data: { sym: 'EURUSD', win: [480, 600], tfs: { '4h': { d: 0, loc: '50%', said: 'range' } } } },
       { id: 'b13', created_at: L('2026-11-13', 795), kind: 'brief', side: null, mine: null, data: { sym: 'EURUSD', win: [810, 930], tfs: { '4h': { d: 0, loc: '50%', said: 'range' } } } },
       { id: 's13', created_at: L('2026-11-13', 855), kind: 'setup', side: -1, mine: null, data: { sym: 'EURUSD', win: [810, 930] } } ];
     var fake = function () { var Q = function (t) { var q = { t: t, f: {}, nn: [], cols: '' }, me = function () { return q; };
@@ -65,8 +82,9 @@
     ok('today\'s London: his 4H "Ranging, Premium Edge, Unsure" against its range at the premium middle - the phase agrees, the location not (24 Nov agrees on both)', /^4H ?1\/2/.test(cell('4H')) && /Phase 2\/2/.test(cell('4H')) && /Location 1\/2/.test(cell('4H')), cell('4H'));
     ok('...24 Nov: his 4H "Initiating, Bearish" agrees on the phase with its initiation down; his LTF counts on its 15M; the bias on a day it sent nothing left out', /^15M ?0\/1/.test(cell('15M')) && /Phase 1\/1/.test(cell('15M')) && /2 bias checks/.test(tx(host.querySelector('.hk-agh'))), [cell('15M'), tx(host.querySelector('.hk-agh'))]);
     var agt = host.querySelector('.hk-agt'), mis = [].slice.call(host.querySelectorAll('.hk-mis .hk-disr'));
-    ok('his trades in its hours: 24 Nov 08:02 sell and 13 Nov 14:21 sell (the 17:04 buy on a day it sent nothing is left out) - the setup at 14:15 flagged one', agt && tx(agt.querySelector('b')) === '1/2', agt && tx(agt));
-    ok('...24 Nov\'s it said nothing about, its row opening that session', mis.length === 1 && mis[0].dataset.dis === 'b|b24|15m' && /It said nothing/.test(tx(mis[0])) && /08:02/.test(tx(mis[0])), mis.map(tx));
+    ok('his trades in its hours: 24 Nov 08:02 sell, 19 Nov 08:04 buy (in London\'s hours at the broker\'s time) and 13 Nov 14:21 sell - the setup at 14:15 flagged one', agt && tx(agt.querySelector('b')) === '1/3', agt && tx(agt));
+    ok('...24 Nov\'s and 19 Nov\'s it said nothing about, latest first, each opening its session', mis.length === 2 && mis[0].dataset.dis === 'b|b24|15m' && /It said nothing/.test(tx(mis[0])) && /08:02/.test(tx(mis[0]))
+      && mis[1].dataset.dis === 'b|b19|15m' && /BUY/.test(tx(mis[1])) && /08:04/.test(tx(mis[1])), mis.map(tx));
     host.remove(); host = null;
     // ---- the buttons: HTF / LTF for everyone, the admin too (the hawk keeps HTF = its 4H, LTF = its 15M to itself)
     var btn = function (w) { return [].slice.call(document.querySelectorAll('.tf-btn[data-tf="' + w + '"]')); };
