@@ -374,11 +374,13 @@
     var r = st.row, a = r.data || {}, d = a.chart;
     var RG = W < 480 ? 60 : 70, TOP = 10, BOT = 20, PW = W - RG, PH = H - TOP - BOT;
     // the brief shows the whole day it measured; an alert zooms in on the session, so a 3-pip stop can be seen
-    // always 1-minute candles (26 Nov 2026, Nestor: "make it always show 1m candles"), never merged into 15-minute ones: the app's candle
-    // store's for the chart's span (st.m1); the row's own 5-minute ones only until they come, or where the store has none
-    var tf = d.tf * 60, src = d.c;
+    // always 1-minute candles (26 Nov 2026, Nestor: "make it always show 1m candles", then "make sure i dont see any more 5m candles"): the
+    // app's candle store's for the chart's span (st.m1), else the row's own (chart.c1, sent by hawk.py since 26 Nov); never the row's
+    // 5-minute ones - they only lay out the time scale, candles left out, until the 1-minute ones come (noC)
+    var tf = d.tf * 60, src = d.c, noC = false;
     if (st.m1 && st.m1.length) { src = st.m1; tf = 60; }
-    else if (r.kind !== 'brief') { var t0 = Math.max(d.r0, d.w0 - 3 * 3600); src = d.c.filter(function (b) { return b[0] >= t0; }); if (src.length < 36) src = d.c.slice(-36); }
+    else if (d.c1 && d.c1.length) { src = d.c1; tf = 60; }
+    else { noC = true; if (r.kind !== 'brief') { var t0 = Math.max(d.r0, d.w0 - 3 * 3600); src = d.c.filter(function (b) { return b[0] >= t0; }); if (src.length < 36) src = d.c.slice(-36); } }
     var bars = src, vw = st.vw || null, zt = !!(vw && vw.t1 > vw.t0 && src.length);   // his view (24 Nov 2026): a span of time and / or a price range, set by dragging
     var n = bars.length; if (!n) return;
     // a session opens on its whole window, a quarter of an hour each side (every alert in it in view); an alert or a brief with more
@@ -441,7 +443,8 @@
     if (d.a2b) { var m2 = (d.a2b[0] + d.a2b[1]) / 2; line(Y(m2), K.acc, 1.2, [6, 4]); tag(m2, L('Leg 50%', '50% del tramo'), K.acc); pill(m2, p5(m2), K.acc); }
     // candles
     var cw = Math.max(1, Math.min(9, bw * 0.62));
-    bars.forEach(function (b, i) { var x = (i + 0.5) * bw, up = b[4] >= b[1]; g.fillStyle = up ? K.cup : K.cdn;
+    if (noC) txt(st.m1st === 'none' ? L('No 1-minute candles stored for this day', 'No hay velas de 1 minuto guardadas para este día') : L('Loading 1-minute candles…', 'Cargando velas de 1 minuto…'), OX + PW / 2, TOP + PH / 2, K.mut, 'center', 11, 500);
+    else bars.forEach(function (b, i) { var x = (i + 0.5) * bw, up = b[4] >= b[1]; g.fillStyle = up ? K.cup : K.cdn;
       g.fillRect(Math.round(x - 0.5), Y(b[2]), 1, Math.max(1, Y(b[3]) - Y(b[2])));
       var y0 = Y(Math.max(b[1], b[4])), y1 = Y(Math.min(b[1], b[4])); g.fillRect(Math.round(x - cw / 2), y0, Math.max(1, Math.round(cw)), Math.max(1, y1 - y0)); });
     // the hour swings behind the phase: higher highs / lows
@@ -507,9 +510,8 @@
     pills.forEach(function (p) { g.fillStyle = p.bg; g.beginPath();
       if (g.roundRect) g.roundRect(PW + 4, p.y - 7, RG - 8, 14, 3); else g.rect(PW + 4, p.y - 7, RG - 8, 14); g.fill();
       txt(p.t, PW + RG / 2, p.y + .5, p.fg, 'center', 10, 500); });
-    // its candles' timeframe, in the corner under the prices (26 Nov 2026, Nestor: "what timeframe is this suppossed to be?"): 1M, or 5M
-    // while the 1-minute ones are on their way or where the candle store has none
-    var tfL = tf % 3600 ? tf / 60 + 'M' : tf / 3600 + 'H'; txt(tfL, PW + RG / 2, H - 9, K.mut, 'center', 9, 600); if (box.dataset.tf !== tfL) box.dataset.tf = tfL;
+    // its candles' timeframe, in the corner under the prices (26 Nov 2026, Nestor: "what timeframe is this suppossed to be?"): always 1M
+    var tfL = noC ? 'none' : '1M'; txt('1M', PW + RG / 2, H - 9, K.mut, 'center', 9, 600); if (box.dataset.tf !== tfL) box.dataset.tf = tfL;
   }
 
   // ---------- his reading of a timeframe as the hawk makes it - cloud/hawk/engine.py read_bars / read / where / tf_said, line for line (keep
@@ -730,8 +732,8 @@
       var from = d.c[0][0];
       if (r.kind !== 'brief') { from = Math.max(d.r0 || 0, d.w0 - 3 * 3600); if (d.c.filter(function (b) { return b[0] >= from; }).length < 36) from = d.c[Math.max(0, d.c.length - 36)][0]; }
       return { k: String((r.data && r.data.sym) || 'EURUSD') + '|' + from, sym: String((r.data && r.data.sym) || 'EURUSD'), from: from, to: d.c[d.c.length - 1][0] + (d.tf || 5) * 60 }; }
-    function m1Load(st) { if (!opt.bars) return; var sp = m1Span(st.row); if (!sp) return; var c = M1[sp.k];
-      if (c && c.m) st.m1 = c.m;
+    function m1Load(st) { var sp = m1Span(st.row); if (!opt.bars || !sp) { st.m1st = 'none'; return; } var c = M1[sp.k];
+      if (c && c.m) st.m1 = c.m; st.m1st = c && c.none ? 'none' : 'wait';
       if (c && (c.p || c.none || c.to >= sp.to || Date.now() - (c.failAt || 0) < 60000)) return;
       c = M1[sp.k] = c || { m: null, to: 0, p: null };
       var a = c.m && c.m.length ? c.m[c.m.length - 1][0] : sp.from - 60;
@@ -740,10 +742,11 @@
           x.forEach(function (b) { var t = +b.time; if (t >= sp.from && t < sp.to) mm[t] = [t, +b.open, +b.high, +b.low, +b.close]; });
           c.m = Object.keys(mm).map(Number).sort(function (p, q) { return p - q; }).map(function (t) { return mm[t]; }); c.to = sp.to; }
         else if (x && !x.failed) { if (c.m) c.to = sp.to; else c.none = true; }   // the store has no 1-minute candles there: its 5-minute ones stay
-        else c.failAt = Date.now();
+        else { c.failAt = Date.now(); setTimeout(function () { draw(st); }, 61000); }   // tried again a minute on
         c.p = null;
-        Object.keys(charts).forEach(function (id) { var s2 = charts[id], p2 = m1Span(s2.row); if (p2 && p2.k === sp.k && c.m && s2.m1 !== c.m) { s2.m1 = c.m; draw(s2); } });
-      }, function () { c.p = null; c.failAt = Date.now(); }); }
+        Object.keys(charts).forEach(function (id) { var s2 = charts[id], p2 = m1Span(s2.row); if (!p2 || p2.k !== sp.k) return;
+          if (c.m && s2.m1 !== c.m) { s2.m1 = c.m; draw(s2); } else if (c.none && s2.m1st !== 'none') { s2.m1st = 'none'; draw(s2); } });
+      }, function () { c.p = null; c.failAt = Date.now(); setTimeout(function () { draw(st); }, 61000); }); }
     function chKey(box) { return (box.closest('.hk-nar') ? 'n' : '') + (box.hasAttribute('data-ses') ? 's' : box.closest('.hk-brief') ? 'b' : 'a'); }
     function chHs() { try { return JSON.parse(localStorage.getItem('st_hawk_chh') || '{}') || {}; } catch (x) { return {}; } }
     function hookChart(st) {
@@ -905,7 +908,10 @@
       if (!base) return null; var F = SC[S.key], m = {};
       sesRowBars(S).forEach(function (b) { m[b[0]] = b; });
       if (F && F.m && F.src === 'bars') (F.tf === 60 ? agg(F.m, 300) : F.m).forEach(function (b) { m[b[0]] = b; });
-      var d = Object.assign({}, base.c, { c: Object.keys(m).map(Number).sort(function (a, b) { return a - b; }).map(function (t) { return m[t]; }) });
+      var m1 = {}; S.rows.forEach(function (r) { var c = r.data && r.data.chart; if (c && Array.isArray(c.c1)) c.c1.forEach(function (b) { m1[b[0]] = b; }); });
+      if (F && F.m && F.src === 'bars' && F.tf === 60) F.m.forEach(function (b) { m1[b[0]] = b; });
+      var d = Object.assign({}, base.c, { c: Object.keys(m).map(Number).sort(function (a, b) { return a - b; }).map(function (t) { return m[t]; }),
+        c1: Object.keys(m1).map(Number).sort(function (a, b) { return a - b; }).map(function (t) { return m1[t]; }) });
       if (base.r !== S.brief) { d.px = null; d.now = null; }
       return { id: 'ses:' + S.key, kind: 'sess', data: { chart: d, sym: S.sym } }; }
     function sesMarks(S) { return S.al.map(function (r, i) { return { t: alertT(r) - 60, p: alertP(r), n: i + 1, s: r.side }; }).filter(function (m) { return isFinite(m.p); }); }

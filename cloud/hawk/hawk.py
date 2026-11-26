@@ -122,7 +122,7 @@ class Hawk:
         return None
 
     def chart(self):
-        """What the hawk is looking at, for hawk.html: ~a day of 5-minute candles and its reading of them."""
+        """What the hawk is looking at: ~a day of 5-minute candles (c), the last hours' 1-minute ones (c1), and its reading of them."""
         x = self.ctx; j, last = x['j'], x['last']
         c5 = []
         for i in range(j, last + 1):
@@ -136,7 +136,12 @@ class Hawk:
         sw = sorted([(E.HB[s[2]][0], s[1], 'H') for s in E.SWH if s[0] <= now][-4:] +
                     [(E.HB[s[2]][0], s[1], 'L') for s in E.SWL if s[0] <= now][-4:])
         r5 = lambda v: round(v, 5)
-        return dict(tf=5, c=[[b[0]] + [r5(v) for v in b[1:]] for b in c5],
+        # the 1-minute candles too, for the part the app draws (26 Nov 2026, Nestor: "make sure i dont see any more 5m candles"): from 3
+        # hours before the window (or the range's start, if later) to now - ~300 candles, not the whole day (that would be ~75 KB a row)
+        i1 = j
+        while i1 < last and E.T[i1] < w0 - 10800: i1 += 1
+        c1 = [[E.T[i], r5(E.O[i]), r5(E.H[i]), r5(E.L[i]), r5(E.C[i])] for i in range(i1, last + 1)]
+        return dict(tf=5, c=[[b[0]] + [r5(v) for v in b[1:]] for b in c5], c1=c1,
                     phase=x['ph'], bh=r5(x['bh']), bl=r5(x['bl']), r0=E.T[j], r1=E.T[min(x['i0'] + 60, last)],
                     a2b=x['a2b'] and [r5(v) for v in x['a2b']], sw=[[t, r5(p), k] for t, p, k in sw],
                     w0=w0, w1=w0 + (E.WIN[1] - E.WIN[0]) * 60, now=now, px=r5(E.C[last]))

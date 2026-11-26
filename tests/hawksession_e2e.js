@@ -212,6 +212,8 @@
     for (k = 0; k < 80 && !r2.querySelector('.hk-ses[data-sk="' + sk + '"] .hk-aft'); k++) await W(100);
     var c2 = r2.querySelector('.hk-ses[data-sk="' + sk + '"]');
     ok('hawk.html: the same session card, its tiles not buttons, After from the alerts\' own 5-minute candles so far', c2 && !c2.querySelector('button[data-rvtf]') && /alerts' own 5-minute candles/.test(tx(c2.querySelector('.hk-saft .hk-hint'))) && / so far$/.test(tx(c2.querySelector('.hk-saftw'))), c2 && [tx(c2.querySelector('.hk-saftw')), tx(c2.querySelector('.hk-saft .hk-hint'))]);
+    var tf2 = r2.querySelector('.hk-ses[data-sk="' + sk + '"] .hk-sesc');
+    ok('hawk.html, no candle store, rows without 1-minute candles: no 5-minute candles drawn, it says so ("make sure i dont see any more 5m candles")', tf2 && tf2.dataset.tf === 'none', tf2 && tf2.dataset.tf);
     var tg2 = r2.querySelector('input[data-hkquiet]');
     ok('...before the database update the toggle waits, saying so', tg2 && tg2.disabled && tg2.checked && /next hawk update/.test(tx(tg2.closest('label').nextElementSibling)), tg2 && tx(tg2.closest('label').nextElementSibling));
     // moved into another window's document, as the app moves the rail into Live Charts' own window (26 Nov 2026, Nestor: "also whats all
