@@ -1105,7 +1105,10 @@
         al: ((A[2] && !A[2].error && A[2].data) || []).filter(function (x) { return x && x.side; }) };
       agPaint(); }
     // his bias, in the hawk's words: Ranging -> range (agrees with 'range forming' too), Trending / Initiating + Bullish / Bearish -> trend /
-    // initiation up / down; Unsure: the phase alone. Location as it is, lower case. His HTF is its 4H, his LTF its 15M (the buttons say so).
+    // initiation up / down; Unsure: the phase alone. Location as it is, lower case.
+    // His HTF is its 4H, his LTF its 15M - remembered HERE, nowhere else: his bias buttons keep saying HTF / LTF (26 Nov 2026, Nestor: "well
+    // maybe dont change the HTF and LTF labels but the hawk remembers that the htf mean 4h and the ltf means 15mins?"). No 1M: the hawk
+    // judges phase on the 4H / 1H / 15M, and his 1-minute reads reach it through his trades.
     var AG_TF = { htf: '4h', ltf: '15m' };
     function agKey(s) { s = String(s || ''); try { if (opt.canon) return String(opt.canon(s) || ''); } catch (x) {} return s.toUpperCase().replace(/[^A-Z0-9]/g, ''); }
     function agWk(a) { a = +a; return a < 360 ? 'asia' : a < 720 ? 'london' : a < 1080 ? 'new york' : 'evening'; }

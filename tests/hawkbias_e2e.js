@@ -1,9 +1,10 @@
 (async function () {
   // The hawk learns from what he does anyway (Nestor, 26 Nov 2026: "would you suggest an easier way to train it that doesnt add too much
-  // work for me?" - "yes do step 1"): the app hands hawk.js his Check my bias answers (opt.bias) and journal trades (opt.trades), and the
-  // bias buttons say 4H / 15M for him alone ("maybe say 4h/15m/1m?"). The two accessors are taken from app.html as written and run on the
-  // shapes his real journal holds (26 Nov 2026); then hawk.js scores them against stand-in briefs and alerts; then the admin's sign-in
-  // relabels the buttons. Nothing is sent anywhere: the sign-in is a stand-in session on a made-up token.
+  // work for me?" - "yes do step 1"): the app hands hawk.js his Check my bias answers (opt.bias) and journal trades (opt.trades); the bias
+  // buttons keep saying HTF / LTF, for him too ("dont change the HTF and LTF labels but the hawk remembers that the htf mean 4h and the ltf
+  // means 15mins"). The two accessors are taken from app.html as written and run on the shapes his real journal holds (26 Nov 2026); then
+  // hawk.js scores them against stand-in briefs and alerts; then the admin's sign-in leaves the labels alone. Nothing is sent anywhere: the
+  // sign-in is a stand-in session on a made-up token.
   // Run: python tests/browser_test.py tests/hawkbias_e2e.js
   var W = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
   var out = [], ok = function (name, cond, got) { out.push({ name: name, ok: !!cond, got: got === undefined ? null : got }); };
@@ -67,7 +68,7 @@
     ok('his trades in its hours: 24 Nov 08:02 sell and 13 Nov 14:21 sell (the 17:04 buy on a day it sent nothing is left out) - the setup at 14:15 flagged one', agt && tx(agt.querySelector('b')) === '1/2', agt && tx(agt));
     ok('...24 Nov\'s it said nothing about, its row opening that session', mis.length === 1 && mis[0].dataset.dis === 'b|b24|15m' && /It said nothing/.test(tx(mis[0])) && /08:02/.test(tx(mis[0])), mis.map(tx));
     host.remove(); host = null;
-    // ---- the buttons: HTF / LTF for a member, 4H / 15M once the admin is seen
+    // ---- the buttons: HTF / LTF for everyone, the admin too (the hawk keeps HTF = its 4H, LTF = its 15M to itself)
     var btn = function (w) { return [].slice.call(document.querySelectorAll('.tf-btn[data-tf="' + w + '"]')); };
     ok('a member sees HTF / LTF', btn('htf').length >= 3 && btn('htf').every(function (e) { return e.textContent === 'HTF'; }) && btn('ltf').every(function (e) { return e.textContent === 'LTF'; }), btn('htf').map(function (e) { return e.textContent; }));
     if (!window.__stHawk) {
@@ -77,7 +78,7 @@
       try { await SB.auth._notifyAllSubscribers('SIGNED_IN', SESSION); } catch (e) {}
       for (k = 0; k < 100 && !window.__stHawk; k++) await W(100);
     }
-    ok('the admin: every bias HTF / LTF button says 4H / 15M, its title says what the hawk reads it as', !!window.__stHawk && btn('htf').length >= 3 && btn('htf').every(function (e) { return e.textContent === '4H' && /4H/.test(e.title); }) && btn('ltf').every(function (e) { return e.textContent === '15M' && /15M/.test(e.title); }),
+    ok('the admin (the hawk loaded): the buttons still say HTF / LTF', !!window.__stHawk && btn('htf').length >= 3 && btn('htf').every(function (e) { return e.textContent === 'HTF'; }) && btn('ltf').every(function (e) { return e.textContent === 'LTF'; }),
       [!!window.__stHawk, btn('htf').map(function (e) { return e.textContent; }), btn('ltf').map(function (e) { return e.textContent; })]);
     ok('no page errors from the hawk', !errs.filter(function (e) { return /hawk/i.test(e); }).length, errs.slice(0, 5));
   } catch (e) { ok('test ran', false, String(e && e.stack || e)); }
