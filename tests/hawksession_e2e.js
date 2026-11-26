@@ -240,9 +240,7 @@
     tr0.click(); for (k = 0; k < 30 && !Q('.hk-sh [data-sw="trades"]'); k++) await W(100);
     var bk = Q('.hk-sh [data-sw="trades"]');
     ok('...it opens the lab, with a way back to the trades', bk && /The trades/.test(tx(bk)), bk && tx(bk));
-    var bsv = bk && bk.querySelector('svg'), bkr = bk && bk.getBoundingClientRect(), bsr = bsv && bsv.getBoundingClientRect();
-    ok('...the way back has a drawn chevron, centred in the button, and no text arrow', !!bsv && !/[←<]/.test(tx(bk)) && bsr.width > 4 && bsr.height > 8
-      && Math.abs((bsr.top + bsr.height / 2) - (bkr.top + bkr.height / 2)) < 1.5, bsv && [tx(bk), bsr.width, bsr.height, bsr.top, bkr.top, bkr.height]);
+    ok('...the way back is just its words: no arrow, no chevron', tx(bk) === 'The trades' && !bk.querySelector('svg'), bk && bk.innerHTML);
     bk.click(); for (k = 0; k < 30 && !Q('.hk-sh [data-sw="whatif"]'); k++) await W(100);
     ok('...and back', !!Q('.hk-sh [data-sw="whatif"]'));
     // flight marks numbered by the study archived on 26 Nov 2026 (offline file v3): onto the same trade in the new study (data->>was), else
