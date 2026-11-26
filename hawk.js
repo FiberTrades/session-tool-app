@@ -45,7 +45,7 @@
     '.hk-chip.setup{color:var(--hk-acc);background:color-mix(in srgb,var(--hk-acc) 15%,transparent)}',
     '.hk-chip.warn{color:var(--hk-warn);background:color-mix(in srgb,var(--hk-warn) 15%,transparent)}',
     // the brief's three timeframes (7 Nov 2026): phase, and where price sits on it
-    '.hk-tfs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:10px 0 4px}',
+    '.hk-tfs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:10px 0 4px}',
     '.hk-tf{border:1px solid var(--hk-line);border-radius:8px;padding:7px 9px;min-width:0}',
     '.hk-tf b{display:block;font:500 10px var(--hk-mono);letter-spacing:.08em;color:var(--hk-mut)}',
     '.hk-tf span{display:block;font-size:13px;font-weight:600;margin-top:2px;overflow-wrap:anywhere}',
@@ -229,7 +229,7 @@
     '.hk-sesb .hk-btn.go.done{background:transparent;color:var(--hk-buy);border-color:color-mix(in srgb,var(--hk-buy) 45%,transparent);cursor:default}.hk-sesb .hk-btn.go svg{width:13px;height:13px}',
     '.hk-agree{margin:10px 0 2px;padding:11px 12px 12px;border:1px solid var(--hk-line);border-radius:10px;background:var(--hk-card)}.hk-agree[hidden]{display:none}',
     '.hk-agh{display:flex;align-items:baseline;justify-content:space-between;gap:8px}.hk-agh b{font-size:13px;font-weight:600}.hk-agh i{font:normal 11px var(--hk-mono);color:var(--hk-mut);text-align:right}.hk-agree .hk-hint{margin:6px 0 0}',
-    '.hk-agg{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:9px}',
+    '.hk-agg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:9px}',
     '.hk-agc{padding:7px 9px 8px;border-radius:8px;background:var(--hk-soft);min-width:0}.hk-agc .k{display:block;font:500 10px var(--hk-mono);letter-spacing:.1em;color:var(--hk-mut)}',
     '.hk-agc .v{display:block;margin-top:1px;font:500 18px var(--hk-mono);font-variant-numeric:tabular-nums;color:var(--hk-ink)}.hk-agc .v small{font-size:11.5px;color:var(--hk-mut)}',
     '.hk-agc s{display:block;height:3px;margin:5px 0 6px;border-radius:2px;background:color-mix(in srgb,var(--hk-mut) 25%,transparent);overflow:hidden;text-decoration:none}.hk-agc s i{display:block;height:100%;background:var(--hk-buy)}',
@@ -321,9 +321,12 @@
   function tfSaid(x) { var w = TF_SAID[x]; return w ? L(w[0], w[1]) : String(x || ''); }
   function tfLoc(x) { var w = TF_LOC[x]; return w ? L(w[0], w[1]) : String(x || ''); }
   var ICH = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" aria-hidden="true"><path d="M3 1.5v9M9 2.5v8"/><rect x="1.8" y="3.6" width="2.4" height="4.2" rx=".4"/><rect x="7.8" y="4.6" width="2.4" height="3.4" rx=".4"/></svg>';
+  // the timeframes he reads and corrects: his bias's two, HTF = 4H and LTF = 15M (26 Nov 2026, Nestor: "whats the point measuring the 1h if im
+  // already doing the 4h?"). Old reviews that carry a 1H keep it in the database; it is no longer shown or scored.
+  var YT = ['4h', '15m'];
   function tfTiles(t, x, o) {   // x: [4H direction, 15M direction] when they disagree; o: the review's buttons (24 Nov 2026) - { k: 'b' brief / 's' study trade, id, mine: his reads by timeframe, cur: the one open }
-    return '<div class="hk-tfs" ' + (o ? 'role="group" data-rvk="' + o.k + '" data-rvid="' + esc(o.id) + '"' : 'role="list"') + ' aria-label="' + L('The three timeframes', 'Las tres temporalidades') + '">' + ['4h', '1h', '15m'].map(function (k) { var v = t[k]; if (!v) return '';
-      var cls = 'hk-tf' + (v.d > 0 ? ' buy' : v.d < 0 ? ' sell' : '') + (x && k !== '1h' ? ' x' : ''), body = '<span>' + esc(tfSaid(v.said)) + '</span><i>' + esc(tfLoc(v.loc)) + '</i>';
+    return '<div class="hk-tfs" ' + (o ? 'role="group" data-rvk="' + o.k + '" data-rvid="' + esc(o.id) + '"' : 'role="list"') + ' aria-label="' + L('The 4H and the 15M', 'El 4H y el 15M') + '">' + YT.map(function (k) { var v = t[k]; if (!v) return '';   // his two (26 Nov 2026: no 1H)
+      var cls = 'hk-tf' + (v.d > 0 ? ' buy' : v.d < 0 ? ' sell' : '') + (x ? ' x' : ''), body = '<span>' + esc(tfSaid(v.said)) + '</span><i>' + esc(tfLoc(v.loc)) + '</i>';
       if (!o) return '<div role="listitem" class="' + cls + '"><b>' + k.toUpperCase() + '</b>' + body + '</div>';
       var m = o.mine && o.mine[k], ms = m && m.said && m.said !== v.said ? m.said : null, ml = m && m.loc && m.loc !== v.loc ? m.loc : null;
       var you = ms || ml ? '<u>' + L('You: ', 'Tú: ') + esc([ms ? tfSaid(ms) : null, ml ? tfLoc(ml) : null].filter(Boolean).join(' · ')) + '</u>' : '';
@@ -656,7 +659,7 @@
     }
     function mineText(r) {
       var m = r.mine; if (!m) return '';
-      if (r.kind === 'brief') { var tk = m.tf ? ['4h', '1h', '15m'].filter(function (k) { return m.tf[k]; }) : [];
+      if (r.kind === 'brief') { var tk = m.tf ? YT.filter(function (k) { return m.tf[k]; }) : [];
         return (m.phase || m.bh != null ? L('Your read: ', 'Tu lectura: ') + (PHASES.filter(function (p) { return p[0] === m.phase; }).map(function (p) { return L(p[1], p[2]); })[0] || '') +
           (m.bh != null ? L(' · range ', ' · rango ') + p5(m.bl) + '–' + p5(m.bh) : '') : '') + (tk.length ? (m.phase || m.bh != null ? ' · ' : '') + L('You went through the ', 'Revisaste el ') + tk.map(function (k) { return k.toUpperCase(); }).join(', ') : ''); }
       return L('Your trade: entry ' + p5(m.entry) + ' · stop ' + p5(m.stop) + ' · target ' + p5(m.tgt), 'Tu operación: entrada ' + p5(m.entry) + ' · stop ' + p5(m.stop) + ' · objetivo ' + p5(m.tgt));
@@ -1001,7 +1004,7 @@
     // his read of each timeframe, in the card: phase and location, the hawk's to start with (the tiles above still open each in his charts)
     function sesYr(S) { var T = S.brief.data.tfs || {}, k = esc(S.key), op = function (xs, cur, lab) { return (xs.indexOf(cur) < 0 ? xs.concat([cur]) : xs).map(function (x) { return '<option value="' + esc(x) + '"' + (x === cur ? ' selected' : '') + '>' + esc(lab(x)) + '</option>'; }).join(''); };
       return '<div class="hk-yr"><div class="hk-yrh"><span>' + L('Your read', 'Tu lectura') + '</span><i>' + L('Change what you see differently', 'Cambia lo que veas distinto') + '</i></div>' +
-        ['4h', '1h', '15m'].filter(function (tf) { return T[tf] && T[tf].said; }).map(function (tf) { var v = sesTf(S, tf), U = tf.toUpperCase();
+        YT.filter(function (tf) { return T[tf] && T[tf].said; }).map(function (tf) { var v = sesTf(S, tf), U = tf.toUpperCase();
           return '<div class="hk-yrr"><b>' + U + '</b><label class="hk-pick"><select data-sesr="said" data-tf="' + tf + '" data-sk="' + k + '" aria-label="' + esc(L('Your ' + U + ' phase', 'Tu fase del ' + U)) + '"' + (v.said !== v.hk.said ? ' class="you"' : '') + '>' + op(RV_SAID, v.said, tfSaid) + '</select></label>' +
             '<label class="hk-pick"><select data-sesr="loc" data-tf="' + tf + '" data-sk="' + k + '" aria-label="' + esc(L('Your ' + U + ' location', 'Tu ubicación del ' + U)) + '"' + (v.loc !== v.hk.loc ? ' class="you"' : '') + '>' + op(RV_LOC, v.loc, tfLoc) + '</select></label></div>'; }).join('') + '</div>'; }
     function sesItem(S, r, i, F) { var f = sesF(S, r), sd = r.side === 1 ? 'buy' : r.side === -1 ? 'sell' : '', ch = r.data && r.data.chart && r.data.chart.c && r.data.chart.c.length, k = esc(S.key);
@@ -1041,7 +1044,7 @@
     // his reads of the timeframes, written into the brief's mine.tf as the full-charts review writes them, each marked seen
     function sesMine(S, D, note, iso) { var H = S.home, mine = Object.assign({}, H.mine || {});
       if (S.brief && H === S.brief) { var T = S.brief.data.tfs || {}, M = Object.assign({}, mine.tf || {});
-        ['4h', '1h', '15m'].forEach(function (tf) { var hk = T[tf]; if (!hk || !hk.said) return; var cur = Object.assign({}, M[tf] || {}), dr = (D.tf && D.tf[tf]) || {}, sd = dr.said || cur.said || hk.said, lc = dr.loc || cur.loc || hk.loc;
+        YT.forEach(function (tf) { var hk = T[tf]; if (!hk || !hk.said) return; var cur = Object.assign({}, M[tf] || {}), dr = (D.tf && D.tf[tf]) || {}, sd = dr.said || cur.said || hk.said, lc = dr.loc || cur.loc || hk.loc;
           if (sd !== hk.said) cur.said = sd; else delete cur.said; if (lc !== hk.loc) cur.loc = lc; else delete cur.loc;
           if (dr.said || dr.loc || !cur.at) cur.at = iso; cur.hk = { said: hk.said, loc: hk.loc }; cur.seen = true; M[tf] = cur; });
         mine.tf = M; }
@@ -1145,7 +1148,7 @@
         : m.other ? L('It called the other side', 'Avisó del otro lado') : L('It said nothing', 'No dijo nada');
       return '<button type="button" class="hk-disr" data-dis="' + esc('b|' + m.x.id + '|15m') + '" title="' + esc(L('Open the session in your charts', 'Abrir la sesión en tus gráficos')) + '"><span class="tf ' + (s ? 's' : 'b') + '">' + (s ? L('SELL', 'VENTA') : L('BUY', 'COMPRA')) + '</span><span class="w">' + esc(w) + '</span>' +
         '<span class="x">' + esc(L('Your ', 'Tu ') + (s ? L('sell', 'venta') : L('buy', 'compra'))) + ' → <u>' + esc(what) + '</u></span></button>'; }
-    function agItems() { var out = [], one = function (base, T, tfs) { Object.keys(T || {}).forEach(function (tf) { var m = T[tf], hk = (tfs && tfs[tf]) || (m && m.hk); if (!m || !hk || !hk.said) return;
+    function agItems() { var out = [], one = function (base, T, tfs) { Object.keys(T || {}).forEach(function (tf) { var m = T[tf], hk = (tfs && tfs[tf]) || (m && m.hk); if (YT.indexOf(tf) < 0 || !m || !hk || !hk.said) return;
         var sd = m.said || hk.said, lc = m.loc || hk.loc; out.push(Object.assign({ tf: tf, hk: hk, said: sd, loc: lc, okS: sd === hk.said, okL: lc === hk.loc, at: Date.parse(m.at || base.when || '') || 0 }, base)); }); };
       ((AG && AG.b) || []).forEach(function (x) { if (x.mine && x.mine.tf) one({ k: 'b', id: x.id, when: x.created_at, sym: x.sym, win: x.win }, x.mine.tf, x.tfs); });
       ((AG && AG.s) || []).forEach(function (x) { one({ k: 's', run: x.run, n: x.n, day: x.day, when: x.day + 'T12:00:00Z' }, x.tf_mine, x.tfs); });
@@ -1164,7 +1167,7 @@
       var h = '<div class="hk-agh"><b>' + L('Agrees with you', 'Coincide contigo') + '</b><i>' + esc(sub || L('nothing read yet', 'nada leído aún')) + '</i></div>';
       if (!it.length) h += '<p class="hk-hint">' + (opt.bias ? L('Do your Check my bias on a day it watches, save a session review, or correct a timeframe in your charts, and the score starts.', 'Haz tu Revisar mi sesgo un día que vigila, guarda una revisión de sesión, o corrige una temporalidad en tus gráficos, y empieza la puntuación.')
         : L('Save a session review, or correct a timeframe in your charts, and the score starts.', 'Guarda una revisión de sesión, o corrige una temporalidad en tus gráficos, y empieza la puntuación.')) + '</p>';
-      else { h += '<div class="hk-agg" role="list">' + ['4h', '1h', '15m'].map(function (tf) { var xs = it.filter(function (x) { return x.tf === tf; }), n = xs.length;
+      else { h += '<div class="hk-agg" role="list">' + YT.map(function (tf) { var xs = it.filter(function (x) { return x.tf === tf; }), n = xs.length;
           var b = xs.filter(function (x) { return x.okS && x.okL; }).length, s1 = xs.filter(function (x) { return x.okS; }).length, l1 = xs.filter(function (x) { return x.okL; }).length;
           return '<div class="hk-agc" role="listitem" aria-label="' + esc(tf.toUpperCase() + ': ' + b + L(' of ', ' de ') + n) + '"><span class="k">' + tf.toUpperCase() + '</span><span class="v">' + (n ? b + '<small>/' + n + '</small>' : '–') + '</span><s><i style="width:' + (n ? Math.round(100 * b / n) : 0) + '%"></i></s>' +
             (n ? '<span class="hk-ags">' + L('Phase', 'Fase') + ' <b>' + s1 + '/' + n + '</b></span><span class="hk-ags">' + L('Location', 'Ubicación') + ' <b>' + l1 + '/' + n + '</b></span>' : '<span class="hk-ags">' + L('No reads yet', 'Sin lecturas') + '</span>') + '</div>'; }).join('') + '</div>';
@@ -1335,7 +1338,7 @@
     function sTick(r, big) { return ['agree', 'disagree'].map(function (v) { var ok = v === 'agree', w = ok ? L('Valid setup', 'Setup válido') : L('Not a setup', 'No es un setup');
       return '<button data-tick="' + v + '" data-sn="' + r.n + '" aria-pressed="' + (r.verdict === v) + '" title="' + w + '" aria-label="' + w + ' #' + r.n + '">' + (ok ? ICK : IX) + (big ? '<span>' + w + '</span>' : '') + '</button>'; }).join(''); }
     function sDwN(r) { return (r.drawings || []).filter(function (x) { return x && !x.mbe; }).length; }
-    function sMarks(r) { var m = [], k = sDwN(r); if (r.note) m.push(L('note', 'nota')); if (r.be_mine) m.push(r.be_mine.none ? L('no BE', 'sin BE') : L('your BE', 'tu BE')); if (k) m.push(sPl(k, 'drawing', 'dibujo', 'dibujos')); var tk = r.tf_mine ? ['4h', '1h', '15m'].filter(function (x) { return r.tf_mine[x]; }) : []; if (tk.length) m.push(L('your ', 'tu ') + tk.map(function (x) { return x.toUpperCase(); }).join('/')); return m.length ? '<u> · ' + m.join(' · ') + '</u>' : ''; }
+    function sMarks(r) { var m = [], k = sDwN(r); if (r.note) m.push(L('note', 'nota')); if (r.be_mine) m.push(r.be_mine.none ? L('no BE', 'sin BE') : L('your BE', 'tu BE')); if (k) m.push(sPl(k, 'drawing', 'dibujo', 'dibujos')); var tk = r.tf_mine ? YT.filter(function (x) { return r.tf_mine[x]; }) : []; if (tk.length) m.push(L('your ', 'tu ') + tk.map(function (x) { return x.toUpperCase(); }).join('/')); return m.length ? '<u> · ' + m.join(' · ') + '</u>' : ''; }
     function sRow(r) { var d = r.data, buy = d.side > 0, rule = d.rule === 'initiation pocket' ? 'initiation' : d.rule;
       return '<div class="hk-tr" data-sn="' + r.n + '" aria-current="' + (ssel === r.n) + '"><button class="hk-trm" data-so="' + r.n + '" aria-expanded="' + (ssel === r.n) + '">' +
         '<span class="m"><i class="' + (buy ? 'buy' : 'sell') + '"></i>' + sBuy(buy) + ' · ' + esc(sModel(d.model)) + sSplit(d) + '</span>' +
@@ -1383,8 +1386,11 @@
         '<div class="hk-saved" id="hk-ss"></div></div>'; }
     function studyRender() {
       css(host.ownerDocument);
-      var h = '<div class="hk-sh"><div><h4>' + L('Rule study', 'Estudio de reglas') + '</h4><p>' + esc(mkName(sMkt)) + (sSes ? ' · ' + sSesName(sSes) + L(' · 1 year', ' · 1 año') : L(' · London 08–10 · 1 year', ' · Londres 08–10 · 1 año')) + '</p></div><div class="hk-seg hk-vw" role="group" aria-label="' + L('View', 'Vista') + '">' +
-        [['trades', L('Trades', 'Operaciones')], ['whatif', L('Variables', 'Variables')]].map(function (v) { return '<button data-sw="' + v[0] + '" aria-pressed="' + (sview === v[0]) + '">' + v[1] + '</button>'; }).join('') + '</div></div>';
+      var h = '<div class="hk-sh"><div><h4>' + L('Rule study', 'Estudio de reglas') + '</h4><p>' + esc(mkName(sMkt)) + (sSes ? ' · ' + sSesName(sSes) + L(' · 1 year', ' · 1 año') : L(' · London 08–10 · 1 year', ' · Londres 08–10 · 1 año')) + '</p></div>' +
+        // the What if lab (stops, targets, break-even, costs, the Net R grid) is for tuning rules before the hawk ever trades money, not for
+        // training it: one quiet button, closed by default (26 Nov 2026, Nestor: "i feel like the hawk section is overly engineered")
+        (sview === 'whatif' ? '<button type="button" class="hk-btn hk-vw" data-sw="trades">' + L('← The trades', '← Las operaciones') + '</button>'
+          : '<button type="button" class="hk-btn hk-vw" data-sw="whatif" title="' + L('Try other stops, targets, break-even and costs on the year', 'Prueba otros stops, objetivos, break-even y costes en el año') + '">' + L('Test the rules', 'Probar las reglas') + '</button>') + '</div>';
       if (sFlPend) h += sFlCard(sFlPend);
       h += sMktHtml();
       var all = study.filter(function (r) { return sIn(r.day); });
