@@ -127,7 +127,7 @@
     var PE = function (ty, x, y) { zc.dispatchEvent(new PointerEvent(ty, { clientX: zR.left + x, clientY: zR.top + y, pointerId: 7, button: 0, buttons: ty === 'pointerup' ? 0 : 1, pointerType: 'mouse', bubbles: true, cancelable: true })); };
     var drag = function (x0, y0, x1, y1) { PE('pointerdown', x0, y0); PE('pointermove', (x0 + x1) / 2, (y0 + y1) / 2); PE('pointermove', x1, y1); PE('pointerup', x1, y1); };
     var dbl = function (x, y) { zc.dispatchEvent(new MouseEvent('dblclick', { clientX: zR.left + x, clientY: zR.top + y, bubbles: true })); };
-    ok('the session chart: taller than an alert chart to start (300 px in a side panel, 380 in a page), a Reset view chip hidden, how to zoom said in its legend', Math.abs(zb.offsetHeight - (zb.closest('.hk-nar') ? 300 : 380)) <= 2 && zr0 && zr0.hidden && /drag the price or time scale to stretch .* double-click to reset/.test(tx(zb.parentNode.querySelector('.hk-lgh'))), [zb.offsetHeight, zr0 && zr0.hidden, tx(zb.parentNode.querySelector('.hk-lgh'))]);
+    ok('the session chart: taller than an alert chart to start (300 px in a side panel, 380 in a page), a Reset view chip hidden, how to zoom said in its legend', Math.abs(zb.offsetHeight - (zb.closest('.hk-nar') ? 300 : 380)) <= 2 && zr0 && zr0.hidden && /drag the price or time scale to stretch · Ctrl \+ scroll to zoom · double-click to reset/.test(tx(zb.parentNode.querySelector('.hk-lgh'))), [zb.offsetHeight, zr0 && zr0.hidden, tx(zb.parentNode.querySelector('.hk-lgh'))]);
     drag(ZW / 2, ZH - 8, ZW / 2 + 140, ZH - 8); var zimg1 = zc.toDataURL();
     ok('dragging the time scale to the right zooms in: redrawn, Reset view shown', zimg1 !== zimg0 && !zr0.hidden, null);
     drag(ZW - 30, ZH / 2, ZW - 30, ZH / 2 + 90); var zimg2 = zc.toDataURL();
@@ -138,15 +138,26 @@
     ok('double-click on the price scale: only the price back to the hawk\'s, the time zoom kept', zc.toDataURL() !== zimg3 && zc.toDataURL() !== zimg0 && !zr0.hidden, null);
     dbl(ZW / 2, ZH / 2);
     ok('double-click on the chart: the hawk\'s own view, exactly as it was, Reset view hidden', zc.toDataURL() === zimg0 && zr0.hidden, null);
-    zb.dispatchEvent(new PointerEvent('pointerleave', { pointerId: 7 }));
-    var wv = new WheelEvent('wheel', { clientX: zR.left + ZW / 2, clientY: zR.top + ZH / 2, deltaY: -300, bubbles: true, cancelable: true }); zc.dispatchEvent(wv);
-    ok('a wheel over a chart he hasn\'t clicked scrolls the page, not the chart', !wv.defaultPrevented && zc.toDataURL() === zimg0, null);
+    // 26 Nov 2026 (Nestor: "something is very wrong with the price scale from the hawk it waont stop scrolling")
+    var wv = new WheelEvent('wheel', { clientX: zR.left + ZW - 30, clientY: zR.top + ZH / 2, deltaY: 300, bubbles: true, cancelable: true }); zc.dispatchEvent(wv);
+    ok('the plain wheel over the price scale scrolls the page, the chart as it was', !wv.defaultPrevented && zc.toDataURL() === zimg0, null);
     PE('pointerdown', ZW / 2, ZH / 2); PE('pointerup', ZW / 2, ZH / 2);
-    var wv2 = new WheelEvent('wheel', { clientX: zR.left + ZW / 2, clientY: zR.top + ZH / 2, deltaY: -300, bubbles: true, cancelable: true }); zc.dispatchEvent(wv2);
-    ok('...after a click on it, the wheel zooms it', wv2.defaultPrevented && zc.toDataURL() !== zimg0 && !zr0.hidden, null);
+    var wv1 = new WheelEvent('wheel', { clientX: zR.left + ZW - 30, clientY: zR.top + ZH / 2, deltaY: 300, bubbles: true, cancelable: true }); zc.dispatchEvent(wv1);
+    ok('...after a click on the chart too (it zoomed the price while he scrolled the page)', !wv1.defaultPrevented && zc.toDataURL() === zimg0, null);
+    var wv2 = new WheelEvent('wheel', { clientX: zR.left + ZW / 2, clientY: zR.top + ZH / 2, deltaY: -300, ctrlKey: true, bubbles: true, cancelable: true }); zc.dispatchEvent(wv2);
+    ok('Ctrl + the wheel zooms it', wv2.defaultPrevented && zc.toDataURL() !== zimg0 && !zr0.hidden, null);
+    zb.dispatchEvent(new MouseEvent('dblclick', { clientX: zR.left + ZW / 2, clientY: zR.top + ZH / 2, bubbles: true }));
+    ok('a double-click whose target is the chart box (a real mouse: the press captured to the box) resets it', zc.toDataURL() === zimg0 && zr0.hidden, null);
+    PE('pointerdown', ZW - 30, ZH / 2); PE('pointermove', ZW - 30, ZH / 2 + 40); var zst = zc.toDataURL();
+    zc.dispatchEvent(new PointerEvent('pointermove', { clientX: zR.left + ZW - 30, clientY: zR.top + ZH / 2 + 120, pointerId: 7, buttons: 0, pointerType: 'mouse', bubbles: true }));
+    zc.dispatchEvent(new PointerEvent('pointermove', { clientX: zR.left + ZW - 60, clientY: zR.top + ZH / 2 - 100, pointerId: 7, buttons: 0, pointerType: 'mouse', bubbles: true }));
+    zb.dispatchEvent(new PointerEvent('pointerleave', { pointerId: 7 }));
+    ok('a price-scale drag whose let-go never came ends once the mouse moves with the button up: the price stays where it was', zc.toDataURL() === zst, null);
+    zb.dispatchEvent(new MouseEvent('dblclick', { clientX: zR.left + ZW / 2, clientY: zR.top + ZH / 2, bubbles: true }));
+    drag(ZW / 2, ZH - 8, ZW / 2 + 140, ZH - 8);
     zr0.click();
     ok('Reset view: the hawk\'s own view again', zc.toDataURL() === zimg0 && zr0.hidden, null);
-    var rz = zb.nextElementSibling, zh0 = zb.offsetHeight, rR = rz.getBoundingClientRect(), RP = function (ty, dy) { rz.dispatchEvent(new PointerEvent(ty, { clientX: rR.left + 20, clientY: rR.top + 5 + dy, pointerId: 8, button: 0, pointerType: 'mouse', bubbles: true, cancelable: true })); };
+    var rz = zb.nextElementSibling, zh0 = zb.offsetHeight, rR = rz.getBoundingClientRect(), RP = function (ty, dy) { rz.dispatchEvent(new PointerEvent(ty, { clientX: rR.left + 20, clientY: rR.top + 5 + dy, pointerId: 8, button: 0, buttons: ty === 'pointerup' ? 0 : 1, pointerType: 'mouse', bubbles: true, cancelable: true })); };
     RP('pointerdown', 0); RP('pointermove', 50); RP('pointermove', 100); RP('pointerup', 100);
     var chh = {}; try { chh = JSON.parse(localStorage.getItem('st_hawk_chh') || '{}'); } catch (e) {}
     ok('the bar under it: dragged down 100 px, the chart 100 px taller, redrawn to fit, kept for the next session charts', rz.classList.contains('hk-rsz') && Math.abs(zb.offsetHeight - zh0 - 100) <= 1 && (chh.s || chh.ns) === parseInt(zb.style.height, 10) && Math.abs(zc.height / (window.devicePixelRatio || 1) - zb.clientHeight) <= 1, [zh0, zb.offsetHeight, chh, zc.height]);
@@ -201,6 +212,15 @@
     ok('hawk.html: the same session card, its tiles not buttons, After from the alerts\' own 5-minute candles so far', c2 && !c2.querySelector('button[data-rvtf]') && /alerts' own 5-minute candles/.test(tx(c2.querySelector('.hk-saft .hk-hint'))) && / so far$/.test(tx(c2.querySelector('.hk-saftw'))), c2 && [tx(c2.querySelector('.hk-saftw')), tx(c2.querySelector('.hk-saft .hk-hint'))]);
     var tg2 = r2.querySelector('input[data-hkquiet]');
     ok('...before the database update the toggle waits, saying so', tg2 && tg2.disabled && tg2.checked && /next hawk update/.test(tx(tg2.closest('label').nextElementSibling)), tg2 && tx(tg2.closest('label').nextElementSibling));
+    // moved into another window's document, as the app moves the rail into Live Charts' own window (26 Nov 2026, Nestor: "also whats all
+    // these?" - the hawk unstyled there): its styles follow it within a second
+    var ifr = document.createElement('iframe'); ifr.style.cssText = 'position:fixed;left:0;top:0;width:420px;height:600px;border:0;z-index:9';   /* fixed: the page under it keeps its layout */ document.body.appendChild(ifr);
+    var idoc = ifr.contentDocument; idoc.open(); idoc.write('<!doctype html><html><head></head><body></body></html>'); idoc.close();
+    idoc.body.appendChild(idoc.adoptNode(r2));
+    for (k = 0; k < 30 && !idoc.getElementById('hk-css'); k++) await W(100);
+    var ib = r2.querySelector('.hk-btn');
+    ok('moved into another window (Live Charts\' own): its styles go with it within a second', !!idoc.getElementById('hk-css') && !!ib && idoc.defaultView.getComputedStyle(ib).borderRadius === '8px', [!!idoc.getElementById('hk-css'), ib && idoc.defaultView.getComputedStyle(ib).borderRadius]);
+    ifr.remove();
     ok('no page errors', !errs.length, errs);
   } catch (e) { ok('no exception', false, String(e && e.stack || e).slice(0, 800)); }
   hosts.forEach(function (h) { h.remove(); });

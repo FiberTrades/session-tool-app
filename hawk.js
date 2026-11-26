@@ -567,6 +567,14 @@
   // ---------- the feed
   function mount(host, sb, opt) {
     opt = opt || {}; var doc = host.ownerDocument || document; css(doc);
+    // the document the panel is in NOW, its styles in it (26 Nov 2026, Nestor: "also whats all these?" - the hawk on the rail unstyled in
+    // Live Charts' own window: the app moves the chart stage, the rail and this panel with it, into that window and back (adoptNode), and
+    // the styles stayed in the document it was mounted in). Checked when the pointer comes in, on each redraw and render, and every tick.
+    function hd() { var d = host.ownerDocument || document;
+      if (d !== doc && ro && list) { try { ro.disconnect(); var RW = d.defaultView && d.defaultView.ResizeObserver; if (RW) ro = new RW(function () { if ((host.ownerDocument || document) !== doc) hd(); redraw(); }); ro.observe(list); } catch (x) {} }   // its size watched from the window it is in
+      doc = d; css(d); return d; }
+    host.addEventListener('pointerenter', hd);
+    setInterval(function () { var d = host.ownerDocument || document; if (d !== doc || !d.getElementById('hk-css')) hd(); }, 1000);   // moved to the other window: styled within a second
     var focusId = opt.focusId || null, period = focusId ? 7 : 1, lastP = 7, rows = [], charts = {}, views = {}, pollT = null;   // lastP: the dropdown's period (Today is its own button)
     function headHtml() { return '<div>' +
       '<div class="hk-eye">' + L('Hawk', 'Halcón') + ' <i>' + L('Admin only', 'Solo admin') + '</i></div><div class="hk-title">' + L('Hawk', 'Halcón') + '</div>' +
@@ -582,7 +590,7 @@
       if (!t || !(t.html || t.sess)) { if (!todayEl.hidden) { todayEl.hidden = true; todayEl.innerHTML = ''; } return; }
       var h = '<div class="hk-tdh"><span>' + L('Session', 'Sesión') + '</span><span>' + esc(t.sess || '') + '</span></div>' + t.html;
       if (todayEl.innerHTML !== h) todayEl.innerHTML = h; todayEl.hidden = false; }
-    if (opt.today) setInterval(function () { if (!doc.hidden && host.offsetParent) todayPaint(); }, 15000);
+    if (opt.today) setInterval(function () { if (!hd().hidden && host.offsetParent) todayPaint(); }, 15000);
     function tabs() { root.querySelectorAll('.hk-tabs button').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.p === String(period)); });
       var ps = root.querySelector('[data-hkp]'); if (ps) { var o0 = ps.options[0], ol = ps.querySelector('option[value="' + lastP + '"]'); if (o0 && ol) o0.textContent = ol.textContent;
         var on = period !== 's' && period !== 1; ps.value = on ? String(period) : ''; ps.classList.toggle('off', !on); } todayPaint(); watchPaint(); agPaint(); }
@@ -620,7 +628,7 @@
         watchPaint(); setTimeout(function () { cfgMsg = ''; watchPaint(); }, 6000); }, function (e) { cfgMsg = L('Not saved', 'No guardado'); watchPaint(); }); }
     tabs(); cfgLoad();
     function redraw() { Object.keys(charts).forEach(function (id) { draw(charts[id]); }); }   // a hidden chart has no size and draws nothing
-    var ro = 'ResizeObserver' in window ? new ResizeObserver(function () { redraw(); }) : null;
+    var ro = 'ResizeObserver' in window ? new ResizeObserver(function () { if ((host.ownerDocument || document) !== doc) hd(); redraw(); }) : null;   // moved to the other window: watched from there at once (a watcher left in this window fired every frame)
     if (ro) ro.observe(list);
     try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', redraw); } catch (e) {}
     function byEl(sel) { return root.querySelector(sel); }
@@ -647,7 +655,7 @@
       return '<div class="hk-legend">' + it.map(function (x) { return '<span><s style="background:var(--hk-' + x[0] + ');opacity:' + x[2] + '"></s>' + x[1] + '</span>'; }).join('') +
         '<span>' + L('HH · HL · LH · LL = hour swings', 'HH · HL · LH · LL = swings de 1 hora') + '</span>' + zHint() + '</div>';
     }
-    function zHint() { return '<span class="hk-lgh">' + L('Drag to move · drag the price or time scale to stretch · click, then scroll to zoom · double-click to reset', 'Arrastra para moverlo · arrastra la escala de precio o de tiempo para estirarla · haz clic y luego usa la rueda para el zoom · doble clic para volver') + '</span>';
+    function zHint() { return '<span class="hk-lgh">' + L('Drag to move · drag the price or time scale to stretch · Ctrl + scroll to zoom · double-click to reset', 'Arrastra para moverlo · arrastra la escala de precio o de tiempo para estirarla · Ctrl + rueda para el zoom · doble clic para volver') + '</span>';
     }
     function card(r) {
       var side = r.side === 1 ? '<span class="hk-chip buy">' + L('Buy', 'Compra') + '</span>' : r.side === -1 ? '<span class="hk-chip sell">' + L('Sell', 'Venta') + '</span>' : '';
@@ -673,7 +681,7 @@
       return h + '</article>';
     }
     function render() {
-      charts = {}; rvHint = true;
+      hd(); charts = {}; rvHint = true;
       if (!rows.length) { list.innerHTML = '<p class="hk-empty">' + L('No alerts in this period. The hawk watches weekdays, in your watch hours (' + winsSaid() + ' London): the brief 15 minutes before, then alerts until 5 minutes after.', 'No hay alertas en este periodo. El halcón vigila de lunes a viernes en tus horas (' + winsSaid() + ' de Londres): el resumen 15 minutos antes y luego alertas hasta 5 minutos después.') + '</p>'; statsEl.hidden = true; SESS = {}; return; }
       stats();
       // a window that has ended (its done row in, or 5 minutes past its end) is one card: its brief, its alerts and what came next (24 Nov 2026)
@@ -698,9 +706,13 @@
     }
     function byId(id) { return rows.find(function (x) { return x.id === id; }); }
     // his own view of a hawk chart (24 Nov 2026, Nestor: "could i please be able to control de time and price scales on this chart? evrything
-    // just looks so on top of eachother right now, very messy"): drag it to move it, drag the price scale or the time scale to stretch, click
-    // it and then the wheel zooms (not before: a list of charts would catch the page's scrolling), double-click to go back; the bar under
-    // it makes it taller (remembered per kind of chart). Kept per chart, in times, through the redraws and the list's re-renders.
+    // just looks so on top of eachother right now, very messy"): drag it to move it, drag the price scale or the time scale to stretch,
+    // Ctrl + the wheel zooms, double-click to go back; the bar under it makes it taller (remembered per kind of chart). Kept per chart, in
+    // times, through the redraws and the list's re-renders.
+    // 26 Nov 2026 (Nestor: "something is very wrong with the price scale from the hawk it waont stop scrolling"): the plain wheel never
+    // touches the chart (it zoomed the price once he had clicked the chart, while he scrolled the page), a double-click resets with a real
+    // mouse (its target is the box the press captured to, not the canvas), and a drag ends the moment the button is up, even if the
+    // let-go never reaches the chart.
     function chKey(box) { return (box.closest('.hk-nar') ? 'n' : '') + (box.hasAttribute('data-ses') ? 's' : box.closest('.hk-brief') ? 'b' : 'a'); }
     function chHs() { try { return JSON.parse(localStorage.getItem('st_hawk_chh') || '{}') || {}; } catch (x) { return {}; } }
     function hookChart(st) {
@@ -712,10 +724,10 @@
       var rz = doc.createElement('div'); rz.className = 'hk-rsz'; rz.title = L('Drag to make the chart taller or shorter', 'Arrastra para hacer el gráfico más alto o más bajo'); box.insertAdjacentElement('afterend', rz);
       rz.addEventListener('pointerdown', function (e) { if (e.button > 0) return; e.preventDefault(); var y0 = e.clientY, h0 = parseFloat(getComputedStyle(box).height) || box.offsetHeight;
         try { rz.setPointerCapture(e.pointerId); } catch (x) {} rz.classList.add('on');
-        function mv(ev) { box.style.height = Math.max(160, Math.min(900, Math.round(h0 + ev.clientY - y0))) + 'px'; draw(st); }
-        function done() { rz.removeEventListener('pointermove', mv); rz.removeEventListener('pointerup', done); rz.removeEventListener('pointercancel', done); rz.classList.remove('on');
+        function mv(ev) { if (ev.pointerType === 'mouse' && !(ev.buttons & 1)) { done(); return; } box.style.height = Math.max(160, Math.min(900, Math.round(h0 + ev.clientY - y0))) + 'px'; draw(st); }
+        function done() { if (!rz.classList.contains('on')) return; rz.removeEventListener('pointermove', mv); rz.removeEventListener('pointerup', done); rz.removeEventListener('pointercancel', done); rz.removeEventListener('lostpointercapture', done); rz.classList.remove('on');
           var all = chHs(); all[hk] = parseInt(box.style.height, 10); try { localStorage.setItem('st_hawk_chh', JSON.stringify(all)); } catch (x) {} }
-        rz.addEventListener('pointermove', mv); rz.addEventListener('pointerup', done); rz.addEventListener('pointercancel', done); });
+        rz.addEventListener('pointermove', mv); rz.addEventListener('pointerup', done); rz.addEventListener('pointercancel', done); rz.addEventListener('lostpointercapture', done); });
       function setV(v) { if (v && v.t1 == null && !v.p) v = null; st.vw = v; if (v) views[key] = v; else delete views[key]; draw(st); }
       function pos(e) { var b = box.getBoundingClientRect(); return { x: e.clientX - b.left, y: e.clientY - b.top }; }
       function zone(p) { return p.x >= st.PW ? 'p' : p.y >= st.H - st.BOT ? 't' : 'c'; }   // the price scale, the time scale, the chart
@@ -724,7 +736,6 @@
         nv.t0 = bTm(V.bars, V.tf, a); nv.t1 = bTm(V.bars, V.tf, b); return nv; }
       function wide(V, s) { return Math.max(6, Math.min(V.NT * 3, s)); }   // 6 candles at the closest, three charts' worth at the farthest
       box.addEventListener('pointerdown', function (e) { if (e.target !== st.cv || e.button > 0 || !st.view) return; var p = pos(e);
-        st.act = true;
         if (st.edit) { var best = null, bd = e.pointerType === 'touch' ? 26 : 14;
           editKeys(st.row).forEach(function (k) { var dd = Math.abs(st.y(st.edit[k]) - p.y); if (dd < bd) { bd = dd; best = k; } });
           if (best) { e.preventDefault(); st.drag = best; st.frozen = st.scale; try { box.setPointerCapture(e.pointerId); } catch (x) {} draw(st); return; } }
@@ -732,6 +743,7 @@
         if (e.pointerType !== 'touch') e.preventDefault();
         try { box.setPointerCapture(e.pointerId); } catch (x) {} });
       box.addEventListener('pointermove', function (e) { var p = pos(e);
+        if ((st.drag || g0) && e.pointerType === 'mouse' && !(e.buttons & 1)) up();   // the button is up: the drag is over, whether or not its let-go came here
         if (st.drag) { st.edit[st.drag] = r5(st.p(p.y)); draw(st); return; }
         if (g0) { var V = st.view, dx = p.x - g0.x, dy = p.y - g0.y;
           if (!g0.mv && Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
@@ -745,17 +757,17 @@
           box.style.cursor = g0.z === 'c' ? 'grabbing' : g0.z === 't' ? 'ew-resize' : 'ns-resize'; setV(nv); return; }
         var z = zone(p); box.style.cursor = z === 'p' ? 'ns-resize' : z === 't' ? 'ew-resize' : st.edit ? '' : 'crosshair';
         if (!st.edit) { st.hover = p; draw(st); } });
-      box.addEventListener('pointerleave', function () { st.act = false; if (st.hover) { st.hover = null; draw(st); } });
+      box.addEventListener('pointerleave', function () { if (st.hover) { st.hover = null; draw(st); } });
       function up() {
         if (st.drag) { st.drag = null; st.frozen = null;
           if (st.edit.bh != null && st.edit.bl != null && st.edit.bl > st.edit.bh) { var t = st.edit.bh; st.edit.bh = st.edit.bl; st.edit.bl = t; }
           draw(st); return; }
         if (g0) { g0 = null; st.pan = false; box.style.cursor = ''; draw(st); } }
-      box.addEventListener('pointerup', up); box.addEventListener('pointercancel', up);
-      box.addEventListener('dblclick', function (e) { if (e.target !== st.cv || !st.vw) return; var z = zone(pos(e)), nv = Object.assign({}, st.vw);
+      box.addEventListener('pointerup', up); box.addEventListener('pointercancel', up); box.addEventListener('lostpointercapture', up);
+      box.addEventListener('dblclick', function (e) { if (e.target === zr || !st.vw) return; var z = zone(pos(e)), nv = Object.assign({}, st.vw);
         if (z === 'p') delete nv.p; else if (z === 't') { delete nv.t0; delete nv.t1; } else nv = null;
         setV(nv); });
-      box.addEventListener('wheel', function (e) { if (!(st.act || e.ctrlKey) || !st.view || st.drag) return; e.preventDefault();
+      box.addEventListener('wheel', function (e) { if (!e.ctrlKey || !st.view || st.drag) return; e.preventDefault();   // Ctrl + wheel (a touchpad's pinch too); the plain wheel scrolls the page
         var p = pos(e), V = st.view, k = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1, wy = e.deltaY * k, wx = e.deltaX * k, nv = Object.assign({}, st.vw || {});
         if (zone(p) === 'p') { var pc = st.p(p.y), f = Math.exp(wy * 0.0015); nv.p = [pc + (st.scale[0] - pc) * f, pc - (pc - st.scale[1]) * f]; }   // over the price scale: price, round the pointer
         else { var c = V.i0 + Math.min(p.x, st.PW) / V.bw, s = wide(V, (V.i1 - V.i0) * Math.exp(wy * 0.0015)), a = c - (c - V.i0) * s / (V.i1 - V.i0), sh = wx / V.bw;   // else time, round the pointer; sideways moves it
@@ -782,7 +794,7 @@
     var pending = [];
     // new alerts appear by themselves while the London window is on and this feed is on screen
     function poll() { clearTimeout(pollT); pollT = setTimeout(poll, 30000);
-      if (doc.hidden || !host.offsetParent || period !== 1) return;
+      if (hd().hidden || !host.offsetParent || period !== 1) return;
       var hm = LDN.format(new Date()), m = +hm.slice(0, 2) * 60 + +hm.slice(3), wd = new Date().toLocaleDateString('en-GB', { timeZone: 'Europe/London', weekday: 'short' });
       if (wd === 'Sat' || wd === 'Sun' || !cfgWins().some(function (w) { return m >= w[0] - 40 && m <= w[1] + 20; })) return;
       load(true); }
@@ -855,7 +867,7 @@
         else { c.m = sesRowBars(S); c.tf = 300; c.src = 'rows'; c.full = false; }
         c.p = null; c.t = Date.now() / 1000; sesPaint(S.key); })();
       return c; }
-    setInterval(function () { if (doc.hidden || !host.offsetParent || period === 's') return;   // a window still inside its "after": the candles again every 2 minutes
+    setInterval(function () { if (hd().hidden || !host.offsetParent || period === 's') return;   // a window still inside its "after": the candles again every 2 minutes
       Object.keys(SESS).forEach(function (k) { var c = SC[k]; if (c && !c.full && !c.p && sesEl(k)) sesFeed(SESS[k]); }); }, 120000);
     // the chart of the session: the brief's day as it measured it, the window, each alert numbered, and the candles after
     function sesRow(S) { var base = null; [S.brief].concat(S.al).some(function (r) { var c = r && r.data && r.data.chart; if (c && Array.isArray(c.c) && c.c.length) { base = { r: r, c: c }; return true; } return false; });
@@ -1477,7 +1489,7 @@
       return sKeep(r, got, ask); }
     // leaving the study (another view or tab, the trade closed): his own Replay drawings come back
     var sAutoBusy = false;
-    setInterval(async function () { if (sAutoBusy || sOnChart == null || !opt.study || doc.hidden) return; var r = sFind(sOnChart); if (!r) return;
+    setInterval(async function () { if (sAutoBusy || sOnChart == null || !opt.study || hd().hidden) return; var r = sFind(sOnChart); if (!r) return;
       sAutoBusy = true; try { await sCapture(r, false); } catch (x) {} sAutoBusy = false; }, 3000);
     function sEnd() { sStudying = false; if (sOnChart == null || !opt.study) return; sOnChart = null; try { opt.study({ end: true }); } catch (x) {} }
     // ---------- the review in his full charts (Nestor, 24 Nov 2026: "adjusting this tiny graph is a nightmare ... if i click on the 4h in brief
@@ -1598,7 +1610,7 @@
       if (R0.on && R0.k === 's' && r) { sOpen(r); return; }   // a study trade: back to the trade in Study
       if (R0.on || rvStudy) try { await opt.study({ end: true }); } catch (x) {}   // a brief: his own charts back (the hand-back saves the drawings)
       RV = null; rvPaint(); }
-    setInterval(async function () { if (rvBusy || !RV || !RV.on || !opt.study || doc.hidden) return; var R0 = RV, r = rvRow(R0.k, R0.id); if (!r) return;
+    setInterval(async function () { if (rvBusy || !RV || !RV.on || !opt.study || hd().hidden) return; var R0 = RV, r = rvRow(R0.k, R0.id); if (!r) return;
       rvBusy = true; try { var got = await opt.study({ get: R0.n }); if (Array.isArray(got) && RV === R0) await rvKeep(R0.k, r, R0.tf, got, null, R0.n); } catch (x) {} rvBusy = false; }, 3000);
     function sScroller() { for (var e = host; e && e !== doc.body; e = e.parentElement) { var o = getComputedStyle(e).overflowY; if ((o === 'auto' || o === 'scroll') && e.scrollHeight > e.clientHeight) return e; } return null; }
     function sShow(n) { var sc = sScroller(), row = byEl('.hk-tr[data-sn="' + n + '"]');   // the open trade in view: the panel scrolls, never the page (the platform's bars stay put)
@@ -1842,7 +1854,7 @@
       var hello = function () { try { sFlOp.postMessage({ kind: 'st-hawk-flight-ready' }, '*'); } catch (x) { clearInterval(hi); } };
       hi = setInterval(function () { if (++tries > 60 || sFlPend) clearInterval(hi); else hello(); }, 500); hello(); })();
     load(); poll();
-    var api = { reload: function () { load(); }, redraw: function () { todayPaint(); redraw(); }, today: todayPaint, relang: relang, rv: function () { return RV; }, sessions: function () { return SESS; }, agree: function () { return AG; } };
+    var api = { reload: function () { load(); }, redraw: function () { hd(); todayPaint(); redraw(); }, today: todayPaint, relang: relang, rv: function () { return RV; }, sessions: function () { return SESS; }, agree: function () { return AG; } };
     MOUNTS.push(api);
     return api;
   }
