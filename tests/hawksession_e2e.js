@@ -122,6 +122,8 @@
     ok('...which of the brief\'s levels were taken, highest first', lv.join(' | ') === 'Range high 1.09400 27.8 pips short | Sell zone 1.09250 12.8 pips short | 50% 1.09100 Taken 08:16 | Range low 1.08800 Taken 09:29', lv);
     ok('...measured from the brief to the 13:20 time exit, on 1-minute candles from the store', tx(card().querySelector('.hk-saftw')) === '07:45 → 13:20' && /1-minute candles/.test(tx(card().querySelector('.hk-saft .hk-hint'))) && BARS.some(function (b) { return b[1] === 1; }), [tx(card().querySelector('.hk-saftw')), BARS.slice(0, 4)]);
     ok('the session chart: drawn with the three alerts numbered on it', !!Q('.hk-ses[data-sk="' + sk + '"] .hk-sesc canvas') && Q('.hk-ses[data-sk="' + sk + '"] .hk-sesc canvas').width > 100, null);
+    var tfB = Q('.hk-ses[data-sk="' + sk + '"] .hk-sesc');
+    ok('the session chart says its candles\' timeframe in the corner under the prices: 5M, or 15M when too narrow for 5-minute ones ("what timeframe is this suppossed to be?")', tfB && (tfB.dataset.tf === '5M' || tfB.dataset.tf === '15M'), tfB && tfB.dataset.tf);
     // his own view of the session chart (24 Nov 2026, Nestor: "could i please be able to control de time and price scales on this chart?")
     var zb = Q('.hk-ses[data-sk="' + sk + '"] .hk-sesc'), zc = zb.querySelector('canvas'), zr0 = zb.querySelector('.hk-zr'), zimg0 = zc.toDataURL(), zR = zb.getBoundingClientRect(), ZW = zb.clientWidth, ZH = zb.clientHeight;
     var PE = function (ty, x, y) { zc.dispatchEvent(new PointerEvent(ty, { clientX: zR.left + x, clientY: zR.top + y, pointerId: 7, button: 0, buttons: ty === 'pointerup' ? 0 : 1, pointerType: 'mouse', bubbles: true, cancelable: true })); };

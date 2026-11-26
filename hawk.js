@@ -500,6 +500,9 @@
     pills.forEach(function (p) { g.fillStyle = p.bg; g.beginPath();
       if (g.roundRect) g.roundRect(PW + 4, p.y - 7, RG - 8, 14, 3); else g.rect(PW + 4, p.y - 7, RG - 8, 14); g.fill();
       txt(p.t, PW + RG / 2, p.y + .5, p.fg, 'center', 10, 500); });
+    // its candles' timeframe, in the corner under the prices (26 Nov 2026, Nestor: "what timeframe is this suppossed to be?"): 5M, 15M once
+    // the chart is too narrow (or zoomed out too far) for 5-minute candles
+    var tfL = tf % 3600 ? tf / 60 + 'M' : tf / 3600 + 'H'; txt(tfL, PW + RG / 2, H - 9, K.mut, 'center', 9, 600); if (box.dataset.tf !== tfL) box.dataset.tf = tfL;
   }
 
   // ---------- his reading of a timeframe as the hawk makes it - cloud/hawk/engine.py read_bars / read / where / tf_said, line for line (keep
