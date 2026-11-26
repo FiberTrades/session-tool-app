@@ -184,16 +184,27 @@ class Hawk:
             hb_ = E.htf_bias(E.T[last] + 60, now) if E.PHASES and E.HTF_4H else None
             if E.PHASES and E.HTF_4H: lines.append(E.htf_said(E.T[last] + 60, now, px))   # the bigger picture first: the 4H decides the side
             tfs = fr.get('tf') and tfs_now(E.T[last] + 60, now)
-            if ph == 'range forming':
+            if ph == 'range forming' and getattr(E, 'RF_BLOCK', True):
                 lines.append('A range is forming on the hour chart (no side tested twice yet): no range trades until one is.')
                 lines.append('Price %s. Range %s–%s.' % (px(now), px(bl), px(bh)))
             elif ph.startswith('initiation'):
                 up = ph.endswith('up'); base = fr['tf']['1h']['base']
-                lines.append('Initiation %s on the hour chart: a strong close %s %s. Only %s today: the pocket at the break or the 50%% of a new leg.' % (
-                    'up' if up else 'down', 'above' if up else 'below', px(base[0] if up else base[1]), 'buys' if up else 'sells'))
+                # 26 Nov 2026: the hour chart picks the kind of setup (the 50% of a new leg, its way); the 4H gives the side
+                d1 = 1 if up else -1
+                if getattr(E, 'INIT_1H', True):
+                    lines.append('Initiation %s on the hour chart: a strong close %s %s. Only %s today: the pocket at the break or the 50%% of a new leg.' % (
+                        'up' if up else 'down', 'above' if up else 'below', px(base[0] if up else base[1]), 'buys' if up else 'sells'))
+                elif hb_ is not None and E.PHASES and E.HTF_4H and hb_ != d1:
+                    # the 4H says the other way (or nothing): its 50% setups are off; only a 15-minute initiation the 4H's way can come
+                    lines.append('Initiation %s on the hour chart: a strong close %s %s, against the 4H: no %s today%s.' % (
+                        'up' if up else 'down', 'above' if up else 'below', px(base[0] if up else base[1]), 'buys' if up else 'sells',
+                        '' if not hb_ else ', a %s only from a 15-minute initiation %s' % ('buy' if hb_ > 0 else 'sell', 'up' if hb_ > 0 else 'down')))
+                else:
+                    lines.append('Initiation %s on the hour chart: a strong close %s %s. Look for %s at the 50%% of a new leg.' % (
+                        'up' if up else 'down', 'above' if up else 'below', px(base[0] if up else base[1]), 'buys' if up else 'sells'))
                 lines.append('Price %s. Range %s–%s.' % (px(now), px(bl), px(bh)))
-            elif ph == 'range':
-                lines.append('Range day. Range %s–%s: premium above %s, discount below %s, 50%% at %s.' % (px(bl), px(bh), px(bh - q), px(bl + q), px(mid)))
+            elif ph.startswith('range'):   # 'range forming' too once its block is off (26 Nov 2026): the range rules, on the 24 h box
+                lines.append('%s Range %s–%s: premium above %s, discount below %s, 50%% at %s.' % ('Range day.' if ph == 'range' else 'A range is forming on the hour chart.', px(bl), px(bh), px(bh - q), px(bl + q), px(mid)))
                 lines.append('Price %s, %s.' % (px(now), loc))
                 if not (E.PHASES and E.HTF_4H): lines.append('Sell idea: a high taken in the premium, then the move slows. Buy idea: a low taken in the discount, then it slows.')
                 elif hb_ == -1: lines.append('Sell idea: a high taken in the premium, then the move slows.')
@@ -204,7 +215,13 @@ class Hawk:
                 lines.append('%s on the hour chart (%s ×2).' % ('Trend up' if up else 'Trend down', 'higher highs and lows' if up else 'lower highs and lows'))
                 if a2b:
                     m2 = sum(a2b) / 2
-                    lines.append('Last leg %s → %s: its 50%% at %s is the %s zone.' % (px(a2b[0]), px(a2b[1]), px(m2), 'buy' if up else 'sell'))
+                    if hb_ is not None and E.PHASES and E.HTF_4H and hb_ != (1 if up else -1):
+                        # 26 Nov 2026: the 4H says the other way (or nothing) - its 50% is not a buy (sell) zone today; a countertrend
+                        # trade back to it is all the hour chart allows
+                        lines.append('Last leg %s → %s, against the 4H: no %s at its 50%% (%s)%s.' % (px(a2b[0]), px(a2b[1]), 'buys' if up else 'sells', px(m2),
+                                     '' if not hb_ else '; a %s only countertrend, back to it' % ('buy' if hb_ > 0 else 'sell')))
+                    else:
+                        lines.append('Last leg %s → %s: its 50%% at %s is the %s zone.' % (px(a2b[0]), px(a2b[1]), px(m2), 'buy' if up else 'sell'))
                 lines.append('Price %s. Range %s–%s.' % (px(now), px(bl), px(bh)))
             if tfs: lines.append(tf_line(tfs))
             if dis_now: lines.append(dis_said(dis_now) + ' Setups still come, each marked.')

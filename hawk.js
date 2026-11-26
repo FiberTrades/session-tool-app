@@ -45,7 +45,7 @@
     '.hk-chip.setup{color:var(--hk-acc);background:color-mix(in srgb,var(--hk-acc) 15%,transparent)}',
     '.hk-chip.warn{color:var(--hk-warn);background:color-mix(in srgb,var(--hk-warn) 15%,transparent)}',
     // the brief's three timeframes (7 Nov 2026): phase, and where price sits on it
-    '.hk-tfs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:10px 0 4px}',
+    '.hk-tfs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:10px 0 4px}',
     '.hk-tf{border:1px solid var(--hk-line);border-radius:8px;padding:7px 9px;min-width:0}',
     '.hk-tf b{display:block;font:500 10px var(--hk-mono);letter-spacing:.08em;color:var(--hk-mut)}',
     '.hk-tf span{display:block;font-size:13px;font-weight:600;margin-top:2px;overflow-wrap:anywhere}',
@@ -229,7 +229,7 @@
     '.hk-sesb .hk-btn.go.done{background:transparent;color:var(--hk-buy);border-color:color-mix(in srgb,var(--hk-buy) 45%,transparent);cursor:default}.hk-sesb .hk-btn.go svg{width:13px;height:13px}',
     '.hk-agree{margin:10px 0 2px;padding:11px 12px 12px;border:1px solid var(--hk-line);border-radius:10px;background:var(--hk-card)}.hk-agree[hidden]{display:none}',
     '.hk-agh{display:flex;align-items:baseline;justify-content:space-between;gap:8px}.hk-agh b{font-size:13px;font-weight:600}.hk-agh i{font:normal 11px var(--hk-mono);color:var(--hk-mut);text-align:right}.hk-agree .hk-hint{margin:6px 0 0}',
-    '.hk-agg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:9px}',
+    '.hk-agg{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:9px}',
     '.hk-agc{padding:7px 9px 8px;border-radius:8px;background:var(--hk-soft);min-width:0}.hk-agc .k{display:block;font:500 10px var(--hk-mono);letter-spacing:.1em;color:var(--hk-mut)}',
     '.hk-agc .v{display:block;margin-top:1px;font:500 18px var(--hk-mono);font-variant-numeric:tabular-nums;color:var(--hk-ink)}.hk-agc .v small{font-size:11.5px;color:var(--hk-mut)}',
     '.hk-agc s{display:block;height:3px;margin:5px 0 6px;border-radius:2px;background:color-mix(in srgb,var(--hk-mut) 25%,transparent);overflow:hidden;text-decoration:none}.hk-agc s i{display:block;height:100%;background:var(--hk-buy)}',
@@ -321,12 +321,13 @@
   function tfSaid(x) { var w = TF_SAID[x]; return w ? L(w[0], w[1]) : String(x || ''); }
   function tfLoc(x) { var w = TF_LOC[x]; return w ? L(w[0], w[1]) : String(x || ''); }
   var ICH = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" aria-hidden="true"><path d="M3 1.5v9M9 2.5v8"/><rect x="1.8" y="3.6" width="2.4" height="4.2" rx=".4"/><rect x="7.8" y="4.6" width="2.4" height="3.4" rx=".4"/></svg>';
-  // the timeframes he reads and corrects: his bias's two, HTF = 4H and LTF = 15M (26 Nov 2026, Nestor: "whats the point measuring the 1h if im
-  // already doing the 4h?"). Old reviews that carry a 1H keep it in the database; it is no longer shown or scored.
-  var YT = ['4h', '15m'];
+  // the timeframes he reads and corrects. 26 Nov 2026: for an hour 4H + 15M only (his "whats the point measuring the 1h if im already doing
+  // the 4h?"), then all three again (his "i use the 1h and the 4h to look for direction and intention"): the 4H gives the hawk its side,
+  // the 1H the kind of setup it looks for, so his 1H corrections are what teach it intention.
+  var YT = ['4h', '1h', '15m'];
   function tfTiles(t, x, o) {   // x: [4H direction, 15M direction] when they disagree; o: the review's buttons (24 Nov 2026) - { k: 'b' brief / 's' study trade, id, mine: his reads by timeframe, cur: the one open }
-    return '<div class="hk-tfs" ' + (o ? 'role="group" data-rvk="' + o.k + '" data-rvid="' + esc(o.id) + '"' : 'role="list"') + ' aria-label="' + L('The 4H and the 15M', 'El 4H y el 15M') + '">' + YT.map(function (k) { var v = t[k]; if (!v) return '';   // his two (26 Nov 2026: no 1H)
-      var cls = 'hk-tf' + (v.d > 0 ? ' buy' : v.d < 0 ? ' sell' : '') + (x ? ' x' : ''), body = '<span>' + esc(tfSaid(v.said)) + '</span><i>' + esc(tfLoc(v.loc)) + '</i>';
+    return '<div class="hk-tfs" ' + (o ? 'role="group" data-rvk="' + o.k + '" data-rvid="' + esc(o.id) + '"' : 'role="list"') + ' aria-label="' + L('The three timeframes', 'Las tres temporalidades') + '">' + YT.map(function (k) { var v = t[k]; if (!v) return '';
+      var cls = 'hk-tf' + (v.d > 0 ? ' buy' : v.d < 0 ? ' sell' : '') + (x && k !== '1h' ? ' x' : ''), body = '<span>' + esc(tfSaid(v.said)) + '</span><i>' + esc(tfLoc(v.loc)) + '</i>';
       if (!o) return '<div role="listitem" class="' + cls + '"><b>' + k.toUpperCase() + '</b>' + body + '</div>';
       var m = o.mine && o.mine[k], ms = m && m.said && m.said !== v.said ? m.said : null, ml = m && m.loc && m.loc !== v.loc ? m.loc : null;
       var you = ms || ml ? '<u>' + L('You: ', 'Tú: ') + esc([ms ? tfSaid(ms) : null, ml ? tfLoc(ml) : null].filter(Boolean).join(' · ')) + '</u>' : '';
@@ -1401,7 +1402,8 @@
       var ag = all.filter(function (r) { return r.verdict === 'agree'; }).length, no = all.filter(function (r) { return r.verdict === 'disagree'; }).length, chk = ag + no;
       h += '<p class="hk-hint hk-lead">' + (sMkt === 'EURUSD' ? L('Your rules: stop 2–4 pips, target 20 pips, 0.6 pip costs.', 'Tus reglas: stop de 2–4 pips, objetivo de 20 pips, 0.6 pips de costes.') : sLeadMkt()) +
         (sSes && sSes !== '@1330' ? sOwnLead() : sSes ? L(' New York window 13:30–15:30 London: the 24 h box to 12:30, no entry from 10 min before red news to 5 after, out 10 min before the next one, else by 20:00.', ' Ventana de Nueva York 13:30–15:30 de Londres: la caja de 24 h hasta las 12:30, sin entrar desde 10 min antes de noticias rojas hasta 5 después, fuera 10 min antes de las siguientes, si no a las 20:00.') : L(' London window 08:00–10:00.', ' Ventana de Londres 08:00–10:00.')) +
-        (study[0] && study[0].data.rules === 'phases+4h' ? L(' Read with your three phases on 4H / 1H / 15M; the 4H picks the side.', ' Leído con tus tres fases en 4H / 1H / 15M; el 4H elige el lado.')
+        (study[0] && study[0].data.rules === 'phases+4h+1h' ? L(' Read with your three phases: the 4H picks the side, the 1H the kind of setup, the 15M the entry.', ' Leído con tus tres fases: el 4H elige el lado, el 1H el tipo de setup, el 15M la entrada.')   // 26 Nov 2026: the 1H's two blocks off
+          : study[0] && study[0].data.rules === 'phases+4h' ? L(' Read with your three phases on 4H / 1H / 15M; the 4H picks the side.', ' Leído con tus tres fases en 4H / 1H / 15M; el 4H elige el lado.')
           : study[0] && study[0].data.rules === 'phases' ? L(' Read with your three phases on 4H / 1H / 15M.', ' Leído con tus tres fases en 4H / 1H / 15M.') : '') + (opt.study ? L(' Tap a trade to see it in Study with its zones and position.', ' Toca una operación para verla en el Estudio con sus zonas y su posición.') : '') + L(' Tick the ones you\'d take, cross the ones you wouldn\'t.', ' Marca con ✓ las que tomarías y con ✗ las que no.') + '</p>' +
         '<div class="hk-kpi">' + [[all.length, L('Trades', 'Operaciones')], [sR1(net), L('Net', 'Neto'), net >= 0 ? 'up' : 'dn'], [won, L('Targets', 'Objetivos')], [ag, L('You ✓', 'Tú ✓'), ag ? 'up' : '']]
           .map(function (s) { return '<div><b class="' + (s[2] || '') + '">' + s[0] + '</b><span>' + s[1] + '</span></div>'; }).join('') + '</div>' + sYbn(all) +

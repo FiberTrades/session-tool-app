@@ -107,12 +107,11 @@
     ok('the card heads with the window and market, and what is in it', /London 08–10 · EUR\/USD/.test(tx(card().querySelector('h3'))) && tx(card().querySelector('.hk-sesl')) === 'Brief 07:45 · 3 alerts · 0 of 3 rated', [tx(card().querySelector('h3')), tx(card().querySelector('.hk-sesl'))]);
     var secs = [].slice.call(card().querySelectorAll('.hk-sec')).map(function (e) { return tx(e.querySelector('.hk-sech')); });
     ok('three parts: Before (the brief), During (each alert), After', secs.length === 3 && /^1 Before The brief · 07:45/.test(secs[0]) && /^2 During 3 alerts/.test(secs[1]) && /^3 After/.test(secs[2]), secs);
-    // 26 Nov 2026 ("whats the point measuring the 1h if im already doing the 4h?"): his two, as in his bias - the brief's 1H is not shown
-    ok('Before: the brief\'s words without the timeframes line, its 4H / 15M tiles open his charts (no 1H)', /Sell idea: a high taken in the premium/.test(tx(card().querySelector('.hk-sbody'))) && !/Timeframes:/.test(tx(card().querySelector('.hk-sbody'))) && card().querySelectorAll('button[data-rvtf]').length === 2 && !card().querySelector('button[data-rvtf="1h"]'), [tx(card().querySelector('.hk-sbody')), card().querySelectorAll('button[data-rvtf]').length]);
+    ok('Before: the brief\'s words without the timeframes line, its 4H / 1H / 15M tiles open his charts', /Sell idea: a high taken in the premium/.test(tx(card().querySelector('.hk-sbody'))) && !/Timeframes:/.test(tx(card().querySelector('.hk-sbody'))) && card().querySelectorAll('button[data-rvtf]').length === 3, [tx(card().querySelector('.hk-sbody')), card().querySelectorAll('button[data-rvtf]').length]);
     var sel = function (c, k2, tf) { return c.querySelector('select[data-sesr="' + k2 + '"][data-tf="' + tf + '"]'); };
-    ok('...his read per timeframe, the hawk\'s to start with (no pink), six phases and six places', sel(card(), 'said', '4h').value === 'trend down' && sel(card(), 'loc', '4h').value === 'discount edge' && !sel(card(), 'said', '1h') && sel(card(), 'said', '15m').value === 'initiation down' && !card().querySelector('.hk-yr select.you') && sel(card(), 'said', '15m').options.length === 6 && sel(card(), 'loc', '15m').options.length === 6,
-      ['4h', '15m'].map(function (tf) { return sel(card(), 'said', tf).value + '/' + sel(card(), 'loc', tf).value; }));
-    ok('...the session he saved shows his own 4H read in pink', cC && sel(cC, 'said', '4h').value === 'range' && sel(cC, 'said', '4h').classList.contains('you') && !sel(cC, 'said', '15m').classList.contains('you'), cC && sel(cC, 'said', '4h').value);
+    ok('...his read per timeframe, the hawk\'s to start with (no pink), six phases and six places', sel(card(), 'said', '4h').value === 'trend down' && sel(card(), 'loc', '4h').value === 'discount edge' && sel(card(), 'said', '1h').value === 'range' && sel(card(), 'said', '15m').value === 'initiation down' && !card().querySelector('.hk-yr select.you') && sel(card(), 'said', '1h').options.length === 6 && sel(card(), 'loc', '1h').options.length === 6,
+      ['4h', '1h', '15m'].map(function (tf) { return sel(card(), 'said', tf).value + '/' + sel(card(), 'loc', tf).value; }));
+    ok('...the session he saved shows his own 4H read in pink', cC && sel(cC, 'said', '4h').value === 'range' && sel(cC, 'said', '4h').classList.contains('you') && !sel(cC, 'said', '1h').classList.contains('you'), cC && sel(cC, 'said', '4h').value);
     var items = QA('.hk-ses[data-sk="' + sk + '"] .hk-si');
     ok('During: the three alerts numbered in order, each with its time, kind, side, why and four ratings', items.length === 3 && items.map(function (e) { return tx(e.querySelector('.hk-sin')) + ' ' + tx(e.querySelector('.hk-st')); }).join(',') === '1 08:31,2 08:40,3 09:10' && items.every(function (e) { return e.querySelectorAll('[data-sesf]').length === 4 && e.querySelector('.hk-sib').textContent.length > 20; }),
       items.map(function (e) { return tx(e.querySelector('.hk-sih')); }));
@@ -169,29 +168,28 @@
     var chh = {}; try { chh = JSON.parse(localStorage.getItem('st_hawk_chh') || '{}'); } catch (e) {}
     ok('the bar under it: dragged down 100 px, the chart 100 px taller, redrawn to fit, kept for the next session charts', rz.classList.contains('hk-rsz') && Math.abs(zb.offsetHeight - zh0 - 100) <= 1 && (chh.s || chh.ns) === parseInt(zb.style.height, 10) && Math.abs(zc.height / (window.devicePixelRatio || 1) - zb.clientHeight) <= 1, [zh0, zb.offsetHeight, chh, zc.height]);
     try { localStorage.removeItem('st_hawk_chh'); } catch (e) {} zb.style.height = '';
-    // the agreement score before he saves: his reviewed window (4H changed, 15M kept; its 1H no longer counts) and study trade 2 (15M changed);
-    // study trade 1 carries only a 1H read, so it is not counted at all
+    // the agreement score before he saves: his reviewed window (4H changed, 1H and 15M kept) and two study trades (1H kept, 15M changed)
     var ag = function () { return [].slice.call(root.querySelectorAll('.hk-agree .hk-agc')).map(function (e) { return e.querySelector('.k').textContent.trim() + ' ' + e.querySelector('.v').textContent.replace(/ +/g, '').trim(); }).join(' · '); };
-    ok('Agrees with you: 4H 0/1 · 15M 1/2 (no 1H), over 1 session and 1 study trade', ag() === '4H 0/1 · 15M 1/2' && /1 session · 1 study trade$/.test(tx(Q('.hk-agh'))), [ag(), tx(Q('.hk-agh'))]);
+    ok('Agrees with you: 4H 0/1 · 1H 2/2 · 15M 1/2, over 1 session and 2 study trades', ag() === '4H 0/1 · 1H 2/2 · 15M 1/2' && /1 session · 2 study trades/.test(tx(Q('.hk-agh'))), [ag(), tx(Q('.hk-agh'))]);
     ok('...its latest disagreements listed, each opening in his charts', QA('.hk-disr').length === 2 && QA('.hk-disr').map(function (e) { return e.dataset.dis; }).join(',') === 's|strict_20|2|15m,b|c-brief|4h' && /Hawk: Initiation up · Breakout → You: Range/.test(tx(QA('.hk-disr')[0])), QA('.hk-disr').map(tx));
-    // one feedback pass: three ratings, a 15M read changed, a note - nothing written until Save
+    // one feedback pass: three ratings, a 1H read changed, a note - nothing written until Save
     var rate = function (id, f) { card().querySelector('[data-sesf="' + f + '"][data-id="' + id + '"]').click(); };
     rate('a-sweep', 'good'); rate('a-setup', 'good'); rate('a-init', 'early');
-    var s1h = sel(card(), 'said', '15m'); s1h.value = 'trend down'; s1h.dispatchEvent(new Event('change', { bubbles: true }));
+    var s1h = sel(card(), 'said', '1h'); s1h.value = 'trend down'; s1h.dispatchEvent(new Event('change', { bubbles: true }));
     var ta = card().querySelector('textarea[data-sesnote]'); ta.value = 'Good London: the sell side was right, the pocket was too far'; ta.dispatchEvent(new Event('input', { bubbles: true }));
     var kept = null; try { kept = JSON.parse(localStorage.getItem('st_hawk_sesd') || 'null'); } catch (e) {}
-    ok('picks are drafts: pressed at once, the 15M pink, kept on this device, nothing saved yet', card().querySelector('[data-sesf="early"][data-id="a-init"]').getAttribute('aria-pressed') === 'true' && s1h.classList.contains('you') && kept && kept[sk] && kept[sk].f['a-init'] === 'early' && kept[sk].tf['15m'].said === 'trend down' && /sell side/.test(kept[sk].note) && !SAVES.length && tx(card().querySelector('.hk-sesl')) === 'Brief 07:45 · 3 alerts · 3 of 3 rated',
+    ok('picks are drafts: pressed at once, the 1H pink, kept on this device, nothing saved yet', card().querySelector('[data-sesf="early"][data-id="a-init"]').getAttribute('aria-pressed') === 'true' && s1h.classList.contains('you') && kept && kept[sk] && kept[sk].f['a-init'] === 'early' && kept[sk].tf['1h'].said === 'trend down' && /sell side/.test(kept[sk].note) && !SAVES.length && tx(card().querySelector('.hk-sesl')) === 'Brief 07:45 · 3 alerts · 3 of 3 rated',
       [SAVES.length, kept && kept[sk], tx(card().querySelector('.hk-sesl'))]);
     card().querySelector('[data-sessave]').click();
     for (k = 0; k < 50 && !(card() && card().classList.contains('done')); k++) await W(100);
     var fb = SAVES.filter(function (x) { return x.t === 'hawk_signals' && 'feedback' in x.p; }), mn = SAVES.filter(function (x) { return x.t === 'hawk_signals' && x.p.mine; }), mine = mn.length && mn[mn.length - 1].p.mine;
     ok('Save: one rating each on the three alerts (hawk_signals.feedback + feedback_at)', fb.length === 3 && fb.map(function (x) { return x.f.id + '=' + x.p.feedback; }).join(',') === 'a-sweep=good,a-setup=good,a-init=early' && fb.every(function (x) { return x.p.feedback_at; }), fb);
-    ok('...his reads in the brief\'s mine.tf: the 15M changed, the 4H kept - both marked seen, no 1H written', mn.length === 1 && mn[0].f.id === 'a-brief' && mine.tf['15m'].said === 'trend down' && !('said' in mine.tf['4h']) && !('loc' in mine.tf['4h']) && mine.tf['4h'].seen && mine.tf['15m'].seen && !('1h' in mine.tf) && mine.tf['15m'].hk.said === 'initiation down', mine);
+    ok('...his reads in the brief\'s mine.tf: the 1H changed, the 4H and 15M kept - all three marked seen', mn.length === 1 && mn[0].f.id === 'a-brief' && mine.tf['1h'].said === 'trend down' && !('said' in mine.tf['4h']) && !('loc' in mine.tf['4h']) && mine.tf['4h'].seen && mine.tf['1h'].seen && mine.tf['15m'].seen && mine.tf['1h'].hk.said === 'range', mine);
     ok('...the note and the time in the brief\'s mine.rev', mine && mine.rev && /sell side was right/.test(mine.rev.note) && Date.parse(mine.rev.at) > Date.now() - 60000, mine && mine.rev);
     ok('...the card turns Reviewed, its button "Saved HH:MM", the draft gone from the device', card().classList.contains('done') && /Reviewed \d\d:\d\d/.test(tx(card().querySelector('.hk-top'))) && card().querySelector('[data-sessave]').disabled && /Saved \d\d:\d\d/.test(tx(card().querySelector('[data-sessave]'))) && !((JSON.parse(localStorage.getItem('st_hawk_sesd') || '{}'))[sk]),
       [card().className, tx(card().querySelector('[data-sessave]'))]);
-    for (k = 0; k < 40 && ag() !== '4H 1/2 · 15M 1/3'; k++) await W(100);
-    ok('the score follows: 4H 1/2 · 15M 1/3, his new 15M disagreement first', ag() === '4H 1/2 · 15M 1/3' && QA('.hk-disr')[0] && QA('.hk-disr')[0].dataset.dis === 'b|a-brief|15m' && /Hawk: Initiation down · Breakout → You: Trend down/.test(tx(QA('.hk-disr')[0])), [ag(), QA('.hk-disr').map(tx)]);
+    for (k = 0; k < 40 && ag() !== '4H 1/2 · 1H 2/3 · 15M 2/3'; k++) await W(100);
+    ok('the score follows: 4H 1/2 · 1H 2/3 · 15M 2/3, his new 1H disagreement first', ag() === '4H 1/2 · 1H 2/3 · 15M 2/3' && QA('.hk-disr')[0] && QA('.hk-disr')[0].dataset.dis === 'b|a-brief|1h' && /Hawk: Range · Premium middle → You: Trend down/.test(tx(QA('.hk-disr')[0])), [ag(), QA('.hk-disr').map(tx)]);
     // step 1 (26 Nov 2026, "yes do step 1"): his Check my bias answers and journal trades count, nothing new to fill in
     var nowIso = new Date().toISOString(), dB = ldnDay(NOW);
     BIAS.push({ day: dC, ses: 'London', sym: 'EURUSD', at: nowIso, htf: { s: 'Ranging', l: 'Premium Edge', d: 'Unsure' }, ltf: { s: '', l: '', d: '' } });   // the reviewed window: its review wins
@@ -204,22 +202,22 @@
     M.api.redraw();
     for (k = 0; k < 40 && !Q('.hk-agt'); k++) await W(100);
     var agt = Q('.hk-agt'), mis = QA('.hk-mis .hk-disr');
-    ok('his bias counts: its HTF on the 4H, its LTF on the 15M - 4H 2/3 · 15M 1/4; a reviewed window\'s review wins', ag() === '4H 2/3 · 15M 1/4' && /2 sessions · 1 bias check · 1 study trade$/.test(tx(Q('.hk-agh'))), [ag(), tx(Q('.hk-agh'))]);
+    ok('his bias counts: its HTF on the 4H, its LTF on the 15M - 4H 2/3 · 1H 2/3 · 15M 2/4; a reviewed window\'s review wins', ag() === '4H 2/3 · 1H 2/3 · 15M 2/4' && /2 sessions · 1 bias check · 2 study trades/.test(tx(Q('.hk-agh'))), [ag(), tx(Q('.hk-agh'))]);
     ok('...its disagreement first, marked as his bias, opening today\'s session on the 15M', QA('.hk-disr')[0] && QA('.hk-disr')[0].dataset.dis === 'b|b-brief|15m' && /your bias/.test(tx(QA('.hk-disr')[0])) && /Hawk: Initiation down · Breakout → You: Range · At the 50%/.test(tx(QA('.hk-disr')[0])), QA('.hk-disr').map(tx));
     ok('his trades in its hours: it flagged 1 of 3 (outside its hours and a day without a brief left out)', agt && /Your trades in its hours/.test(tx(agt)) && tx(agt.querySelector('b')) === '1 /3', agt && tx(agt));
     ok('...the two it missed, latest first, each opening its session', mis.length === 2 && mis[0].dataset.dis === 'b|a-brief|15m' && /SELL/.test(tx(mis[0].querySelector('.tf'))) && /08:20/.test(tx(mis[0])) && /It called it at 08:31, after you were in/.test(tx(mis[0]))
       && mis[1].dataset.dis === 'b|c-brief|15m' && /BUY/.test(tx(mis[1].querySelector('.tf'))) && /It said nothing/.test(tx(mis[1])), mis.map(tx));
     BIAS.length = 0; TRADES.length = 0; M.api.redraw();
-    ok('...gone again with no bias and no trades', ag() === '4H 1/2 · 15M 1/3' && !Q('.hk-agt') && !Q('.hk-mis'), [ag(), !!Q('.hk-agt')]);
+    ok('...gone again with no bias and no trades', ag() === '4H 1/2 · 1H 2/3 · 15M 2/3' && !Q('.hk-agt') && !Q('.hk-mis'), [ag(), !!Q('.hk-agt')]);
     // changing a rating again: Save changes
     rate('a-init', 'late');
     ok('a change after saving: the button asks to save the changes', /Save changes/.test(tx(card().querySelector('[data-sessave]'))) && !card().querySelector('[data-sessave]').disabled, tx(card().querySelector('[data-sessave]')));
     rate('a-init', 'late'); rate('a-init', 'early');
     // a disagreement opens in his charts on that timeframe
     STUDYC.length = 0; QA('.hk-disr')[0].click();
-    for (k = 0; k < 60 && !STUDYC.some(function (c) { return c.tf === 15; }); k++) await W(100);
-    var op = STUDYC.filter(function (c) { return c.tf === 15; })[0];
-    ok('a brief\'s disagreement opens Study on its 15M at the brief\'s moment', op && op.n === 'hb|a-brief|15m' && op.at === t0 && op.sym === 'EURUSD', STUDYC.slice(0, 3));
+    for (k = 0; k < 60 && !STUDYC.some(function (c) { return c.tf === 60; }); k++) await W(100);
+    var op = STUDYC.filter(function (c) { return c.tf === 60; })[0];
+    ok('a brief\'s disagreement opens Study on its 1H at the brief\'s moment', op && op.n === 'hb|a-brief|1h' && op.at === t0 && op.sym === 'EURUSD', STUDYC.slice(0, 3));
     // the toggle: alerts during the session, on by default, saved with his hawk settings
     var tg = Q('input[data-hkquiet]');
     ok('"Alerts during the session" is on, saved with his hawk settings', tg && tg.checked && !tg.disabled && /Alerts during the session/.test(tx(tg.closest('label'))), tg && tx(tg.closest('label')));

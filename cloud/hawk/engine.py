@@ -90,7 +90,14 @@ SW_K = 2               # a swing high / low: 2 candles on each side, on every ti
 # +26.1R (the blocked trades made 12R). He chose: alert, and say they disagree. Never against the hour chart's initiation (INIT_1H):
 # +42.0R (99 trades, drawdown 9.5R). The other markets, scaled: GBP/USD +32.4R, gold +5.8R, US100 +1.0R (before: +17.1, +23.8, -12.8).
 TF_RULE = False        # True: no setup while the 4H and the 15M point opposite ways (his first idea, 7 Nov); False: the alert says it
-INIT_1H = True         # never against an initiation on the hour chart: no 15M pocket the other way
+# 26 Nov 2026 (Nestor: "i use the 1h and the 4h to look for direction and intention" -> "yes do it all"): the 4H gives the side (HTF_4H), the
+# 1H only picks the KIND of setup (range: the edges; trend: the 50% of its last leg, or countertrend to it; initiation: its way only), and its
+# two blocks are off - they only repeated the 4H's side gate. The year, London 08-10, scaled (scratchpad gate4h/, run_gate4h.py --diag):
+# EUR/USD 55 -> 66 trades, +51.0R -> +71.3R (drawdown 7.9 -> 9.1, halves +13.7 / +57.6); GBP/USD +22.5 -> +22.0R; gold +27.3 -> +29.1R;
+# US100 -1.0 -> +4.6R. The 4H doing the 1H's whole job instead: GBP/USD +1.2R, gold -0.1R (rejected); no 1H at all: EUR/USD +75.1R but
+# drawdown 12.1, gold +15.2R, GBP/USD +16.5R.
+INIT_1H = False        # True: never against an initiation on the hour chart (no 15M pocket the other way) - off 26 Nov 2026
+RF_BLOCK = False       # True: no sweep trades while the hour chart's range is still forming (no side tested twice) - off 26 Nov 2026
 LOC_24H = True         # premium / discount on the 24 h before the session (False: on the 1H reading's own range, -29R on the year)
 # The bigger picture decides the side (Nestor, 7 Nov 2026: "the hawk cant just base its entries on the last 24h, it needs to be able to look
 # further to really know what market structure price is in, location and direction"): the 4H reading, in a trend or an initiation its way
@@ -411,7 +418,7 @@ def scan_day(idx, opts):
             if init_dir and init_at < a:
                 if side != init_dir and opts.get('respect_init', True): continue   # never against an initiation
             react = True
-            if ph == 'range forming' and not opts.get('any_loc'): continue   # 7 Nov: a range trades once one side was tested again
+            if RF_BLOCK and ph == 'range forming' and not opts.get('any_loc'): continue   # 7 Nov: a range trades once one side was tested again (off 26 Nov)
             if ph.startswith('initiation'):
                 # 7 Nov: an initiation on the hour chart - only its way, and only the 50% of a new leg (the pocket at the break is the
                 # initiation model above); never its edge or 50% against it

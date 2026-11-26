@@ -20,7 +20,7 @@ def xm_of(to): return min(23 * 60 + 30, max(20 * 60, to + 60))   # hawk.js sXmOf
 def hhmm(m): return '%02d%02d' % (m // 60, m % 60)
 def run_name(sym, f, t): return RUN[sym] + '@' + hhmm(f) + '-' + hhmm(t)
 def ok_window(f, t): return isinstance(f, int) and isinstance(t, int) and 60 <= f < t <= 22 * 60 and 30 <= t - f <= 6 * 60 and f % 15 == 0 and t % 15 == 0
-for k, v in dict(PHASES=True, LOC_24H=True, TF_RULE=False, INIT_1H=True, STOP_MAX=4.0, TP_LIQ=False, STOP_PAST=0.5, BOX_MAX=4.0, FIT_STOP=False, EXIT_NEWS=False, HTF_4H=True).items():
+for k, v in dict(PHASES=True, LOC_24H=True, TF_RULE=False, INIT_1H=False, RF_BLOCK=False, STOP_MAX=4.0, TP_LIQ=False, STOP_PAST=0.5, BOX_MAX=4.0, FIT_STOP=False, EXIT_NEWS=False, HTF_4H=True).items():
     setattr(E, k, v)
 
 def load(fn):
