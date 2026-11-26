@@ -71,6 +71,11 @@
   var wantMon = String(mon(1).getDate()).padStart(2, '0'), friD = mon(1); friD.setDate(friD.getDate() + 4);
   var wantFri = String(friD.getDate()).padStart(2, '0');
   ok('the days are next week\'s Monday to Friday', /MON/i.test(days()[0] || '') && (days()[0] || '').indexOf(wantMon) >= 0 && /FRI/i.test(days()[4] || '') && (days()[4] || '').indexOf(wantFri) >= 0, days());
+  // 26 Nov 2026 ("can the days in economic calendar look like they do in charts? slightly highlighted"): each day on a lit band, wider than its rows, the date in line with the times
+  (function () { var hs = [].slice.call(document.querySelectorAll('#econ-calendar-body .econ-day-header')), ev = document.querySelector('#econ-calendar-body .econ-event'), t0 = ev && ev.firstElementChild;
+    var lit = hs.every(function (h) { var c = getComputedStyle(h); return c.backgroundColor !== 'rgba(0, 0, 0, 0)' && /-10px 0px 0px/.test(c.boxShadow) && c.borderBottomStyle === 'none'; });
+    var lb = hs[0] && (hs[0].querySelector('.econ-day-label') || hs[0]).getBoundingClientRect(), tr = t0 && t0.getBoundingClientRect();
+    ok('each day sits on a lightly lit band, the date in line with the times', hs.length === 5 && lit && !!lb && !!tr && Math.abs(lb.left - tr.left) <= 1, [hs.length, lit, lb && Math.round(lb.left), tr && Math.round(tr.left)]); })();
   ok('the week after next is not shown', titles().filter(function (x) { return /Core CPI/.test(x); }).length === 0, titles());
   ok('nothing was written into the journal: the feed keeps its own two events', data._calendarCache.events.length === 2, data._calendarCache.events.length);
   // a row opens with the app's own information, like any other
