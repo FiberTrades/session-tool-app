@@ -8528,6 +8528,13 @@ try {
         <span class="tk-switch-track"><span class="tk-switch-knob"></span></span>
       </label>
       <div id="settings-lb-cap" class="settings-notif-cap"></div>
+      <!-- Judge me on (26 Nov 2026, Nestor: "it should use the lead account but maybe in here we could select what account we want to be
+           judged on"): which account a trade copied to several of them counts on for the leaderboard's Net R and win rate. Server side
+           (lb_prefs.judge_acc through st_set_leaderboard_judge; st_rebuild_leaderboard's ded). Shown to a member with 2+ accounts. -->
+      <label class="settings-label" id="settings-lbj-label" for="settings-lbj" style="margin-top:24px;" data-i18n="settings.lbj_label">Judge me on</label>
+      <p class="settings-hint" id="settings-lbj-hint" data-i18n="settings.lbj_hint">A trade copied to several accounts counts once on the leaderboard. Pick the account its Net R and win rate come from. Risk and daily-loss rules still check every account.</p>
+      <select id="settings-lbj" class="settings-input settings-input-compact"></select>
+      <div id="settings-lbj-cap" class="settings-notif-cap"></div>
       <!-- Admin only: push a refresh to every open app. Hidden unless the signed-in
            account is the owner; renderAdminReload() decides. Sits above Data, so for
            everyone else (who never sees this block) Data simply stays last. -->
@@ -10717,6 +10724,8 @@ try {
       'settings.notif_label': 'Notifications',
       'settings.privacy_label': 'Privacy',
       'settings.lb_toggle': 'Show me on the leaderboard',
+      'settings.lbj_label': 'Judge me on',
+      'settings.lbj_hint': 'A trade copied to several accounts counts once on the leaderboard. Pick the account its Net R and win rate come from. Risk and daily-loss rules still check every account.',
       'settings.lb_hint': 'Off: you are left out of the Discipline Leaderboard everywhere, its medals and the month\u2019s podium included. Your own stats stay exactly as they are, and you can turn it back on at any time.',
       'settings.install_label': 'Install on your PC',
       'settings.install_hint': 'Session Terminal as an app of its own: its own window and icon, no browser bars, and it can open when your computer starts.',
@@ -12706,6 +12715,8 @@ try {
       'settings.notif_label': 'Notificaciones',
       'settings.privacy_label': 'Privacidad',
       'settings.lb_toggle': 'Mostrarme en el ranking',
+      'settings.lbj_label': 'Juzgarme en',
+      'settings.lbj_hint': 'Una operación copiada a varias cuentas cuenta una vez en el ranking. Elige la cuenta de la que salen su R neto y su porcentaje de aciertos. Las reglas de riesgo y de pérdida diaria siguen revisando todas las cuentas.',
       'settings.lb_hint': 'Desactivado: quedas fuera del Ranking de disciplina en todas partes, incluidas sus medallas y el podio del mes. Tus propias estadísticas siguen exactamente igual, y puedes volver a activarlo cuando quieras.',
       'settings.install_label': 'Instalar en tu ordenador',
       'settings.install_hint': 'Session Terminal como una aplicación propia: su propia ventana e icono, sin las barras del navegador, y puede abrirse al encender el ordenador.',
@@ -30615,8 +30626,8 @@ try {
       const sb = window.__stSB;
       if (!sb || !sb.from || !uid()) return null;
       try {
-        const r = await sb.from('lb_prefs').select('hidden').eq('user_id', uid()).maybeSingle();
-        if (r && !r.error) window.__stLbHidden = !!(r.data && r.data.hidden);
+        const r = await sb.from('lb_prefs').select('hidden, judge_acc').eq('user_id', uid()).maybeSingle();
+        if (r && !r.error) { window.__stLbHidden = !!(r.data && r.data.hidden); window.__stLbJudge = (r.data && r.data.judge_acc) || ''; }
       } catch (e) {}
       return window.__stLbHidden;
     }
@@ -30631,7 +30642,48 @@ try {
       if (window.__stLbHidden === undefined) await load();
       cb.checked = window.__stLbHidden !== true;
       cap('');
+      judgePaint(); setTimeout(judgePaint, 0);   // again once Settings has wrapped it in its row
     }
+    /* Judge me on (26 Nov 2026): the copier's Lead by default (''), or one of his accounts. Listed: the accounts that take part (not
+       archived, not kept separate), plus the one picked if it has since been archived. The Lead's name rides on the default when the
+       EA says which login leads (copy_role). Hidden with fewer than 2 accounts - nothing is ever copied then - and in a mentor view. */
+    function judgeAccs() { try { return (Array.isArray(data.accounts) ? data.accounts : []).filter(a => a && a.id && ((!a.archived && !a.separate) || a.id === window.__stLbJudge)); } catch (e) { return []; } }
+    function leadName() {
+      try { const m = data.mt5LoginMap || {}, lg = Object.keys(m).filter(k => window.__stEA && window.__stEA.roleOf(k) === 'lead')[0];
+        const a = lg ? (data.accounts || []).filter(x => x && x.id === m[lg])[0] : null; return a ? (a.name || '') : ''; } catch (e) { return ''; }
+    }
+    function judgePaint() {
+      const sel = document.getElementById('settings-lbj'); if (!sel) return;
+      const els = ['settings-lbj-label', 'settings-lbj-hint', 'settings-lbj', 'settings-lbj-cap'].map(id => document.getElementById(id)).filter(Boolean);
+      const A = judgeAccs(), show = !mentor() && !!uid() && A.filter(a => !a.archived).length >= 2, row = sel.closest('.set-row');
+      (row ? [row] : els).forEach(el => { el.style.display = show ? '' : 'none'; });
+      if (!show) return;
+      const ln = leadName(), cur = window.__stLbJudge || '';
+      const opts = [['', ln ? T('Copier Lead · ', 'Líder del copiador · ') + ln : T('Copier Lead (default)', 'Líder del copiador (predeterminado)')]]
+        .concat(A.map(a => [a.id, (a.name || a.id) + (a.archived ? T(' (archived)', ' (archivada)') : '')]));
+      const sig = JSON.stringify(opts);
+      if (sel.dataset.sig !== sig) { sel.innerHTML = ''; opts.forEach(o => { const op = document.createElement('option'); op.value = o[0]; op.textContent = o[1]; sel.appendChild(op); }); sel.dataset.sig = sig; }
+      if (document.activeElement !== sel) sel.value = opts.some(o => o[0] === cur) ? cur : '';
+    }
+    document.addEventListener('change', async e => {
+      const sel = e.target;
+      if (!sel || sel.id !== 'settings-lbj') return;
+      const sb = window.__stSB, v = sel.value || '', was = window.__stLbJudge || '', c = document.getElementById('settings-lbj-cap');
+      const say = t => { if (c) c.textContent = t || ''; };
+      if (!sb || !sb.rpc || !uid()) { sel.value = was; return; }
+      sel.disabled = true; say(T('Saving…', 'Guardando…'));
+      try {
+        const r = await sb.rpc('st_set_leaderboard_judge', { p_acc: v || null });
+        if (r && r.error) throw r.error;
+        window.__stLbJudge = v;
+        const nm = (sel.options[sel.selectedIndex] || {}).textContent || '';
+        say(v ? T('Saved: copied trades count on ', 'Guardado: las operaciones copiadas cuentan en ') + nm : T('Saved: copied trades count on your copier Lead', 'Guardado: las operaciones copiadas cuentan en tu Líder del copiador'));
+        try { if (window.STBoard && window.STBoard.refresh) window.STBoard.refresh(); } catch (er) {}
+      } catch (er) {
+        sel.value = was;
+        say(T('Not saved. Check your connection and try again.', 'No se guardó. Revisa tu conexión y vuelve a intentarlo.'));
+      } finally { sel.disabled = false; }
+    });
     document.addEventListener('change', async e => {
       const cb = e.target;
       if (!cb || cb.id !== 'settings-lb-show') return;

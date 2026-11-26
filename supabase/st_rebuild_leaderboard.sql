@@ -54,6 +54,10 @@
 -- a member with lb_prefs.hidden (Settings -> Profile -> Show me on the leaderboard, off) is left out of `people`, so of every
 -- live board, and of the all-time board; see supabase/leaderboard_optout.sql. Live md5 (LF) 4d1ebd86432a8dff694b74f2640a5aac.
 --
+-- 26 Nov 2026: written from the LIVE function again (it had drifted from this file: live md5 (LF) 9ab2c6b69e7bcc78120c9dc489fd7cf0 before this
+-- change). Judge me on (Settings -> Profile -> Privacy, lb_prefs.judge_acc): which copy of a copied setup counts - his pick,
+-- else the copier's Lead, else the earliest open; see the ded CTE and supabase/lb_judge_account.sql.
+--
 CREATE OR REPLACE FUNCTION public.st_rebuild_leaderboard()
  RETURNS void
  LANGUAGE plpgsql
@@ -441,10 +445,24 @@ begin
                 rows between unbounded preceding and current row) as setup_no
       from raw r
     ),
+    -- 26 Nov 2026 (Nestor: "it should use the lead account but maybe in here we could select what account we want to be judged
+    -- on"): WHICH copy of a setup counts for R, W/L and the trade count. 1) the account he picked in Settings -> Privacy -> "Judge
+    -- me on" (lb_prefs.judge_acc, a journal account id), when that account has a copy; 2) else the copier's Lead (ea_settings
+    -- copy_role = 'lead' for the login the copy came from); 3) else, as before, the earliest open. Until now 3) was all there was,
+    -- and a Follow filling in the same second with a lower ticket number won: his November read +0.24R off a 10K Follow that pays
+    -- no commission, while his 70K Lead's own trades made -2.45R. coalesce(.., false): a NULL would sort FIRST in a desc order.
     ded as (
-      select distinct on (user_id, sym_core, direction, src, setup_no) *
-      from grp
-      order by user_id, sym_core, direction, src, setup_no, open_time, ticket
+      select distinct on (g.user_id, g.sym_core, g.direction, g.src, g.setup_no) g.*
+      from grp g
+      left join lb_prefs lp on lp.user_id = g.user_id
+      left join tacc ta on ta.user_id = g.user_id and ta.ticket = g.ticket::text
+      order by g.user_id, g.sym_core, g.direction, g.src, g.setup_no,
+               coalesce(lp.judge_acc is not null and coalesce(g.acc_m, ta.acc_id) = lp.judge_acc, false) desc,
+               exists (select 1 from trades_inbox i2
+                         join ea_settings es on es.user_id = g.user_id and es.login::text = i2.login::text
+                        where i2.token::text = g.user_id::text and i2.ticket::text = g.ticket::text
+                          and es.settings ->> 'copy_role' = 'lead') desc,
+               g.open_time, g.ticket
     ),
     -- 2026-09-29 (Nestor: "judge all accounts"): a trade copied to the member's other accounts (EA Trade
     -- Copier) is judged on EVERY account it landed on - the copier really places each copy, and each prop firm
