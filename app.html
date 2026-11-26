@@ -7390,8 +7390,13 @@ try {
           var u = r && r.data && r.data.session && r.data.session.user;
           if (on || !u || String(u.email || '').toLowerCase() !== ADMIN) return;
           on = true;
-          var s = document.createElement('script'); s.src = 'hawk.js?v=20261126d';   /* bump with each hawk.js change: a cached copy kept the Study tab from him */
-          s.onload = function () { window.__stHawk = { sb: c }; try { if (window.__stPractice && window.__stPractice._hawkOn) window.__stPractice._hawkOn(); } catch (e) {} };
+          var s = document.createElement('script'); s.src = 'hawk.js?v=20261126e';   /* bump with each hawk.js change: a cached copy kept the Study tab from him */
+          s.onload = function () { window.__stHawk = { sb: c };
+            /* his bias buttons name his timeframes (26 Nov 2026, Nestor: "if in session bias you need to add just for me these instead of just
+               saying HTF/LTF, maybe say 4h/15m/1m?"): 4H and 15M, what the hawk reads them as - his only, members keep HTF / LTF. No 1M tab:
+               the hawk judges phase on the 4H / 1H / 15M, and his 1-minute reads reach it through his trades. */
+            try { [].forEach.call(document.querySelectorAll('.tf-btn[data-tf="htf"], .tf-btn[data-tf="ltf"]'), function (b) { var h = b.getAttribute('data-tf') === 'htf';
+              b.textContent = h ? '4H' : '15M'; b.title = h ? 'Your higher timeframe: the hawk reads it as its 4H' : 'Your lower timeframe: the hawk reads it as its 15M'; }); } catch (e) {} try { if (window.__stPractice && window.__stPractice._hawkOn) window.__stPractice._hawkOn(); } catch (e) {} };
           document.head.appendChild(s);
         }).catch(function () {});
       }
@@ -100639,6 +100644,20 @@ window.__stAZ = (function () {
         rs = rs.slice(-50).sort(function(a, b){ return a - b; });
         var dr = 0; try { dr = parseFloat(data.defaults && data.defaults.risk) || 0; } catch (e) {}
         return { trades: out, risk: dr || (rs.length ? rs[Math.floor(rs.length / 2)] : 0), cur: (typeof curSym === 'function') ? curSym() : '£' }; } catch (e) { return null; } },
+      /* his Check my bias answers and journal trades, for the hawk's "Agrees with you" score (26 Nov 2026, Nestor: "would you suggest an
+         easier way to train it that doesnt add too much work for me?" - "yes do step 1"): it learns from what he does anyway. Bias: London
+         day, session, market, his HTF read (the hawk's 4H) and LTF read (its 15M). Trades: London day and clock minute (entryTime is London
+         time since the MT5 time fix), side, market - one per trade, its copies on his other accounts dropped. */
+      bias: function(){ try { var B = (data && Array.isArray(data.biasHistory)) ? data.biasHistory : [];
+        return B.filter(function(b){ return b && b.dateKey && (b.structure || b.structureLtf); }).map(function(b){ return { day: String(b.dateKey).slice(0, 10), ses: b.sessionName || '', sym: b.symbol ? canon(b.symbol) : '', at: b.date || '',
+          htf: { s: b.structure || '', l: b.location || '', d: b.direction || '' }, ltf: { s: b.structureLtf || '', l: b.locationLtf || '', d: b.directionLtf || '' } }; }); } catch (e) { return []; } },
+      trades: function(){ try { var all = (typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades() : [], seen = {}, out = [];
+        all.forEach(function(t){ if (!t || !t.date) return; var m = /^(\d{1,2}):(\d{2})/.exec(String(t.entryTime || '')); if (!m) return;
+          var dt = new Date(t.date); if (isNaN(dt.getTime())) return; var day = dt.toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
+          var sd = String(t.side || t.type || t.direction || ''), side = /short|sell/i.test(sd) ? -1 : /long|buy/i.test(sd) ? 1 : 0; if (!side) return;
+          var sym = canon(t.mt5Symbol || t.symbol || ''), min = (+m[1]) * 60 + (+m[2]), k = day + '|' + min + '|' + side + '|' + sym;
+          if (seen[k]) return; seen[k] = 1; out.push({ day: day, min: min, side: side, sym: sym }); });
+        return out; } catch (e) { return []; } },
       today: function(){ return null; } });   // the session and its news are in Check my bias now (Nestor, 6 Nov 2026), the plan too, the budget in the Trade Manager
     if (first || PLHK._lt !== lt || !PLHK._shown) { PLHK._lt = lt; PLHK._shown = true; setTimeout(function(){ try { PLHK.redraw(); } catch (e) {} }, 30); } }   // drawn again when it opens and when the theme flips
   function platBuild(win){ var D = win.ownerDocument, E = PL.el, mk = function(cls, html){ var d = D.createElement('div'); d.className = cls; d.innerHTML = html || ''; win.appendChild(d); return d; };

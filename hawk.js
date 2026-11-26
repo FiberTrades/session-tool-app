@@ -234,6 +234,8 @@
     '.hk-agc .v{display:block;margin-top:1px;font:500 18px var(--hk-mono);font-variant-numeric:tabular-nums;color:var(--hk-ink)}.hk-agc .v small{font-size:11.5px;color:var(--hk-mut)}',
     '.hk-agc s{display:block;height:3px;margin:5px 0 6px;border-radius:2px;background:color-mix(in srgb,var(--hk-mut) 25%,transparent);overflow:hidden;text-decoration:none}.hk-agc s i{display:block;height:100%;background:var(--hk-buy)}',
     '.hk-agc .hk-ags{display:flex;justify-content:space-between;gap:4px;font-size:10.5px;line-height:1.5;color:var(--hk-mut);white-space:nowrap}.hk-agc .hk-ags b{font:500 10.5px var(--hk-mono);color:var(--hk-ink)}',
+    '.hk-agt{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-top:11px;padding-top:9px;border-top:1px solid var(--hk-line);font-size:12px}.hk-agt b{font:500 15px var(--hk-mono);font-variant-numeric:tabular-nums;color:var(--hk-ink)}.hk-agt b small{font-size:11px;color:var(--hk-mut)}',
+    '.hk-agt+.hk-hint{margin:3px 0 0!important;font-size:11px}.hk-disr .tf.s{color:var(--hk-sell);border-color:color-mix(in srgb,var(--hk-sell) 50%,transparent)}.hk-disr .tf.b{color:var(--hk-buy);border-color:color-mix(in srgb,var(--hk-buy) 50%,transparent)}',
     '.hk-dis{margin-top:11px}.hk-dish{font:500 10px var(--hk-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--hk-mut);margin-bottom:3px}',
     '.hk-disr{display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:9px;row-gap:2px;align-items:center;width:100%;box-sizing:border-box;text-align:left;background:transparent;border:0;border-top:1px solid var(--hk-line);border-radius:0;padding:7px 4px;cursor:pointer;color:var(--hk-ink);font:inherit}.hk-dish+.hk-disr{border-top:0}',
     '.hk-disr:hover{background:var(--hk-soft)}.hk-disr:focus-visible{outline:2px solid #e0a84a;outline-offset:-2px}',
@@ -313,7 +315,7 @@
     ['initiation up', 'Initiation up', 'Iniciación alcista'], ['initiation down', 'Initiation down', 'Iniciación bajista']];
   // his three phases on each timeframe (hawk.py tfs_now / engine.tf_said, engine.where): the words, and where price sits
   var TF_SAID = { 'trend up': ['Trend up', 'Tendencia alcista'], 'trend down': ['Trend down', 'Tendencia bajista'], range: ['Range', 'Rango'], 'range forming': ['Range forming', 'Rango formándose'],
-    'initiation up': ['Initiation up', 'Iniciación alcista'], 'initiation down': ['Initiation down', 'Iniciación bajista'] };
+    'initiation up': ['Initiation up', 'Iniciación alcista'], 'initiation down': ['Initiation down', 'Iniciación bajista'], trend: ['Trend', 'Tendencia'], initiation: ['Initiation', 'Iniciación'] };
   var TF_LOC = { breakout: ['Breakout', 'Ruptura'], 'premium edge': ['Premium edge', 'Extremo del premium'], 'premium middle': ['Premium middle', 'Premium medio'],
     '50%': ['At the 50%', 'En el 50%'], 'discount middle': ['Discount middle', 'Descuento medio'], 'discount edge': ['Discount edge', 'Extremo del descuento'] };
   function tfSaid(x) { var w = TF_SAID[x]; return w ? L(w[0], w[1]) : String(x || ''); }
@@ -1088,31 +1090,77 @@
           : L('Off: no phone alerts while the window runs. The brief still comes before it, and the review after it with every alert in it.', 'Apagadas: ninguna alerta al teléfono mientras dura la ventana. El resumen sigue llegando antes, y la revisión después con todas las alertas.')) + '</p>'; }
 
     // ---------- the agreement score (step 3, 24 Nov 2026): his saved 4H / 1H / 15M reads (phase + location) against the hawk's, over the
-    // sessions he reviewed (hawk_signals.mine.tf) and the study trades he read (hawk_study.tf_mine); the latest disagreements open in his charts
+    // sessions he reviewed (hawk_signals.mine.tf) and the study trades he read (hawk_study.tf_mine); the latest disagreements open in his charts.
+    // Since 26 Nov 2026 (Nestor: "would you suggest an easier way to train it that doesnt add too much work for me?" - "yes do step 1") it
+    // also counts what he does anyway, nothing new to fill in: his Check my bias answers (opt.bias, the app) against the brief of that day
+    // and session, and his journal trades (opt.trades) against its alerts
     function agSoon(ms) { clearTimeout(agT); agT = setTimeout(agLoad, ms == null ? 1200 : ms); }
     async function agLoad() { if (!mount.admin) return; var A = null;
       try { A = await Promise.all([
-        sb.from('hawk_signals').select('id, created_at, title, mine, tfs:data->tfs, sym:data->>sym, win:data->win').eq('kind', 'brief').not('mine', 'is', null).order('created_at', { ascending: false }).limit(500),
-        sb.from('hawk_study').select('run, n, day, tf_mine, tfs:data->tfs').not('tf_mine', 'is', null).limit(3000)]); } catch (x) { return; }
+        sb.from('hawk_signals').select('id, created_at, title, mine, tfs:data->tfs, sym:data->>sym, win:data->win').eq('kind', 'brief').order('created_at', { ascending: false }).limit(1500),
+        sb.from('hawk_study').select('run, n, day, tf_mine, tfs:data->tfs').not('tf_mine', 'is', null).limit(3000),
+        opt.trades ? sb.from('hawk_signals').select('id, created_at, kind, side, sym:data->>sym, win:data->win').in('kind', ['sweep', 'setup', 'initiation', 'pocket']).not('side', 'is', null).order('created_at', { ascending: false }).limit(3000) : null]); } catch (x) { return; }
       if (!A || ((!A[0] || A[0].error) && (!A[1] || A[1].error))) return;
-      AG = { b: ((A[0] && !A[0].error && A[0].data) || []).filter(function (x) { return x && x.mine && x.mine.tf; }), s: ((A[1] && !A[1].error && A[1].data) || []).filter(function (x) { return x && x.tf_mine; }) };
+      AG = { b: ((A[0] && !A[0].error && A[0].data) || []).filter(function (x) { return x && x.id; }), s: ((A[1] && !A[1].error && A[1].data) || []).filter(function (x) { return x && x.tf_mine; }),
+        al: ((A[2] && !A[2].error && A[2].data) || []).filter(function (x) { return x && x.side; }) };
       agPaint(); }
+    // his bias, in the hawk's words: Ranging -> range (agrees with 'range forming' too), Trending / Initiating + Bullish / Bearish -> trend /
+    // initiation up / down; Unsure: the phase alone. Location as it is, lower case. His HTF is its 4H, his LTF its 15M (the buttons say so).
+    var AG_TF = { htf: '4h', ltf: '15m' };
+    function agKey(s) { s = String(s || ''); try { if (opt.canon) return String(opt.canon(s) || ''); } catch (x) {} return s.toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+    function agWk(a) { a = +a; return a < 360 ? 'asia' : a < 720 ? 'london' : a < 1080 ? 'new york' : 'evening'; }
+    function agSes(n) { n = String(n || '').toLowerCase(); return /london|londres/.test(n) ? 'london' : /new ?york|nueva york|\bny\b/.test(n) ? 'new york' : /asia|tokyo|sydney/.test(n) ? 'asia' : ''; }
+    function agRead(r) { r = r || {}; var s = String(r.s || '').toLowerCase(), d = /bull/i.test(r.d || '') ? ' up' : /bear/i.test(r.d || '') ? ' down' : '';
+      return { said: /^rang/.test(s) ? 'range' : /^trend/.test(s) ? 'trend' + d : /^initi/.test(s) ? 'initiation' + d : '', loc: String(r.l || '').toLowerCase().trim() }; }
+    function agSame(me, hk) { hk = String(hk || ''); return me === hk || (me === 'range' && hk.indexOf('range') === 0) || ((me === 'trend' || me === 'initiation') && hk.indexOf(me + ' ') === 0); }
+    function agMin(iso) { var s = new Date(iso).toLocaleTimeString('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }); return +s.slice(0, 2) * 60 + +s.slice(3, 5); }
+    function agBrief(day, sym, ses) {   // the brief his bias (or trade) belongs to: that London day, market and window - the first, if the hawk sent two
+      var c = ((AG && AG.b) || []).filter(function (x) { return sesDay(x) === day && Array.isArray(x.win) && (!sym || agKey(x.sym || 'EURUSD') === sym) && (!ses || agWk(x.win[0]) === ses); });
+      return c.length ? c[c.length - 1] : null; }
+    function agBias(out) { var B = []; try { B = (opt.bias && opt.bias()) || []; } catch (x) {} if (!B.length || !AG || !AG.b.length) return; var seen = {};
+      B.forEach(function (b) { var x = b && b.day && agBrief(b.day, b.sym || '', agSes(b.ses)); if (!x || !x.tfs) return;
+        Object.keys(AG_TF).forEach(function (k) { var tf = AG_TF[k], r = agRead(b[k]), hk = x.tfs[tf], key = x.id + '|' + tf;
+          if (!r.said || !r.loc || !hk || !hk.said || seen[key] || (x.mine && x.mine.tf && x.mine.tf[tf])) return;   // a review of that timeframe says it better
+          seen[key] = 1; out.push({ k: 'b', bias: 1, id: x.id, when: x.created_at, sym: x.sym, win: x.win, tf: tf, hk: hk, said: r.said, loc: r.loc, okS: agSame(r.said, hk.said), okL: r.loc === hk.loc,
+            at: Date.parse(b.at || '') || Date.parse(x.created_at) || 0 }); }); }); }
+    // his trades in the hours it watches (a brief that London day on that market, from half an hour before its window to the end): did it
+    // flag each - an alert on his side in that window, at most 2 minutes after he got in? The ones it missed are what to teach it next.
+    function agTrades() { var T = []; try { T = (opt.trades && opt.trades()) || []; } catch (x) {} if (!T.length || !AG || !AG.b.length) return null;
+      var R = { n: 0, hit: 0, miss: [] };
+      T.forEach(function (t) { if (!t || !t.day || !(t.side === 1 || t.side === -1) || !isFinite(t.min)) return;
+        var x = ((AG.b) || []).filter(function (y) { return sesDay(y) === t.day && Array.isArray(y.win) && agKey(y.sym || 'EURUSD') === (t.sym || 'EURUSD') && t.min >= +y.win[0] - 30 && t.min <= +y.win[1]; }).pop();
+        if (!x) return; R.n++;
+        var al = (AG.al || []).filter(function (a) { return sesDay(a) === t.day && agKey(a.sym || 'EURUSD') === (t.sym || 'EURUSD') && Array.isArray(a.win) && +a.win[0] === +x.win[0]; });
+        var on = al.filter(function (a) { return +a.side === t.side; }), early = on.filter(function (a) { return agMin(a.created_at) <= t.min + 2; });
+        if (early.length) { R.hit++; return; }
+        R.miss.push({ t: t, x: x, late: on.length ? on.map(function (a) { return agMin(a.created_at); }).sort(function (a, b) { return a - b; })[0] : null, other: al.length > on.length }); });
+      R.miss.sort(function (a, b) { return a.t.day < b.t.day ? 1 : a.t.day > b.t.day ? -1 : b.t.min - a.t.min; });
+      return R; }
+    function agHm(m) { return ('0' + Math.floor(m / 60)).slice(-2) + ':' + ('0' + m % 60).slice(-2); }
+    function agMissRow(m) { var t = m.t, s = t.side < 0, w = new Date(t.day + 'T12:00:00Z').toLocaleDateString(LOC(), { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }) + ' · ' + wName(+m.x.win[0]) + ' · ' + agHm(t.min) + (t.sym && t.sym !== 'EURUSD' ? ' · ' + mkName(t.sym) : '');
+      var what = m.late != null ? L('It called it at ' + agHm(m.late) + ', after you were in', 'Lo avisó a las ' + agHm(m.late) + ', cuando ya estabas dentro')
+        : m.other ? L('It called the other side', 'Avisó del otro lado') : L('It said nothing', 'No dijo nada');
+      return '<button type="button" class="hk-disr" data-dis="' + esc('b|' + m.x.id + '|15m') + '" title="' + esc(L('Open the session in your charts', 'Abrir la sesión en tus gráficos')) + '"><span class="tf ' + (s ? 's' : 'b') + '">' + (s ? L('SELL', 'VENTA') : L('BUY', 'COMPRA')) + '</span><span class="w">' + esc(w) + '</span>' +
+        '<span class="x">' + esc(L('Your ', 'Tu ') + (s ? L('sell', 'venta') : L('buy', 'compra'))) + ' → <u>' + esc(what) + '</u></span></button>'; }
     function agItems() { var out = [], one = function (base, T, tfs) { Object.keys(T || {}).forEach(function (tf) { var m = T[tf], hk = (tfs && tfs[tf]) || (m && m.hk); if (!m || !hk || !hk.said) return;
         var sd = m.said || hk.said, lc = m.loc || hk.loc; out.push(Object.assign({ tf: tf, hk: hk, said: sd, loc: lc, okS: sd === hk.said, okL: lc === hk.loc, at: Date.parse(m.at || base.when || '') || 0 }, base)); }); };
-      ((AG && AG.b) || []).forEach(function (x) { one({ k: 'b', id: x.id, when: x.created_at, sym: x.sym, win: x.win }, x.mine.tf, x.tfs); });
+      ((AG && AG.b) || []).forEach(function (x) { if (x.mine && x.mine.tf) one({ k: 'b', id: x.id, when: x.created_at, sym: x.sym, win: x.win }, x.mine.tf, x.tfs); });
       ((AG && AG.s) || []).forEach(function (x) { one({ k: 's', run: x.run, n: x.n, day: x.day, when: x.day + 'T12:00:00Z' }, x.tf_mine, x.tfs); });
+      agBias(out);
       return out; }
     function agRunName(run) { var m = /^strict_20(?::([\w.]+))?(@(?:1330|\d{4}-\d{4}))?$/.exec(run || ''); return m ? (m[1] ? ' · ' + mkName(m[1]) : '') + (m[2] ? ' · ' + sSesName(m[2]) : '') : ''; }
-    function agRow(x) { var w = x.k === 'b' ? ldn(x.when, { weekday: 'short', day: 'numeric', month: 'short' }) + ' · ' + (Array.isArray(x.win) ? wName(+x.win[0]) : L('Brief', 'Resumen')) + (x.sym && x.sym !== 'EURUSD' ? ' · ' + mkName(x.sym) : '')
+    function agRow(x) { var w = x.k === 'b' ? ldn(x.when, { weekday: 'short', day: 'numeric', month: 'short' }) + ' · ' + (Array.isArray(x.win) ? wName(+x.win[0]) : L('Brief', 'Resumen')) + (x.sym && x.sym !== 'EURUSD' ? ' · ' + mkName(x.sym) : '') + (x.bias ? ' · ' + L('your bias', 'tu sesgo') : '')
         : new Date(x.day + 'T12:00:00Z').toLocaleDateString(LOC(), { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }) + ' · ' + L('Study #', 'Estudio n.º ') + x.n + agRunName(x.run);
       var me = [x.okS ? null : tfSaid(x.said), x.okL ? null : tfLoc(x.loc)].filter(Boolean).join(' · '), v = x.k === 'b' ? 'b|' + x.id + '|' + x.tf : 's|' + x.run + '|' + x.n + '|' + x.tf;
       return '<button type="button" class="hk-disr" data-dis="' + esc(v) + '" title="' + esc(L('Open it in your charts on the ' + x.tf.toUpperCase(), 'Abrirlo en tus gráficos en el ' + x.tf.toUpperCase())) + '"><span class="tf">' + x.tf.toUpperCase() + '</span><span class="w">' + esc(w) + '</span>' +
         '<span class="x">' + esc(L('Hawk: ', 'Halcón: ') + tfSaid(x.hk.said) + ' · ' + tfLoc(x.hk.loc)) + ' → <u>' + esc(L('You: ', 'Tú: ') + me) + '</u></span></button>'; }
     function agPaint() { if (!agEl) return; if (period === 's' || !AG) { if (!agEl.hidden) agEl.hidden = true; return; }
-      var it = agItems(), ns = {}, nt = {}; it.forEach(function (x) { if (x.k === 'b') ns[x.id] = 1; else nt[x.run + '|' + x.n] = 1; });
-      var nS = Object.keys(ns).length, nT = Object.keys(nt).length, sub = [nS ? sPl(nS, 'session', 'sesión', 'sesiones') : null, nT ? sPl(nT, 'study trade', 'operación del estudio', 'operaciones del estudio') : null].filter(Boolean).join(' · ');
+      var it = agItems(), ns = {}, nb = {}, nt = {}; it.forEach(function (x) { if (x.bias) nb[x.id] = 1; else if (x.k === 'b') ns[x.id] = 1; else nt[x.run + '|' + x.n] = 1; });
+      var nS = Object.keys(ns).length, nB = Object.keys(nb).length, nT = Object.keys(nt).length, TR = agTrades();
+      var sub = [nS ? sPl(nS, 'session', 'sesión', 'sesiones') : null, nB ? sPl(nB, 'bias check', 'sesgo', 'sesgos') : null, nT ? sPl(nT, 'study trade', 'operación del estudio', 'operaciones del estudio') : null].filter(Boolean).join(' · ');
       var h = '<div class="hk-agh"><b>' + L('Agrees with you', 'Coincide contigo') + '</b><i>' + esc(sub || L('nothing read yet', 'nada leído aún')) + '</i></div>';
-      if (!it.length) h += '<p class="hk-hint">' + L('Save a session review, or correct a timeframe in your charts, and the score starts.', 'Guarda una revisión de sesión, o corrige una temporalidad en tus gráficos, y empieza la puntuación.') + '</p>';
+      if (!it.length) h += '<p class="hk-hint">' + (opt.bias ? L('Do your Check my bias on a day it watches, save a session review, or correct a timeframe in your charts, and the score starts.', 'Haz tu Revisar mi sesgo un día que vigila, guarda una revisión de sesión, o corrige una temporalidad en tus gráficos, y empieza la puntuación.')
+        : L('Save a session review, or correct a timeframe in your charts, and the score starts.', 'Guarda una revisión de sesión, o corrige una temporalidad en tus gráficos, y empieza la puntuación.')) + '</p>';
       else { h += '<div class="hk-agg" role="list">' + ['4h', '1h', '15m'].map(function (tf) { var xs = it.filter(function (x) { return x.tf === tf; }), n = xs.length;
           var b = xs.filter(function (x) { return x.okS && x.okL; }).length, s1 = xs.filter(function (x) { return x.okS; }).length, l1 = xs.filter(function (x) { return x.okL; }).length;
           return '<div class="hk-agc" role="listitem" aria-label="' + esc(tf.toUpperCase() + ': ' + b + L(' of ', ' de ') + n) + '"><span class="k">' + tf.toUpperCase() + '</span><span class="v">' + (n ? b + '<small>/' + n + '</small>' : '–') + '</span><s><i style="width:' + (n ? Math.round(100 * b / n) : 0) + '%"></i></s>' +
@@ -1120,6 +1168,9 @@
         var dis = it.filter(function (x) { return !(x.okS && x.okL); }).sort(function (a, b) { return b.at - a.at; }).slice(0, 5);
         h += dis.length ? '<div class="hk-dis"><div class="hk-dish">' + L('Latest disagreements', 'Últimos desacuerdos') + '</div>' + dis.map(agRow).join('') + '</div>'
           : '<p class="hk-hint">' + L('No disagreements: it reads every timeframe you went through as you do.', 'Sin desacuerdos: lee cada temporalidad que revisaste como tú.') + '</p>'; }
+      if (TR && TR.n) h += '<div class="hk-agt" aria-label="' + esc(L('Your trades in its hours: it flagged ', 'Tus operaciones en sus horas: avisó de ') + TR.hit + L(' of ', ' de ') + TR.n) + '"><span>' + L('Your trades in its hours', 'Tus operaciones en sus horas') + '</span><b>' + TR.hit + '<small>/' + TR.n + '</small></b></div>' +
+        '<p class="hk-hint">' + L('Flagged: an alert on your side, in that window, before you got in.', 'Avisada: una alerta de tu lado, en esa ventana, antes de que entraras.') + '</p>' +
+        (TR.miss.length ? '<div class="hk-dis hk-mis"><div class="hk-dish">' + L('Trades it missed', 'Operaciones que no vio') + '</div>' + TR.miss.slice(0, 3).map(agMissRow).join('') + '</div>' : '');
       if (agEl.innerHTML !== h) agEl.innerHTML = h; agEl.hidden = false; }
     // a disagreement opens where he made it: a brief's session card (the period widened to reach it) on that timeframe in his charts; a
     // study trade in Study (its market and hours), its row open, on that timeframe
@@ -1891,7 +1942,7 @@
       var hello = function () { try { sFlOp.postMessage({ kind: 'st-hawk-flight-ready' }, '*'); } catch (x) { clearInterval(hi); } };
       hi = setInterval(function () { if (++tries > 60 || sFlPend) clearInterval(hi); else hello(); }, 500); hello(); })();
     load(); poll();
-    var api = { reload: function () { load(); }, redraw: function () { hd(); todayPaint(); redraw(); }, today: todayPaint, relang: relang, rv: function () { return RV; }, sessions: function () { return SESS; }, agree: function () { return AG; } };
+    var api = { reload: function () { load(); }, redraw: function () { hd(); todayPaint(); redraw(); agPaint(); }, today: todayPaint, relang: relang, rv: function () { return RV; }, sessions: function () { return SESS; }, agree: function () { return AG; } };
     MOUNTS.push(api);
     return api;
   }

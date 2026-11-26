@@ -66,7 +66,7 @@
     // the stand-in database: reads answer from the rows above, writes are recorded (and applied, so a reload sees them)
     var SAVES = [], STUDYQ = [];
     var fake = function (cfg) { var Q = function (t) { var q = { t: t, op: 'select', f: {}, nn: [], cols: '' }, me = function () { return q; };
-        ['gt', 'lt', 'gte', 'lte', 'order', 'limit', 'range', 'in', 'ilike'].forEach(function (k) { q[k] = me; });
+        ['gt', 'lt', 'gte', 'lte', 'order', 'limit', 'range', 'ilike'].forEach(function (k) { q[k] = me; }); q.in = function (k, v) { q.inn = [k, v]; return q; };
         q.select = function (c) { if (q.op === 'select') q.cols = c || ''; return q; }; q.eq = function (k, v) { q.f[k] = v; return q; }; q.not = function (k) { q.nn.push(k); return q; };
         q.update = function (p) { q.op = 'update'; q.p = JSON.parse(JSON.stringify(p)); return q; }; q.maybeSingle = q.single = function () { q.one = true; return q; };
         q.then = function (a, b) { return Promise.resolve().then(function () { return answer(q); }).then(a, b); }; return q; };
@@ -77,6 +77,9 @@
           return { data: null, error: null }; }
         if (q.t === 'hawk_config') return { data: JSON.parse(JSON.stringify(cfg)), error: null };
         if (q.t === 'hawk_signals') { var rs = ROWS.slice().sort(function (a, b) { return a.created_at < b.created_at ? 1 : -1; });
+          if (/data->/.test(q.cols)) { var cl = q.cols.split(',').map(function (c) { return c.trim(); }), cp = function (v) { return v === undefined ? null : JSON.parse(JSON.stringify(v)); };
+            return { data: rs.filter(function (r) { return (!q.f.kind || r.kind === q.f.kind) && (!q.inn || q.inn[1].indexOf(r[q.inn[0]]) >= 0) && q.nn.every(function (k) { return r[k] != null; }); })
+              .map(function (r) { var o = {}; cl.forEach(function (c) { var m = /^(\w+):data->>?(\w+)$/.exec(c); o[m ? m[1] : c] = m ? cp(r.data && r.data[m[2]]) : cp(r[c]); }); return o; }), error: null }; }
           if (q.f.kind === 'brief' && q.nn.indexOf('mine') >= 0) return { data: rs.filter(function (r) { return r.kind === 'brief' && r.mine; }).map(function (r) { return { id: r.id, created_at: r.created_at, title: r.title, mine: JSON.parse(JSON.stringify(r.mine)), tfs: r.data.tfs, sym: r.data.sym, win: r.data.win }; }), error: null };
           return { data: JSON.parse(JSON.stringify(rs)), error: null }; }
         if (q.t === 'hawk_study') { STUDYQ.push(q.cols);
@@ -89,7 +92,8 @@
     var mk = function (o, cfg) { var h = document.createElement('div'); h.className = 'pl-hk'; h.style.cssText = 'position:fixed;left:0;top:0;width:380px;height:900px;overflow-y:auto;z-index:99999;background:#111;color:#ddd;--hk-ink:#ddd;--hk-mut:#8a8f98;--hk-line:#2a2e39;--hk-soft:#1e222d;--hk-card:#171a22;--hk-plot:#0e1016;--hk-acc:#5b8def;--hk-buy:#26a69a;--hk-sell:#ef5350;--hk-warn:#e0a84a;--hk-you:#f472b6;--hk-cup:#ddd;--hk-cdn:#777';
       var b = document.createElement('div'); h.appendChild(b); document.body.appendChild(h); hosts.push(h); try { window.STHawk.mount.admin = undefined; } catch (e) {}
       return { host: h, api: window.STHawk.mount(b, fake(cfg), o) }; };
-    var M = mk({ app: true, narrow: true, study: study, bars: bars }, CFG), root = M.host;
+    var BIAS = [], TRADES = [];
+    var M = mk({ app: true, narrow: true, study: study, bars: bars, bias: function () { return BIAS; }, trades: function () { return TRADES; } }, CFG), root = M.host;
     var Q = function (s) { return root.querySelector(s); }, QA = function (s) { return [].slice.call(root.querySelectorAll(s)); }, tx = function (e) { if (!e) return null; var w = document.createTreeWalker(e, NodeFilter.SHOW_TEXT), p = [], n; while ((n = w.nextNode())) { var v = n.nodeValue.replace(/\s+/g, ' ').trim(); if (v) p.push(v); } return p.join(' '); };
     // 7 days, so all three windows are in
     for (k = 0; k < 60 && !Q('[data-hkp]'); k++) await W(100);
@@ -186,6 +190,25 @@
       [card().className, tx(card().querySelector('[data-sessave]'))]);
     for (k = 0; k < 40 && ag() !== '4H 1/2 · 1H 2/3 · 15M 2/3'; k++) await W(100);
     ok('the score follows: 4H 1/2 · 1H 2/3 · 15M 2/3, his new 1H disagreement first', ag() === '4H 1/2 · 1H 2/3 · 15M 2/3' && QA('.hk-disr')[0] && QA('.hk-disr')[0].dataset.dis === 'b|a-brief|1h' && /Hawk: Range · Premium middle → You: Trend down/.test(tx(QA('.hk-disr')[0])), [ag(), QA('.hk-disr').map(tx)]);
+    // step 1 (26 Nov 2026, "yes do step 1"): his Check my bias answers and journal trades count, nothing new to fill in
+    var nowIso = new Date().toISOString(), dB = ldnDay(NOW);
+    BIAS.push({ day: dC, ses: 'London', sym: 'EURUSD', at: nowIso, htf: { s: 'Ranging', l: 'Premium Edge', d: 'Unsure' }, ltf: { s: '', l: '', d: '' } });   // the reviewed window: its review wins
+    BIAS.push({ day: dB, ses: '', sym: 'EURUSD', at: nowIso, htf: { s: 'Trending', l: 'Discount Edge', d: 'Bearish' }, ltf: { s: 'Ranging', l: '50%', d: '' } });   // today's brief, never reviewed
+    TRADES.push({ day: dA, min: 525, side: -1, sym: 'EURUSD' });   // 08:45 sell: the sweep (08:31) and the setup (08:40) called it first
+    TRADES.push({ day: dA, min: 500, side: -1, sym: 'EURUSD' });   // 08:20 sell: its first sell call came at 08:31
+    TRADES.push({ day: dC, min: 540, side: 1, sym: 'EURUSD' });    // 09:00 buy: it said nothing
+    TRADES.push({ day: dA, min: 720, side: -1, sym: 'EURUSD' });   // 12:00: outside its hours, not counted
+    TRADES.push({ day: ldnDay(NOW - 2 * 86400), min: 510, side: -1, sym: 'EURUSD' });   // a day it sent no brief: not counted
+    M.api.redraw();
+    for (k = 0; k < 40 && !Q('.hk-agt'); k++) await W(100);
+    var agt = Q('.hk-agt'), mis = QA('.hk-mis .hk-disr');
+    ok('his bias counts: its HTF on the 4H, its LTF on the 15M - 4H 2/3 · 1H 2/3 · 15M 2/4; a reviewed window\'s review wins', ag() === '4H 2/3 · 1H 2/3 · 15M 2/4' && /2 sessions · 1 bias check · 2 study trades/.test(tx(Q('.hk-agh'))), [ag(), tx(Q('.hk-agh'))]);
+    ok('...its disagreement first, marked as his bias, opening today\'s session on the 15M', QA('.hk-disr')[0] && QA('.hk-disr')[0].dataset.dis === 'b|b-brief|15m' && /your bias/.test(tx(QA('.hk-disr')[0])) && /Hawk: Initiation down · Breakout → You: Range · At the 50%/.test(tx(QA('.hk-disr')[0])), QA('.hk-disr').map(tx));
+    ok('his trades in its hours: it flagged 1 of 3 (outside its hours and a day without a brief left out)', agt && /Your trades in its hours/.test(tx(agt)) && tx(agt.querySelector('b')) === '1 /3', agt && tx(agt));
+    ok('...the two it missed, latest first, each opening its session', mis.length === 2 && mis[0].dataset.dis === 'b|a-brief|15m' && /SELL/.test(tx(mis[0].querySelector('.tf'))) && /08:20/.test(tx(mis[0])) && /It called it at 08:31, after you were in/.test(tx(mis[0]))
+      && mis[1].dataset.dis === 'b|c-brief|15m' && /BUY/.test(tx(mis[1].querySelector('.tf'))) && /It said nothing/.test(tx(mis[1])), mis.map(tx));
+    BIAS.length = 0; TRADES.length = 0; M.api.redraw();
+    ok('...gone again with no bias and no trades', ag() === '4H 1/2 · 1H 2/3 · 15M 2/3' && !Q('.hk-agt') && !Q('.hk-mis'), [ag(), !!Q('.hk-agt')]);
     // changing a rating again: Save changes
     rate('a-init', 'late');
     ok('a change after saving: the button asks to save the changes', /Save changes/.test(tx(card().querySelector('[data-sessave]'))) && !card().querySelector('[data-sessave]').disabled, tx(card().querySelector('[data-sessave]')));
