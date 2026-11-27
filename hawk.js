@@ -217,6 +217,7 @@
     '.hk-st{font:11.5px var(--hk-mono);color:var(--hk-mut)}',
     '.hk-sic{margin-left:auto;font:500 11px var(--hk-font,inherit);color:var(--hk-mut);background:none;border:1px solid var(--hk-line);border-radius:999px;padding:2px 9px;cursor:pointer}.hk-sic:hover,.hk-sic[aria-expanded="true"]{color:var(--hk-ink);border-color:var(--hk-mut)}',
     '.hk-ses .hk-sit{margin:6px 0 0;font-size:13px;font-weight:600}.hk-ses .hk-sib{margin:2px 0 0;font-size:12px;line-height:1.45;color:var(--hk-mut)}',
+    '.hk-next{margin:7px 0 0;font-size:12.5px;line-height:1.45;color:var(--hk-mut)}.hk-next b{color:var(--hk-ink);font-weight:600}.hk-ses .hk-next{margin-top:4px;font-size:12px}',
     '.hk-ses .hk-then{display:flex;gap:8px;align-items:baseline;margin:7px 0 0;font-size:12px;line-height:1.4}.hk-ses .hk-then:empty{display:none}.hk-then b{flex:none;font:500 9.5px var(--hk-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--hk-mut)}.hk-then .up{color:var(--hk-buy)}.hk-then .dn{color:var(--hk-sell)}',
     '.hk-ses .hk-sinote{margin:5px 0 0;font-size:12px;color:var(--hk-you)}',
     '.hk-ses .hk-rate{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;margin-top:9px;border:1px solid var(--hk-line);border-radius:8px;overflow:hidden;background:var(--hk-card)}',
@@ -310,6 +311,16 @@
     A_RULES.forEach(function (r) { s = s.replace(r[0], function () { return r[1](arguments); }); }); return s; }
   var RATE = [['good', 'Good call', 'Bien visto'], ['bad', 'Not my trade', 'No es mi operación'], ['early', 'Too early', 'Demasiado pronto'], ['late', 'Too late', 'Demasiado tarde']];
   var RATE_S = { good: ['Good call', 'Bien visto'], bad: ['Not mine', 'No es mía'], early: ['Too early', 'Pronto'], late: ['Too late', 'Tarde'] };   // the session card's one row of four
+  // an initiation gives the side, not an entry (27 Nov 2026, Nestor: "is this supposed to be a sell signal? i cant work it out and where it
+  // says i should sell ... and where my position tool would go" - "yes do that"): its chip says Sells only / Buys only, and a line under it
+  // says what comes next - the pocket it gave, if price comes back to it, else the 50% pullback alert, which carries entry, stop and target
+  function sideWord(r) { var ini = r.kind === 'initiation';
+    return r.side === 1 ? (ini ? L('Buys only', 'Solo compras') : L('Buy', 'Compra')) : (ini ? L('Sells only', 'Solo ventas') : L('Sell', 'Venta')); }
+  function iniNext(r) { if (r.kind !== 'initiation' || !(r.side === 1 || r.side === -1)) return ''; var b = r.side === 1, d = r.data || {};
+    return '<p class="hk-next"><b>' + L('No entry yet:', 'Aún no hay entrada:') + '</b> ' + (d.tgt && d.entry
+      ? (b ? L('the buy waits at the pocket above, if price comes back down to it.', 'la compra espera en el pocket de arriba, si el precio vuelve a bajar hasta él.')
+           : L('the sell waits at the pocket above, if price comes back up to it.', 'la venta espera en el pocket de arriba, si el precio vuelve a subir hasta él.'))
+      : L('wait for the 50% pullback alert. It gives the entry, stop and target.', 'espera la alerta del retroceso al 50%. Trae la entrada, el stop y el objetivo.')) + '</p>'; }
   var KIND = { brief: ['Brief', 'Resumen'], sweep: ['Watch', 'Vigilar'], pocket: ['Watch', 'Vigilar'], initiation: ['Initiation', 'Iniciación'], setup: ['Setup', 'Setup'], news: ['Red news', 'Noticia roja'], done: ['Done', 'Fin'] };
   var PHASES = [['range', 'Range', 'Rango'], ['trend up', 'Trend up', 'Tendencia alcista'], ['trend down', 'Trend down', 'Tendencia bajista'],
     ['initiation up', 'Initiation up', 'Iniciación alcista'], ['initiation down', 'Initiation down', 'Iniciación bajista']];
@@ -676,13 +687,13 @@
     function zHint() { return '<span class="hk-lgh">' + L('Drag to move · drag the price or time scale to stretch · Ctrl + scroll to zoom · double-click to reset', 'Arrastra para moverlo · arrastra la escala de precio o de tiempo para estirarla · Ctrl + rueda para el zoom · doble clic para volver') + '</span>';
     }
     function card(r) {
-      var side = r.side === 1 ? '<span class="hk-chip buy">' + L('Buy', 'Compra') + '</span>' : r.side === -1 ? '<span class="hk-chip sell">' + L('Sell', 'Venta') + '</span>' : '';
+      var side = r.side === 1 || r.side === -1 ? '<span class="hk-chip ' + (r.side === 1 ? 'buy' : 'sell') + '">' + sideWord(r) + '</span>' : '';
       var ch = r.data && r.data.chart && r.data.chart.c && r.data.chart.c.length, keys = editKeys(r), h = '';
       h += '<article class="hk-card' + (r.kind === 'brief' ? ' hk-brief' : '') + (r.id === focusId ? ' hk-focus' : '') + '" id="hk-a-' + r.id + '">' +
         '<div class="hk-top"><span class="hk-chip' + (r.kind === 'setup' ? ' setup' : '') + '">' + esc(KIND[r.kind] ? L(KIND[r.kind][0], KIND[r.kind][1]) : r.kind) + '</span>' + side +
         (r.data && r.data.tfx ? '<span class="hk-chip warn" title="' + esc(L('The 4H and the 15M point opposite ways', 'El 4H y el 15M apuntan en sentidos opuestos')) + '">4H ≠ 15M</span>' : '') +
         '<span class="hk-time">' + esc(ldn(r.created_at, { hour: '2-digit', minute: '2-digit' })) + '</span></div>' +
-        '<h3>' + esc(aES(r.title)) + '</h3><p>' + esc(aES(r.data && r.data.tfs ? String(r.body || '').replace(/ ?Timeframes: [^.]+\./, '') : r.body)) + '</p>' +
+        '<h3>' + esc(aES(r.title)) + '</h3><p>' + esc(aES(r.data && r.data.tfs ? String(r.body || '').replace(/ ?Timeframes: [^.]+\./, '') : r.body)) + '</p>' + iniNext(r) +
         (r.data && r.data.tfs ? rvTiles('b', r) : '');
       if (ch) {
         h += '<div class="hk-chart" data-id="' + r.id + '"><canvas role="img" aria-label="' + L('The hawk\'s chart for this alert', 'El gráfico del halcón para esta alerta') + '"></canvas></div>' + legend(r);
@@ -1011,10 +1022,10 @@
     function sesItem(S, r, i, F) { var f = sesF(S, r), sd = r.side === 1 ? 'buy' : r.side === -1 ? 'sell' : '', ch = r.data && r.data.chart && r.data.chart.c && r.data.chart.c.length, k = esc(S.key);
       return '<div class="hk-si" id="hk-a-' + r.id + '"><div class="hk-sih"><span class="hk-sin ' + sd + '">' + (i + 1) + '</span><span class="hk-st">' + esc(ldn(r.created_at, HM)) + '</span>' +
         '<span class="hk-chip' + (r.kind === 'setup' ? ' setup' : '') + '">' + esc(KIND[r.kind] ? L(KIND[r.kind][0], KIND[r.kind][1]) : r.kind) + '</span>' +
-        (sd ? '<span class="hk-chip ' + sd + '">' + (r.side === 1 ? L('Buy', 'Compra') : L('Sell', 'Venta')) + '</span>' : '') +
+        (sd ? '<span class="hk-chip ' + sd + '">' + sideWord(r) + '</span>' : '') +
         (r.data && r.data.tfx ? '<span class="hk-chip warn" title="' + esc(L('The 4H and the 15M point opposite ways', 'El 4H y el 15M apuntan en sentidos opuestos')) + '">4H ≠ 15M</span>' : '') +
         (ch ? '<button type="button" class="hk-sic" data-sesch="' + r.id + '" aria-expanded="false">' + L('Its chart', 'Su gráfico') + '</button>' : '') + '</div>' +
-        '<p class="hk-sit">' + esc(aES(r.title)) + '</p><p class="hk-sib">' + esc(aES(r.body)) + '</p>' +
+        '<p class="hk-sit">' + esc(aES(r.title)) + '</p><p class="hk-sib">' + esc(aES(r.body)) + '</p>' + iniNext(r) +
         (ch ? '<div class="hk-chart" data-id="' + r.id + '" hidden><canvas role="img" aria-label="' + L('The hawk\'s chart for this alert', 'El gráfico del halcón para esta alerta') + '"></canvas></div>' : '') +
         '<p class="hk-then" data-then="' + r.id + '">' + sesThen(S, r, F) + '</p>' +
         (r.note ? '<p class="hk-sinote">' + esc(L('Your note: ', 'Tu nota: ') + r.note) + '</p>' : '') +

@@ -115,6 +115,11 @@
     var items = QA('.hk-ses[data-sk="' + sk + '"] .hk-si');
     ok('During: the three alerts numbered in order, each with its time, kind, side, why and four ratings', items.length === 3 && items.map(function (e) { return tx(e.querySelector('.hk-sin')) + ' ' + tx(e.querySelector('.hk-st')); }).join(',') === '1 08:31,2 08:40,3 09:10' && items.every(function (e) { return e.querySelectorAll('[data-sesf]').length === 4 && e.querySelector('.hk-sib').textContent.length > 20; }),
       items.map(function (e) { return tx(e.querySelector('.hk-sih')); }));
+    // an initiation is the side, not an entry (27 Nov 2026): the session card's says Sells only, and that its pocket waits
+    var iS = card().querySelector('#hk-a-a-init'), iNx = iS && iS.querySelector('.hk-next');
+    ok('the session card\'s initiation: chip "Sells only", "No entry yet: the sell waits at the pocket above"', iS && /Sells only/.test(tx(iS.querySelector('.hk-sih'))) && iNx && /^No entry yet: the sell waits at the pocket above, if price comes back up to it\.$/.test(tx(iNx)),
+      iS && [tx(iS.querySelector('.hk-sih')), iNx && tx(iNx)]);
+    ok('...its other alerts keep a plain Sell', /Sell$/.test(tx(card().querySelector('#hk-a-a-setup .hk-chip.sell'))) && !card().querySelector('#hk-a-a-setup .hk-next'), tx(card().querySelector('#hk-a-a-setup .hk-chip.sell')));
     // after: the candles from the store (1-minute)
     for (k = 0; k < 50 && !/Target/.test(tx(card().querySelector('[data-then="a-setup"]')) || ''); k++) await W(100);
     var th = function (id) { return tx(card().querySelector('[data-then="' + id + '"]')); };
@@ -252,6 +257,16 @@
     var fs = SAVES.slice(nS).filter(function (x) { return x.t === 'hawk_study'; });
     ok('flight marks from the archived study go to the same trade (was 7), else to its archive v3_ #7', fs.length === 2 && fs[0].f.run === 'strict_20' && fs[0].f['data->>was'] === '7' && fs[0].f.day === '2026-10-20' && fs[0].p.verdict === 'agree'
       && fs[1].f.run === 'v3_strict_20' && fs[1].f.n === 7, fs.map(function (x) { return x.f; }));
+    // an initiation is the side, not an entry ("is this supposed to be a sell signal? i cant work it out"): Sells only, and what comes next
+    var BI = { id: 'b-init', created_at: iso(NOW - 60), kind: 'initiation', side: -1, title: 'Initiation · down', body: 'Strong 15-minute close below the range (1.08890). Don\'t buy against it.', feedback: null, note: null, mine: null,
+      data: Object.assign({ edge: 1.0889, side: -1, kind: 'initiation', chart: chart(NOW - 60, 1.0887) }, base, { win: bwin }) };
+    ROWS.push(BI); var M3 = mk({ app: true, narrow: true, study: study, bars: bars }, CFG), r3 = M3.host;
+    for (k = 0; k < 60 && !r3.querySelector('article#hk-a-b-init'); k++) await W(100);
+    var bI = r3.querySelector('article#hk-a-b-init'), bNx = bI && bI.querySelector('.hk-next');
+    ok('a live initiation with no pocket: "Sells only", "No entry yet: wait for the 50% pullback alert", above its chart', bI && tx(bI.querySelector('.hk-chip.sell')) === 'Sells only' && bNx && /^No entry yet: wait for the 50% pullback alert\. It gives the entry, stop and target\.$/.test(tx(bNx))
+      && !!(bNx.compareDocumentPosition(bI.querySelector('.hk-chart') || bNx) & Node.DOCUMENT_POSITION_FOLLOWING), bI && [tx(bI.querySelector('.hk-chip.sell')), bNx && tx(bNx)]);
+    ok('...the live sweep idea keeps a plain Sell', tx(r3.querySelector('article#hk-a-b-sweep .hk-chip.sell')) === 'Sell' && !r3.querySelector('article#hk-a-b-sweep .hk-next'), tx(r3.querySelector('article#hk-a-b-sweep .hk-chip.sell')));
+    ROWS.pop(); r3.remove();
     var M2 = mk({}, CFG2), r2 = M2.host;
     for (k = 0; k < 80 && !r2.querySelector('.hk-ses[data-sk="' + sk + '"] .hk-aft'); k++) await W(100);
     var c2 = r2.querySelector('.hk-ses[data-sk="' + sk + '"]');
