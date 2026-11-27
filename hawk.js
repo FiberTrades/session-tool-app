@@ -385,9 +385,11 @@
     var box = st.box, cv = st.cv, W = box.clientWidth, H = box.clientHeight;
     if (!W || !H) return;
     var dpr = window.devicePixelRatio || 1;
-    if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+    if (window.__stCrispFit) window.__stCrispFit(cv, W, H, dpr);   // a whole number of screen pixels: never stretched (crisp.js, 27 Nov 2026)
+    else if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
     if (st.load) st.load();   // its 1-minute candles, fetched the first time it is drawn in view
-    var g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+    var g = cv.getContext('2d'); if (window.__stCrisp) window.__stCrisp(g);   // on whole screen pixels, as TradingView (crisp.js, 27 Nov 2026)
+    g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
     var cs = getComputedStyle(box), K = {};
     ['ink', 'mut', 'line', 'soft', 'acc', 'buy', 'sell', 'warn', 'you', 'cup', 'cdn', 'card', 'plot'].forEach(function (n) { K[n] = cs.getPropertyValue('--hk-' + n).trim() || '#888'; });
     var MONO = cs.getPropertyValue('--hk-mono').trim() || 'monospace';
@@ -462,7 +464,7 @@
     pill(d.bh, p5(d.bh), K.mut); pill(d.bl, p5(d.bl), K.mut);
     if (d.a2b) { var m2 = (d.a2b[0] + d.a2b[1]) / 2; line(Y(m2), K.acc, 1.2, [6, 4]); tag(m2, L('Leg 50%', '50% del tramo'), K.acc); pill(m2, p5(m2), K.acc); }
     // candles
-    var cw = Math.max(1, Math.min(9, bw * 0.62));
+    var cw = Math.max(1, Math.round(Math.max(1, Math.min(9, bw * 0.62)) * dpr)) / dpr;   // whole screen pixels: every body the same width (27 Nov 2026)
     if (noC) txt(st.m1st === 'none' ? L('No 1-minute candles stored for this day', 'No hay velas de 1 minuto guardadas para este día') : L('Loading 1-minute candles…', 'Cargando velas de 1 minuto…'), OX + PW / 2, TOP + PH / 2, K.mut, 'center', 11, 500);
     else bars.forEach(function (b, i) { var x = (i + 0.5) * bw, up = b[4] >= b[1]; g.fillStyle = up ? K.cup : K.cdn;
       g.fillRect(Math.round(x - 0.5), Y(b[2]), 1, Math.max(1, Y(b[3]) - Y(b[2])));

@@ -74,7 +74,7 @@
     var tg = pop().querySelector('[data-tgl="extR"]'); tg.checked = true; tg.dispatchEvent(new Event('change', { bubbles: true })); await W(30);
     tg = pop().querySelector('[data-tgl="mid"]'); tg.checked = true; tg.dispatchEvent(new Event('change', { bubbles: true })); await W(30);
     var dm = P._panes()[0], pwd = r.width - 60, far = px(Math.min(pwd - 10, r0.x1 + 120), r0.y0 + 12), midP = 0;
-    for (xx = Math.round(r0.x0 + 4); xx < r0.x0 + 40; xx++) { var mc = px(xx, Math.round((r0.y0 + r0.y1) / 2) + 0); if (mc[2] > 200 && mc[3] > 150) midP++; }
+    for (xx = Math.round(r0.x0 + 4); xx < r0.x0 + 40; xx++) { var ym = (r0.y0 + r0.y1) / 2, mc = px(xx, Math.floor(ym)), mc2 = px(xx, Math.ceil(ym)); if ((mc[2] > 200 && mc[3] > 150) || (mc2[2] > 200 && mc2[3] > 150)) midP++; }   // the line is one screen pixel since crisp.js (27 Nov 2026): the row it is in, either side of the half
     ok('Extend right: the box runs on to the price scale; Middle line: dotted, the line colour (its style in More)', d0.extR === true && d0.mid === true && Math.abs(far[0] - 244) <= 3 && far[3] > 60 && midP > 3 && midP < 34 && pop().querySelectorAll('[data-md]').length === 3, [far, midP]);
     DB.closePop();
 
