@@ -318,9 +318,12 @@
     return r.side === 1 ? (ini ? L('Buys only', 'Solo compras') : L('Buy', 'Compra')) : (ini ? L('Sells only', 'Solo ventas') : L('Sell', 'Venta')); }
   function iniNext(r) { if (r.kind !== 'initiation' || !(r.side === 1 || r.side === -1)) return ''; var b = r.side === 1, d = r.data || {};
     return '<p class="hk-next"><b>' + L('No entry yet:', 'Aún no hay entrada:') + '</b> ' + (d.tgt && d.entry
-      ? (b ? L('the buy waits at the pocket above, if price comes back down to it.', 'la compra espera en el pocket de arriba, si el precio vuelve a bajar hasta él.')
-           : L('the sell waits at the pocket above, if price comes back up to it.', 'la venta espera en el pocket de arriba, si el precio vuelve a subir hasta él.'))
+      ? (b ? L('the buy waits at that pocket, if price comes back down to it.', 'la compra espera en ese pocket, si el precio vuelve a bajar hasta él.')
+           : L('the sell waits at that pocket, if price comes back up to it.', 'la venta espera en ese pocket, si el precio vuelve a subir hasta él.'))
       : L('wait for the 50% pullback alert. It gives the entry, stop and target.', 'espera la alerta del retroceso al 50%. Trae la entrada, el stop y el objetivo.')) + '</p>'; }
+  // since 27 Nov 2026 the hawk writes that line into the alert too (for the phone); here it is drawn once, as its own line (iniNext)
+  // (only that sentence: "4H and 15M disagree: ..." can follow it)
+  function bodyOf(r) { var s = String(r.body || ''); return r.kind === 'initiation' ? s.replace(/ ?No entry yet: (?:wait for the 50% pullback alert\. It gives the entry, stop and target\.|the (?:buy|sell) waits at that pocket, if price comes back (?:up|down) to it\.)/, '') : s; }
   var KIND = { brief: ['Brief', 'Resumen'], sweep: ['Watch', 'Vigilar'], pocket: ['Watch', 'Vigilar'], initiation: ['Initiation', 'Iniciación'], setup: ['Setup', 'Setup'], news: ['Red news', 'Noticia roja'], done: ['Done', 'Fin'] };
   var PHASES = [['range', 'Range', 'Rango'], ['trend up', 'Trend up', 'Tendencia alcista'], ['trend down', 'Trend down', 'Tendencia bajista'],
     ['initiation up', 'Initiation up', 'Iniciación alcista'], ['initiation down', 'Initiation down', 'Iniciación bajista']];
@@ -693,7 +696,7 @@
         '<div class="hk-top"><span class="hk-chip' + (r.kind === 'setup' ? ' setup' : '') + '">' + esc(KIND[r.kind] ? L(KIND[r.kind][0], KIND[r.kind][1]) : r.kind) + '</span>' + side +
         (r.data && r.data.tfx ? '<span class="hk-chip warn" title="' + esc(L('The 4H and the 15M point opposite ways', 'El 4H y el 15M apuntan en sentidos opuestos')) + '">4H ≠ 15M</span>' : '') +
         '<span class="hk-time">' + esc(ldn(r.created_at, { hour: '2-digit', minute: '2-digit' })) + '</span></div>' +
-        '<h3>' + esc(aES(r.title)) + '</h3><p>' + esc(aES(r.data && r.data.tfs ? String(r.body || '').replace(/ ?Timeframes: [^.]+\./, '') : r.body)) + '</p>' + iniNext(r) +
+        '<h3>' + esc(aES(r.title)) + '</h3><p>' + esc(aES(r.data && r.data.tfs ? String(r.body || '').replace(/ ?Timeframes: [^.]+\./, '') : bodyOf(r))) + '</p>' + iniNext(r) +
         (r.data && r.data.tfs ? rvTiles('b', r) : '');
       if (ch) {
         h += '<div class="hk-chart" data-id="' + r.id + '"><canvas role="img" aria-label="' + L('The hawk\'s chart for this alert', 'El gráfico del halcón para esta alerta') + '"></canvas></div>' + legend(r);
@@ -1025,7 +1028,7 @@
         (sd ? '<span class="hk-chip ' + sd + '">' + sideWord(r) + '</span>' : '') +
         (r.data && r.data.tfx ? '<span class="hk-chip warn" title="' + esc(L('The 4H and the 15M point opposite ways', 'El 4H y el 15M apuntan en sentidos opuestos')) + '">4H ≠ 15M</span>' : '') +
         (ch ? '<button type="button" class="hk-sic" data-sesch="' + r.id + '" aria-expanded="false">' + L('Its chart', 'Su gráfico') + '</button>' : '') + '</div>' +
-        '<p class="hk-sit">' + esc(aES(r.title)) + '</p><p class="hk-sib">' + esc(aES(r.body)) + '</p>' + iniNext(r) +
+        '<p class="hk-sit">' + esc(aES(r.title)) + '</p><p class="hk-sib">' + esc(aES(bodyOf(r))) + '</p>' + iniNext(r) +
         (ch ? '<div class="hk-chart" data-id="' + r.id + '" hidden><canvas role="img" aria-label="' + L('The hawk\'s chart for this alert', 'El gráfico del halcón para esta alerta') + '"></canvas></div>' : '') +
         '<p class="hk-then" data-then="' + r.id + '">' + sesThen(S, r, F) + '</p>' +
         (r.note ? '<p class="hk-sinote">' + esc(L('Your note: ', 'Tu nota: ') + r.note) + '</p>' : '') +

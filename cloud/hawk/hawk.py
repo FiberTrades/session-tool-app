@@ -245,6 +245,10 @@ class Hawk:
                 body = 'Strong %d-minute close %s the range (%s). Don\'t %s against it.' % (15 if E.PHASES else 5, word(s, 'above', 'below'), px(e['edge']), word(s, 'sell', 'buy'))
                 if e.get('tgt'):
                     body += ' %s pocket: %s %s, stop %s, target %s (%.1fR).' % (word(s, 'Buy-high', 'Sell-low'), word(s, 'buy', 'sell'), px(e['entry']), px(e['stop']), px(e['tgt']), pips(e['tgt'], e['entry']) / pips(e['entry'], e['stop']))
+                    # 27 Nov 2026 (Nestor: "is this supposed to be a sell signal?" - the phone the same as the PC): the side, not an entry
+                    body += ' No entry yet: the %s waits at that pocket, if price comes back %s to it.' % (word(s, 'buy', 'sell'), word(s, 'down', 'up'))
+                else:
+                    body += ' No entry yet: wait for the 50% pullback alert. It gives the entry, stop and target.'
                 self.out('init:%d' % s, 'initiation', 'Initiation · ' + word(s, 'up', 'down'), body + dline, s, dict(e, tfx=dis_now))
             elif e['kind'] == 'sweep' and recent(e['i']) and WIN_OK(mins):
                 what = word(s, 'Low', 'High'); where = {'discount': 'in the discount', 'premium': 'in the premium'}.get(e['loc'], e['rule'])
