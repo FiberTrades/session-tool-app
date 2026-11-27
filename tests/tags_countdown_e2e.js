@@ -45,7 +45,7 @@
     ok('...on the overlay: red letters at the note, nothing of ours over the tag', redIn(pw - ov[0].x - 2) && at(inTag)[3] === 0, [at(inTag)]);
     ok('...and nothing painted behind the words: the line under them untouched (no box, no knock-out)', bare(pw - ov[0].x - 2));
     // moved off the TP: still the note's own words on the line, now against the scale (no box: the library's title stays empty)
-    d.price = tp.p + 0.0020; P._render(); await W(400);
+    var yTp = p.series.priceToCoordinate(tp.p); d.price = p.series.coordinateToPrice(yTp > 120 ? yTp - 60 : yTp + 60); P._render(); await W(400);   /* 60 px off the TP, on screen whatever the chart's range */
     hl = (p.hl || []).filter(function (l) { return Math.abs(l.options().price - d.price) < 1e-9; })[0]; var ov2 = p._hlOv || [];
     y = Math.round(p.series.priceToCoordinate(d.price) * dpr);
     ok('moved off the TP: the note against the scale, still on the line (no box)', hl && hl.options().title === '' && hl.options().axisLabelVisible && ov2.length === 1 && !ov2[0].x && redIn(pw - 2) && bare(pw - 2), [hl && hl.options().title, ov2]);

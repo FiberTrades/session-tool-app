@@ -27,7 +27,7 @@
     ok('...the stop red, the target green, the entry dark', sl && /e56767|229,\s*103,\s*103/i.test(sl.bg) && tp && /4ecd8b|78,\s*205,\s*139/i.test(tp.bg) && pe && pe.bg === '#2a2833', [sl && sl.bg, tp && tp.bg, pe && pe.bg]);
     ok('...and the span from stop to target shaded on the scale', bd && bd.p1 === d.sl && bd.p2 === d.tp, bd);
     await W(200);
-    var inB = blueAt(p.chart, p.series, (d.sl + d.tp) / 2), outB = blueAt(p.chart, p.series, d.tp + 0.0006);
+    var inB = blueAt(p.chart, p.series, (d.a.price + d.tp) / 2),   /* between the entry's and the target's labels: the middle of stop to target sits under the entry's own label */ outB = blueAt(p.chart, p.series, d.tp + 0.0006);
     ok('...painted: blue in the scale between them, not above the target', isBlue(inB) && !isBlue(outB), [inB, outB]);
     // its own colours follow it
     d.psc = '#ff9800'; P._render(); await W(300);

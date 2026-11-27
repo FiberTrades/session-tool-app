@@ -30,11 +30,12 @@
     var X = Math.round(r.width * 0.3);
 
     document.getElementById('stpr-drawbtn').click(); await W(40);
-    var tools = document.getElementById('stpr-tools'); tools.querySelector('[data-tgrp="lines"]').click(); await W(40);
-    var fl = tools.querySelector('.stpr-tg[data-grp="lines"] .stpr-tfl'), names = Array.prototype.map.call(fl.querySelectorAll('[data-tool]'), function (b) { return b.textContent; });
-    ok('Back Testing: Path in the line tools, after Arrow', names.indexOf('Path') === names.indexOf('Arrow') + 1, names.join('|'));
+    var tools = document.getElementById('stpr-tools'); tools.querySelector('[data-tgrp="shapes"]').click(); await W(40);   /* the tools grouped as TradingView's: Path is a shape there, after the rectangles */
+    var fl = tools.querySelector('.stpr-tg[data-grp="shapes"] .stpr-tfl'), names = Array.prototype.map.call(fl.querySelectorAll('[data-tool]'), function (b) { return b.textContent; });
+    var ix = function (rx) { for (var q = 0; q < names.length; q++) if (rx.test(names[q])) return q; return -1; };
+    ok('Back Testing: Path in the Shapes tools, after the rectangles (as TradingView)', ix(/^Path/) > ix(/^Rectangle/) && ix(/^Rectangle/) >= 0 && ix(/^Path/) > ix(/^Rotated/), names.join('|'));
     fl.querySelector('[data-tool="path"]').click(); await W(40);
-    ok('...picked: the tool is on, the group button shows it', DW.tool === 'path' && /^Path/.test(tools.querySelector('[data-gtool="lines"]').title), [DW.tool, tools.querySelector('[data-gtool="lines"]').title]);
+    ok('...picked: the tool is on, the group button shows it', DW.tool === 'path' && /^Path/.test(tools.querySelector('[data-gtool="shapes"]').title), [DW.tool, tools.querySelector('[data-gtool="shapes"]').title]);
 
     // click, click, click, then a double-click on the fourth point
     click(X, 300); mev('mousemove', X + 60, 200); await W(30);
@@ -55,7 +56,7 @@
     ok('pressing a point takes that point (p1); a leg takes the whole of it', h1 && h1.part === 'p1' && hb && hb.part === 'body' && DW.list[hb.i] === pa, [h1, hb]);
 
     // drag the second point, then the whole of it
-    var t2 = pa.pts[2].t, pr2 = pa.pts[2].price;
+    var t2 = pa.pts[2].t, pr2 = pa.pts[2].price; DW.sel = DW.list.indexOf(pa);   /* an object is clicked first, then dragged (2 Nov 2026): it is selected */
     mev('mousedown', q[1].x, q[1].y); mev('mousemove', q[1].x + 30, q[1].y - 40, { held: true }); mev('mousemove', q[1].x + 30, q[1].y - 40, { held: true }); mev('mouseup', q[1].x + 30, q[1].y - 40); await W(60);
     var n1 = XY(pa.pts[1]);
     ok('dragging point 2 moves it alone', Math.abs(n1.y - (q[1].y - 40)) < 3 && Math.abs(n1.x - (q[1].x + 30)) < 10 && pa.pts[2].t === t2 && pa.pts[2].price === pr2, [n1, q[1]]);
@@ -107,6 +108,7 @@
     ok('...drawn in blue', near(rmc2, BLUE, 14), rmc2);
     var rh = R._hit(rq[2].x, rq[2].y);
     ok('its last point is a handle (p2)', rh && rh.part === 'p2', rh);
+    S.sel = S.drawings.indexOf(rp);   /* clicked first, then dragged (2 Nov 2026) */
     rev('mousedown', rq[2].x, rq[2].y); rev('mousemove', rq[2].x, rq[2].y + 40, { held: true }); rev('mousemove', rq[2].x, rq[2].y + 40, { held: true }); rev('mouseup', rq[2].x, rq[2].y + 40); await W(60);
     var rn = R._P(rp.pts[2]);
     ok('dragging it moves that point alone', Math.abs(rn.y - (rq[2].y + 40)) < 3 && Math.abs(R._P(rp.pts[0]).y - rq[0].y) < 1, [rn, rq[2]]);

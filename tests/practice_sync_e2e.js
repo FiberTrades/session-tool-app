@@ -78,7 +78,10 @@
     P._place(-1); g = 0; while (P._s().pos && g++ < 400) P._step();
     await W(300);
     var mine = DB.practice_trades.filter(function (x) { return x.sym === 'EURUSD' && x.day === '2026-10-01'; });
-    ok('the new trade is on the server once', mine.length === 2 && mine.filter(function (x) { return x.r === 2; }).length === 2, mine.map(function (x) { return x.client_id + ':' + x.r; }));
+    /* the seeded trade (2R) and the new one, each once: the new one's result is whatever the day's candles give it - its target (2R)
+       or its stop (-1R) - so it is not pinned (the test's candles are a stand-in since 29 Oct 2026) */
+    var mids = mine.map(function (x) { return x.client_id; });
+    ok('the new trade is on the server once', mine.length === 2 && mids[0] !== mids[1] && mine.some(function (x) { return x.r === 2; }) && mine.every(function (x) { return x.r === 2 || x.r === -1; }), mine.map(function (x) { return x.client_id + ':' + x.r; }));
     await W(300);
     var DW = P._dr();
     ok("the phone's EUR/USD drawing came down when EUR/USD opened", DW.list.length === 1 && DW.list[0].text === 'from the phone', DW.list);

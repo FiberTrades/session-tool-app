@@ -8,7 +8,7 @@
 # symbol and timeframe some whole weeks of real candles. A time outside them is served from the same moment of the week inside
 # them, its first week before them and its last after (time of week kept, so sessions and weekends stay where they are); a symbol without a sample is another one's, scaled to its
 # price. ST_REAL_CANDLES=1 opts a run out (the real store - one run at a time, never in parallel).
-import gzip, io, json, os, threading, urllib.parse, urllib.request
+import gzip, io, json, os, threading, time, urllib.parse, urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIX = os.path.join(HERE, 'fixtures', 'candles')
 WEEK = 7 * 86400
@@ -90,7 +90,14 @@ def candles_before(sym, tf, before, n):
     return rows[-n:]
 
 def symbols():
-    return _meta().get('symbols', [])
+    """the symbols and their stored range, as the real store says it: up to the last whole candle before now (27 Nov 2026). The sample
+    ends 29 Oct, but every later time is served from its last week (candles()), so the range runs on to today, as the live feed keeps
+    the real store; a test of 'the latest day' (practice_days_e2e) then finds yesterday, not a random day months back."""
+    now = int(time.time()); out = []
+    for s in _meta().get('symbols', []):
+        st = max(60, int(s.get('tf', 1) or 1) * 60)
+        out.append(dict(s, last_t=max(int(s.get('last_t', 0)), (now // st) * st - st)))
+    return out
 
 def answer(fn, args, offset=0, limit=1000):
     """what the store would answer this RPC (the rows, as PostgREST sends them)"""

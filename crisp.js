@@ -18,9 +18,11 @@
   // line goes soft whatever is drawn on it (a 858 px wide chart at 125% is 1072.5 screen pixels). It may come out up to one screen pixel
   // smaller than w x h on the page.
   window.__stCrispFit = function (c, w, h, dpr) {
-    var off = window.__stCrispOff === true, bw = Math.max(1, off ? Math.round(w * dpr) : Math.floor(w * dpr + 1e-4)), bh = Math.max(1, off ? Math.round(h * dpr) : Math.floor(h * dpr + 1e-4)), k = bw + 'x' + bh + '@' + dpr + (off ? 'o' : '');
+    var off = window.__stCrispOff === true, bw = Math.max(1, off ? Math.round(w * dpr) : Math.floor(w * dpr + 1e-4)), bh = Math.max(1, off ? Math.round(h * dpr) : Math.floor(h * dpr + 1e-4));
     if (c.width !== bw) c.width = bw; if (c.height !== bh) c.height = bh;
-    if (c.__stFit !== k) { c.__stFit = k; c.style.width = (off ? w : bw / dpr) + 'px'; c.style.height = (off ? h : bh / dpr) + 'px'; }   // a zoom: the same bitmap can need a new size on the page
+    // its size on the page, checked every time (a zoom, or anything else that changed it): the same bitmap can need a new size there
+    var sw = +(off ? w : bw / dpr).toFixed(4) + 'px', sh = +(off ? h : bh / dpr).toFixed(4) + 'px';
+    if (c.style.width !== sw) c.style.width = sw; if (c.style.height !== sh) c.style.height = sh;
   };
   window.__stCrisp = function (g) {
     if (!g || g.__stCrisp || typeof g.getTransform !== 'function') return g;

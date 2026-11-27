@@ -86,27 +86,50 @@
       win.classList.remove('pt5'); await W(30);
     }
 
-    // the news button: two options
-    var nb = $('#stpr-newsbtn'); if (phoneNow) try { nb.scrollIntoView({ inline: 'center', block: 'nearest' }); } catch (e) {}
-    ok('a news button in reach', nb && nb.getBoundingClientRect().width > 0, nb && nb.getBoundingClientRect());
-    nb.click(); await W(200);
-    var sw = $('#stpr-newsshow'), wk = $('#stpr-menu [data-nwopen]');
-    ok('the news button opens two options: Show news on chart, Open news this week', menu().classList.contains('show') && sw && sw.checked && wk && /Show news on chart/.test(menu().textContent) && /Open news this week/.test(menu().textContent), menu().textContent);
-    sw.click(); await W(100); P._drawOv(0); await W(100);
-    ok('flags off: none on the chart, the menu still open, saved for this chart', !(p0()._news || []).length && menu().classList.contains('show') && P._cfg().showPer && P._cfg().showPer[0].news === false && !nb.classList.contains('on'), [(p0()._news || []).length, P._cfg().showPer]);
-    sw = $('#stpr-newsshow'); sw.click(); await W(100); P._drawOv(0); await W(100);
-    ok('flags on again', (p0()._news || []).length >= 1 && nb.classList.contains('on'), (p0()._news || []).length);
-    $('#stpr-menu [data-nwopen]').click(); await W(500);
-    var nx = $('.stpr-news'), nr = nx && nx.getBoundingClientRect(), cw = (nx && nx.parentNode).getBoundingClientRect();
-    ok('News this week opens over the charts', nx && !menu().classList.contains('show') && Math.abs(nr.width - cw.width) <= 1 && Math.abs(nr.height - cw.height) <= 1 && nx.contains(document.elementFromPoint(nr.left + nr.width / 2, nr.top + nr.height / 2)), nr);
-    ok('its rows, the week\'s range; on Replay a figure not out by the replay\'s moment stays hidden', /German Prelim CPI/.test(nx.textContent) && /-0\.2%/.test(nx.textContent) && !/3\.75%/.test(nx.textContent) && /2026-09-28/.test(nx.querySelector('.strp-newsweek').textContent), nx.textContent);
-    nx.querySelector('[data-nwx]').click(); await W(100);
-    ok('the X closes it', !$('.stpr-news'));
+    // the news (6 Nov 2026: its switch is for every chart, Nestor: "all the charts need to follow that command not just the main chart"):
+    // on a phone the top bar's button, two options; on a computer the right rail's News panel - the top bar has no news button there
+    var nb = $('#stpr-newsbtn'), nwToggle;
+    if (phoneNow) {
+      try { nb.scrollIntoView({ inline: 'center', block: 'nearest' }); } catch (e) {}
+      ok('a news button in reach', nb && nb.getBoundingClientRect().width > 0, nb && nb.getBoundingClientRect());
+      nb.click(); await W(200);
+      var sw = $('#stpr-newsshow'), wk = $('#stpr-menu [data-nwopen]');
+      ok('the news button opens two options: Show news on chart, Open news this week', menu().classList.contains('show') && sw && sw.checked && wk && /Show news on chart/.test(menu().textContent) && /Open news this week/.test(menu().textContent), menu().textContent);
+      nwToggle = async function () { $('#stpr-newsshow').click(); await W(100); };
+    } else {
+      var nrb = $('.plat-rail [data-plr="nw"]');
+      ok('a News button in the right rail (no news button in the top bar on a computer)', nrb && nrb.getBoundingClientRect().width > 0 && !(nb && nb.getBoundingClientRect().width > 0), nrb && nrb.getBoundingClientRect());
+      nrb.click(); for (var nw8 = 0; nw8 < 40 && !($('.pl-nw [data-plnwshow]') && $('.pl-nw [data-plnwshow]').getBoundingClientRect().width > 0); nw8++) await W(100);
+      var nws = $('.pl-nw [data-plnwshow]');
+      ok('...it opens the News panel: Show news on chart, on', nws && nws.checked && /Show news on chart/.test($('.pl-nw').textContent), $('.pl-nw') && $('.pl-nw').textContent.slice(0, 120));
+      nwToggle = async function () { $('.pl-nw [data-plnwshow]').click(); await W(100); };
+    }
+    await nwToggle(); P._drawOv(0); await W(100);
+    ok('flags off: none on the chart, for every chart, saved', !(p0()._news || []).length && P._cfg().news === false && (!phoneNow || menu().classList.contains('show')), [(p0()._news || []).length, P._cfg().news, P._cfg().showPer]);
+    await nwToggle(); P._drawOv(0); await W(100);
+    ok('flags on again', (p0()._news || []).length >= 1 && P._cfg().news !== false, (p0()._news || []).length);
+    if (phoneNow) {
+      $('#stpr-menu [data-nwopen]').click(); await W(500);
+      var nx = $('.stpr-news'), nr = nx && nx.getBoundingClientRect(), cw = (nx && nx.parentNode).getBoundingClientRect();
+      ok('News this week opens over the charts', nx && !menu().classList.contains('show') && Math.abs(nr.width - cw.width) <= 1 && Math.abs(nr.height - cw.height) <= 1 && nx.contains(document.elementFromPoint(nr.left + nr.width / 2, nr.top + nr.height / 2)), nr);
+      ok('its rows, the week\'s range; on Replay a figure not out by the replay\'s moment stays hidden', /German Prelim CPI/.test(nx.textContent) && /-0\.2%/.test(nx.textContent) && !/3\.75%/.test(nx.textContent) && /2026-09-28/.test(nx.querySelector('.strp-newsweek').textContent), nx.textContent);
+      nx.querySelector('[data-nwx]').click(); await W(100);
+      ok('the X closes it', !$('.stpr-news'));
+    } else {
+      var nwp = $('.pl-nw');
+      for (var nw9 = 0; nw9 < 40 && !/German Prelim CPI/.test(nwp.textContent); nw9++) await W(100);
+      ok('the panel lists the week; on Replay a figure not out by the replay\'s moment stays hidden', /German Prelim CPI/.test(nwp.textContent) && /-0\.2%/.test(nwp.textContent) && !/3\.75%/.test(nwp.textContent), nwp.textContent.slice(0, 300));
+    }
     // Spanish
     window.__setAppLang('es'); await W(300);
-    nb.click(); await W(200);
-    ok('in Spanish: both options', /Mostrar noticias en el gráfico/.test(menu().textContent) && /Abrir noticias de la semana/.test(menu().textContent), menu().textContent);
-    nb.click(); await W(100);
+    if (phoneNow) {
+      nb.click(); await W(200);
+      ok('in Spanish: both options', /Mostrar noticias en el gráfico/.test(menu().textContent) && /Abrir noticias de la semana/.test(menu().textContent), menu().textContent);
+      nb.click(); await W(100);
+    } else {
+      for (var nw10 = 0; nw10 < 40 && !/Mostrar noticias en el gráfico/.test($('.pl-nw').textContent); nw10++) await W(100);
+      ok('in Spanish: the panel\'s switch', /Mostrar noticias en el gráfico/.test($('.pl-nw').textContent) && /Noticias de la semana/.test($('.pl-nw').textContent), $('.pl-nw').textContent.slice(0, 120));
+    }
     var es0 = typeof getEventTitle === 'function' ? getEventTitle('Federal Funds Rate') : null, dv = document.createElement('div'); R._newsWeek.render(dv, WEEK, {});
     ok('event names through the calendar\'s names, in Spanish too', es0 && es0 !== 'Federal Funds Rate' && dv.textContent.indexOf(es0) >= 0, [es0, dv.textContent.slice(0, 200)]);
     window.__setAppLang('en'); await W(300);

@@ -115,11 +115,13 @@
       check('...its menu there, Trade lines on', !!sw && sw.checked, !!sw);
       sw.checked = false; sw.dispatchEvent(new cw.Event('change', { bubbles: true }));
       L1 = P._lines(1); L0 = P._lines(0);
-      check('Trade lines off on that chart: Execute\'s lines gone there at once, tags too', L1.length > 0 && L1.every(function (l) { return !l.vis; }), L1);
+      // the order being aimed is never hidden on a chart of the trade's own symbol (24 Nov 2026: Trade lines off hid them, and a real
+      // order went in with nothing on screen) - Trade lines off still hides them on a chart of another symbol
+      check('Trade lines off on that chart (the trade\'s symbol): the order being aimed still shows there, never hidden', aimed(L1).length >= 2 && aimed(L1).every(function (l) { return l.vis; }), L1);
       check('...the other chart keeps them', aimed(L0).length >= 2 && aimed(L0).every(function (l) { return l.vis; }), L0);
       P._aim(pr0 - 0.0035); await W(200); L1 = P._lines(1);
-      check('...still gone as the mouse moves', L1.every(function (l) { return !l.vis; }), L1);
-      check('...and no line of it can be dragged there', L1.every(function (l) { return !l.k; }), L1);
+      check('...still there as the mouse moves', aimed(L1).length >= 2 && aimed(L1).every(function (l) { return l.vis; }), L1);
+      check('...and its stop and target can still be dragged there', L1.some(function (l) { return l.vis && l.k; }), L1);
       window.__W1102shot = 1;
       sw = d.getElementById('stpr-marks'); if (sw) { sw.checked = true; sw.dispatchEvent(new cw.Event('change', { bubbles: true })); } await W(150);
       L1 = P._lines(1);

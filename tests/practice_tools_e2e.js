@@ -25,8 +25,11 @@
 
     // speeds and Go to
     var sp = document.getElementById('stpr-speed'), seen = [sp.textContent];
-    for (k = 0; k < 5; k++) { sp.click(); seen.push(sp.textContent); }
-    ok('speed goes 1x 2x 4x 8x 16x and back to 1x', seen.join(' ') === '1× 2× 4× 8× 16× 1×', seen.join(' '));
+    /* the speed is a short menu since 2 Nov 2026 (it stepped one press at a time) */
+    sp.click(); await W(60); var spm = document.querySelector('#stpr-menu.show'), spo = spm ? Array.prototype.map.call(spm.querySelectorAll('[data-spd] b'), function (x) { return x.textContent; }) : [];
+    var spk = [1, 2, 3, 4, 0]; for (k = 0; k < spk.length; k++) { if (!document.querySelector('#stpr-menu.show [data-spd]')) { sp.click(); await W(60); } var spb = document.querySelector('#stpr-menu.show [data-spd="' + spk[k] + '"]'); if (spb) spb.click(); await W(40); seen.push(sp.textContent); }
+    ok('speed: a menu, 16x down to 0.1x; picking 2x 4x 8x 16x then 1x shows each on the button', spo.join(' ') === '16× 8× 4× 2× 1× 0.5× 0.25× 0.1×' && seen.join(' ') === '1× 2× 4× 8× 16× 1×', [spo.join(' '), seen.join(' ')]);
+    try { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); } catch (e) {}
     P._goto('14:30');
     ok('Go to 14:30 plays the market to 14:30', hhmm(S().now) === '14:30', hhmm(S().now));
     document.getElementById('stpr-goto').click(); await W(30);

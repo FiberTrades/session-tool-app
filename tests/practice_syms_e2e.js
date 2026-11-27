@@ -11,7 +11,8 @@
     await W(1000);
     var P = window.__stPractice;
     try { Object.keys(localStorage).filter(function (k) { return /^st_practice/.test(k); }).forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
-    var C = P._cfg(); C.layout = 2; C.tfs = [15, 15, 5, 240]; C.syms = [null, 'XAUUSD']; C.wl = null; C.stopPx = { EURUSD: 0.0012 }; C.speed = 0; C.ses = {}; C.max = true; C.mini = false; C.miniOff = {}; C.lv = {}; C.resume = null;
+    var C = P._cfg(); C.layout = 2; C.tfs = [15, 15, 5, 240]; C.syms = [null, 'XAUUSD']; C.wl = ['EURUSD', 'XAUUSD'];   /* his own watchlist: without one it lists only his MT5's symbols (3 Nov 2026), none in a test */
+    C.stopPx = { EURUSD: 0.0012 }; C.speed = 0; C.ses = {}; C.max = true; C.mini = false; C.miniOff = {}; C.lv = {}; C.resume = null;
     C.mm = Object.assign({}, C.mm, { col: true, on: true, ord: 'market', maxDay: 0 });
     await P.open({ symbol: 'EURUSD', day: '2026-10-01' }); for (var k = 0; k < 100 && !(P._s() && P._panes().length === 2 && P._panes()[1].n); k++) await W(100);
     var pane = function (i) { return P._panes()[i]; };

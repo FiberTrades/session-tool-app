@@ -35,7 +35,7 @@
     try { document.getElementById('strp-close').click(); } catch (e) {} await W(300);
 
     // ---- Live Charts: the trade's card ----
-    var P = window.__stPractice, C = P._cfg(); C.layout = 1; C.tfs = [1, 60, 15, 240]; C.max = false;
+    var P = window.__stPractice, C = P._cfg(); C.layout = 1; C.tfs = [1, 60, 15, 240]; C.max = false; C.lvLg = '9990001';   /* a made-up account, picked on the chart: Live Charts shows its own account's trades only (a row without a login is no one's) */
     window.__stLcForce = true;
     document.querySelector('.tab[data-page="livecharts"]').click();
     for (k = 0; k < 250 && !(P._s() && P._s().live && P._panes().length && P._panes()[0].n); k++) await W(100);
@@ -44,9 +44,9 @@
     var r5 = function (v) { return Math.round(v * 1e5) / 1e5; };
     P._lvTr([
       { ticket: 8801, symbol: sym, direction: 'sell', lots: 16.76, entry_price: e, exit_price: r5(e - 0.00195), open_time: new Date(b0.time * 1000).toISOString(), close_time: new Date(b1.time * 1000).toISOString(),
-        pnl: 2359.81, risk_gbp: 500, login: '', sl_moves: [[b0.time, r5(e + 0.0004)], [b0.time + 600, e]], tp_moves: [[b0.time, r5(e - 0.0020)]], sl_pips: 4, tp_pips: 20 },
-      { ticket: 8802, symbol: sym, direction: 'sell', lots: 1, entry_price: e, exit_price: r5(e - 0.0012), open_time: new Date((b0.time + 300) * 1000).toISOString(),   // not the same minute: that reads as a copy close_time: new Date(b1.time * 1000).toISOString(),
-        pnl: 120, risk_gbp: 40, login: '', sl_moves: [[b0.time, r5(e + 0.0004)]], tp_moves: [[b0.time, r5(e - 0.0020)]], sl_pips: 4, tp_pips: 20 }]);
+        pnl: 2359.81, risk_gbp: 500, login: '9990001', sl_moves: [[b0.time, r5(e + 0.0004)], [b0.time + 600, e]], tp_moves: [[b0.time, r5(e - 0.0020)]], sl_pips: 4, tp_pips: 20 },
+      { ticket: 8802, symbol: sym, direction: 'sell', lots: 1, entry_price: e, exit_price: r5(e - 0.0012), open_time: new Date((b0.time + 300) * 1000).toISOString(), /* not the same minute: that reads as a copy */ close_time: new Date(b1.time * 1000).toISOString(),
+        pnl: 120, risk_gbp: 40, login: '9990001', sl_moves: [[b0.time, r5(e + 0.0004)]], tp_moves: [[b0.time, r5(e - 0.0020)]], sl_pips: 4, tp_pips: 20 }]);
     await W(300);
     var c1 = P._tmCardText(0, 8801), c2 = P._tmCardText(0, 8802);
     ok('Live Charts card, closed at its TP: the real +19.5 pips · +4.72R (money over risk), the exit marked TP', c1 && /Result\+19\.5 pips · \+4\.72R/.test(c1) && /TP/.test(c1), c1);

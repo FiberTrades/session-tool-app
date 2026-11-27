@@ -51,7 +51,7 @@ try { if (localStorage.getItem('st_ui_lang') === 'es') { document.documentElemen
 window._stT = function(en, es){ return (document.documentElement.lang === 'es') ? es : en; };
 </script>
 <script src="i18n-es.js?v=1"></script>
-<script src="crisp.js?v=20261127b"></script>   <!-- chart drawings on whole screen pixels, as TradingView's (27 Nov 2026) -->   <!-- the Spanish safety net: English written straight into the page, swapped as it appears (6 Nov 2026) -->
+<script src="crisp.js?v=20261127c"></script>   <!-- chart drawings on whole screen pixels, as TradingView's (27 Nov 2026) -->   <!-- the Spanish safety net: English written straight into the page, swapped as it appears (6 Nov 2026) -->
 <script>
 /* A GIF is already showing at full size and it animates - opening it in the zoom
    viewer gains nothing, so GIFs are treated as not clickable. */
@@ -95226,7 +95226,10 @@ window.__stAZ = (function () {
   // The chart applies a new view on its next frame and reports the old one until then, so the view set here is remembered
   // for two frames: several steps inside one frame (a held arrow key, a fast replay) then build on it, not on a stale one.
   function setRange(p, r){ try { p.chart.timeScale().setVisibleLogicalRange(r); } catch (e) {} var k = p._rq = { from: r.from, to: r.to }; p._set = k;   // _set: the last view asked for (the tests wait for the chart to show it)
-    var rw = liveWin(); try { rw.requestAnimationFrame(function(){ rw.requestAnimationFrame(function(){ if (p._rq === k) p._rq = null; }); }); } catch (e) { p._rq = null; } }
+    // cleared once the chart shows it: two frames of the chart's OWN window (a chart window's, not the main one's) - the main window's frames could be
+    // stopped, which left it set, so each new candle put the view back where it opened and a drag of a chart window sprang back (27 Nov 2026)
+    var clr = function(){ if (p._rq === k) p._rq = null; }, rw = (p.el && p.el.ownerDocument && p.el.ownerDocument.defaultView) || liveWin();
+    try { rw.requestAnimationFrame(function(){ rw.requestAnimationFrame(clr); }); } catch (e) { p._rq = null; } }
   function getRange(p){ if (p._rq) return p._rq; try { return p.chart.timeScale().getVisibleLogicalRange(); } catch (e) { return null; } }
   function viewPane(p){
     var last = p.n - 1, span = Math.min(phone() ? 50 : SHOW[p.tf], Math.max(10, p.n));
@@ -101833,7 +101836,12 @@ window.__stAZ = (function () {
       var w = Math.min(cv.width - x, Math.round(r.w * d)), h = Math.min(cv.height - y, Math.round(r.h * d));
       if (!(w > 1 && h > 1)) return;
       var sw = Math.max(1, Math.round(w / B)), sh = Math.max(1, Math.round(h / B)), t = document.createElement('canvas'); t.width = sw; t.height = sh;
-      var tg = t.getContext('2d'); tg.imageSmoothingEnabled = true; tg.imageSmoothingQuality = 'high'; tg.drawImage(cv, x, y, w, h, 0, 0, sw, sh);
+      /* down by halves first: each half averages 2x2 on any browser, so every block is the mean of what it covers (in one step a
+         browser without 'high' smoothing samples a pixel or two: a stripe pattern came out white, 27 Nov 2026) */
+      var src = cv, sx = x, sy = y, cw = w, ch = h;
+      while (cw >= sw * 2 || ch >= sh * 2) { var nw = Math.max(sw, Math.ceil(cw / 2)), nh = Math.max(sh, Math.ceil(ch / 2)), st = document.createElement('canvas'); st.width = nw; st.height = nh;
+        var sg = st.getContext('2d'); sg.imageSmoothingEnabled = true; sg.imageSmoothingQuality = 'high'; sg.drawImage(src, sx, sy, cw, ch, 0, 0, nw, nh); src = st; sx = 0; sy = 0; cw = nw; ch = nh; }
+      var tg = t.getContext('2d'); tg.imageSmoothingEnabled = true; tg.imageSmoothingQuality = 'high'; tg.drawImage(src, sx, sy, cw, ch, 0, 0, sw, sh);
       g.drawImage(t, 0, 0, sw, sh, x, y, w, h);
     });
     g.restore(); return cv;

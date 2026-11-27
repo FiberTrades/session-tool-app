@@ -76,6 +76,7 @@
     ok('a colour opens the palette with its opacity (Premium: 10%)', dlg().querySelector('[data-dop]') && dlg().querySelector('[data-dop]').value === '10');
     dlg().querySelector('[data-dcol="#2962ff"]').click(); await W(40);
     ok('a colour from the palette keeps his opacity (10%)', C.miniS.cTop === 'rgba(41,98,255,0.1)', C.miniS.cTop);
+    if (!dlg().querySelector('[data-dop]')) { dlg().querySelector('[data-dsw="cTop"]').click(); await W(30); }   /* a colour picked closes the palette: open it again for its slider */
     var opn = dlg().querySelector('[data-dop]'); opn.value = '25'; fire(opn, 'input'); await W(30);
     ok('and the opacity slider sets it (25%)', C.miniS.cTop === 'rgba(41,98,255,0.25)', C.miniS.cTop);
     // sessions: Box Opacity fills them, the labels' size and colour

@@ -58,21 +58,21 @@
     var at = function (q) { return { x: P._xOfT(0, q.t), y: pane.series.priceToCoordinate(q.price) }; }, A = at(tr.a), B = at(tr.b), ang = Math.atan2(B.y - A.y, B.x - A.x);   // where its points went (snapped to candles)
     var u0 = find('BOS');
     ok('a trend line\'s words: along it, at its angle, above it, at its middle (as before)', u0 && Math.abs(u0.rot - ang) < 0.05 && Math.hypot((u0.x + Math.cos(ang) * u0.w / 2) - (A.x + B.x) / 2, (u0.y) - (A.y + B.y) / 2) < 30, [u0, ang]);
-    await setPos(tr, 'middle', 'l'); var u1 = find('BOS'), mid = { x: u1.x + Math.cos(ang) * u1.w / 2 - Math.sin(ang) * 7, y: u1.y + Math.sin(ang) * u1.w / 2 + Math.cos(ang) * 7 };
+    await setPos(tr, 'middle', 'l'); A = at(tr.a); B = at(tr.b); ang = Math.atan2(B.y - A.y, B.x - A.x); var u1 = find('BOS'),   /* the line's points read again now: the chart can settle meanwhile */ mid = { x: u1.x + Math.cos(ang) * u1.w / 2 - Math.sin(ang) * 7, y: u1.y + Math.sin(ang) * u1.w / 2 + Math.cos(ang) * 7 };
     var onLine = Math.abs((B.y - A.y) * mid.x - (B.x - A.x) * mid.y + B.x * A.y - B.y * A.x) / Math.hypot(B.y - A.y, B.x - A.x);
     ok('Middle, Left: on the line near its start, the line broken there', onLine < 4 && Math.hypot(mid.x - A.x, mid.y - A.y) < u1.w / 2 + 25, [onLine, mid, A]);
     var g0 = { x: u1.x - Math.cos(ang) * 1.5 + Math.sin(ang) * 0, y: u1.y }, gp = px(A.x + Math.cos(ang) * 4, A.y + Math.sin(ang) * 4);
     ok('...nothing painted behind them', gp[3] === 0, gp);
-    await setPos(tr, 'below', 'r'); var u2 = find('BOS'), end = { x: u2.x + Math.cos(ang) * u2.w, y: u2.y + Math.sin(ang) * u2.w };
+    await setPos(tr, 'below', 'r'); A = at(tr.a); B = at(tr.b); ang = Math.atan2(B.y - A.y, B.x - A.x); var u2 = find('BOS'), end = { x: u2.x + Math.cos(ang) * u2.w, y: u2.y + Math.sin(ang) * u2.w };
     ok('Below, Right: under it, ending near its second point', Math.hypot(end.x - B.x, end.y - B.y) < 30 && ((u2.x - A.x) * (B.y - A.y) - (u2.y - A.y) * (B.x - A.x)) < 0, [end, B]);
     // a vertical line: its words level - Top / Middle / Bottom along it, Left / on it / Right of it
     var vl = await drawN('vline', [[X(0.4), Y(0.5)]]); await words(vl, 'NFP'); var vx = P._xOfT(0, vl.a.t), v0 = find('NFP');
     ok('a vertical line\'s words: level, at its top, right of it (as before)', v0 && Math.abs(v0.rot) < 0.01 && v0.y < 30 && v0.x > vx && v0.x < vx + 12, [v0, vx]);
     // the line's pixels a column either side (it sits on a whole pixel, the time on a fraction)
     var colA = function (y) { var m = 0; for (var sx = Math.floor(vx) - 1; sx <= Math.ceil(vx) + 1; sx++) m = Math.max(m, px(sx, y)[3]); return [m]; };
-    await setPos(vl, 'middle', 'c'); var v1 = find('NFP'), vgap = [0, 0, 0, colA(v1.y - 1)[0]], vline = [0, 0, 0, colA(v1.y - 20)[0]];
+    await setPos(vl, 'middle', 'c'); vx = P._xOfT(0, vl.a.t); var v1 = find('NFP'), vgap = [0, 0, 0, colA(v1.y - 1)[0]], vline = [0, 0, 0, colA(v1.y - 20)[0]];
     ok('Middle, On the line: in the middle of it, the line broken behind the words', Math.abs(v1.x + v1.w / 2 - vx) < 2 && Math.abs(v1.y - R.height / 2) < 40 && vgap[3] === 0 && vline[3] > 100, [v1, vgap, vline]);
-    await setPos(vl, 'below', 'l'); var v2 = find('NFP');
+    await setPos(vl, 'below', 'l'); vx = P._xOfT(0, vl.a.t); var v2 = find('NFP');
     ok('Bottom, Left: at its foot, left of it', v2.x + v2.w < vx && v2.y > R.height * 0.7, v2);
     // a ray and a horizontal ray keep their places and take the same options
     var hr = await drawN('hray', [[X(0.3), Y(0.3)]]); await words(hr, 'PDH'); var r0 = find('PDH'), rx = P._xOfT(0, hr.a.t);
@@ -96,7 +96,7 @@
     for (z = 0; z < 30 && yB() < ph + 20; z++) { wheel(-120); await W(40); }
     lf1 = find('LOW FOOT'); var any = cap().filter(function (q) { return /^LOW /.test(q.s); });
     ok('...and on until the foot line is under it: no words for either, nothing at the foot', yB() > ph && !lf1 && !any.length, [yB(), ph, any]);
-    ch.dispatchEvent(new MouseEvent('dblclick', { clientX: ch.getBoundingClientRect().left + PW + 20, clientY: ch.getBoundingClientRect().top + ph / 2, bubbles: true, cancelable: true, view: window })); await W(120);
+    ch.dispatchEvent(new MouseEvent('dblclick', { clientX: ch.getBoundingClientRect().left + PW + 20, clientY: ch.getBoundingClientRect().top + ph / 2, bubbles: true, cancelable: true, view: window })); for (z = 0; z < 40 && !(yT() > 0 && yB() < ph && find('LOW TOP') && find('LOW FOOT')); z++) await W(50);   /* the fit comes back on the chart's next paints */
     ok('the scale back to its fit (a double-click on it): both lines\' words back', yT() > 0 && yB() < ph && find('LOW TOP') && find('LOW FOOT'), [yT(), yB()]);
   } catch (e) { out.push({ name: 'ran', ok: false, got: String(e && e.stack || e) }); }
   return JSON.stringify(out);

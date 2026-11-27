@@ -141,7 +141,7 @@
     var cm = cd.getElementById('stpr-menu');
     check('a chart window: the news button opens its menu in that window', cnb && cm && cm.classList.contains('show') && cd.getElementById('stpr-newsshow') && cm.querySelector('[data-nwopen]'), cnb ? (cm && cm.textContent) : 'no button');
     if (cnb && cd.getElementById('stpr-newsshow')) { var per0 = JSON.stringify(P._cfg().showPer || {}); cd.getElementById('stpr-newsshow').click(); await W(200);
-      var per = P._cfg().showPer || {}; check('...its switch is that chart\'s own (chart 2), the first chart keeps its flags', per[1] && per[1].news === false && !(per[0] && per[0].news === false), [per0, JSON.stringify(per)]);
+      var per = P._cfg().showPer || {}; check('...its switch turns the news off on every chart, this window\'s too (6 Nov 2026: "all the charts need to follow that command")', P._cfg().news === false && !Object.keys(per).some(function (k) { return per[k] && 'news' in per[k]; }), [per0, P._cfg().news, JSON.stringify(per)]);
       cd.getElementById('stpr-newsshow').click(); await W(150); cm.querySelector('[data-nwopen]').click(); await W(500);
       var cnx = cd.querySelector('.stpr-news'); check('...the week opens over that window\'s chart', !!cnx && /CPI m\/m/.test(cnx.textContent) && vis(cnx), cnx && cnx.textContent.slice(0, 80));
       if (cnx) { cnx.querySelector('[data-nwx]').click(); await W(120); } }
