@@ -517,7 +517,7 @@
       if (g.roundRect) g.roundRect(PW + 4, p.y - 7, RG - 8, 14, 3); else g.rect(PW + 4, p.y - 7, RG - 8, 14); g.fill();
       txt(p.t, PW + RG / 2, p.y + .5, p.fg, 'center', 10, 500); });
     // its candles' timeframe, in the corner under the prices (26 Nov 2026, Nestor: "what timeframe is this suppossed to be?"): always 1M
-    var tfL = noC ? 'none' : '1M'; txt('1M', PW + RG / 2, H - 9, K.mut, 'center', 9, 600); if (box.dataset.tf !== tfL) box.dataset.tf = tfL;
+    var tfL = noC ? 'none' : '1M'; txt('1M', PW + RG / 2, H - 9, K.mut, 'center', 9, 600); if (box.dataset.hktf !== tfL) box.dataset.hktf = tfL;   // its own name: Live Charts takes a plain tf attribute for its timeframe buttons (27 Nov 2026)
   }
 
   // ---------- his reading of a timeframe as the hawk makes it - cloud/hawk/engine.py read_bars / read / where / tf_said, line for line (keep
@@ -1006,8 +1006,8 @@
     function sesYr(S) { var T = S.brief.data.tfs || {}, k = esc(S.key), op = function (xs, cur, lab) { return (xs.indexOf(cur) < 0 ? xs.concat([cur]) : xs).map(function (x) { return '<option value="' + esc(x) + '"' + (x === cur ? ' selected' : '') + '>' + esc(lab(x)) + '</option>'; }).join(''); };
       return '<div class="hk-yr"><div class="hk-yrh"><span>' + L('Your read', 'Tu lectura') + '</span><i>' + L('Change what you see differently', 'Cambia lo que veas distinto') + '</i></div>' +
         YT.filter(function (tf) { return T[tf] && T[tf].said; }).map(function (tf) { var v = sesTf(S, tf), U = tf.toUpperCase();
-          return '<div class="hk-yrr"><b>' + U + '</b><label class="hk-pick"><select data-sesr="said" data-tf="' + tf + '" data-sk="' + k + '" aria-label="' + esc(L('Your ' + U + ' phase', 'Tu fase del ' + U)) + '"' + (v.said !== v.hk.said ? ' class="you"' : '') + '>' + op(RV_SAID, v.said, tfSaid) + '</select></label>' +
-            '<label class="hk-pick"><select data-sesr="loc" data-tf="' + tf + '" data-sk="' + k + '" aria-label="' + esc(L('Your ' + U + ' location', 'Tu ubicación del ' + U)) + '"' + (v.loc !== v.hk.loc ? ' class="you"' : '') + '>' + op(RV_LOC, v.loc, tfLoc) + '</select></label></div>'; }).join('') + '</div>'; }
+          return '<div class="hk-yrr"><b>' + U + '</b><label class="hk-pick"><select data-sesr="said" data-hktf="' + tf + '" data-sk="' + k + '" aria-label="' + esc(L('Your ' + U + ' phase', 'Tu fase del ' + U)) + '"' + (v.said !== v.hk.said ? ' class="you"' : '') + '>' + op(RV_SAID, v.said, tfSaid) + '</select></label>' +
+            '<label class="hk-pick"><select data-sesr="loc" data-hktf="' + tf + '" data-sk="' + k + '" aria-label="' + esc(L('Your ' + U + ' location', 'Tu ubicación del ' + U)) + '"' + (v.loc !== v.hk.loc ? ' class="you"' : '') + '>' + op(RV_LOC, v.loc, tfLoc) + '</select></label></div>'; }).join('') + '</div>'; }
     function sesItem(S, r, i, F) { var f = sesF(S, r), sd = r.side === 1 ? 'buy' : r.side === -1 ? 'sell' : '', ch = r.data && r.data.chart && r.data.chart.c && r.data.chart.c.length, k = esc(S.key);
       return '<div class="hk-si" id="hk-a-' + r.id + '"><div class="hk-sih"><span class="hk-sin ' + sd + '">' + (i + 1) + '</span><span class="hk-st">' + esc(ldn(r.created_at, HM)) + '</span>' +
         '<span class="hk-chip' + (r.kind === 'setup' ? ' setup' : '') + '">' + esc(KIND[r.kind] ? L(KIND[r.kind][0], KIND[r.kind][1]) : r.kind) + '</span>' +
@@ -1067,7 +1067,7 @@
     function sesOnTf(k, r, tf) { agSoon(); if (k !== 'b') return; var S = sesOfRow(r); if (!S || !S.brief) return; var D = SD[S.key];
       if (D && D.tf && D.tf[tf]) { delete D.tf[tf]; sesKeepD(); }
       var el = sesEl(S.key), v = sesTf(S, tf); if (!el) return;
-      ['said', 'loc'].forEach(function (k2) { var sl = el.querySelector('select[data-sesr="' + k2 + '"][data-tf="' + tf + '"]'); if (sl) { sl.value = v[k2]; sl.classList.toggle('you', v[k2] !== v.hk[k2]); } }); sesFoot(S.key); }
+      ['said', 'loc'].forEach(function (k2) { var sl = el.querySelector('select[data-sesr="' + k2 + '"][data-hktf="' + tf + '"]'); if (sl) { sl.value = v[k2]; sl.classList.toggle('you', v[k2] !== v.hk[k2]); } }); sesFoot(S.key); }
     function sesScroll(el) { var sc = sScroller(); if (sc) { var rt = el.getBoundingClientRect().top - sc.getBoundingClientRect().top; sc.scrollTop += rt - 8; } else if (!opt.app) el.scrollIntoView({ block: 'start' }); }
     function sesClick(e) {
       var dz = e.target.closest('[data-dis]'); if (dz) { disOpen(dz.dataset.dis); return true; }
@@ -1080,7 +1080,7 @@
       return false; }
     function sesNoteD(t) { var S = SESS[t.dataset.sesnote]; if (!S) return; var D = sesDraft(S.key); D.note = t.value; D.msg = ''; D.t = Date.now(); sesKeepD(); sesFoot(S.key); }
     function sesChange(e) { var t = e.target;
-      if (t.dataset && t.dataset.sesr) { var S = SESS[t.dataset.sk]; if (!S || !S.brief) return true; var D = sesDraft(S.key), tf = t.dataset.tf, hk = (S.brief.data.tfs || {})[tf] || {};
+      if (t.dataset && t.dataset.sesr) { var S = SESS[t.dataset.sk]; if (!S || !S.brief) return true; var D = sesDraft(S.key), tf = t.dataset.hktf, hk = (S.brief.data.tfs || {})[tf] || {};
         (D.tf[tf] = D.tf[tf] || {})[t.dataset.sesr] = t.value; D.msg = ''; D.t = Date.now(); sesKeepD(); t.classList.toggle('you', t.value !== hk[t.dataset.sesr]); sesFoot(S.key); return true; }
       if (t.hasAttribute && t.hasAttribute('data-hkquiet')) { cfgSave('quiet', !t.checked); return true; }
       if (t.dataset && t.dataset.sesnote != null) { sesNoteD(t); return true; }

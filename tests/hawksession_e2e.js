@@ -108,7 +108,7 @@
     var secs = [].slice.call(card().querySelectorAll('.hk-sec')).map(function (e) { return tx(e.querySelector('.hk-sech')); });
     ok('three parts: Before (the brief), During (each alert), After', secs.length === 3 && /^1 Before The brief · 07:45/.test(secs[0]) && /^2 During 3 alerts/.test(secs[1]) && /^3 After/.test(secs[2]), secs);
     ok('Before: the brief\'s words without the timeframes line, its 4H / 1H / 15M tiles open his charts', /Sell idea: a high taken in the premium/.test(tx(card().querySelector('.hk-sbody'))) && !/Timeframes:/.test(tx(card().querySelector('.hk-sbody'))) && card().querySelectorAll('button[data-rvtf]').length === 3, [tx(card().querySelector('.hk-sbody')), card().querySelectorAll('button[data-rvtf]').length]);
-    var sel = function (c, k2, tf) { return c.querySelector('select[data-sesr="' + k2 + '"][data-tf="' + tf + '"]'); };
+    var sel = function (c, k2, tf) { return c.querySelector('select[data-sesr="' + k2 + '"][data-hktf="' + tf + '"]'); };
     ok('...his read per timeframe, the hawk\'s to start with (no pink), six phases and six places', sel(card(), 'said', '4h').value === 'trend down' && sel(card(), 'loc', '4h').value === 'discount edge' && sel(card(), 'said', '1h').value === 'range' && sel(card(), 'said', '15m').value === 'initiation down' && !card().querySelector('.hk-yr select.you') && sel(card(), 'said', '1h').options.length === 6 && sel(card(), 'loc', '1h').options.length === 6,
       ['4h', '1h', '15m'].map(function (tf) { return sel(card(), 'said', tf).value + '/' + sel(card(), 'loc', tf).value; }));
     ok('...the session he saved shows his own 4H read in pink', cC && sel(cC, 'said', '4h').value === 'range' && sel(cC, 'said', '4h').classList.contains('you') && !sel(cC, 'said', '1h').classList.contains('you'), cC && sel(cC, 'said', '4h').value);
@@ -127,7 +127,7 @@
     ok('...measured from the brief to the 13:20 time exit, on 1-minute candles from the store', tx(card().querySelector('.hk-saftw')) === '07:45 → 13:20' && /1-minute candles/.test(tx(card().querySelector('.hk-saft .hk-hint'))) && BARS.some(function (b) { return b[1] === 1; }), [tx(card().querySelector('.hk-saftw')), BARS.slice(0, 4)]);
     ok('the session chart: drawn with the three alerts numbered on it', !!Q('.hk-ses[data-sk="' + sk + '"] .hk-sesc canvas') && Q('.hk-ses[data-sk="' + sk + '"] .hk-sesc canvas').width > 100, null);
     var tfB = Q('.hk-ses[data-sk="' + sk + '"] .hk-sesc');
-    ok('the session chart: 1-minute candles from the candle store, never merged, and it says so under the prices ("make it always show 1m candles"; "what timeframe is this suppossed to be?")', tfB && tfB.dataset.tf === '1M', tfB && tfB.dataset.tf);
+    ok('the session chart: 1-minute candles from the candle store, never merged, and it says so under the prices ("make it always show 1m candles"; "what timeframe is this suppossed to be?")', tfB && tfB.dataset.hktf === '1M', tfB && tfB.dataset.hktf);
     // his own view of the session chart (24 Nov 2026, Nestor: "could i please be able to control de time and price scales on this chart?")
     var zb = Q('.hk-ses[data-sk="' + sk + '"] .hk-sesc'), zc = zb.querySelector('canvas'), zr0 = zb.querySelector('.hk-zr'), zimg0 = zc.toDataURL(), zR = zb.getBoundingClientRect(), ZW = zb.clientWidth, ZH = zb.clientHeight;
     var PE = function (ty, x, y) { zc.dispatchEvent(new PointerEvent(ty, { clientX: zR.left + x, clientY: zR.top + y, pointerId: 7, button: 0, buttons: ty === 'pointerup' ? 0 : 1, pointerType: 'mouse', bubbles: true, cancelable: true })); };
@@ -257,7 +257,7 @@
     var c2 = r2.querySelector('.hk-ses[data-sk="' + sk + '"]');
     ok('hawk.html: the same session card, its tiles not buttons, After from the alerts\' own 5-minute candles so far', c2 && !c2.querySelector('button[data-rvtf]') && /alerts' own 5-minute candles/.test(tx(c2.querySelector('.hk-saft .hk-hint'))) && / so far$/.test(tx(c2.querySelector('.hk-saftw'))), c2 && [tx(c2.querySelector('.hk-saftw')), tx(c2.querySelector('.hk-saft .hk-hint'))]);
     var tf2 = r2.querySelector('.hk-ses[data-sk="' + sk + '"] .hk-sesc');
-    ok('hawk.html, no candle store, rows without 1-minute candles: no 5-minute candles drawn, it says so ("make sure i dont see any more 5m candles")', tf2 && tf2.dataset.tf === 'none', tf2 && tf2.dataset.tf);
+    ok('hawk.html, no candle store, rows without 1-minute candles: no 5-minute candles drawn, it says so ("make sure i dont see any more 5m candles")', tf2 && tf2.dataset.hktf === 'none', tf2 && tf2.dataset.hktf);
     var tg2 = r2.querySelector('input[data-hkquiet]');
     ok('...before the database update the toggle waits, saying so', tg2 && tg2.disabled && tg2.checked && /next hawk update/.test(tx(tg2.closest('label').nextElementSibling)), tg2 && tx(tg2.closest('label').nextElementSibling));
     // moved into another window's document, as the app moves the rail into Live Charts' own window (26 Nov 2026, Nestor: "also whats all
