@@ -159,7 +159,9 @@
       var tmrb = $('.plat-right .pl-tmrb');
       check('the Trade Manager has the risk budget (Today had it), without a second trades meter', !!tmrb && /Risk budget/.test(tmrb.textContent) && /£250 left/.test(tmrb.textContent) && bArg && bArg.noTrades === true, [tmrb && tmrb.textContent.slice(0, 160), JSON.stringify(bArg)]);
       LB.budgetHtml = bh0;
-      check('no hawk: its button stays hidden', !window.__stHawk && (!rb('hk') || rb('hk').hidden), [!!window.__stHawk, rb('hk') && rb('hk').hidden]);
+      // no hawk (gone 28 Nov 2026) - and nothing marked hidden on the rail shows (a button's own display beat 'hidden': the hawk's showed to everyone from 6 Nov)
+      var hidShown = Array.prototype.filter.call(document.querySelectorAll('.plat-rail [hidden]'), function (x) { return getComputedStyle(x).display !== 'none'; });
+      check('no hawk on the rail, and nothing marked hidden there shows', !window.__stHawk && !rb('hk') && !hidShown.length && !document.querySelector('.plat-rail .pl-hki'), [!!window.__stHawk, !!rb('hk'), hidShown.map(function (x) { return x.outerHTML.slice(0, 60); })]);
       // closed: a new message counts on its icon
       var nm = { id: 'tst-' + Date.now(), channel_id: 'ch-chat', sender_id: TROY, sender_name: 'Troy', body: 'hi', created_at: new Date().toISOString() };
       DB.channel_messages.unshift(nm); subs.forEach(function (x) { if (x.table === 'channel_messages' && x.ev === 'INSERT' && (!x.filter || x.filter === 'channel_id=eq.ch-chat')) { try { x.cb({ new: nm }); } catch (e) {} } });
