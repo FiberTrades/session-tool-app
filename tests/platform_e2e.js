@@ -427,11 +427,11 @@
       hd.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: x0, clientY: y0, pointerId: 1 })); document.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: x0 + dx, clientY: y0, pointerId: 1 }));
       document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: x0 + dx, clientY: y0, pointerId: 1 })); };
     var rail = function(k){ $('[data-plr="' + k + '"]').click(); return W(250); }, before = {};
-    for (var rk of ['wl', 'td', 'ot']) { await rail(rk); before[rk] = colW(); } await rail('tm');
+    for (var rk of ['wl', 'ot']) { await rail(rk); before[rk] = colW(); } await rail('tm');
     var wTm0 = colW(); edgeDrag(-80); await W(300); var wTm = colW();
     check('the Trade Manager\'s left edge widens it, kept on this device for it alone', wTm >= wTm0 + 70 && Math.abs((rwp().tm || 0) - wTm) <= 1, [wTm0, wTm, rwp()]);
-    var wAll = {}; for (rk of ['wl', 'td', 'ot']) { await rail(rk); wAll[rk] = colW(); }
-    check('...the Watchlist, Today and the Object tree keep their own widths', Object.keys(wAll).every(function(k){ return Math.abs(wAll[k] - before[k]) <= 1; }), [before, wAll]);
+    var wAll = {}; for (rk of ['wl', 'ot']) { await rail(rk); wAll[rk] = colW(); }
+    check('...the Watchlist and the Object tree keep their own widths (no Today on the rail since 28 Nov 2026)', Object.keys(wAll).every(function(k){ return Math.abs(wAll[k] - before[k]) <= 1; }), [before, wAll]);
     await rail('ch'); edgeDrag(300); await W(300); var wCh = colW(); await rail('wl'); var wWl = colW(); await rail('tm'); var wTm2 = colW();
     check('...Chat narrowed to its least (330, its text box and Send whole): the Watchlist and the Trade Manager unchanged', Math.abs(wCh - 330) <= 1 && rwp().ch === 330 && Math.abs(wWl - before.wl) <= 1 && Math.abs(wTm2 - wTm) <= 1, [wCh, wWl, wTm2, rwp()]);
     var mig = function(o){ localStorage.setItem('st_plat', JSON.stringify(o)); var st1 = P._plStRead(); return [st1.rw, 'pw' in st1]; };

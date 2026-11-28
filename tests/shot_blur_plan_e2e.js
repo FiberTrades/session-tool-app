@@ -107,9 +107,11 @@
       po && po.textContent.slice(0, 200));
     var bb = q('.stpc-bias'), bsw = qa('.stpc-bsw button');
     ok('Your bias today: the chart\'s symbol picked (EUR/USD · London, not the active gold), a switch to the other posted one',
-      !!bb && q('.stpc-bd').firstElementChild === bb && /Your bias today/.test(bb.textContent) && bsw.length === 2 && bsw[1].classList.contains('on') && /EUR\/USD · London/.test(bsw[1].textContent) && /XAU\/USD · New York/.test(bsw[0].textContent),
+      !!bb && q('.stpc-bd').lastElementChild === bb && /Your bias today/.test(bb.textContent) && bsw.length === 2 && bsw[1].classList.contains('on') && /EUR\/USD · London/.test(bsw[1].textContent) && /XAU\/USD · New York/.test(bsw[0].textContent),
       bb && bb.textContent.slice(0, 160));
-    var bt2 = q('.stpc-bgrid').textContent;
+    var ssb = q('.stpc-sess');   // above it, the session and its news - Today's, for everyone since 28 Nov 2026 (the admin's since 6 Nov)
+    ok('...above it the session and the news (Today\'s, now here for everyone)', !!ssb && q('.stpc-bd').firstElementChild === ssb && /Session/.test(ssb.textContent) && /London|New York|Tokyo/.test(ssb.textContent) && /News/.test(ssb.textContent), ssb && ssb.textContent.slice(0, 160));
+    var bt2 = bb.querySelector('.stpc-bgrid').textContent;
     ok('...its mode, HTF/LTF structure, location, direction, the week\'s rule, notes, and when it was posted',
       /Mode\s*Execution/.test(bt2) && /HTF\s*Trending\s*·\s*LTF\s*Initiating/.test(bt2) && /Discount Edge/.test(bt2) && /↑ Bullish/.test(bt2) && !!q('.stpc-bgrid .up') && /No entry before the London open/.test(bt2) && /London took the Asia high/.test(bt2) && /Posted 08:12/.test(bb.textContent), bt2);
     var chs = qa('.stpc-ch'), im = chs.map(function (c) { var g = c.querySelector('img'); return g ? g.getAttribute('src') : ''; });
@@ -117,8 +119,8 @@
       chs.length === 2 && /^HTF/.test(chs[0].textContent) && /^LTF/.test(chs[1].textContent) && im[0] === 'https://s3.tradingview.com/snapshots/a/AbCd1234.png' && im[1] === 'https://s3.tradingview.com/snapshots/e/EfGh5678.png'
       && chs[0].querySelector('a').getAttribute('href') === 'https://www.tradingview.com/x/AbCd1234/' && /The range from Friday/.test(chs[0].textContent) && /The sweep at 08:00/.test(chs[1].textContent), [chs.length, im]);
     bsw[0].click(); await W(40);
-    ok('the switch: gold in New York, its own read (Observation, Bearish with its down arrow, Impact News), no charts posted with it', qa('.stpc-bsw button')[0].classList.contains('on') && /Observation/.test(q('.stpc-bgrid').textContent) && /↓ Bearish/.test(q('.stpc-bgrid').textContent) && /Impact News/.test(q('.stpc-bgrid').textContent) && !!q('.stpc-bgrid .dn') && !q('.stpc-charts'),
-      q('.stpc-bgrid').textContent);
+    ok('the switch: gold in New York, its own read (Observation, Bearish with its down arrow, Impact News), no charts posted with it', qa('.stpc-bsw button')[0].classList.contains('on') && /Observation/.test(q('.stpc-bias .stpc-bgrid').textContent) && /↓ Bearish/.test(q('.stpc-bias .stpc-bgrid').textContent) && /Impact News/.test(q('.stpc-bias .stpc-bgrid').textContent) && !!q('.stpc-bias .stpc-bgrid .dn') && !q('.stpc-charts'),
+      q('.stpc-bias .stpc-bgrid').textContent);
     ok('nothing goes to the assistant', sent.length === 0, sent.length);
     if (mob) {
       var box = q('.stpc').getBoundingClientRect(), wide = qa('button, .stpc-ch').filter(function (x) { return x.getBoundingClientRect().right > innerWidth + 1; });
@@ -143,7 +145,7 @@
     document.querySelector('.stshot-ov [data-sh="close"]').click(); await e2;
     data.biasSlots.forEach(function (sl) { sl.copiedAt = null; });
     window.__stPlanCheck.open({ sym: 'EURUSD' }); await W(80); po = document.querySelector('.stpc-ov');
-    ok('nothing posted today: "No bias posted today" and a link to Session Bias', /No bias posted today/.test((q('.stpc-bnone') || {}).textContent || '') && !!q('[data-pc="openbias"]') && !q('.stpc-bgrid'));
+    ok('nothing posted today: "No bias posted today" and a link to Session Bias', /No bias posted today/.test((q('.stpc-bnone') || {}).textContent || '') && !!q('[data-pc="openbias"]') && !q('.stpc-bias .stpc-bgrid'));
     q('[data-pc="openbias"]').click(); await W(400);
     ok('...the link closes it and opens Session Bias', !document.querySelector('.stpc-ov') && document.querySelector('.tab[data-page="bias"]').classList.contains('active'));
     window.fetch = realFetch;

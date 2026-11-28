@@ -148,21 +148,18 @@
         [sw2, sdr2 && [sdr2.left, sdr2.right, sdr2.width], cq3.right, pr.right, msgs.scrollWidth, msgs.clientWidth]);
       drag(-50); await W(400); var chw = col().width;
       msgs.scrollTop = 0;   // left reading old messages
-      // Today - a member's. This test signs in as the admin, and since 6 Nov 2026 the admin's Today is inside the hawk's panel (plPn maps
-      // 'td' to 'hk', its rail icon hidden), so the hawk steps aside for these checks and comes back after them.
-      for (var ih = 0; ih < 30 && !window.__stHawk; ih++) await W(100);   // hawk.js loads on its own once the admin is seen
-      var hawk0 = window.__stHawk; window.__stHawk = undefined; try { P._hawkOn(); } catch (e) {} await W(300);
-      rb('td').click(); await W(600);
-      var svT = {}; try { svT = JSON.parse(localStorage.getItem('st_plat') || '{}'); } catch (e) {} var expT = Math.max(260, +((svT.rwp || {}).td) || +svT.rw || 300);
-      check('Today: its own panel, at its own width (the chat\'s width stays the chat\'s)', only('.pl-td') && fills('.plat-right > .pl-td') && Math.abs(col().width - expT) < 3 && Math.abs(col().width - chw) > 3, [col().width, expT, chw]);
-      var tdt = $('.plat-right .pl-tdb').textContent;
-      check('Today: red news (or none this week) and the risk budget the Session Live board had', /Red news/i.test(tdt) && (/None this week|·/.test(tdt)), tdt.slice(0, 200));
-      check('Today: no bias (that is in Check my plan now)', !/morning's bias/i.test(tdt));
-      check('Today names the session and how long it has (or until the next)', /\d+ ?(min|h)/.test($('.plat-right .pl-tds').textContent), $('.plat-right .pl-tds').textContent);
-      if (hawk0) {   // the admin again: Today's icon gone, its click target the hawk's panel
-        window.__stHawk = hawk0; try { P._hawkOn(); } catch (e) {} await W(300);
-        check('the admin: no Today icon, Today is in the hawk panel', !(rb('td') && rb('td').offsetParent) && !!rb('hk') && !rb('hk').hidden && P._plat().st.pn === 'td', [!!(rb('td') && rb('td').offsetParent), rb('hk') && rb('hk').hidden, P._plat().st.pn]);
-      }
+      // No Today on the rail since 28 Nov 2026 (the admin's layout since 6 Nov, everyone's on his "allow all users to see new menu changes"):
+      // its session, news and plan are in Check my bias, its risk budget in the Trade Manager under the ticket
+      check('no Today button on the rail', !(rb('td') && rb('td').offsetParent), rb('td') && rb('td').getBoundingClientRect());
+      var stP = P._plat().st, pn0 = stP.pn; stP.pn = 'td'; try { P._hawkOn(); } catch (e) {} await W(300);
+      check('...a Today left open before: the Trade Manager opens instead', only('.pl-tmc') && P._plat().st.pn === 'td', [P._plat().st.pn, !!$('.plat-right .pl-tm')]);
+      // this account has no daily stop or drawdown set (no budget to show): a stand-in budget, to see where it goes
+      var LB = window.__stLiveBox, bh0 = LB.budgetHtml, bArg = 'none'; LB.budgetHtml = function (o) { bArg = o; return '<div class="slx-rb n1"><span>Daily stop</span> <b>£250 left</b></div>'; };
+      for (var tb9 = 0; tb9 < 50 && !$('.plat-right .pl-tmrb'); tb9++) await W(100);
+      var tmrb = $('.plat-right .pl-tmrb');
+      check('the Trade Manager has the risk budget (Today had it), without a second trades meter', !!tmrb && /Risk budget/.test(tmrb.textContent) && /£250 left/.test(tmrb.textContent) && bArg && bArg.noTrades === true, [tmrb && tmrb.textContent.slice(0, 160), JSON.stringify(bArg)]);
+      LB.budgetHtml = bh0;
+      check('no hawk: its button stays hidden', !window.__stHawk && (!rb('hk') || rb('hk').hidden), [!!window.__stHawk, rb('hk') && rb('hk').hidden]);
       // closed: a new message counts on its icon
       var nm = { id: 'tst-' + Date.now(), channel_id: 'ch-chat', sender_id: TROY, sender_name: 'Troy', body: 'hi', created_at: new Date().toISOString() };
       DB.channel_messages.unshift(nm); subs.forEach(function (x) { if (x.table === 'channel_messages' && x.ev === 'INSERT' && (!x.filter || x.filter === 'channel_id=eq.ch-chat')) { try { x.cb({ new: nm }); } catch (e) {} } });
